@@ -142,7 +142,7 @@ export function Header({
               className="w-8 h-8"
             />
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Tesseract</h1>
+              <h1 className="text-lg font-bold text-gray-900">Tesseract (test)</h1>
             </div>
             </div>
 
