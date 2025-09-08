@@ -14,6 +14,13 @@ interface CollaborationManagerProps {
   noteTitle: string
   isOpen: boolean
   onClose: () => void
+  noteOwnerId: string // ID of the note creator
+  noteOwnerUser?: { // Details of the note creator
+    id: string
+    email: string
+    first_name?: string
+    last_name?: string
+  }
 }
 
 interface Collaboration {
@@ -23,6 +30,7 @@ interface Collaboration {
   invited_by: string
   created_at: string
   user?: {
+    id: string
     email: string
     first_name?: string
     last_name?: string
@@ -34,7 +42,9 @@ export function CollaborationManager({
   noteType, 
   noteTitle, 
   isOpen, 
-  onClose 
+  onClose,
+  noteOwnerId,
+  noteOwnerUser
 }: CollaborationManagerProps) {
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitePermission, setInvitePermission] = useState<'read' | 'write'>('read')
@@ -50,6 +60,25 @@ export function CollaborationManager({
   })
   const { user } = useAuth()
   const queryClient = useQueryClient()
+
+  // Fetch owner details if not fully provided
+  const { data: ownerDetails } = useQuery({
+    queryKey: ['note-owner', noteOwnerId],
+    queryFn: async () => {
+      if (!noteOwnerId) return null
+      if (noteOwnerUser?.email && noteOwnerUser.id === noteOwnerId) return noteOwnerUser // Already have details
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .eq('id', noteOwnerId)
+        .single()
+      
+      if (error) throw error
+      return data
+    },
+    enabled: isOpen && !!noteOwnerId
+  })
 
   // Fetch existing collaborations
   const { data: collaborations, isLoading } = useQuery({
@@ -94,29 +123,6 @@ export function CollaborationManager({
     queryFn: async () => {
       if (!searchQuery.trim() || searchQuery.length < 2) return []
       
-      console.log('🔍 Searching for users with query:', searchQuery)
-      
-      // First, let's check if there are any users at all
-      const { data: allUsers, error: allUsersError } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .neq('id', user?.id) // Exclude current user
-      
-      console.log('👥 Total users in database (excluding current user):', allUsers?.length || 0)
-      console.log('📋 All users:', allUsers)
-      
-      if (allUsersError) {
-        console.error('❌ Failed to fetch all users:', allUsersError)
-        throw allUsersError
-      }
-      
-      // If no users exist, return empty array
-      if (!allUsers || allUsers.length === 0) {
-        console.log('⚠️ No other users found in the database')
-        return []
-      }
-      
-      // Now perform the search
       const { data, error } = await supabase
         .from('users')
         .select('id, email, first_name, last_name')
@@ -124,19 +130,13 @@ export function CollaborationManager({
         .neq('id', user?.id) // Exclude current user
         .limit(10)
       
-      if (error) {
-        console.error('❌ User search failed:', error)
-        throw error
-      }
+      if (error) throw error
       
-      console.log('✅ User search results:', data?.length || 0, 'users found')
-      console.log('📋 Search results:', data)
-      
-      // Filter out users who are already collaborators
+      // Filter out users who are already collaborators or the owner
       const existingUserIds = new Set(collaborations?.map(c => c.user_id) || [])
-      console.log('🚫 Existing collaborator user IDs:', Array.from(existingUserIds))
+      existingUserIds.add(noteOwnerId); // Exclude the owner
+      
       const filteredResults = data?.filter(u => !existingUserIds.has(u.id)) || []
-      console.log('🔍 After filtering existing collaborators:', filteredResults.length, 'users available')
       
       return filteredResults
     },
@@ -227,8 +227,7 @@ export function CollaborationManager({
     }
   }
 
-  const getUserDisplayName = (collaboration: Collaboration) => {
-    const user = collaboration.user
+  const getUserDisplayName = (user: any) => {
     if (!user) return 'Unknown User'
     
     if (user.first_name && user.last_name) {
@@ -239,6 +238,9 @@ export function CollaborationManager({
   }
 
   if (!isOpen) return null
+
+  // Filter out the owner from the collaborators list
+  const filteredCollaborations = collaborations?.filter(c => c.user_id !== noteOwnerId) || []
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -266,6 +268,25 @@ export function CollaborationManager({
           </div>
 
           <div className="p-6 space-y-6">
+            {/* Note Owner */}
+            <Card>
+              <h4 className="text-sm font-semibold text-gray-900 mb-4">Note Owner</h4>
+              <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                  <Users className="h-4 w-4 text-primary-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {getUserDisplayName(ownerDetails || noteOwnerUser)}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {ownerDetails?.email || noteOwnerUser?.email}
+                  </p>
+                </div>
+                <Badge variant="primary" size="sm" className="ml-auto">Owner</Badge>
+              </div>
+            </Card>
+
             {/* Invite New User */}
             <Card>
               <h4 className="text-sm font-semibold text-gray-900 mb-4">Invite New Collaborator</h4>
@@ -294,7 +315,7 @@ export function CollaborationManager({
                             <p className="text-sm font-medium text-gray-900">
                               {searchUser.first_name && searchUser.last_name 
                                 ? `${searchUser.first_name} ${searchUser.last_name}`
-                                : searchUser.email?.split('@')[0]
+                                : getUserDisplayName(searchUser)
                               }
                             </p>
                             <p className="text-xs text-gray-500">{searchUser.email}</p>
@@ -334,9 +355,9 @@ export function CollaborationManager({
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-sm font-semibold text-gray-900">Current Collaborators</h4>
-                {collaborations && (
+                {filteredCollaborations && (
                   <Badge variant="default" size="sm">
-                    {collaborations.length} collaborator{collaborations.length !== 1 ? 's' : ''}
+                    {filteredCollaborations.length} collaborator{filteredCollaborations.length !== 1 ? 's' : ''}
                   </Badge>
                 )}
               </div>
@@ -353,9 +374,9 @@ export function CollaborationManager({
                     </div>
                   ))}
                 </div>
-              ) : collaborations && collaborations.length > 0 ? (
+              ) : filteredCollaborations.length > 0 ? (
                 <div className="space-y-3">
-                  {collaborations.map((collaboration) => (
+                  {filteredCollaborations.map((collaboration) => (
                     <div
                       key={collaboration.id}
                       className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
@@ -366,7 +387,7 @@ export function CollaborationManager({
                         </div>
                         <div>
                           <p className="text-sm font-medium text-gray-900">
-                            {getUserDisplayName(collaboration)}
+                            {getUserDisplayName(collaboration.user)}
                           </p>
                           <p className="text-xs text-gray-500">{collaboration.user?.email}</p>
                         </div>
