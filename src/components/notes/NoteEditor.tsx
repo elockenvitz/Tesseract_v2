@@ -1,13 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Plus, Search, Calendar, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users } from 'lucide-react'
+import {
+  Plus, Search, Calendar, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users,
+  Bold, Italic, Underline, Strikethrough, Code, Quote, List, ListOrdered, ListTodo,
+  Heading1, Heading2, Heading3, Link as LinkIcon, Image as ImageIcon, Minus,
+  Highlighter, Palette, Eraser, Wand2, Bot
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CollaborationManager } from '../ui/CollaborationManager'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 
 interface NoteEditorProps {
@@ -34,21 +39,33 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
     noteTitle: ''
   })
   const [hiddenNoteIds, setHiddenNoteIds] = useState<Set<string>>(new Set())
+
+  // Toolbar state
   const [showNoteTypeDropdown, setShowNoteTypeDropdown] = useState(false)
   const [showFontDropdown, setShowFontDropdown] = useState(false)
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
   const [showColorDropdown, setShowColorDropdown] = useState(false)
+  const [showHighlightDropdown, setShowHighlightDropdown] = useState(false)
   const [showMoreDropdown, setShowMoreDropdown] = useState(false)
-  const [showCollaborationManager, setShowCollaborationManager] = useState(false)
+  const [showHeadingDropdown, setShowHeadingDropdown] = useState(false)
+  const [showAIDropdown, setShowAIDropdown] = useState(false)
+
   const [currentFont, setCurrentFont] = useState('Sans Serif')
   const [currentSize, setCurrentSize] = useState('15')
-  const editorRef = useRef<HTMLDivElement>(null)
+  const [showCollaborationManager, setShowCollaborationManager] = useState(false)
+
+  const editorRef = useRef<HTMLTextAreaElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
+
   const noteTypeDropdownRef = useRef<HTMLDivElement>(null)
   const fontDropdownRef = useRef<HTMLDivElement>(null)
   const sizeDropdownRef = useRef<HTMLDivElement>(null)
   const colorDropdownRef = useRef<HTMLDivElement>(null)
+  const highlightDropdownRef = useRef<HTMLDivElement>(null)
   const moreDropdownRef = useRef<HTMLDivElement>(null)
+  const headingDropdownRef = useRef<HTMLDivElement>(null)
+  const aiDropdownRef = useRef<HTMLDivElement>(null)
+
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -90,64 +107,211 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
     { value: '#6b7280', label: 'Gray' }
   ]
 
+  const highlightOptions = [
+    { value: '#fff59e', label: 'Yellow' },
+    { value: '#a7f3d0', label: 'Mint' },
+    { value: '#bfdbfe', label: 'Light Blue' },
+    { value: '#fecaca', label: 'Pink' },
+    { value: '#fde68a', label: 'Amber' },
+  ]
+
   // Fetch all notes related to this asset
   const { data: notes, isLoading } = useQuery({
     queryKey: ['asset-notes', assetId],
     queryFn: async () => {
-      console.log('🔍 Fetching notes for asset:', assetId)
       const { data, error } = await supabase
         .from('asset_notes')
         .select('*')
         .eq('asset_id', assetId)
+        .eq('is_deleted', false)
         .order('updated_at', { ascending: false })
-      
-      if (error) {
-        console.error('❌ Failed to fetch asset notes:', error)
-        throw error
-      }
-      
-      console.log('✅ Asset notes fetched:', data?.length || 0, 'notes')
-      console.log('📋 Notes data:', data)
-      
-      // Filter out locally hidden notes from the UI
+
+      if (error) throw error
       const filteredNotes = (data || []).filter(note => !hiddenNoteIds.has(note.id))
-      console.log('🔍 After filtering hidden notes:', filteredNotes.length, 'notes')
       return filteredNotes
     },
-    staleTime: 0, // Always fetch fresh data
-    refetchOnWindowFocus: true, // Refetch when window regains focus
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
-  // Get the currently selected note
-  const selectedNote = notes?.find(note => note.id === selectedNoteId)
+  // Try to load user's integrated AI models (soft-fail to a default list)
+  const { data: integratedModels } = useQuery({
+    queryKey: ['ai-integrations', user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ai_integrations') // adjust to your actual table name
+          .select('id, provider, model_name, display_name')
+          .eq('user_id', user!.id)
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node
-      
-      if (noteTypeDropdownRef.current && !noteTypeDropdownRef.current.contains(target)) {
-        setShowNoteTypeDropdown(false)
-      }
-      if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
-        setShowFontDropdown(false)
-      }
-      if (sizeDropdownRef.current && !sizeDropdownRef.current.contains(target)) {
-        setShowSizeDropdown(false)
-      }
-      if (colorDropdownRef.current && !colorDropdownRef.current.contains(target)) {
-        setShowColorDropdown(false)
-      }
-      if (moreDropdownRef.current && !moreDropdownRef.current.contains(target)) {
-        setShowMoreDropdown(false)
+        if (error) throw error
+        return (data || []).map((m: any) => ({
+          id: m.id,
+          label: m.display_name || `${m.provider}/${m.model_name}`,
+          provider: m.provider,
+          model: m.model_name,
+        }))
+      } catch {
+        return [
+          { id: 'gpt-4o', label: 'OpenAI GPT-4o', provider: 'openai', model: 'gpt-4o' },
+          { id: 'claude-3-5-sonnet', label: 'Anthropic Claude 3.5 Sonnet', provider: 'anthropic', model: 'claude-3-5-sonnet' },
+        ]
       }
     }
+  })
 
-    if (showNoteTypeDropdown || showFontDropdown || showSizeDropdown || showColorDropdown || showMoreDropdown) {
+  // Lookup user display names for created_by / updated_by
+  const { data: usersById } = useQuery({
+    queryKey: ['users-by-id', (notes ?? []).map(n => n.created_by), (notes ?? []).map(n => n.updated_by)],
+    enabled: !!notes && notes.length > 0,
+    queryFn: async () => {
+      const ids = Array.from(
+        new Set(
+          (notes ?? [])
+            .flatMap(n => [n.created_by, n.updated_by])
+            .filter(Boolean) as string[]
+        )
+      )
+      if (ids.length === 0) return {} as Record<string, any>
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', ids)
+
+      if (error) throw error
+
+      const map: Record<string, any> = {}
+      for (const u of data || []) map[u.id] = u
+      return map
+    }
+  })
+
+  const nameFor = (id?: string | null) => {
+    if (!id) return 'Unknown'
+    const u = usersById?.[id]
+    if (!u) return 'Unknown'
+    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
+    return u.email?.split('@')[0] || 'Unknown'
+  }
+
+  // format "last updated" (remove "about"; switch to absolute after 24h)
+  const formatUpdatedAt = (value?: string | null) => {
+    if (!value) return ''
+    const d = new Date(value)
+    if (isNaN(d.getTime())) return ''
+    const ONE_DAY = 24 * 60 * 60 * 1000
+    const diff = Date.now() - d.getTime()
+    if (diff >= ONE_DAY) return format(d, 'MMM d, yyyy h:mm a')
+    return formatDistanceToNow(d, { addSuffix: true }).replace(/^about\s+/i, '')
+  }
+
+  const selectedNote = notes?.find(note => note.id === selectedNoteId)
+
+  // ---------- Toolbar helpers ----------
+  const getTA = () => editorRef.current as HTMLTextAreaElement | null
+
+  const wrapSelection = (before: string, after = '') => {
+    const ta = getTA()
+    if (!ta) return
+    const { selectionStart: start, selectionEnd: end } = ta
+    const selected = editingContent.slice(start, end)
+    const next = editingContent.slice(0, start) + before + selected + after + editingContent.slice(end)
+    setEditingContent(next)
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(start + before.length, end + before.length)
+    }, 0)
+  }
+
+  const surroundWithTag = (tag: string, attrs?: Record<string, string>) => {
+    const open =
+      attrs && Object.keys(attrs).length
+        ? `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')}>`
+        : `<${tag}>`
+    const close = `</${tag}>`
+    wrapSelection(open, close)
+  }
+
+  const prefixSelectedLines = (prefixer: (idx: number) => string) => {
+    const ta = getTA()
+    if (!ta) return
+    const { selectionStart: start, selectionEnd: end } = ta
+    const text = editingContent
+    const pre = text.slice(0, start)
+    const sel = text.slice(start, end)
+    const post = text.slice(end)
+
+    const selStartIdx = pre.lastIndexOf('\n') + 1
+    const selEndIdx = end + post.indexOf('\n')
+    const block = text.slice(selStartIdx, selEndIdx === end - 1 ? end : (selEndIdx >= end ? selEndIdx : end))
+    const lines = block.split('\n')
+
+    const newBlock = lines.map((l, i) => `${prefixer(i)}${l.replace(/^\s*(- |\d+\. |\[ \] |- \[ \] )?/, '')}`).join('\n')
+    const next = text.slice(0, selStartIdx) + newBlock + text.slice(selStartIdx + block.length)
+    setEditingContent(next)
+
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(selStartIdx, selStartIdx + newBlock.length)
+    }, 0)
+  }
+
+  const insertHR = () => {
+    const ta = getTA(); if (!ta) return
+    const { selectionStart: start } = ta
+    const next = editingContent.slice(0, start) + '\n\n---\n\n' + editingContent.slice(start)
+    setEditingContent(next)
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(start + 6, start + 6)
+    }, 0)
+  }
+
+  const clearFormattingSelection = () => {
+    const ta = getTA(); if (!ta) return
+    const { selectionStart: start, selectionEnd: end } = ta
+    const selected = editingContent.slice(start, end)
+    const cleaned = selected.replace(/<\/?[^>]+>/g, '')
+    const next = editingContent.slice(0, start) + cleaned + editingContent.slice(end)
+    setEditingContent(next)
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(start, start + cleaned.length)
+    }, 0)
+  }
+
+  const insertAIBlock = (provider: string, model: string) => {
+    const block = `\n> 🤖 AI (${provider}/${model}) — describe your request here\n`
+    const ta = getTA(); if (!ta) return
+    const { selectionStart: start } = ta
+    const next = editingContent.slice(0, start) + block + editingContent.slice(start)
+    setEditingContent(next)
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(start + block.length, start + block.length)
+    }, 0)
+  }
+
+  // ---------- Close dropdowns on outside click ----------
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const t = event.target as Node
+      if (noteTypeDropdownRef.current && !noteTypeDropdownRef.current.contains(t)) setShowNoteTypeDropdown(false)
+      if (fontDropdownRef.current && !fontDropdownRef.current.contains(t)) setShowFontDropdown(false)
+      if (sizeDropdownRef.current && !sizeDropdownRef.current.contains(t)) setShowSizeDropdown(false)
+      if (colorDropdownRef.current && !colorDropdownRef.current.contains(t)) setShowColorDropdown(false)
+      if (highlightDropdownRef.current && !highlightDropdownRef.current.contains(t)) setShowHighlightDropdown(false)
+      if (moreDropdownRef.current && !moreDropdownRef.current.contains(t)) setShowMoreDropdown(false)
+      if (headingDropdownRef.current && !headingDropdownRef.current.contains(t)) setShowHeadingDropdown(false)
+      if (aiDropdownRef.current && !aiDropdownRef.current.contains(t)) setShowAIDropdown(false)
+    }
+    if (showNoteTypeDropdown || showFontDropdown || showSizeDropdown || showColorDropdown || showMoreDropdown || showHeadingDropdown || showAIDropdown || showHighlightDropdown) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showNoteTypeDropdown, showFontDropdown, showSizeDropdown, showColorDropdown, showMoreDropdown])
+  }, [showNoteTypeDropdown, showFontDropdown, showSizeDropdown, showColorDropdown, showMoreDropdown, showHeadingDropdown, showAIDropdown, showHighlightDropdown])
 
   // Update editing content when selected note changes
   useEffect(() => {
@@ -157,38 +321,29 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
     }
   }, [selectedNote])
 
-  // Auto-save functionality
+  // ---------- Mutations / autosave ----------
   const saveNoteMutation = useMutation({
     mutationFn: async ({ id, title, content }: { id: string; title?: string; content?: string }) => {
       setIsSaving(true)
-      const updates: any = { updated_at: new Date().toISOString() }
+      const updates: any = { updated_at: new Date().toISOString(), updated_by: user?.id }
       if (title !== undefined) updates.title = title
       if (content !== undefined) updates.content = content
-
-      const { error } = await supabase
-        .from('asset_notes')
-        .update(updates)
-        .eq('id', id)
-      
+      const { error } = await supabase.from('asset_notes').update(updates).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-notes', assetId] })
       setIsSaving(false)
     },
-    onError: () => {
-      setIsSaving(false)
-    }
+    onError: () => setIsSaving(false)
   })
 
-  // Update note type
   const updateNoteTypeMutation = useMutation({
     mutationFn: async ({ id, noteType }: { id: string; noteType: string }) => {
       const { error } = await supabase
         .from('asset_notes')
-        .update({ note_type: noteType, updated_at: new Date().toISOString() })
+        .update({ note_type: noteType, updated_at: new Date().toISOString(), updated_by: user?.id })
         .eq('id', id)
-      
       if (error) throw error
     },
     onSuccess: () => {
@@ -197,12 +352,9 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
     }
   })
 
-  // Create new note
   const createNoteMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('User not authenticated')
-      
-      // Create the note directly in asset_notes
       const { data: noteData, error: noteError } = await supabase
         .from('asset_notes')
         .insert([{
@@ -210,11 +362,11 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
           title: 'Untitled',
           content: '',
           note_type: 'research',
-          created_by: user.id
+          created_by: user.id,
+          updated_by: user.id
         }])
         .select()
         .single()
-      
       if (noteError) throw noteError
       return noteData
     },
@@ -224,36 +376,23 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
     }
   })
 
-  // Delete note
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
-      
-      // Mark the note as deleted in the database
       const { error } = await supabase
         .from('asset_notes')
-        .update({ is_deleted: true })
+        .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
         .eq('id', noteId)
-        .eq('created_by', user.id) // Ensure user owns the note
-      
+        .eq('created_by', user.id)
       if (error) throw error
     },
     onSuccess: () => {
-      // Refresh the notes list to reflect the hidden note
       queryClient.invalidateQueries({ queryKey: ['asset-notes', assetId] })
-      
-      // If we hid the selected note, select another note or clear selection
       const hiddenNoteId = deleteConfirmDialog.noteId
       if (selectedNoteId === hiddenNoteId) {
         const remainingNotes = notes?.filter(n => n.id !== selectedNoteId && !hiddenNoteIds.has(n.id)) || []
-        if (remainingNotes.length > 0) {
-          onNoteSelect(remainingNotes[0].id)
-        } else {
-          onNoteSelect('')
-        }
+        onNoteSelect(remainingNotes[0]?.id || '')
       }
-      
-      // Close the dialog
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
       setShowNoteMenu(null)
     },
@@ -263,30 +402,23 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
     }
   })
 
-  // Auto-save when content changes
   useEffect(() => {
     if (!selectedNote || editingContent === selectedNote.content || !editingContent.trim()) return
-
-    const timeoutId = setTimeout(() => {
+    const t = setTimeout(() => {
       saveNoteMutation.mutate({ id: selectedNote.id, content: editingContent })
-    }, 1000) // Auto-save after 1 second of inactivity
-
-    return () => clearTimeout(timeoutId)
+    }, 1000)
+    return () => clearTimeout(t)
   }, [editingContent, selectedNote?.id])
 
-  // Auto-save when title changes
   useEffect(() => {
     if (!selectedNote || editingTitle === selectedNote.title || !editingTitle.trim()) return
-
-    const timeoutId = setTimeout(() => {
+    const t = setTimeout(() => {
       saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
       setIsTitleEditing(false)
-    }, 1000) // Auto-save after 1 second of inactivity
-
-    return () => clearTimeout(timeoutId)
+    }, 1000)
+    return () => clearTimeout(t)
   }, [editingTitle, selectedNote?.id])
 
-  // Save when switching notes or component unmounts
   useEffect(() => {
     return () => {
       if (selectedNote && (editingContent !== selectedNote.content || editingTitle !== selectedNote.title)) {
@@ -294,54 +426,37 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
         if (editingContent !== selectedNote.content) updates.content = editingContent
         if (editingTitle !== selectedNote.title) updates.title = editingTitle
         if (Object.keys(updates).length > 0) {
-          supabase
-            .from('asset_notes')
-            .update({ ...updates, updated_at: new Date().toISOString() })
-            .eq('id', selectedNote.id)
+          supabase.from('asset_notes').update({ ...updates, updated_at: new Date().toISOString(), updated_by: user?.id }).eq('id', selectedNote.id)
         }
       }
     }
   }, [selectedNote?.id])
 
-  // Save when switching notes
   const saveCurrentNote = async () => {
-    if (selectedNote) {
-      const updates: any = {}
-      if (editingContent !== selectedNote.content) updates.content = editingContent
-      if (editingTitle !== selectedNote.title) updates.title = editingTitle
-      if (Object.keys(updates).length > 0) {
-        try {
-          await supabase
-            .from('asset_notes')
-            .update({ ...updates, updated_at: new Date().toISOString() })
-            .eq('id', selectedNote.id)
-          queryClient.invalidateQueries({ queryKey: ['asset-notes', assetId] })
-        } catch (error) {
-          console.error('Failed to save note:', error)
-        }
+    if (!selectedNote) return
+    const updates: any = {}
+    if (editingContent !== selectedNote.content) updates.content = editingContent
+    if (editingTitle !== selectedNote.title) updates.title = editingTitle
+    if (Object.keys(updates).length > 0) {
+      try {
+        await supabase.from('asset_notes').update({ ...updates, updated_at: new Date().toISOString(), updated_by: user?.id }).eq('id', selectedNote.id)
+        queryClient.invalidateQueries({ queryKey: ['asset-notes', assetId] })
+      } catch (e) {
+        console.error('Failed to save note:', e)
       }
     }
   }
 
-  const handleContentChange = (content: string) => {
-    setEditingContent(content)
-  }
-
-  const handleTitleChange = (title: string) => {
-    setEditingTitle(title)
-  }
-
+  // Title handlers
+  const handleContentChange = (content: string) => setEditingContent(content)
+  const handleTitleChange = (title: string) => setEditingTitle(title)
   const handleTitleClick = (e: React.MouseEvent<HTMLHeadingElement>) => {
-    // Capture event properties before the async callback
     const currentTarget = e.currentTarget
     const clientX = e.clientX
-    
     setIsTitleEditing(true)
-    // Focus the input after it's rendered
     setTimeout(() => {
       if (titleInputRef.current) {
         titleInputRef.current.focus()
-        // Calculate cursor position based on click position
         const rect = currentTarget.getBoundingClientRect()
         const clickX = clientX - rect.left
         const textWidth = rect.width
@@ -352,111 +467,44 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
       }
     }, 0)
   }
-
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       setIsTitleEditing(false)
-      if (editingTitle !== selectedNote?.title) {
-        saveNoteMutation.mutate({ id: selectedNote!.id, title: editingTitle })
-      }
+      if (editingTitle !== selectedNote?.title) saveNoteMutation.mutate({ id: selectedNote!.id, title: editingTitle })
     } else if (e.key === 'Escape') {
       setEditingTitle(selectedNote?.title || '')
       setIsTitleEditing(false)
     }
   }
-
   const handleTitleBlur = () => {
     setIsTitleEditing(false)
-    // Save on blur if content changed
-    if (selectedNote && editingTitle !== selectedNote.title) {
-      saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
-    }
+    if (selectedNote && editingTitle !== selectedNote.title) saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
   }
 
+  // Note list handlers
   const handleNoteClick = async (noteId: string) => {
-    // Save current note before switching if there are changes
-    if (selectedNote && (editingContent !== selectedNote.content || editingTitle !== selectedNote.title)) {
-      await saveCurrentNote()
-    }
+    if (selectedNote && (editingContent !== selectedNote.content || editingTitle !== selectedNote.title)) await saveCurrentNote()
     onNoteSelect(noteId)
     setIsTitleEditing(false)
   }
-
-  const handleCreateNote = () => {
-    createNoteMutation.mutate()
-  }
-
-  const handleDeleteNote = (noteId: string, noteTitle: string) => {
-    setDeleteConfirmDialog({
-      isOpen: true,
-      noteId,
-      noteTitle
-    })
-  }
-
+  const handleCreateNote = () => createNoteMutation.mutate()
+  const handleDeleteNote = (noteId: string, noteTitle: string) => setDeleteConfirmDialog({ isOpen: true, noteId, noteTitle })
   const handleConfirmDelete = () => {
     if (deleteConfirmDialog.noteId) {
-      // Add the note ID to hidden notes set
       setHiddenNoteIds(prev => new Set([...prev, deleteConfirmDialog.noteId!]))
-      // Trigger the mutation to update the UI
       softDeleteNoteMutation.mutate(deleteConfirmDialog.noteId)
     }
   }
+  const handleCancelDelete = () => setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
+  const handleNoteTypeChange = (noteType: string) => { if (selectedNote) updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType }) }
 
-  const handleCancelDelete = () => {
-    setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
-  }
+  // Existing helpers kept for compatibility
+  const insertText = (before: string, after: string = '') => wrapSelection(before, after)
+  const insertAtLineStart = (prefix: string) => prefixSelectedLines(() => prefix)
 
-  const handleNoteTypeChange = (noteType: string) => {
-    if (selectedNote) {
-      updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType })
-    }
-  }
-
-  const insertText = (before: string, after: string = '') => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement
-    if (textarea) {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const selectedText = editingContent.substring(start, end)
-      const newText = editingContent.substring(0, start) + before + selectedText + after + editingContent.substring(end)
-      setEditingContent(newText)
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + before.length, end + before.length)
-      }, 0)
-    }
-  }
-
-  const insertAtLineStart = (prefix: string) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement
-    if (textarea) {
-      const start = textarea.selectionStart
-      const lines = editingContent.split('\n')
-      let currentPos = 0
-      let lineIndex = 0
-      
-      for (let i = 0; i < lines.length; i++) {
-        if (currentPos + lines[i].length >= start) {
-          lineIndex = i
-          break
-        }
-        currentPos += lines[i].length + 1
-      }
-      
-      lines[lineIndex] = prefix + lines[lineIndex]
-      const newText = lines.join('\n')
-      setEditingContent(newText)
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + prefix.length, start + prefix.length)
-      }, 0)
-    }
-  }
-
-  const filteredNotes = notes?.filter(note => 
-    note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    note.content.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredNotes = notes?.filter(note =>
+    (note.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (note.content || '').toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
 
   const getNoteTypeColor = (type: string | null) => {
@@ -483,7 +531,7 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          
+
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -510,9 +558,7 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
             </div>
           ) : filteredNotes.length > 0 ? (
             <div className="space-y-1 p-2">
-              {console.log('🎨 Rendering notes list:', filteredNotes.length, 'notes')}
-              {filteredNotes.map((note) => {
-                return (
+              {filteredNotes.map((note) => (
                 <div
                   key={note.id}
                   className={clsx(
@@ -536,22 +582,29 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                         )}
                       </div>
                       <p className="text-xs text-gray-600 line-clamp-2 mb-2">
-                        {note.content.replace(/^#.*\n/, '').substring(0, 80)}...
+                        {(note.content || '').replace(/^#.*\n/, '').substring(0, 80)}...
                       </p>
-                      <div className="flex items-center space-x-3 text-xs text-gray-500">
+
+                      {/* Meta row with names */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                         <div className="flex items-center">
                           <Calendar className="h-3 w-3 mr-1" />
-                          {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
+                          {formatUpdatedAt(note.updated_at)}
                         </div>
+
+                        {note.updated_by && <span>• Edited by {nameFor(note.updated_by)}</span>}
+                        {note.created_by && <span>• Created by {nameFor(note.created_by)}</span>}
+
                         {note.is_shared && (
                           <div className="flex items-center">
-                            <Share2 className="h-3 w-3 mr-1" />
+                            <span>•</span>
+                            <Share2 className="h-3 w-3 mx-1" />
                             Shared
                           </div>
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Note Menu */}
                     <div className="relative">
                       <button
@@ -563,13 +616,13 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                       >
                         <MoreHorizontal className="h-3 w-3" />
                       </button>
-                      
+
                       {showNoteMenu === note.id && (
-                        <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[120px]">
+                        <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[140px]">
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              navigator.clipboard.writeText(note.content)
+                              navigator.clipboard.writeText(note.content || '')
                               setShowNoteMenu(null)
                             }}
                             className="w-full px-3 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-50 flex items-center"
@@ -593,8 +646,7 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                     </div>
                   </div>
                 </div>
-                )
-              })}
+              ))}
             </div>
           ) : (
             <div className="p-4 text-center text-gray-500">
@@ -617,15 +669,13 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                 <div className="flex items-center space-x-3 flex-1">
                   <div className="flex items-center space-x-2" ref={noteTypeDropdownRef}>
                     <div className="relative">
-                      <button
-                        onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}
-                      >
+                      <button onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}>
                         <Badge variant={getNoteTypeColor(selectedNote.note_type)} size="sm">
                           {selectedNote.note_type || 'general'}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </Badge>
                       </button>
-                      
+
                       {showNoteTypeDropdown && (
                         <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
                           {noteTypeOptions.map((option) => (
@@ -647,13 +697,14 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                         </div>
                       )}
                     </div>
+
                     {selectedNote.is_shared && (
                       <Badge variant="primary" size="sm">
                         <Share2 className="h-3 w-3 mr-1" />
                         Shared
                       </Badge>
                     )}
-                    
+
                     {/* Collaboration Button */}
                     <button
                       onClick={() => setShowCollaborationManager(true)}
@@ -663,59 +714,33 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                       <Users className="h-3 w-3" />
                       <span>Share</span>
                     </button>
-                    
-                    {/* Text Editor Toolbar */}
+
+                    {/* TEXT EDITOR TOOLBAR */}
                     <div className="flex items-center space-x-1 ml-6 pl-6 border-l border-gray-300 bg-white rounded-lg shadow-sm border px-2 py-1">
-                      {/* Insert Button */}
-                      <div className="relative" ref={moreDropdownRef}>
-                        <button 
-                          onClick={() => setShowMoreDropdown(!showMoreDropdown)}
-                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+
+                      {/* Headings */}
+                      <div className="relative" ref={headingDropdownRef}>
+                        <button
+                          onClick={() => setShowHeadingDropdown(!showHeadingDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                          title="Headings"
                         >
-                          <div className="w-4 h-4 bg-blue-500 rounded-full mr-2 flex items-center justify-center">
-                            <Plus className="h-2.5 w-2.5 text-white" />
-                          </div>
-                          Insert
+                          <Heading2 className="h-4 w-4 mr-1" /> Heading
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
-                        {showMoreDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]">
-                            <button
-                              onClick={() => {
-                                insertText('![Image](', ')')
-                                setShowMoreDropdown(false)
-                              }}
-                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
-                            >
-                              Image
+                        {showHeadingDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                            <button className="px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center"
+                              onClick={() => { insertAtLineStart('# '); setShowHeadingDropdown(false) }}>
+                              <Heading1 className="h-3 w-3 mr-2" /> H1
                             </button>
-                            <button
-                              onClick={() => {
-                                insertText('[Link](', ')')
-                                setShowMoreDropdown(false)
-                              }}
-                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
-                            >
-                              Link
+                            <button className="px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center"
+                              onClick={() => { insertAtLineStart('## '); setShowHeadingDropdown(false) }}>
+                              <Heading2 className="h-3 w-3 mr-2" /> H2
                             </button>
-                            <button
-                              onClick={() => {
-                                insertText('```\n', '\n```')
-                                setShowMoreDropdown(false)
-                              }}
-                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
-                            >
-                              Code Block
-                            </button>
-                            <button
-                              onClick={() => {
-                                insertText('| Column 1 | Column 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |')
-                                setShowMoreDropdown(false)
-                              }}
-                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
-                            >
-                              Table
+                            <button className="px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center"
+                              onClick={() => { insertAtLineStart('### '); setShowHeadingDropdown(false) }}>
+                              <Heading3 className="h-3 w-3 mr-2" /> H3
                             </button>
                           </div>
                         )}
@@ -723,38 +748,193 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
 
                       <div className="w-px h-4 bg-gray-300" />
 
-                      {/* AI Button */}
-                      <button className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors">
-                        <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded mr-2 flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">AI</span>
-                        </div>
-                        AI
-                        <ChevronDown className="ml-1 h-3 w-3" />
+                      {/* Inline styling */}
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Bold" onClick={() => wrapSelection('**', '**')}>
+                        <Bold className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Italic" onClick={() => wrapSelection('*', '*')}>
+                        <Italic className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Underline" onClick={() => surroundWithTag('u')}>
+                        <Underline className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Strikethrough" onClick={() => wrapSelection('~~', '~~')}>
+                        <Strikethrough className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Inline code" onClick={() => wrapSelection('`', '`')}>
+                        <Code className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Blockquote" onClick={() => insertAtLineStart('> ')}>
+                        <Quote className="h-4 w-4" />
                       </button>
 
                       <div className="w-px h-4 bg-gray-300" />
 
-                      {/* Font Family */}
+                      {/* Lists */}
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Bulleted list"
+                        onClick={() => prefixSelectedLines(() => '- ')}>
+                        <List className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Numbered list"
+                        onClick={() => prefixSelectedLines((i) => `${i + 1}. `)}>
+                        <ListOrdered className="h-4 w-4" />
+                      </button>
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Checklist"
+                        onClick={() => prefixSelectedLines(() => '- [ ] ')}>
+                        <ListTodo className="h-4 w-4" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Color & highlight */}
+                      <div className="relative" ref={colorDropdownRef}>
+                        <button
+                          onClick={() => setShowColorDropdown(!showColorDropdown)}
+                          className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded"
+                          title="Text color"
+                        >
+                          <Palette className="h-4 w-4" />
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showColorDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50">
+                            <div className="grid grid-cols-7 gap-1">
+                              {colorOptions.map((c) => (
+                                <button
+                                  key={c.value}
+                                  onClick={() => { surroundWithTag('span', { style: `color:${c.value}` }); setShowColorDropdown(false) }}
+                                  className="w-5 h-5 rounded border border-gray-300"
+                                  style={{ backgroundColor: c.value }}
+                                  title={c.label}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="relative" ref={highlightDropdownRef}>
+                        <button
+                          onClick={() => setShowHighlightDropdown(!showHighlightDropdown)}
+                          className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded"
+                          title="Highlight"
+                        >
+                          <Highlighter className="h-4 w-4" />
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showHighlightDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50">
+                            <div className="grid grid-cols-5 gap-1">
+                              {highlightOptions.map((c) => (
+                                <button
+                                  key={c.value}
+                                  onClick={() => { surroundWithTag('span', { style: `background-color:${c.value}` }); setShowHighlightDropdown(false) }}
+                                  className="w-5 h-5 rounded border border-gray-300"
+                                  style={{ backgroundColor: c.value }}
+                                  title={c.label}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <button className="p-1.5 rounded hover:bg-gray-100" title="Clear formatting" onClick={clearFormattingSelection}>
+                        <Eraser className="h-4 w-4" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Insert menu */}
+                      <div className="relative" ref={moreDropdownRef}>
+                        <button
+                          onClick={() => setShowMoreDropdown(!showMoreDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                        >
+                          <div className="w-4 h-4 bg-blue-500 rounded-full mr-2 flex items-center justify-center">
+                            <Plus className="h-2.5 w-2.5 text-white" />
+                          </div>
+                          Insert
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+
+                        {showMoreDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]">
+                            <button onClick={() => { insertText('![Image](', ')'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center">
+                              <ImageIcon className="h-3 w-3 mr-2" /> Image
+                            </button>
+                            <button onClick={() => { insertText('[Link](', ')'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center">
+                              <LinkIcon className="h-3 w-3 mr-2" /> Link
+                            </button>
+                            <button onClick={() => { insertText('```\n', '\n```'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center">
+                              <Code className="h-3 w-3 mr-2" /> Code Block
+                            </button>
+                            <button onClick={() => { insertText('| Column 1 | Column 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                              Table
+                            </button>
+                            <button onClick={() => { insertHR(); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center">
+                              <Minus className="h-3 w-3 mr-2" /> Horizontal rule
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* AI models dropdown */}
+                      <div className="relative" ref={aiDropdownRef}>
+                        <button
+                          onClick={() => setShowAIDropdown(!showAIDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                        >
+                          <Wand2 className="h-4 w-4 mr-1" />
+                          <span className="hidden sm:inline">AI</span>
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showAIDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w=[220px]">
+                            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-gray-500">Insert AI reference</div>
+                            {(integratedModels || []).map((m: any) => (
+                              <button
+                                key={m.id}
+                                onClick={() => { insertAIBlock(m.provider, m.model); setShowAIDropdown(false) }}
+                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center"
+                              >
+                                <Bot className="h-3 w-3 mr-2" />
+                                {m.label}
+                              </button>
+                            ))}
+                            {(!integratedModels || integratedModels.length === 0) && (
+                              <div className="px-3 py-2 text-xs text-gray-500">No models found</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Font + Size */}
                       <div className="relative" ref={fontDropdownRef}>
-                        <button 
+                        <button
                           onClick={() => setShowFontDropdown(!showFontDropdown)}
-                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors min-w-[80px]"
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded min-w-[80px]"
                         >
                           {currentFont}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
                         {showFontDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]">
                             {fontOptions.map((font) => (
                               <button
                                 key={font.value}
-                                onClick={() => {
-                                  setCurrentFont(font.value)
-                                  setShowFontDropdown(false)
-                                }}
+                                onClick={() => { setCurrentFont(font.value); setShowFontDropdown(false) }}
                                 className={clsx(
-                                  'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors',
+                                  'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
                                   currentFont === font.value && 'bg-gray-100'
                                 )}
                                 style={{ fontFamily: font.value }}
@@ -766,27 +946,22 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                         )}
                       </div>
 
-                      {/* Font Size */}
                       <div className="relative" ref={sizeDropdownRef}>
-                        <button 
+                        <button
                           onClick={() => setShowSizeDropdown(!showSizeDropdown)}
-                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors min-w-[50px]"
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded min-w-[50px]"
                         >
                           {currentSize}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
                         {showSizeDropdown && (
                           <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[60px]">
                             {sizeOptions.map((size) => (
                               <button
                                 key={size.value}
-                                onClick={() => {
-                                  setCurrentSize(size.value)
-                                  setShowSizeDropdown(false)
-                                }}
+                                onClick={() => { setCurrentSize(size.value); setShowSizeDropdown(false) }}
                                 className={clsx(
-                                  'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors',
+                                  'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
                                   currentSize === size.value && 'bg-gray-100'
                                 )}
                               >
@@ -797,140 +972,36 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                         )}
                       </div>
 
-                      <div className="w-px h-4 bg-gray-300" />
+                      <div className="w-px h-4 bg-gray-300 mx-1" />
 
-                      {/* Text Color */}
-                      <div className="relative" ref={colorDropdownRef}>
-                        <button 
-                          onClick={() => setShowColorDropdown(!showColorDropdown)}
-                          className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                          title="Text Color"
-                        >
-                          <div className="w-4 h-4 rounded border border-gray-300 bg-black"></div>
-                          <ChevronDown className="ml-1 h-3 w-3" />
-                        </button>
-                        
-                        {showColorDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50">
-                            <div className="grid grid-cols-4 gap-1">
-                              {colorOptions.map((color) => (
-                                <button
-                                  key={color.value}
-                                  onClick={() => {
-                                    setShowColorDropdown(false)
-                                  }}
-                                  className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
-                                  style={{ backgroundColor: color.value }}
-                                  title={color.label}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="w-px h-4 bg-gray-300" />
-
-                      {/* Undo/Redo */}
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
+                      {/* Undo / Redo */}
+                      <button
+                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
                         title="Undo"
-                        onClick={() => {
-                          // Basic undo functionality - in a real app you'd implement proper undo/redo
-                          document.execCommand('undo')
-                        }}
+                        onClick={() => document.execCommand('undo')}
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                         </svg>
                       </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
+                      <button
+                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
                         title="Redo"
-                        onClick={() => {
-                          document.execCommand('redo')
-                        }}
+                        onClick={() => document.execCommand('redo')}
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10H11a8 8 0 00-8 8v2m18-10l-6-6m6 6l-6 6" />
                         </svg>
                       </button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1" />
-
-                      {/* Text Formatting */}
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors font-bold text-sm" 
-                        onClick={() => insertText('**', '**')}
-                        title="Bold"
-                      >
-                        B
-                      </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors italic text-sm" 
-                        onClick={() => insertText('*', '*')}
-                        title="Italic"
-                      >
-                        I
-                      </button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1" />
-
-                      {/* Lists */}
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
-                        onClick={() => insertAtLineStart('- ')}
-                        title="Bullet List"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                        </svg>
-                      </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
-                        onClick={() => insertAtLineStart('1. ')}
-                        title="Numbered List"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h6a2 2 0 002-2V7a2 2 0 00-2-2H9z" />
-                        </svg>
-                      </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
-                        onClick={() => insertAtLineStart('> ')}
-                        title="Quote"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                      </button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1" />
-
-                      {/* More Options */}
-                      <button className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors">
-                        More
-                        <ChevronDown className="ml-1 h-3 w-3" />
-                      </button>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2 text-xs text-gray-500">
-                  <Calendar className="h-3 w-3" />
-                  Last updated {formatDistanceToNow(new Date(selectedNote.updated_at || 0), { addSuffix: true })}
-                  {updateNoteTypeMutation.isPending && (
-                    <div className="flex items-center ml-2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-1" />
-                      <span className="text-xs">Updating...</span>
-                    </div>
-                  )}
-                </div>
+                {/* (Removed meta line: last updated / created by) */}
               </div>
             </div>
 
             {/* Editor Content */}
             <div className="flex-1 overflow-y-auto">
-              {/* Note Title as Editable Heading */}
               <div className="p-6 pb-0">
                 {isTitleEditing ? (
                   <input
@@ -944,7 +1015,7 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                     placeholder="Untitled"
                   />
                 ) : (
-                  <h1 
+                  <h1
                     className="text-2xl font-bold text-gray-900 mb-6 border-b border-gray-200 pb-4 cursor-text hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors"
                     onClick={handleTitleClick}
                   >
@@ -952,21 +1023,20 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
                   </h1>
                 )}
               </div>
-              
-              {/* Note Content */}
+
               <div className="px-6 pb-6">
-              <textarea
-                ref={editorRef as unknown as React.RefObject<HTMLTextAreaElement>}
-                value={editingContent}
-                onChange={(e) => handleContentChange(e.target.value)}
-                placeholder="Start typing..."
-                className="w-full resize-none border-none outline-none text-gray-900 placeholder-gray-400 leading-relaxed"
-                style={{
-                  minHeight: '400px',
-                  fontFamily: currentFont,
-                  fontSize: `${currentSize}px`
-                }}
-              />
+                <textarea
+                  ref={editorRef}
+                  value={editingContent}
+                  onChange={(e) => handleContentChange(e.target.value)}
+                  placeholder="Start typing..."
+                  className="w-full resize-none border-none outline-none text-gray-900 placeholder-gray-400 leading-relaxed"
+                  style={{
+                    minHeight: '400px',
+                    fontFamily: currentFont,
+                    fontSize: `${currentSize}px`
+                  }}
+                />
               </div>
             </div>
 
@@ -1028,6 +1098,8 @@ export function NoteEditor({ assetId, assetSymbol, selectedNoteId, onNoteSelect 
         noteTitle={selectedNote?.title || ''}
         isOpen={showCollaborationManager}
         onClose={() => setShowCollaborationManager(false)}
+        noteOwnerId={selectedNote?.created_by || ''}
+        noteOwnerUser={undefined /* name now resolved via usersById */}
       />
     </div>
   )

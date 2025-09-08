@@ -86,6 +86,42 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     refetchOnWindowFocus: true,
   })
 
+  // ---------- MINIMAL ADD: user lookup for created_by / updated_by ----------
+  const { data: usersById } = useQuery({
+    queryKey: ['users-by-id', (notes ?? []).map(n => n.created_by), (notes ?? []).map(n => n.updated_by)],
+    enabled: !!notes && notes.length > 0,
+    queryFn: async () => {
+      const ids = Array.from(
+        new Set(
+          (notes ?? [])
+            .flatMap(n => [n.created_by, n.updated_by])
+            .filter(Boolean) as string[]
+        )
+      )
+      if (ids.length === 0) return {} as Record<string, any>
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', ids)
+
+      if (error) throw error
+
+      const map: Record<string, any> = {}
+      for (const u of data || []) map[u.id] = u
+      return map
+    }
+  })
+
+  const nameFor = (id?: string | null) => {
+    if (!id) return 'Unknown'
+    const u = usersById?.[id]
+    if (!u) return 'Unknown'
+    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
+    return u.email?.split('@')[0] || 'Unknown'
+  }
+  // ------------------------------------------------------------------------
+
   // ---------- Mutations ----------
   const updateAssetMutation = useMutation({
     mutationFn: async (updates: any) => {
@@ -531,10 +567,19 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
                               <Calendar className="h-3 w-3 mr-1" />
                               {formatDistanceToNow(new Date(note.updated_at), { addSuffix: true })}
                             </div>
-                            <div className="flex items-center">
-                              <User className="h-3 w-3 mr-1" />
-                              You
-                            </div>
+                            {/* MINIMAL CHANGE: replace "You" with real names */}
+                            {note.updated_by && (
+                              <div className="flex items-center">
+                                <User className="h-3 w-3 mr-1" />
+                                Edited by {nameFor(note.updated_by)}
+                              </div>
+                            )}
+                            {note.created_by && (
+                              <div className="flex items-center">
+                                <User className="h-3 w-3 mr-1" />
+                                Created by {nameFor(note.created_by)}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

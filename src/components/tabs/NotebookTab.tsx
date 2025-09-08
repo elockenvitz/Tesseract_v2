@@ -1,22 +1,113 @@
+// src/components/notes/NotebookTab.tsx
+import { useEffect, useState } from 'react'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
-import { FileText, Calendar, User, Share2 } from 'lucide-react'
+import { FileText, Calendar, User as UserIcon, Share2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { supabase } from '../../lib/supabase'
+
+type UserLite = {
+  id?: string
+  email?: string
+  first_name?: string | null
+  last_name?: string | null
+}
+
+type Notebook = {
+  id: string
+  title: string
+  content: string
+  note_type: string | null
+  is_shared: boolean
+  created_at: string
+  updated_at: string
+  created_by: string | null
+  updated_by: string | null
+  // If your parent query already joins these, we'll use them directly:
+  created_by_user?: UserLite
+  updated_by_user?: UserLite
+}
 
 interface NotebookTabProps {
-  notebook: any
+  notebook: Notebook
 }
 
 export function NotebookTab({ notebook }: NotebookTabProps) {
+  const [createdByUser, setCreatedByUser] = useState<UserLite | null>(
+    notebook.created_by_user ?? null
+  )
+  const [updatedByUser, setUpdatedByUser] = useState<UserLite | null>(
+    notebook.updated_by_user ?? null
+  )
+
+  // Fallback: if parent didn't include joined users, fetch them here by ID
+  useEffect(() => {
+    const needCreated = !createdByUser && notebook.created_by
+    const needUpdated = !updatedByUser && notebook.updated_by
+
+    if (!needCreated && !needUpdated) return
+
+    const ids: string[] = []
+    if (needCreated && notebook.created_by) ids.push(notebook.created_by)
+    if (
+      needUpdated &&
+      notebook.updated_by &&
+      notebook.updated_by !== notebook.created_by
+    ) {
+      ids.push(notebook.updated_by)
+    }
+
+    if (ids.length === 0) return
+
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .in('id', ids)
+
+      if (error) {
+        console.error('Failed to load users for notebook', error)
+        return
+      }
+
+      const byId = new Map<string, UserLite>()
+      data?.forEach((u) => u.id && byId.set(u.id, u))
+
+      if (needCreated && notebook.created_by) {
+        setCreatedByUser(byId.get(notebook.created_by) ?? null)
+      }
+      if (needUpdated && notebook.updated_by) {
+        setUpdatedByUser(byId.get(notebook.updated_by) ?? null)
+      }
+    })()
+  }, [
+    createdByUser,
+    updatedByUser,
+    notebook.created_by,
+    notebook.updated_by,
+  ])
+
+  const getUserDisplayName = (u?: UserLite | null) => {
+    if (!u) return 'Unknown user'
+    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
+    if (u.email) return u.email.split('@')[0]
+    return 'Unknown user'
+  }
+
   const getNoteTypeColor = (type: string | null) => {
     switch (type) {
-      case 'meeting': return 'primary'
-      case 'call': return 'success'
-      case 'research': return 'warning'
-      case 'idea': return 'error'
-      case 'analysis': return 'default'
-      case 'general': return 'default'
-      default: return 'default'
+      case 'meeting':
+        return 'primary'
+      case 'call':
+        return 'success'
+      case 'research':
+        return 'warning'
+      case 'idea':
+        return 'error'
+      case 'analysis':
+      case 'general':
+      default:
+        return 'default'
     }
   }
 
@@ -39,14 +130,25 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
               </Badge>
             )}
           </div>
-          <div className="flex items-center space-x-6 text-sm text-gray-500">
+
+          {/* Meta line: created + updated with names */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500">
             <div className="flex items-center whitespace-nowrap">
               <Calendar className="h-4 w-4 mr-1" />
-              Created {formatDistanceToNow(new Date(notebook.created_at), { addSuffix: true })}
+              Created{' '}
+              {formatDistanceToNow(new Date(notebook.created_at), {
+                addSuffix: true,
+              })}{' '}
+              by {getUserDisplayName(createdByUser)}
             </div>
+
             <div className="flex items-center whitespace-nowrap">
-              <User className="h-4 w-4 mr-1" />
-              You
+              <UserIcon className="h-4 w-4 mr-1" />
+              Last edited{' '}
+              {formatDistanceToNow(new Date(notebook.updated_at), {
+                addSuffix: true,
+              })}{' '}
+              by {getUserDisplayName(updatedByUser)}
             </div>
           </div>
         </div>
@@ -86,6 +188,9 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
               <p className="text-xs font-medium text-gray-600">Last Updated</p>
               <p className="text-sm font-semibold text-gray-900">
                 {formatDistanceToNow(new Date(notebook.updated_at), { addSuffix: true })}
+              </p>
+              <p className="text-xs text-gray-500">
+                by {getUserDisplayName(updatedByUser)}
               </p>
             </div>
           </div>
