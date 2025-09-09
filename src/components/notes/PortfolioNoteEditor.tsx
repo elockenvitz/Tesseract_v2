@@ -1,13 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Plus, Search, Calendar, User, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Type, Palette, MoreVertical, Users } from 'lucide-react'
+import {
+  Plus, Search, Calendar, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users,
+  Bold, Italic, Underline, Strikethrough, List, ListOrdered, CheckSquare, Quote,
+  Highlighter, Type as TypeIcon, Minus, Eraser, Code as CodeIcon, Link as LinkIcon
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CollaborationManager } from '../ui/CollaborationManager'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 
 interface PortfolioNoteEditorProps {
@@ -18,30 +22,48 @@ interface PortfolioNoteEditorProps {
   onClose: () => void
 }
 
-export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId, onNoteSelect, onClose }: PortfolioNoteEditorProps) {
+export function PortfolioNoteEditor({
+  portfolioId,
+  portfolioName,
+  selectedNoteId,
+  onNoteSelect,
+  onClose
+}: PortfolioNoteEditorProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [editingContent, setEditingContent] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
   const [isTitleEditing, setIsTitleEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showNoteMenu, setShowNoteMenu] = useState<string | null>(null)
-  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
-    isOpen: boolean
-    noteId: string | null
-    noteTitle: string
-  }>({
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ isOpen: boolean; noteId: string | null; noteTitle: string }>({
     isOpen: false,
     noteId: null,
     noteTitle: ''
   })
   const [hiddenNoteIds, setHiddenNoteIds] = useState<Set<string>>(new Set())
+
   const [showNoteTypeDropdown, setShowNoteTypeDropdown] = useState(false)
+  const [showFontDropdown, setShowFontDropdown] = useState(false)
+  const [showSizeDropdown, setShowSizeDropdown] = useState(false)
+  const [showColorDropdown, setShowColorDropdown] = useState(false)
+  const [showMoreDropdown, setShowMoreDropdown] = useState(false)
+  const [showAIDropdown, setShowAIDropdown] = useState(false)
+  const [showHeadingDropdown, setShowHeadingDropdown] = useState(false)
   const [showCollaborationManager, setShowCollaborationManager] = useState(false)
+
   const [currentFont, setCurrentFont] = useState('Sans Serif')
   const [currentSize, setCurrentSize] = useState('15')
+
   const editorRef = useRef<HTMLDivElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const noteTypeDropdownRef = useRef<HTMLDivElement>(null)
+  const fontDropdownRef = useRef<HTMLDivElement>(null)
+  const sizeDropdownRef = useRef<HTMLDivElement>(null)
+  const colorDropdownRef = useRef<HTMLDivElement>(null)
+  const moreDropdownRef = useRef<HTMLDivElement>(null)
+  const aiDropdownRef = useRef<HTMLDivElement>(null)
+  const headingDropdownRef = useRef<HTMLDivElement>(null)
+
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -54,7 +76,43 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
     { value: 'call', label: 'Call', color: 'purple' }
   ]
 
-  // Fetch all notes related to this portfolio
+  const fontOptions = [
+    { value: 'Sans Serif', label: 'Sans Serif' },
+    { value: 'Serif', label: 'Serif' },
+    { value: 'Monospace', label: 'Monospace' },
+    { value: 'Arial', label: 'Arial' },
+    { value: 'Times New Roman', label: 'Times New Roman' },
+    { value: 'Courier New', label: 'Courier New' }
+  ]
+
+  const sizeOptions = [
+    { value: '12', label: '12' },
+    { value: '14', label: '14' },
+    { value: '15', label: '15' },
+    { value: '16', label: '16' },
+    { value: '18', label: '18' },
+    { value: '20', label: '20' },
+    { value: '24', label: '24' }
+  ]
+
+  const colorOptions = [
+    { value: '#000000', label: 'Black' },
+    { value: '#dc2626', label: 'Red' },
+    { value: '#2563eb', label: 'Blue' },
+    { value: '#16a34a', label: 'Green' },
+    { value: '#d97706', label: 'Orange' },
+    { value: '#9333ea', label: 'Purple' },
+    { value: '#6b7280', label: 'Gray' }
+  ]
+
+  // Example AI model options; wire to your integrations if you have them
+  const aiModelOptions = [
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { id: 'local-llm', label: 'Local LLM' }
+  ]
+
+  // ---------- Queries ----------
   const { data: notes, isLoading } = useQuery({
     queryKey: ['portfolio-notes', portfolioId],
     queryFn: async () => {
@@ -62,35 +120,90 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
         .from('portfolio_notes')
         .select('*')
         .eq('portfolio_id', portfolioId)
-        .neq('is_deleted', true)
+        .eq('is_deleted', false)
         .order('updated_at', { ascending: false })
-      
+
       if (error) throw error
-      // Filter out locally hidden notes from the UI
-      return (data || []).filter(note => !hiddenNoteIds.has(note.id))
+      return (data || []).filter(n => !hiddenNoteIds.has(n.id))
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true
   })
 
-  // Get the currently selected note
-  const selectedNote = notes?.find(note => note.id === selectedNoteId)
+  // Lookup user display names (created_by / updated_by)
+  const { data: usersById } = useQuery({
+    queryKey: ['users-by-id', (notes ?? []).map(n => n.created_by), (notes ?? []).map(n => n.updated_by)],
+    enabled: !!notes && notes.length > 0,
+    queryFn: async () => {
+      const ids = Array.from(
+        new Set(
+          (notes ?? [])
+            .flatMap(n => [n.created_by, n.updated_by])
+            .filter(Boolean) as string[]
+        )
+      )
+      if (ids.length === 0) return {} as Record<string, any>
 
-  // Close dropdown when clicking outside
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', ids)
+
+      if (error) throw error
+
+      const map: Record<string, any> = {}
+      for (const u of data || []) map[u.id] = u
+      return map
+    }
+  })
+
+  const nameFor = (id?: string | null) => {
+    if (!id) return 'Unknown'
+    const u = usersById?.[id]
+    if (!u) return 'Unknown'
+    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
+    return u.email?.split('@')[0] || 'Unknown'
+  }
+
+  // Format "Last updated": remove "about"; switch to absolute after 24h
+  const formatUpdatedAt = (value?: string | null) => {
+    if (!value) return ''
+    const d = new Date(value)
+    if (isNaN(d.getTime())) return ''
+    const ONE_DAY = 24 * 60 * 60 * 1000
+    const diff = Date.now() - d.getTime()
+    if (diff >= ONE_DAY) return format(d, 'MMM d, yyyy h:mm a')
+    return formatDistanceToNow(d, { addSuffix: true }).replace(/^about\s+/i, '')
+  }
+
+  // Selected note
+  const selectedNote = notes?.find(n => n.id === selectedNoteId)
+
+  // ---------- Dropdown outside-click handling ----------
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node
-      
-      if (noteTypeDropdownRef.current && !noteTypeDropdownRef.current.contains(target)) {
-        setShowNoteTypeDropdown(false)
-      }
+      if (noteTypeDropdownRef.current && !noteTypeDropdownRef.current.contains(target)) setShowNoteTypeDropdown(false)
+      if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) setShowFontDropdown(false)
+      if (sizeDropdownRef.current && !sizeDropdownRef.current.contains(target)) setShowSizeDropdown(false)
+      if (colorDropdownRef.current && !colorDropdownRef.current.contains(target)) setShowColorDropdown(false)
+      if (moreDropdownRef.current && !moreDropdownRef.current.contains(target)) setShowMoreDropdown(false)
+      if (aiDropdownRef.current && !aiDropdownRef.current.contains(target)) setShowAIDropdown(false)
+      if (headingDropdownRef.current && !headingDropdownRef.current.contains(target)) setShowHeadingDropdown(false)
     }
-
-    if (showNoteTypeDropdown) {
+    if (
+      showNoteTypeDropdown || showFontDropdown || showSizeDropdown || showColorDropdown ||
+      showMoreDropdown || showAIDropdown || showHeadingDropdown
+    ) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showNoteTypeDropdown])
+  }, [
+    showNoteTypeDropdown, showFontDropdown, showSizeDropdown, showColorDropdown,
+    showMoreDropdown, showAIDropdown, showHeadingDropdown
+  ])
 
-  // Update editing content when selected note changes
+  // Sync editor when selection changes
   useEffect(() => {
     if (selectedNote) {
       setEditingContent(selectedNote.content || '')
@@ -98,38 +211,29 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
     }
   }, [selectedNote])
 
-  // Auto-save functionality
+  // ---------- Mutations ----------
   const saveNoteMutation = useMutation({
     mutationFn: async ({ id, title, content }: { id: string; title?: string; content?: string }) => {
       setIsSaving(true)
-      const updates: any = { updated_at: new Date().toISOString() }
+      const updates: any = { updated_at: new Date().toISOString(), updated_by: user?.id }
       if (title !== undefined) updates.title = title
       if (content !== undefined) updates.content = content
-
-      const { error } = await supabase
-        .from('portfolio_notes')
-        .update(updates)
-        .eq('id', id)
-      
+      const { error } = await supabase.from('portfolio_notes').update(updates).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
       setIsSaving(false)
     },
-    onError: () => {
-      setIsSaving(false)
-    }
+    onError: () => setIsSaving(false)
   })
 
-  // Update note type
   const updateNoteTypeMutation = useMutation({
     mutationFn: async ({ id, noteType }: { id: string; noteType: string }) => {
       const { error } = await supabase
         .from('portfolio_notes')
-        .update({ note_type: noteType, updated_at: new Date().toISOString() })
+        .update({ note_type: noteType, updated_at: new Date().toISOString(), updated_by: user?.id })
         .eq('id', id)
-      
       if (error) throw error
     },
     onSuccess: () => {
@@ -138,25 +242,22 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
     }
   })
 
-  // Create new note
   const createNoteMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('User not authenticated')
-      
-      // Create the note directly in portfolio_notes
-      const { data: noteData, error: noteError } = await supabase
+      const { data: noteData, error } = await supabase
         .from('portfolio_notes')
         .insert([{
           portfolio_id: portfolioId,
           title: 'Untitled',
           content: '',
           note_type: 'research',
-          created_by: user.id
+          created_by: user.id,
+          updated_by: user.id
         }])
         .select()
         .single()
-      
-      if (noteError) throw noteError
+      if (error) throw error
       return noteData
     },
     onSuccess: (newNote) => {
@@ -165,80 +266,138 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
     }
   })
 
-  // Delete note
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
-      
-      // Mark the note as deleted in the database
       const { error } = await supabase
         .from('portfolio_notes')
-        .update({ is_deleted: true })
+        .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
         .eq('id', noteId)
-        .eq('created_by', user.id) // Ensure user owns the note
-      
+        .eq('created_by', user.id)
       if (error) throw error
     },
     onSuccess: () => {
-      // Refresh the notes list to reflect the hidden note
       queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
-      
-      // If we hid the selected note, select another note or clear selection
       const hiddenNoteId = deleteConfirmDialog.noteId
       if (selectedNoteId === hiddenNoteId) {
         const remainingNotes = notes?.filter(n => n.id !== selectedNoteId && !hiddenNoteIds.has(n.id)) || []
-        if (remainingNotes.length > 0) {
-          onNoteSelect(remainingNotes[0].id)
-        } else {
-          onNoteSelect('')
-        }
+        if (remainingNotes.length > 0) onNoteSelect(remainingNotes[0].id)
+        else onNoteSelect('')
       }
-      
-      // Close the dialog
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
       setShowNoteMenu(null)
     },
-    onError: (error) => {
-      console.error('Failed to hide note:', error)
+    onError: (err) => {
+      console.error('Failed to hide note:', err)
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
     }
   })
 
-  // Auto-save when content changes
+  // ---------- Autosave ----------
   useEffect(() => {
     if (!selectedNote || editingContent === selectedNote.content || !editingContent.trim()) return
-
     const timeoutId = setTimeout(() => {
       saveNoteMutation.mutate({ id: selectedNote.id, content: editingContent })
-    }, 1000) // Auto-save after 1 second of inactivity
-
+    }, 1000)
     return () => clearTimeout(timeoutId)
   }, [editingContent, selectedNote?.id])
 
-  // Auto-save when title changes
   useEffect(() => {
     if (!selectedNote || editingTitle === selectedNote.title || !editingTitle.trim()) return
-
     const timeoutId = setTimeout(() => {
       saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
       setIsTitleEditing(false)
-    }, 1000) // Auto-save after 1 second of inactivity
-
+    }, 1000)
     return () => clearTimeout(timeoutId)
   }, [editingTitle, selectedNote?.id])
 
-  const handleContentChange = (content: string) => {
-    setEditingContent(content)
+  // ---------- Markdown helpers (match NoteEditor) ----------
+  const getTextarea = () => document.querySelector('textarea') as HTMLTextAreaElement | null
+
+  const wrapSelection = (before: string, after = before) => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selected = editingContent.substring(start, end)
+    const newText = editingContent.substring(0, start) + before + selected + after + editingContent.substring(end)
+    setEditingContent(newText)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + before.length, end + before.length)
+    }, 0)
   }
 
-  const handleTitleChange = (title: string) => {
-    setEditingTitle(title)
+  const toggleLinePrefix = (prefix: string) => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const before = editingContent.substring(0, start)
+    const selection = editingContent.substring(start, end)
+    const after = editingContent.substring(end)
+    const lines = selection.split('\n').map(line => {
+      if (line.startsWith(prefix)) return line.replace(new RegExp(`^${prefix}`), '')
+      return prefix + line
+    })
+    const replaced = before + lines.join('\n') + after
+    setEditingContent(replaced)
+    setTimeout(() => textarea.focus(), 0)
   }
+
+  const insertText = (before: string, after: string = '') => wrapSelection(before, after)
+  const insertAtLineStart = (prefix: string) => toggleLinePrefix(prefix)
+
+  const makeHeading = (level: 1 | 2 | 3 | 4 | 5 | 6) => {
+    const hashes = '#'.repeat(level) + ' '
+    toggleLinePrefix(hashes)
+  }
+
+  const insertHorizontalRule = () => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const newText = editingContent.slice(0, start) + '\n\n---\n\n' + editingContent.slice(start)
+    setEditingContent(newText)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + 6, start + 6)
+    }, 0)
+  }
+
+  const clearFormatting = () => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selected = editingContent.substring(start, end)
+    // very simple pass to strip common markdown wrappers
+    const stripped = selected
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/__(.*?)__/g, '$1')
+      .replace(/~~(.*?)~~/g, '$1')
+      .replace(/`(.*?)`/g, '$1')
+      .replace(/==(.*?)==/g, '$1')
+      .replace(/<u>(.*?)<\/u>/g, '$1')
+      .replace(/^> /gm, '')
+      .replace(/^[-*] \[ \] /gm, '')
+      .replace(/^[-*] /gm, '')
+      .replace(/^\d+\. /gm, '')
+    const newText = editingContent.substring(0, start) + stripped + editingContent.substring(end)
+    setEditingContent(newText)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start, start + stripped.length)
+    }, 0)
+  }
+
+  const handleContentChange = (content: string) => setEditingContent(content)
+  const handleTitleChange = (title: string) => setEditingTitle(title)
 
   const handleTitleClick = (e: React.MouseEvent<HTMLHeadingElement>) => {
     const currentTarget = e.currentTarget
     const clientX = e.clientX
-    
     setIsTitleEditing(true)
     setTimeout(() => {
       if (titleInputRef.current) {
@@ -273,38 +432,36 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
     }
   }
 
+  const saveCurrentNote = async () => {
+    if (!selectedNote) return
+    const updates: any = {}
+    if (editingContent !== selectedNote.content) updates.content = editingContent
+    if (editingTitle !== selectedNote.title) updates.title = editingTitle
+    if (Object.keys(updates).length > 0) {
+      try {
+        await supabase
+          .from('portfolio_notes')
+          .update({ ...updates, updated_at: new Date().toISOString(), updated_by: user?.id })
+          .eq('id', selectedNote.id)
+        queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
+      } catch (e) {
+        console.error('Failed to save note:', e)
+      }
+    }
+  }
+
   const handleNoteClick = async (noteId: string) => {
     if (selectedNote && (editingContent !== selectedNote.content || editingTitle !== selectedNote.title)) {
-      const updates: any = {}
-      if (editingContent !== selectedNote.content) updates.content = editingContent
-      if (editingTitle !== selectedNote.title) updates.title = editingTitle
-      if (Object.keys(updates).length > 0) {
-        try {
-          await supabase
-            .from('portfolio_notes')
-            .update({ ...updates, updated_at: new Date().toISOString() })
-            .eq('id', selectedNote.id)
-          queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
-        } catch (error) {
-          console.error('Failed to save note:', error)
-        }
-      }
+      await saveCurrentNote()
     }
     onNoteSelect(noteId)
     setIsTitleEditing(false)
   }
 
-  const handleCreateNote = () => {
-    createNoteMutation.mutate()
-  }
+  const handleCreateNote = () => createNoteMutation.mutate()
 
-  const handleDeleteNote = (noteId: string, noteTitle: string) => {
-    setDeleteConfirmDialog({
-      isOpen: true,
-      noteId,
-      noteTitle
-    })
-  }
+  const handleDeleteNote = (noteId: string, noteTitle: string) =>
+    setDeleteConfirmDialog({ isOpen: true, noteId, noteTitle })
 
   const handleConfirmDelete = () => {
     if (deleteConfirmDialog.noteId) {
@@ -313,20 +470,18 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
     }
   }
 
-  const handleCancelDelete = () => {
-    setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
-  }
+  const handleCancelDelete = () => setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
 
   const handleNoteTypeChange = (noteType: string) => {
-    if (selectedNote) {
-      updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType })
-    }
+    if (selectedNote) updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType })
   }
 
-  const filteredNotes = notes?.filter(note => 
-    note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    note.content.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || []
+  const filteredNotes =
+    notes?.filter(
+      note =>
+        note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        note.content.toLowerCase().includes(searchQuery.toLowerCase())
+    ) || []
 
   const getNoteTypeColor = (type: string | null) => {
     switch (type) {
@@ -352,7 +507,7 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          
+
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -360,7 +515,7 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
               type="text"
               placeholder="Search notes..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
@@ -379,23 +534,19 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
             </div>
           ) : filteredNotes.length > 0 ? (
             <div className="space-y-1 p-2">
-              {filteredNotes.map((note) => (
+              {filteredNotes.map(note => (
                 <div
                   key={note.id}
                   className={clsx(
                     'p-3 rounded-lg cursor-pointer transition-colors group relative',
-                    selectedNoteId === note.id
-                      ? 'bg-primary-50 border border-primary-200'
-                      : 'hover:bg-gray-50'
+                    selectedNoteId === note.id ? 'bg-primary-50 border border-primary-200' : 'hover:bg-gray-50'
                   )}
                   onClick={() => handleNoteClick(note.id)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="font-medium text-gray-900 truncate text-sm">
-                          {note.title}
-                        </h4>
+                        <h4 className="font-medium text-gray-900 truncate text-sm">{note.title}</h4>
                         {note.note_type && (
                           <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
                             {note.note_type}
@@ -405,24 +556,29 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                       <p className="text-xs text-gray-600 line-clamp-2 mb-2">
                         {note.content.replace(/^#.*\n/, '').substring(0, 80)}...
                       </p>
-                      <div className="flex items-center space-x-3 text-xs text-gray-500">
+
+                      {/* Meta row with names */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                         <div className="flex items-center">
                           <Calendar className="h-3 w-3 mr-1" />
-                          {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
+                          {formatUpdatedAt(note.updated_at)}
                         </div>
+                        {note.updated_by && <span>• Edited by {nameFor(note.updated_by)}</span>}
+                        {note.created_by && <span>• Created by {nameFor(note.created_by)}</span>}
                         {note.is_shared && (
                           <div className="flex items-center">
-                            <Share2 className="h-3 w-3 mr-1" />
+                            <span>•</span>
+                            <Share2 className="h-3 w-3 mx-1" />
                             Shared
                           </div>
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Note Menu */}
                     <div className="relative">
                       <button
-                        onClick={(e) => {
+                        onClick={e => {
                           e.stopPropagation()
                           setShowNoteMenu(showNoteMenu === note.id ? null : note.id)
                         }}
@@ -430,11 +586,11 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                       >
                         <MoreHorizontal className="h-3 w-3" />
                       </button>
-                      
+
                       {showNoteMenu === note.id && (
                         <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[120px]">
                           <button
-                            onClick={(e) => {
+                            onClick={e => {
                               e.stopPropagation()
                               navigator.clipboard.writeText(note.content)
                               setShowNoteMenu(null)
@@ -445,7 +601,7 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                             Copy content
                           </button>
                           <button
-                            onClick={(e) => {
+                            onClick={e => {
                               e.stopPropagation()
                               handleDeleteNote(note.id, note.title)
                             }}
@@ -483,18 +639,16 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                 <div className="flex items-center space-x-3 flex-1">
                   <div className="flex items-center space-x-2" ref={noteTypeDropdownRef}>
                     <div className="relative">
-                      <button
-                        onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}
-                      >
+                      <button onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}>
                         <Badge variant={getNoteTypeColor(selectedNote.note_type)} size="sm">
                           {selectedNote.note_type || 'general'}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </Badge>
                       </button>
-                      
+
                       {showNoteTypeDropdown && (
                         <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
-                          {noteTypeOptions.map((option) => (
+                          {noteTypeOptions.map(option => (
                             <button
                               key={option.value}
                               onClick={() => handleNoteTypeChange(option.value)}
@@ -513,13 +667,14 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                         </div>
                       )}
                     </div>
+
                     {selectedNote.is_shared && (
                       <Badge variant="primary" size="sm">
                         <Share2 className="h-3 w-3 mr-1" />
                         Shared
                       </Badge>
                     )}
-                    
+
                     {/* Collaboration Button */}
                     <button
                       onClick={() => setShowCollaborationManager(true)}
@@ -529,38 +684,292 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                       <Users className="h-3 w-3" />
                       <span>Share</span>
                     </button>
+
+                    {/* === Toolbar (matches NoteEditor) === */}
+                    <div className="flex items-center space-x-1 ml-6 pl-6 border-l border-gray-300 bg-white rounded-lg shadow-sm border px-2 py-1">
+
+                      {/* Inline styles */}
+                      <button title="Bold" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('**', '**')}>
+                        <Bold className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Italic" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('*', '*')}>
+                        <Italic className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Underline" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('<u>', '</u>')}>
+                        <Underline className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Strikethrough" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('~~', '~~')}>
+                        <Strikethrough className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Headings */}
+                      <div className="relative" ref={headingDropdownRef}>
+                        <button
+                          onClick={() => setShowHeadingDropdown(!showHeadingDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                          title="Headings"
+                        >
+                          <TypeIcon className="h-3.5 w-3.5 mr-1" />
+                          Headings
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showHeadingDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
+                            {[1,2,3,4,5,6].map((lvl) => (
+                              <button
+                                key={lvl}
+                                onClick={() => { makeHeading(lvl as 1|2|3|4|5|6); setShowHeadingDropdown(false) }}
+                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                              >
+                                H{lvl}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Lists & Quote */}
+                      <button title="Bulleted list" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('- ')}>
+                        <List className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Numbered list" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('1. ')}>
+                        <ListOrdered className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Checklist" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('- [ ] ')}>
+                        <CheckSquare className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Quote" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('> ')}>
+                        <Quote className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Highlight & Code & HR & Clear */}
+                      <button title="Highlight" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('==', '==')}>
+                        <Highlighter className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Inline code" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('`', '`')}>
+                        <CodeIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Horizontal rule" className="p-1.5 hover:bg-gray-100 rounded" onClick={insertHorizontalRule}>
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Clear formatting" className="p-1.5 hover:bg-gray-100 rounded" onClick={clearFormatting}>
+                        <Eraser className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Insert menu */}
+                      <div className="relative" ref={moreDropdownRef}>
+                        <button
+                          onClick={() => setShowMoreDropdown(!showMoreDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                        >
+                          <div className="w-4 h-4 bg-blue-500 rounded-full mr-2 flex items-center justify-center">
+                            <Plus className="h-2.5 w-2.5 text-white" />
+                          </div>
+                          Insert
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+
+                        {showMoreDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]">
+                            <button
+                              onClick={() => { insertText('![Image](', ')'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
+                            >
+                              Image
+                            </button>
+                            <button
+                              onClick={() => { insertText('[Link](', ')'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
+                            >
+                              <span className="inline-flex items-center"><LinkIcon className="h-3 w-3 mr-2" />Link</span>
+                            </button>
+                            <button
+                              onClick={() => { insertText('```\n', '\n```'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
+                            >
+                              Code Block
+                            </button>
+                            <button
+                              onClick={() => { insertText('| Column 1 | Column 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |'); setShowMoreDropdown(false) }}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
+                            >
+                              Table
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* AI menu (placeholder hook to your integrations) */}
+                      <div className="relative" ref={aiDropdownRef}>
+                        <button
+                          onClick={() => setShowAIDropdown(!showAIDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                          title="AI"
+                        >
+                          <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded mr-2 flex items-center justify-center">
+                            <span className="text-white text-[10px] font-bold">AI</span>
+                          </div>
+                          AI
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showAIDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[180px]">
+                            {aiModelOptions.map(m => (
+                              <button
+                                key={m.id}
+                                onClick={() => {
+                                  insertText(`\n<!-- ai:model:${m.id} -->\n`, '\n<!-- /ai -->\n')
+                                  setShowAIDropdown(false)
+                                }}
+                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                              >
+                                Use {m.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Font */}
+                      <div className="relative" ref={fontDropdownRef}>
+                        <button
+                          onClick={() => setShowFontDropdown(!showFontDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors min-w-[80px]"
+                        >
+                          {currentFont}
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+
+                        {showFontDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
+                            {fontOptions.map(font => (
+                              <button
+                                key={font.value}
+                                onClick={() => { setCurrentFont(font.value); setShowFontDropdown(false) }}
+                                className={clsx(
+                                  'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors',
+                                  currentFont === font.value && 'bg-gray-100'
+                                )}
+                                style={{ fontFamily: font.value }}
+                              >
+                                {font.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Size */}
+                      <div className="relative" ref={sizeDropdownRef}>
+                        <button
+                          onClick={() => setShowSizeDropdown(!showSizeDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors min-w-[50px]"
+                        >
+                          {currentSize}
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+
+                        {showSizeDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[60px]">
+                            {sizeOptions.map(size => (
+                              <button
+                                key={size.value}
+                                onClick={() => { setCurrentSize(size.value); setShowSizeDropdown(false) }}
+                                className={clsx(
+                                  'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors',
+                                  currentSize === size.value && 'bg-gray-100'
+                                )}
+                              >
+                                {size.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Color palette (placeholder for rich text) */}
+                      <div className="relative" ref={colorDropdownRef}>
+                        <button
+                          onClick={() => setShowColorDropdown(!showColorDropdown)}
+                          className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                          title="Text Color"
+                        >
+                          <div className="w-4 h-4 rounded border border-gray-300 bg-black"></div>
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showColorDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                            <div className="grid grid-cols-4 gap-1 p-1">
+                              {colorOptions.map(color => (
+                                <button
+                                  key={color.value}
+                                  onClick={() => { setShowColorDropdown(false) /* hook into rich-text if added later */ }}
+                                  className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                                  style={{ backgroundColor: color.value }}
+                                  title={color.label}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-px h-4 bg-gray-300 mx-1" />
+
+                      {/* Undo / Redo */}
+                      <button
+                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                        title="Undo"
+                        onClick={() => document.execCommand('undo')}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                      </button>
+                      <button
+                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                        title="Redo"
+                        onClick={() => document.execCommand('redo')}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10H11a8 8 0 00-8 8v2m18-10l-6-6m6 6l-6 6" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2 text-xs text-gray-500">
-                  <Calendar className="h-3 w-3" />
-                  Last updated {formatDistanceToNow(new Date(selectedNote.updated_at || 0), { addSuffix: true })}
-                  {updateNoteTypeMutation.isPending && (
-                    <div className="flex items-center ml-2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-1" />
-                      <span className="text-xs">Updating...</span>
-                    </div>
-                  )}
-                </div>
+                {/* meta line intentionally omitted here */}
               </div>
             </div>
 
             {/* Editor Content */}
             <div className="flex-1 overflow-y-auto">
-              {/* Note Title as Editable Heading */}
               <div className="p-6 pb-0">
                 {isTitleEditing ? (
                   <input
                     ref={titleInputRef}
                     type="text"
                     value={editingTitle}
-                    onChange={(e) => handleTitleChange(e.target.value)}
+                    onChange={e => handleTitleChange(e.target.value)}
                     onKeyDown={handleTitleKeyDown}
                     onBlur={handleTitleBlur}
                     className="w-full text-2xl font-bold text-gray-900 mb-6 border-b border-gray-200 pb-4 bg-transparent border-0 border-b-2 focus:outline-none focus:border-primary-500"
                     placeholder="Untitled"
                   />
                 ) : (
-                  <h1 
+                  <h1
                     className="text-2xl font-bold text-gray-900 mb-6 border-b border-gray-200 pb-4 cursor-text hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors"
                     onClick={handleTitleClick}
                   >
@@ -568,13 +977,12 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                   </h1>
                 )}
               </div>
-              
-              {/* Note Content */}
+
               <div className="px-6 pb-6">
                 <textarea
-                  ref={editorRef as React.RefObject<HTMLTextAreaElement>}
+                  ref={editorRef as unknown as React.RefObject<HTMLTextAreaElement>}
                   value={editingContent}
-                  onChange={(e) => handleContentChange(e.target.value)}
+                  onChange={e => handleContentChange(e.target.value)}
                   placeholder="Start typing..."
                   className="w-full resize-none border-none outline-none text-gray-900 placeholder-gray-400 leading-relaxed"
                   style={{
@@ -600,12 +1008,8 @@ export function PortfolioNoteEditor({ portfolioId, portfolioName, selectedNoteId
                       Saving...
                     </div>
                   )}
-                  {!isSaving && !saveNoteMutation.isPending && (
-                    <span className="text-success-600">Auto-saved</span>
-                  )}
-                  {saveNoteMutation.isError && (
-                    <span className="text-error-600">Save failed</span>
-                  )}
+                  {!isSaving && !saveNoteMutation.isPending && <span className="text-success-600">Auto-saved</span>}
+                  {saveNoteMutation.isError && <span className="text-error-600">Save failed</span>}
                 </div>
               </div>
             </div>
