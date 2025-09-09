@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Briefcase, Search, Filter, Plus, Calendar, FileText, ArrowUpDown, ChevronDown } from 'lucide-react'
+import { Briefcase, Search, Filter, Plus, Calendar, ArrowUpDown, ChevronDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -19,26 +19,18 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [showFilters, setShowFilters] = useState(false)
 
-  // Fetch all portfolios
+  // Fetch all portfolios (notes removed from select)
   const { data: portfolios, isLoading } = useQuery({
     queryKey: ['all-portfolios'],
     queryFn: async () => {
-      console.log('🔍 Fetching all portfolios from database...')
       const { data, error } = await supabase
         .from('portfolios')
         .select(`
           *,
-          portfolio_notes(id, title, updated_at),
           portfolio_holdings(id, shares, cost)
         `)
         .order('updated_at', { ascending: false })
-      
-      if (error) {
-        console.error('❌ Failed to fetch portfolios:', error)
-        throw error
-      }
-      
-      console.log('✅ Portfolios fetched:', data?.length || 0, 'records')
+      if (error) throw error
       return data || []
     },
     staleTime: 0,
@@ -49,19 +41,18 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
   const filteredPortfolios = useMemo(() => {
     if (!portfolios) return []
 
-    let filtered = portfolios.filter(portfolio => {
-      // Search filter
-      const matchesSearch = !searchQuery || 
+    let filtered = portfolios.filter((portfolio) => {
+      const matchesSearch =
+        !searchQuery ||
         portfolio.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (portfolio.description && portfolio.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (portfolio.benchmark && portfolio.benchmark.toLowerCase().includes(searchQuery.toLowerCase()))
-
       return matchesSearch
     })
 
-    // Sort portfolios
     filtered.sort((a, b) => {
-      let aValue, bValue
+      let aValue: any
+      let bValue: any
 
       switch (sortBy) {
         case 'name':
@@ -71,10 +62,6 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
         case 'benchmark':
           aValue = a.benchmark || ''
           bValue = b.benchmark || ''
-          break
-        case 'notes_count':
-          aValue = a.portfolio_notes?.length || 0
-          bValue = b.portfolio_notes?.length || 0
           break
         case 'holdings_count':
           aValue = a.portfolio_holdings?.length || 0
@@ -92,11 +79,8 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
       }
 
       if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortOrder === 'asc' 
-          ? aValue.localeCompare(bValue)
-          : bValue.localeCompare(aValue)
+        return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue)
       }
-
       return sortOrder === 'asc' ? aValue - bValue : bValue - aValue
     })
 
@@ -113,14 +97,12 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
   }
 
   const handlePortfolioClick = (portfolio: any) => {
-    if (onPortfolioSelect) {
-      onPortfolioSelect({
-        id: portfolio.id,
-        title: portfolio.name,
-        type: 'portfolio',
-        data: portfolio
-      })
-    }
+    onPortfolioSelect?.({
+      id: portfolio.id,
+      title: portfolio.name,
+      type: 'portfolio',
+      data: portfolio,
+    })
   }
 
   const clearFilters = () => {
@@ -129,9 +111,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
     setSortOrder('desc')
   }
 
-  const activeFiltersCount = [
-    searchQuery
-  ].filter(Boolean).length
+  const activeFiltersCount = [searchQuery].filter(Boolean).length
 
   return (
     <div className="space-y-6">
@@ -173,10 +153,9 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   {activeFiltersCount}
                 </Badge>
               )}
-              <ChevronDown className={clsx(
-                'h-4 w-4 transition-transform',
-                showFilters && 'rotate-180'
-              )} />
+              <ChevronDown
+                className={clsx('h-4 w-4 transition-transform', showFilters && 'rotate-180')}
+              />
             </button>
 
             {activeFiltersCount > 0 && (
@@ -201,8 +180,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   { value: 'created_at', label: 'Date Created' },
                   { value: 'name', label: 'Portfolio Name' },
                   { value: 'benchmark', label: 'Benchmark' },
-                  { value: 'notes_count', label: 'Notes Count' },
-                  { value: 'holdings_count', label: 'Holdings Count' }
+                  { value: 'holdings_count', label: 'Holdings Count' },
                 ]}
               />
             </div>
@@ -237,7 +215,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
             {/* Table Header */}
             <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
               <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="col-span-4">
+                <div className="col-span-5">
                   <button
                     onClick={() => handleSort('name')}
                     className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
@@ -246,7 +224,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-3">
                   <button
                     onClick={() => handleSort('benchmark')}
                     className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
@@ -261,15 +239,6 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
                   >
                     <span>Holdings</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="col-span-2">
-                  <button
-                    onClick={() => handleSort('notes_count')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                  >
-                    <span>Notes</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </div>
@@ -294,25 +263,15 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
               >
                 <div className="grid grid-cols-12 gap-4 items-center">
                   {/* Portfolio Info */}
-                  <div className="col-span-4">
+                  <div className="col-span-5">
                     <div className="flex items-center space-x-3">
                       <div className="w-10 h-10 bg-gradient-to-br from-success-500 to-success-600 rounded-lg flex items-center justify-center">
                         <Briefcase className="h-5 w-5 text-white" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2">
-                          <p className="text-sm font-semibold text-gray-900 truncate">
-                            {portfolio.name}
-                          </p>
-                          {portfolio.portfolio_notes?.length > 0 && (
-                            <div className="flex items-center">
-                              <FileText className="h-3 w-3 text-gray-400" />
-                              <span className="text-xs text-gray-500 ml-1">
-                                {portfolio.portfolio_notes.length}
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {portfolio.name}
+                        </p>
                         {portfolio.description && (
                           <p className="text-sm text-gray-600 truncate">
                             {portfolio.description}
@@ -323,7 +282,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   </div>
 
                   {/* Benchmark */}
-                  <div className="col-span-2">
+                  <div className="col-span-3">
                     {portfolio.benchmark ? (
                       <span className="text-sm text-gray-900">{portfolio.benchmark}</span>
                     ) : (
@@ -336,14 +295,6 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     <div className="flex items-center text-sm text-gray-500">
                       <Briefcase className="h-3 w-3 mr-1" />
                       {portfolio.portfolio_holdings?.length || 0}
-                    </div>
-                  </div>
-
-                  {/* Notes Count */}
-                  <div className="col-span-2">
-                    <div className="flex items-center text-sm text-gray-500">
-                      <FileText className="h-3 w-3 mr-1" />
-                      {portfolio.portfolio_notes?.length || 0}
                     </div>
                   </div>
 
@@ -367,10 +318,9 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
               {portfolios?.length === 0 ? 'No portfolios yet' : 'No portfolios match your filters'}
             </h3>
             <p className="text-gray-500 mb-4">
-              {portfolios?.length === 0 
+              {portfolios?.length === 0
                 ? 'Start by creating your first portfolio to track your investments.'
-                : 'Try adjusting your search criteria or clearing filters.'
-              }
+                : 'Try adjusting your search criteria or clearing filters.'}
             </p>
             {portfolios?.length === 0 && (
               <Button size="sm">
