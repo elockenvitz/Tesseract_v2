@@ -4,7 +4,7 @@ import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Brief
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
-import { PortfolioNoteEditor } from '../notes/PortfolioNoteEditor'
+import { PortfolioNoteEditor } from '../notes/PortfolioNoteEditorUnified'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { AddTeamMemberModal } from '../portfolios/AddTeamMemberModal'

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   Plus, Search, Calendar, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users,
@@ -14,34 +14,111 @@ import { CollaborationManager } from '../ui/CollaborationManager'
 import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 
-interface PortfolioNoteEditorProps {
-  portfolioId: string
-  portfolioName: string
+export type EntityType = 'asset' | 'portfolio' | 'theme'
+
+export interface UniversalNoteEditorProps {
+  // Entity configuration
+  entityType: EntityType
+  entityId: string
+  entityName: string
+
+  // Note selection
   selectedNoteId?: string
   onNoteSelect: (noteId: string) => void
-  onClose: () => void
+
+  // Optional callbacks
+  onClose?: () => void
+
+  // Feature flags
+  features?: {
+    advancedAI?: boolean
+    richTextFormatting?: boolean
+    colorPicker?: boolean
+    highlightOptions?: boolean
+  }
 }
 
-export function PortfolioNoteEditor({
-  portfolioId,
-  portfolioName,
+interface EntityConfig {
+  tableName: string
+  foreignKey: string
+  queryKey: string
+  noteType: string
+  defaultFeatures: {
+    advancedAI: boolean
+    richTextFormatting: boolean
+    colorPicker: boolean
+    highlightOptions: boolean
+  }
+}
+
+// Configuration for different entity types
+const ENTITY_CONFIGS: Record<EntityType, EntityConfig> = {
+  asset: {
+    tableName: 'asset_notes',
+    foreignKey: 'asset_id',
+    queryKey: 'asset-notes',
+    noteType: 'asset',
+    defaultFeatures: {
+      advancedAI: true,
+      richTextFormatting: true,
+      colorPicker: true,
+      highlightOptions: true
+    }
+  },
+  portfolio: {
+    tableName: 'portfolio_notes',
+    foreignKey: 'portfolio_id',
+    queryKey: 'portfolio-notes',
+    noteType: 'portfolio',
+    defaultFeatures: {
+      advancedAI: false,
+      richTextFormatting: true,
+      colorPicker: false,
+      highlightOptions: false
+    }
+  },
+  theme: {
+    tableName: 'theme_notes',
+    foreignKey: 'theme_id',
+    queryKey: 'theme-notes',
+    noteType: 'theme',
+    defaultFeatures: {
+      advancedAI: false,
+      richTextFormatting: true,
+      colorPicker: false,
+      highlightOptions: false
+    }
+  }
+}
+
+export function UniversalNoteEditor({
+  entityType,
+  entityId,
+  entityName,
   selectedNoteId,
   onNoteSelect,
-  onClose
-}: PortfolioNoteEditorProps) {
+  onClose,
+  features: customFeatures
+}: UniversalNoteEditorProps) {
+  const config = ENTITY_CONFIGS[entityType]
+  const features = { ...config.defaultFeatures, ...customFeatures }
+
   const [searchQuery, setSearchQuery] = useState('')
   const [editingContent, setEditingContent] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
   const [isTitleEditing, setIsTitleEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showNoteMenu, setShowNoteMenu] = useState<string | null>(null)
-  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ isOpen: boolean; noteId: string | null; noteTitle: string }>({
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
+    isOpen: boolean
+    noteId: string | null
+    noteTitle: string
+  }>({
     isOpen: false,
     noteId: null,
     noteTitle: ''
   })
   const [hiddenNoteIds, setHiddenNoteIds] = useState<Set<string>>(new Set())
-
   const [showNoteTypeDropdown, setShowNoteTypeDropdown] = useState(false)
   const [showFontDropdown, setShowFontDropdown] = useState(false)
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
@@ -53,7 +130,6 @@ export function PortfolioNoteEditor({
 
   const [currentFont, setCurrentFont] = useState('Sans Serif')
   const [currentSize, setCurrentSize] = useState('15')
-
   const editorRef = useRef<HTMLDivElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const noteTypeDropdownRef = useRef<HTMLDivElement>(null)
@@ -63,7 +139,6 @@ export function PortfolioNoteEditor({
   const moreDropdownRef = useRef<HTMLDivElement>(null)
   const aiDropdownRef = useRef<HTMLDivElement>(null)
   const headingDropdownRef = useRef<HTMLDivElement>(null)
-
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -105,7 +180,7 @@ export function PortfolioNoteEditor({
     { value: '#6b7280', label: 'Gray' }
   ]
 
-  // Example AI model options; wire to your integrations if you have them
+  // AI model options - could be configured per entity type
   const aiModelOptions = [
     { id: 'gpt-4o', label: 'GPT-4o' },
     { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
@@ -114,12 +189,12 @@ export function PortfolioNoteEditor({
 
   // ---------- Queries ----------
   const { data: notes, isLoading } = useQuery({
-    queryKey: ['portfolio-notes', portfolioId],
+    queryKey: [config.queryKey, entityId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('portfolio_notes')
+        .from(config.tableName)
         .select('*')
-        .eq('portfolio_id', portfolioId)
+        .eq(config.foreignKey, entityId)
         .eq('is_deleted', false)
         .order('updated_at', { ascending: false })
 
@@ -203,13 +278,17 @@ export function PortfolioNoteEditor({
     showMoreDropdown, showAIDropdown, showHeadingDropdown
   ])
 
-  // Sync editor when selection changes
+  // Update editing content when selected note changes
   useEffect(() => {
     if (selectedNote) {
       setEditingContent(selectedNote.content || '')
       setEditingTitle(selectedNote.title || '')
+    } else if (selectedNoteId) {
+      // Clear editing state when a note is selected but not yet loaded
+      setEditingContent('')
+      setEditingTitle('')
     }
-  }, [selectedNote])
+  }, [selectedNote, selectedNoteId])
 
   // ---------- Mutations ----------
   const saveNoteMutation = useMutation({
@@ -218,11 +297,11 @@ export function PortfolioNoteEditor({
       const updates: any = { updated_at: new Date().toISOString(), updated_by: user?.id }
       if (title !== undefined) updates.title = title
       if (content !== undefined) updates.content = content
-      const { error } = await supabase.from('portfolio_notes').update(updates).eq('id', id)
+      const { error } = await supabase.from(config.tableName).update(updates).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
+      queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       setIsSaving(false)
     },
     onError: () => setIsSaving(false)
@@ -231,13 +310,13 @@ export function PortfolioNoteEditor({
   const updateNoteTypeMutation = useMutation({
     mutationFn: async ({ id, noteType }: { id: string; noteType: string }) => {
       const { error } = await supabase
-        .from('portfolio_notes')
+        .from(config.tableName)
         .update({ note_type: noteType, updated_at: new Date().toISOString(), updated_by: user?.id })
         .eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
+      queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       setShowNoteTypeDropdown(false)
     }
   })
@@ -245,24 +324,29 @@ export function PortfolioNoteEditor({
   const createNoteMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('User not authenticated')
-      const { data: noteData, error } = await supabase
-        .from('portfolio_notes')
-        .insert([{
-          portfolio_id: portfolioId,
-          title: 'Untitled',
-          content: '',
-          note_type: 'research',
-          created_by: user.id,
-          updated_by: user.id
-        }])
+      const noteData = {
+        [config.foreignKey]: entityId,
+        title: 'Untitled',
+        content: '',
+        note_type: 'research',
+        created_by: user.id,
+        updated_by: user.id
+      }
+      const { data, error } = await supabase
+        .from(config.tableName)
+        .insert([noteData])
         .select()
         .single()
       if (error) throw error
-      return noteData
+      return data
     },
     onSuccess: (newNote) => {
-      queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
+      queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       onNoteSelect(newNote.id)
+      // Immediately set editing state for the new note to avoid delay
+      setEditingContent(newNote.content || '')
+      setEditingTitle(newNote.title || 'Untitled')
+      setIsTitleEditing(false)
     }
   })
 
@@ -270,14 +354,14 @@ export function PortfolioNoteEditor({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
       const { error } = await supabase
-        .from('portfolio_notes')
+        .from(config.tableName)
         .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
         .eq('id', noteId)
         .eq('created_by', user.id)
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
+      queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       const hiddenNoteId = deleteConfirmDialog.noteId
       if (selectedNoteId === hiddenNoteId) {
         const remainingNotes = notes?.filter(n => n.id !== selectedNoteId && !hiddenNoteIds.has(n.id)) || []
@@ -293,25 +377,7 @@ export function PortfolioNoteEditor({
     }
   })
 
-  // ---------- Autosave ----------
-  useEffect(() => {
-    if (!selectedNote || editingContent === selectedNote.content || !editingContent.trim()) return
-    const timeoutId = setTimeout(() => {
-      saveNoteMutation.mutate({ id: selectedNote.id, content: editingContent })
-    }, 1000)
-    return () => clearTimeout(timeoutId)
-  }, [editingContent, selectedNote?.id])
-
-  useEffect(() => {
-    if (!selectedNote || editingTitle === selectedNote.title || !editingTitle.trim()) return
-    const timeoutId = setTimeout(() => {
-      saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
-      setIsTitleEditing(false)
-    }, 1000)
-    return () => clearTimeout(timeoutId)
-  }, [editingTitle, selectedNote?.id])
-
-  // ---------- Markdown helpers (match NoteEditor) ----------
+  // ---------- Markdown helpers ----------
   const getTextarea = () => document.querySelector('textarea') as HTMLTextAreaElement | null
 
   const wrapSelection = (before: string, after = before) => {
@@ -392,16 +458,61 @@ export function PortfolioNoteEditor({
     }, 0)
   }
 
-  const handleContentChange = (content: string) => setEditingContent(content)
-  const handleTitleChange = (title: string) => setEditingTitle(title)
+  // ---------- Autosave ----------
+  useEffect(() => {
+    if (!selectedNote || editingContent === selectedNote.content || !editingContent.trim()) return
+    const timeoutId = setTimeout(() => {
+      saveNoteMutation.mutate({ id: selectedNote.id, content: editingContent })
+    }, 1000)
+    return () => clearTimeout(timeoutId)
+  }, [editingContent, selectedNote?.id])
+
+  useEffect(() => {
+    if (!selectedNote || editingTitle === selectedNote.title || !editingTitle.trim()) return
+    const timeoutId = setTimeout(() => {
+      saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
+      setIsTitleEditing(false)
+    }, 1000)
+    return () => clearTimeout(timeoutId)
+  }, [editingTitle, selectedNote?.id])
+
+  const saveCurrentNote = async () => {
+    if (!selectedNote) return
+    const updates: any = {}
+    if (editingContent !== selectedNote.content) updates.content = editingContent
+    if (editingTitle !== selectedNote.title) updates.title = editingTitle
+    if (Object.keys(updates).length > 0) {
+      try {
+        await supabase
+          .from(config.tableName)
+          .update({ ...updates, updated_at: new Date().toISOString(), updated_by: user?.id })
+          .eq('id', selectedNote.id)
+        queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
+      } catch (e) {
+        console.error('Failed to save note:', e)
+      }
+    }
+  }
+
+  const handleContentChange = (content: string) => {
+    setEditingContent(content)
+  }
+
+  const handleTitleChange = (title: string) => {
+    setEditingTitle(title)
+  }
 
   const handleTitleClick = (e: React.MouseEvent<HTMLHeadingElement>) => {
+    // Capture event properties before the async callback
     const currentTarget = e.currentTarget
     const clientX = e.clientX
+
     setIsTitleEditing(true)
+    // Focus the input after it's rendered
     setTimeout(() => {
       if (titleInputRef.current) {
         titleInputRef.current.focus()
+        // Calculate cursor position based on click position
         const rect = currentTarget.getBoundingClientRect()
         const clickX = clientX - rect.left
         const textWidth = rect.width
@@ -427,30 +538,14 @@ export function PortfolioNoteEditor({
 
   const handleTitleBlur = () => {
     setIsTitleEditing(false)
+    // Save on blur if content changed
     if (selectedNote && editingTitle !== selectedNote.title) {
       saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
     }
   }
 
-  const saveCurrentNote = async () => {
-    if (!selectedNote) return
-    const updates: any = {}
-    if (editingContent !== selectedNote.content) updates.content = editingContent
-    if (editingTitle !== selectedNote.title) updates.title = editingTitle
-    if (Object.keys(updates).length > 0) {
-      try {
-        await supabase
-          .from('portfolio_notes')
-          .update({ ...updates, updated_at: new Date().toISOString(), updated_by: user?.id })
-          .eq('id', selectedNote.id)
-        queryClient.invalidateQueries({ queryKey: ['portfolio-notes', portfolioId] })
-      } catch (e) {
-        console.error('Failed to save note:', e)
-      }
-    }
-  }
-
   const handleNoteClick = async (noteId: string) => {
+    // Save current note before switching if there are changes
     if (selectedNote && (editingContent !== selectedNote.content || editingTitle !== selectedNote.title)) {
       await saveCurrentNote()
     }
@@ -458,30 +553,41 @@ export function PortfolioNoteEditor({
     setIsTitleEditing(false)
   }
 
-  const handleCreateNote = () => createNoteMutation.mutate()
+  const handleCreateNote = () => {
+    createNoteMutation.mutate()
+  }
 
-  const handleDeleteNote = (noteId: string, noteTitle: string) =>
-    setDeleteConfirmDialog({ isOpen: true, noteId, noteTitle })
+  const handleDeleteNote = (noteId: string, noteTitle: string) => {
+    setDeleteConfirmDialog({
+      isOpen: true,
+      noteId,
+      noteTitle
+    })
+  }
 
   const handleConfirmDelete = () => {
     if (deleteConfirmDialog.noteId) {
+      // Add the note ID to hidden notes set
       setHiddenNoteIds(prev => new Set([...prev, deleteConfirmDialog.noteId!]))
+      // Trigger the mutation to update the UI
       softDeleteNoteMutation.mutate(deleteConfirmDialog.noteId)
     }
   }
 
-  const handleCancelDelete = () => setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
-
-  const handleNoteTypeChange = (noteType: string) => {
-    if (selectedNote) updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType })
+  const handleCancelDelete = () => {
+    setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
   }
 
-  const filteredNotes =
-    notes?.filter(
-      note =>
-        note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        note.content.toLowerCase().includes(searchQuery.toLowerCase())
-    ) || []
+  const handleNoteTypeChange = (noteType: string) => {
+    if (selectedNote) {
+      updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType })
+    }
+  }
+
+  const filteredNotes = notes?.filter(note =>
+    note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    note.content.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || []
 
   const getNoteTypeColor = (type: string | null) => {
     switch (type) {
@@ -502,7 +608,7 @@ export function PortfolioNoteEditor({
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-900">Notes for {portfolioName}</h3>
+            <h3 className="font-semibold text-gray-900">Notes for {entityName}</h3>
             <Button size="sm" onClick={handleCreateNote} disabled={createNoteMutation.isPending}>
               <Plus className="h-4 w-4" />
             </Button>
@@ -515,7 +621,7 @@ export function PortfolioNoteEditor({
               type="text"
               placeholder="Search notes..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
@@ -534,19 +640,23 @@ export function PortfolioNoteEditor({
             </div>
           ) : filteredNotes.length > 0 ? (
             <div className="space-y-1 p-2">
-              {filteredNotes.map(note => (
+              {filteredNotes.map((note) => (
                 <div
                   key={note.id}
                   className={clsx(
                     'p-3 rounded-lg cursor-pointer transition-colors group relative',
-                    selectedNoteId === note.id ? 'bg-primary-50 border border-primary-200' : 'hover:bg-gray-50'
+                    selectedNoteId === note.id
+                      ? 'bg-primary-50 border border-primary-200'
+                      : 'hover:bg-gray-50'
                   )}
                   onClick={() => handleNoteClick(note.id)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="font-medium text-gray-900 truncate text-sm">{note.title}</h4>
+                        <h4 className="font-medium text-gray-900 truncate text-sm">
+                          {note.title}
+                        </h4>
                         {note.note_type && (
                           <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
                             {note.note_type}
@@ -578,7 +688,7 @@ export function PortfolioNoteEditor({
                     {/* Note Menu */}
                     <div className="relative">
                       <button
-                        onClick={e => {
+                        onClick={(e) => {
                           e.stopPropagation()
                           setShowNoteMenu(showNoteMenu === note.id ? null : note.id)
                         }}
@@ -590,7 +700,7 @@ export function PortfolioNoteEditor({
                       {showNoteMenu === note.id && (
                         <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[120px]">
                           <button
-                            onClick={e => {
+                            onClick={(e) => {
                               e.stopPropagation()
                               navigator.clipboard.writeText(note.content)
                               setShowNoteMenu(null)
@@ -601,7 +711,7 @@ export function PortfolioNoteEditor({
                             Copy content
                           </button>
                           <button
-                            onClick={e => {
+                            onClick={(e) => {
                               e.stopPropagation()
                               handleDeleteNote(note.id, note.title)
                             }}
@@ -639,7 +749,9 @@ export function PortfolioNoteEditor({
                 <div className="flex items-center space-x-3 flex-1">
                   <div className="flex items-center space-x-2" ref={noteTypeDropdownRef}>
                     <div className="relative">
-                      <button onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}>
+                      <button
+                        onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}
+                      >
                         <Badge variant={getNoteTypeColor(selectedNote.note_type)} size="sm">
                           {selectedNote.note_type || 'general'}
                           <ChevronDown className="ml-1 h-3 w-3" />
@@ -648,7 +760,7 @@ export function PortfolioNoteEditor({
 
                       {showNoteTypeDropdown && (
                         <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
-                          {noteTypeOptions.map(option => (
+                          {noteTypeOptions.map((option) => (
                             <button
                               key={option.value}
                               onClick={() => handleNoteTypeChange(option.value)}
@@ -667,7 +779,6 @@ export function PortfolioNoteEditor({
                         </div>
                       )}
                     </div>
-
                     {selectedNote.is_shared && (
                       <Badge variant="primary" size="sm">
                         <Share2 className="h-3 w-3 mr-1" />
@@ -685,7 +796,7 @@ export function PortfolioNoteEditor({
                       <span>Share</span>
                     </button>
 
-                    {/* === Toolbar (matches NoteEditor) === */}
+                    {/* Toolbar */}
                     <div className="flex items-center space-x-1 ml-6 pl-6 border-l border-gray-300 bg-white rounded-lg shadow-sm border px-2 py-1">
 
                       {/* Inline styles */}
@@ -705,30 +816,32 @@ export function PortfolioNoteEditor({
                       <div className="w-px h-4 bg-gray-300" />
 
                       {/* Headings */}
-                      <div className="relative" ref={headingDropdownRef}>
-                        <button
-                          onClick={() => setShowHeadingDropdown(!showHeadingDropdown)}
-                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
-                          title="Headings"
-                        >
-                          <TypeIcon className="h-3.5 w-3.5 mr-1" />
-                          Headings
-                          <ChevronDown className="ml-1 h-3 w-3" />
-                        </button>
-                        {showHeadingDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
-                            {[1,2,3,4,5,6].map((lvl) => (
-                              <button
-                                key={lvl}
-                                onClick={() => { makeHeading(lvl as 1|2|3|4|5|6); setShowHeadingDropdown(false) }}
-                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
-                              >
-                                H{lvl}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      {features.richTextFormatting && (
+                        <div className="relative" ref={headingDropdownRef}>
+                          <button
+                            onClick={() => setShowHeadingDropdown(!showHeadingDropdown)}
+                            className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                            title="Headings"
+                          >
+                            <TypeIcon className="h-3.5 w-3.5 mr-1" />
+                            Headings
+                            <ChevronDown className="ml-1 h-3 w-3" />
+                          </button>
+                          {showHeadingDropdown && (
+                            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
+                              {[1,2,3,4,5,6].map((lvl) => (
+                                <button
+                                  key={lvl}
+                                  onClick={() => { makeHeading(lvl as 1|2|3|4|5|6); setShowHeadingDropdown(false) }}
+                                  className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                                >
+                                  H{lvl}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Lists & Quote */}
                       <button title="Bulleted list" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('- ')}>
@@ -805,38 +918,41 @@ export function PortfolioNoteEditor({
                         )}
                       </div>
 
-                      <div className="w-px h-4 bg-gray-300" />
-
-                      {/* AI menu (placeholder hook to your integrations) */}
-                      <div className="relative" ref={aiDropdownRef}>
-                        <button
-                          onClick={() => setShowAIDropdown(!showAIDropdown)}
-                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                          title="AI"
-                        >
-                          <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded mr-2 flex items-center justify-center">
-                            <span className="text-white text-[10px] font-bold">AI</span>
+                      {/* AI menu (if advanced AI is enabled) */}
+                      {features.advancedAI && (
+                        <>
+                          <div className="w-px h-4 bg-gray-300" />
+                          <div className="relative" ref={aiDropdownRef}>
+                            <button
+                              onClick={() => setShowAIDropdown(!showAIDropdown)}
+                              className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                              title="AI"
+                            >
+                              <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded mr-2 flex items-center justify-center">
+                                <span className="text-white text-[10px] font-bold">AI</span>
+                              </div>
+                              AI
+                              <ChevronDown className="ml-1 h-3 w-3" />
+                            </button>
+                            {showAIDropdown && (
+                              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[180px]">
+                                {aiModelOptions.map(m => (
+                                  <button
+                                    key={m.id}
+                                    onClick={() => {
+                                      insertText(`\n<!-- ai:model:${m.id} -->\n`, '\n<!-- /ai -->\n')
+                                      setShowAIDropdown(false)
+                                    }}
+                                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                                  >
+                                    Use {m.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          AI
-                          <ChevronDown className="ml-1 h-3 w-3" />
-                        </button>
-                        {showAIDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[180px]">
-                            {aiModelOptions.map(m => (
-                              <button
-                                key={m.id}
-                                onClick={() => {
-                                  insertText(`\n<!-- ai:model:${m.id} -->\n`, '\n<!-- /ai -->\n')
-                                  setShowAIDropdown(false)
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
-                              >
-                                Use {m.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                        </>
+                      )}
 
                       <div className="w-px h-4 bg-gray-300" />
 
@@ -897,34 +1013,37 @@ export function PortfolioNoteEditor({
                         )}
                       </div>
 
-                      <div className="w-px h-4 bg-gray-300" />
-
-                      {/* Color palette (placeholder for rich text) */}
-                      <div className="relative" ref={colorDropdownRef}>
-                        <button
-                          onClick={() => setShowColorDropdown(!showColorDropdown)}
-                          className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                          title="Text Color"
-                        >
-                          <div className="w-4 h-4 rounded border border-gray-300 bg-black"></div>
-                          <ChevronDown className="ml-1 h-3 w-3" />
-                        </button>
-                        {showColorDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                            <div className="grid grid-cols-4 gap-1 p-1">
-                              {colorOptions.map(color => (
-                                <button
-                                  key={color.value}
-                                  onClick={() => { setShowColorDropdown(false) /* hook into rich-text if added later */ }}
-                                  className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
-                                  style={{ backgroundColor: color.value }}
-                                  title={color.label}
-                                />
-                              ))}
-                            </div>
+                      {/* Color palette (if color picker is enabled) */}
+                      {features.colorPicker && (
+                        <>
+                          <div className="w-px h-4 bg-gray-300" />
+                          <div className="relative" ref={colorDropdownRef}>
+                            <button
+                              onClick={() => setShowColorDropdown(!showColorDropdown)}
+                              className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                              title="Text Color"
+                            >
+                              <div className="w-4 h-4 rounded border border-gray-300 bg-black"></div>
+                              <ChevronDown className="ml-1 h-3 w-3" />
+                            </button>
+                            {showColorDropdown && (
+                              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                                <div className="grid grid-cols-4 gap-1 p-1">
+                                  {colorOptions.map(color => (
+                                    <button
+                                      key={color.value}
+                                      onClick={() => { setShowColorDropdown(false) }}
+                                      className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                                      style={{ backgroundColor: color.value }}
+                                      title={color.label}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </>
+                      )}
 
                       <div className="w-px h-4 bg-gray-300 mx-1" />
 
@@ -950,19 +1069,26 @@ export function PortfolioNoteEditor({
                     </div>
                   </div>
                 </div>
-                {/* meta line intentionally omitted here */}
+
+                {/* Close button if onClose is provided */}
+                {onClose && (
+                  <Button variant="ghost" size="sm" onClick={onClose}>
+                    Close
+                  </Button>
+                )}
               </div>
             </div>
 
             {/* Editor Content */}
             <div className="flex-1 overflow-y-auto">
+              {/* Note Title as Editable Heading */}
               <div className="p-6 pb-0">
                 {isTitleEditing ? (
                   <input
                     ref={titleInputRef}
                     type="text"
                     value={editingTitle}
-                    onChange={e => handleTitleChange(e.target.value)}
+                    onChange={(e) => handleTitleChange(e.target.value)}
                     onKeyDown={handleTitleKeyDown}
                     onBlur={handleTitleBlur}
                     className="w-full text-2xl font-bold text-gray-900 mb-6 border-b border-gray-200 pb-4 bg-transparent border-0 border-b-2 focus:outline-none focus:border-primary-500"
@@ -978,19 +1104,20 @@ export function PortfolioNoteEditor({
                 )}
               </div>
 
+              {/* Note Content */}
               <div className="px-6 pb-6">
-                <textarea
-                  ref={editorRef as unknown as React.RefObject<HTMLTextAreaElement>}
-                  value={editingContent}
-                  onChange={e => handleContentChange(e.target.value)}
-                  placeholder="Start typing..."
-                  className="w-full resize-none border-none outline-none text-gray-900 placeholder-gray-400 leading-relaxed"
-                  style={{
-                    minHeight: '400px',
-                    fontFamily: currentFont,
-                    fontSize: `${currentSize}px`
-                  }}
-                />
+              <textarea
+                ref={editorRef as React.RefObject<HTMLTextAreaElement>}
+                value={editingContent}
+                onChange={(e) => handleContentChange(e.target.value)}
+                placeholder="Start typing..."
+                className="w-full resize-none border-none outline-none text-gray-900 placeholder-gray-400 leading-relaxed"
+                style={{
+                  minHeight: '400px',
+                  fontFamily: currentFont,
+                  fontSize: `${currentSize}px`
+                }}
+              />
               </div>
             </div>
 
@@ -1008,8 +1135,12 @@ export function PortfolioNoteEditor({
                       Saving...
                     </div>
                   )}
-                  {!isSaving && !saveNoteMutation.isPending && <span className="text-success-600">Auto-saved</span>}
-                  {saveNoteMutation.isError && <span className="text-error-600">Save failed</span>}
+                  {!isSaving && !saveNoteMutation.isPending && (
+                    <span className="text-success-600">Auto-saved</span>
+                  )}
+                  {saveNoteMutation.isError && (
+                    <span className="text-error-600">Save failed</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1044,7 +1175,7 @@ export function PortfolioNoteEditor({
       {/* Collaboration Manager */}
       <CollaborationManager
         noteId={selectedNoteId || ''}
-        noteType="portfolio"
+        noteType={config.noteType}
         noteTitle={selectedNote?.title || ''}
         isOpen={showCollaborationManager}
         onClose={() => setShowCollaborationManager(false)}
