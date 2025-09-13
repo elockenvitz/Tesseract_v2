@@ -1,13 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Plus, Search, Calendar, User, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Type, Palette, MoreVertical, Users } from 'lucide-react'
+import {
+  Plus, Search, Calendar, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users,
+  Bold, Italic, Underline, Strikethrough, List, ListOrdered, CheckSquare, Quote,
+  Highlighter, Type as TypeIcon, Minus, Eraser, Code as CodeIcon, Link as LinkIcon
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CollaborationManager } from '../ui/CollaborationManager'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 
 interface ThemeNoteEditorProps {
@@ -40,7 +44,10 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
   const [showColorDropdown, setShowColorDropdown] = useState(false)
   const [showMoreDropdown, setShowMoreDropdown] = useState(false)
+  const [showAIDropdown, setShowAIDropdown] = useState(false)
+  const [showHeadingDropdown, setShowHeadingDropdown] = useState(false)
   const [showCollaborationManager, setShowCollaborationManager] = useState(false)
+
   const [currentFont, setCurrentFont] = useState('Sans Serif')
   const [currentSize, setCurrentSize] = useState('15')
   const editorRef = useRef<HTMLDivElement>(null)
@@ -50,6 +57,8 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
   const sizeDropdownRef = useRef<HTMLDivElement>(null)
   const colorDropdownRef = useRef<HTMLDivElement>(null)
   const moreDropdownRef = useRef<HTMLDivElement>(null)
+  const aiDropdownRef = useRef<HTMLDivElement>(null)
+  const headingDropdownRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -91,7 +100,14 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
     { value: '#6b7280', label: 'Gray' }
   ]
 
-  // Fetch all notes related to this theme
+  // Example AI model options; wire to your integrations if you have them
+  const aiModelOptions = [
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { id: 'local-llm', label: 'Local LLM' }
+  ]
+
+  // ---------- Queries ----------
   const { data: notes, isLoading } = useQuery({
     queryKey: ['theme-notes', themeId],
     queryFn: async () => {
@@ -99,86 +115,124 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
         .from('theme_notes')
         .select('*')
         .eq('theme_id', themeId)
-        .neq('is_deleted', true)
+        .eq('is_deleted', false)
         .order('updated_at', { ascending: false })
-      
+
       if (error) throw error
-      // Filter out locally hidden notes from the UI
-      return (data || []).filter(note => !hiddenNoteIds.has(note.id))
+      return (data || []).filter(n => !hiddenNoteIds.has(n.id))
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true
   })
 
-  // Get the currently selected note
-  const selectedNote = notes?.find(note => note.id === selectedNoteId)
+  // Lookup user display names (created_by / updated_by)
+  const { data: usersById } = useQuery({
+    queryKey: ['users-by-id', (notes ?? []).map(n => n.created_by), (notes ?? []).map(n => n.updated_by)],
+    enabled: !!notes && notes.length > 0,
+    queryFn: async () => {
+      const ids = Array.from(
+        new Set(
+          (notes ?? [])
+            .flatMap(n => [n.created_by, n.updated_by])
+            .filter(Boolean) as string[]
+        )
+      )
+      if (ids.length === 0) return {} as Record<string, any>
 
-  // Close dropdown when clicking outside
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', ids)
+
+      if (error) throw error
+
+      const map: Record<string, any> = {}
+      for (const u of data || []) map[u.id] = u
+      return map
+    }
+  })
+
+  const nameFor = (id?: string | null) => {
+    if (!id) return 'Unknown'
+    const u = usersById?.[id]
+    if (!u) return 'Unknown'
+    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
+    return u.email?.split('@')[0] || 'Unknown'
+  }
+
+  // Format "Last updated": remove "about"; switch to absolute after 24h
+  const formatUpdatedAt = (value?: string | null) => {
+    if (!value) return ''
+    const d = new Date(value)
+    if (isNaN(d.getTime())) return ''
+    const ONE_DAY = 24 * 60 * 60 * 1000
+    const diff = Date.now() - d.getTime()
+    if (diff >= ONE_DAY) return format(d, 'MMM d, yyyy h:mm a')
+    return formatDistanceToNow(d, { addSuffix: true }).replace(/^about\s+/i, '')
+  }
+
+  // Selected note
+  const selectedNote = notes?.find(n => n.id === selectedNoteId)
+
+  // ---------- Dropdown outside-click handling ----------
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node
-      
-      if (noteTypeDropdownRef.current && !noteTypeDropdownRef.current.contains(target)) {
-        setShowNoteTypeDropdown(false)
-      }
-      if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
-        setShowFontDropdown(false)
-      }
-      if (sizeDropdownRef.current && !sizeDropdownRef.current.contains(target)) {
-        setShowSizeDropdown(false)
-      }
-      if (colorDropdownRef.current && !colorDropdownRef.current.contains(target)) {
-        setShowColorDropdown(false)
-      }
-      if (moreDropdownRef.current && !moreDropdownRef.current.contains(target)) {
-        setShowMoreDropdown(false)
-      }
+      if (noteTypeDropdownRef.current && !noteTypeDropdownRef.current.contains(target)) setShowNoteTypeDropdown(false)
+      if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) setShowFontDropdown(false)
+      if (sizeDropdownRef.current && !sizeDropdownRef.current.contains(target)) setShowSizeDropdown(false)
+      if (colorDropdownRef.current && !colorDropdownRef.current.contains(target)) setShowColorDropdown(false)
+      if (moreDropdownRef.current && !moreDropdownRef.current.contains(target)) setShowMoreDropdown(false)
+      if (aiDropdownRef.current && !aiDropdownRef.current.contains(target)) setShowAIDropdown(false)
+      if (headingDropdownRef.current && !headingDropdownRef.current.contains(target)) setShowHeadingDropdown(false)
     }
-
-    if (showNoteTypeDropdown || showFontDropdown || showSizeDropdown || showColorDropdown || showMoreDropdown) {
+    if (
+      showNoteTypeDropdown || showFontDropdown || showSizeDropdown || showColorDropdown ||
+      showMoreDropdown || showAIDropdown || showHeadingDropdown
+    ) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showNoteTypeDropdown, showFontDropdown, showSizeDropdown, showColorDropdown, showMoreDropdown])
+  }, [
+    showNoteTypeDropdown, showFontDropdown, showSizeDropdown, showColorDropdown,
+    showMoreDropdown, showAIDropdown, showHeadingDropdown
+  ])
 
   // Update editing content when selected note changes
   useEffect(() => {
     if (selectedNote) {
       setEditingContent(selectedNote.content || '')
       setEditingTitle(selectedNote.title || '')
+    } else if (selectedNoteId) {
+      // Clear editing state when a note is selected but not yet loaded
+      setEditingContent('')
+      setEditingTitle('')
     }
-  }, [selectedNote])
+  }, [selectedNote, selectedNoteId])
 
-  // Auto-save functionality
+  // ---------- Mutations ----------
   const saveNoteMutation = useMutation({
     mutationFn: async ({ id, title, content }: { id: string; title?: string; content?: string }) => {
       setIsSaving(true)
-      const updates: any = { updated_at: new Date().toISOString() }
+      const updates: any = { updated_at: new Date().toISOString(), updated_by: user?.id }
       if (title !== undefined) updates.title = title
       if (content !== undefined) updates.content = content
-
-      const { error } = await supabase
-        .from('theme_notes')
-        .update(updates)
-        .eq('id', id)
-      
+      const { error } = await supabase.from('theme_notes').update(updates).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['theme-notes', themeId] })
       setIsSaving(false)
     },
-    onError: () => {
-      setIsSaving(false)
-    }
+    onError: () => setIsSaving(false)
   })
 
-  // Update note type
   const updateNoteTypeMutation = useMutation({
     mutationFn: async ({ id, noteType }: { id: string; noteType: string }) => {
       const { error } = await supabase
         .from('theme_notes')
-        .update({ note_type: noteType, updated_at: new Date().toISOString() })
+        .update({ note_type: noteType, updated_at: new Date().toISOString(), updated_by: user?.id })
         .eq('id', id)
-      
       if (error) throw error
     },
     onSuccess: () => {
@@ -187,128 +241,174 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
     }
   })
 
-  // Create new note
   const createNoteMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('User not authenticated')
-      
-      // Create the note directly in theme_notes
-      const { data: noteData, error: noteError } = await supabase
+      const { data: noteData, error } = await supabase
         .from('theme_notes')
         .insert([{
           theme_id: themeId,
           title: 'Untitled',
           content: '',
           note_type: 'research',
-          created_by: user.id
+          created_by: user.id,
+          updated_by: user.id
         }])
         .select()
         .single()
-      
-      if (noteError) throw noteError
+      if (error) throw error
       return noteData
     },
     onSuccess: (newNote) => {
       queryClient.invalidateQueries({ queryKey: ['theme-notes', themeId] })
       onNoteSelect(newNote.id)
+      // Immediately set editing state for the new note to avoid delay
+      setEditingContent(newNote.content || '')
+      setEditingTitle(newNote.title || 'Untitled')
+      setIsTitleEditing(false)
     }
   })
 
-  // Delete note
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
-      
-      // Mark the note as deleted in the database
       const { error } = await supabase
         .from('theme_notes')
-        .update({ is_deleted: true })
+        .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
         .eq('id', noteId)
-        .eq('created_by', user.id) // Ensure user owns the note
-      
+        .eq('created_by', user.id)
       if (error) throw error
     },
     onSuccess: () => {
-      // Refresh the notes list to reflect the hidden note
       queryClient.invalidateQueries({ queryKey: ['theme-notes', themeId] })
-      
-      // If we hid the selected note, select another note or clear selection
       const hiddenNoteId = deleteConfirmDialog.noteId
       if (selectedNoteId === hiddenNoteId) {
         const remainingNotes = notes?.filter(n => n.id !== selectedNoteId && !hiddenNoteIds.has(n.id)) || []
-        if (remainingNotes.length > 0) {
-          onNoteSelect(remainingNotes[0].id)
-        } else {
-          onNoteSelect('')
-        }
+        if (remainingNotes.length > 0) onNoteSelect(remainingNotes[0].id)
+        else onNoteSelect('')
       }
-      
-      // Close the dialog
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
       setShowNoteMenu(null)
     },
-    onError: (error) => {
-      console.error('Failed to hide note:', error)
+    onError: (err) => {
+      console.error('Failed to hide note:', err)
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
     }
   })
 
-  // Auto-save when content changes
+  // ---------- Markdown helpers (match PortfolioNoteEditor) ----------
+  const getTextarea = () => document.querySelector('textarea') as HTMLTextAreaElement | null
+
+  const wrapSelection = (before: string, after = before) => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selected = editingContent.substring(start, end)
+    const newText = editingContent.substring(0, start) + before + selected + after + editingContent.substring(end)
+    setEditingContent(newText)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + before.length, end + before.length)
+    }, 0)
+  }
+
+  const toggleLinePrefix = (prefix: string) => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const before = editingContent.substring(0, start)
+    const selection = editingContent.substring(start, end)
+    const after = editingContent.substring(end)
+    const lines = selection.split('\n').map(line => {
+      if (line.startsWith(prefix)) return line.replace(new RegExp(`^${prefix}`), '')
+      return prefix + line
+    })
+    const replaced = before + lines.join('\n') + after
+    setEditingContent(replaced)
+    setTimeout(() => textarea.focus(), 0)
+  }
+
+  const insertText = (before: string, after: string = '') => wrapSelection(before, after)
+  const insertAtLineStart = (prefix: string) => toggleLinePrefix(prefix)
+
+  const makeHeading = (level: 1 | 2 | 3 | 4 | 5 | 6) => {
+    const hashes = '#'.repeat(level) + ' '
+    toggleLinePrefix(hashes)
+  }
+
+  const insertHorizontalRule = () => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const newText = editingContent.slice(0, start) + '\n\n---\n\n' + editingContent.slice(start)
+    setEditingContent(newText)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + 6, start + 6)
+    }, 0)
+  }
+
+  const clearFormatting = () => {
+    const textarea = getTextarea()
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selected = editingContent.substring(start, end)
+    // very simple pass to strip common markdown wrappers
+    const stripped = selected
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/__(.*?)__/g, '$1')
+      .replace(/~~(.*?)~~/g, '$1')
+      .replace(/`(.*?)`/g, '$1')
+      .replace(/==(.*?)==/g, '$1')
+      .replace(/<u>(.*?)<\/u>/g, '$1')
+      .replace(/^> /gm, '')
+      .replace(/^[-*] \[ \] /gm, '')
+      .replace(/^[-*] /gm, '')
+      .replace(/^\d+\. /gm, '')
+    const newText = editingContent.substring(0, start) + stripped + editingContent.substring(end)
+    setEditingContent(newText)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start, start + stripped.length)
+    }, 0)
+  }
+
+  // ---------- Autosave ----------
   useEffect(() => {
     if (!selectedNote || editingContent === selectedNote.content || !editingContent.trim()) return
-
     const timeoutId = setTimeout(() => {
       saveNoteMutation.mutate({ id: selectedNote.id, content: editingContent })
-    }, 1000) // Auto-save after 1 second of inactivity
-
+    }, 1000)
     return () => clearTimeout(timeoutId)
   }, [editingContent, selectedNote?.id])
 
-  // Auto-save when title changes
   useEffect(() => {
     if (!selectedNote || editingTitle === selectedNote.title || !editingTitle.trim()) return
-
     const timeoutId = setTimeout(() => {
       saveNoteMutation.mutate({ id: selectedNote.id, title: editingTitle })
       setIsTitleEditing(false)
-    }, 1000) // Auto-save after 1 second of inactivity
-
+    }, 1000)
     return () => clearTimeout(timeoutId)
   }, [editingTitle, selectedNote?.id])
 
-  // Save when switching notes or component unmounts
-  useEffect(() => {
-    return () => {
-      if (selectedNote && (editingContent !== selectedNote.content || editingTitle !== selectedNote.title)) {
-        const updates: any = {}
-        if (editingContent !== selectedNote.content) updates.content = editingContent
-        if (editingTitle !== selectedNote.title) updates.title = editingTitle
-        if (Object.keys(updates).length > 0) {
-          supabase
-            .from('theme_notes')
-            .update({ ...updates, updated_at: new Date().toISOString() })
-            .eq('id', selectedNote.id)
-        }
-      }
-    }
-  }, [selectedNote?.id])
-
-  // Save when switching notes
   const saveCurrentNote = async () => {
-    if (selectedNote) {
-      const updates: any = {}
-      if (editingContent !== selectedNote.content) updates.content = editingContent
-      if (editingTitle !== selectedNote.title) updates.title = editingTitle
-      if (Object.keys(updates).length > 0) {
-        try {
-          await supabase
-            .from('theme_notes')
-            .update({ ...updates, updated_at: new Date().toISOString() })
-            .eq('id', selectedNote.id)
-          queryClient.invalidateQueries({ queryKey: ['theme-notes', themeId] })
-        } catch (error) {
-          console.error('Failed to save note:', error)
-        }
+    if (!selectedNote) return
+    const updates: any = {}
+    if (editingContent !== selectedNote.content) updates.content = editingContent
+    if (editingTitle !== selectedNote.title) updates.title = editingTitle
+    if (Object.keys(updates).length > 0) {
+      try {
+        await supabase
+          .from('theme_notes')
+          .update({ ...updates, updated_at: new Date().toISOString(), updated_by: user?.id })
+          .eq('id', selectedNote.id)
+        queryClient.invalidateQueries({ queryKey: ['theme-notes', themeId] })
+      } catch (e) {
+        console.error('Failed to save note:', e)
       }
     }
   }
@@ -403,46 +503,6 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
     }
   }
 
-  const insertText = (before: string, after: string = '') => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement
-    if (textarea) {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const selectedText = editingContent.substring(start, end)
-      const newText = editingContent.substring(0, start) + before + selectedText + after + editingContent.substring(end)
-      setEditingContent(newText)
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + before.length, end + before.length)
-      }, 0)
-    }
-  }
-
-  const insertAtLineStart = (prefix: string) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement
-    if (textarea) {
-      const start = textarea.selectionStart
-      const lines = editingContent.split('\n')
-      let currentPos = 0
-      let lineIndex = 0
-      
-      for (let i = 0; i < lines.length; i++) {
-        if (currentPos + lines[i].length >= start) {
-          lineIndex = i
-          break
-        }
-        currentPos += lines[i].length + 1
-      }
-      
-      lines[lineIndex] = prefix + lines[lineIndex]
-      const newText = lines.join('\n')
-      setEditingContent(newText)
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + prefix.length, start + prefix.length)
-      }, 0)
-    }
-  }
 
   const filteredNotes = notes?.filter(note => 
     note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -526,14 +586,19 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
                       <p className="text-xs text-gray-600 line-clamp-2 mb-2">
                         {note.content.replace(/^#.*\n/, '').substring(0, 80)}...
                       </p>
-                      <div className="flex items-center space-x-3 text-xs text-gray-500">
+
+                      {/* Meta row with names */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                         <div className="flex items-center">
                           <Calendar className="h-3 w-3 mr-1" />
-                          {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
+                          {formatUpdatedAt(note.updated_at)}
                         </div>
+                        {note.updated_by && <span>• Edited by {nameFor(note.updated_by)}</span>}
+                        {note.created_by && <span>• Created by {nameFor(note.created_by)}</span>}
                         {note.is_shared && (
                           <div className="flex items-center">
-                            <Share2 className="h-3 w-3 mr-1" />
+                            <span>•</span>
+                            <Share2 className="h-3 w-3 mx-1" />
                             Shared
                           </div>
                         )}
@@ -651,11 +716,86 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
                       <span>Share</span>
                     </button>
                     
-                    {/* Text Editor Toolbar */}
+                    {/* === Toolbar (matches PortfolioNoteEditor) === */}
                     <div className="flex items-center space-x-1 ml-6 pl-6 border-l border-gray-300 bg-white rounded-lg shadow-sm border px-2 py-1">
-                      {/* Insert Button */}
+
+                      {/* Inline styles */}
+                      <button title="Bold" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('**', '**')}>
+                        <Bold className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Italic" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('*', '*')}>
+                        <Italic className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Underline" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('<u>', '</u>')}>
+                        <Underline className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Strikethrough" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('~~', '~~')}>
+                        <Strikethrough className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Headings */}
+                      <div className="relative" ref={headingDropdownRef}>
+                        <button
+                          onClick={() => setShowHeadingDropdown(!showHeadingDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                          title="Headings"
+                        >
+                          <TypeIcon className="h-3.5 w-3.5 mr-1" />
+                          Headings
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showHeadingDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
+                            {[1,2,3,4,5,6].map((lvl) => (
+                              <button
+                                key={lvl}
+                                onClick={() => { makeHeading(lvl as 1|2|3|4|5|6); setShowHeadingDropdown(false) }}
+                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                              >
+                                H{lvl}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Lists & Quote */}
+                      <button title="Bulleted list" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('- ')}>
+                        <List className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Numbered list" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('1. ')}>
+                        <ListOrdered className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Checklist" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('- [ ] ')}>
+                        <CheckSquare className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Quote" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => insertAtLineStart('> ')}>
+                        <Quote className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Highlight & Code & HR & Clear */}
+                      <button title="Highlight" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('==', '==')}>
+                        <Highlighter className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Inline code" className="p-1.5 hover:bg-gray-100 rounded" onClick={() => wrapSelection('`', '`')}>
+                        <CodeIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Horizontal rule" className="p-1.5 hover:bg-gray-100 rounded" onClick={insertHorizontalRule}>
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <button title="Clear formatting" className="p-1.5 hover:bg-gray-100 rounded" onClick={clearFormatting}>
+                        <Eraser className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="w-px h-4 bg-gray-300" />
+
+                      {/* Insert menu */}
                       <div className="relative" ref={moreDropdownRef}>
-                        <button 
+                        <button
                           onClick={() => setShowMoreDropdown(!showMoreDropdown)}
                           className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
                         >
@@ -665,41 +805,29 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
                           Insert
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
+
                         {showMoreDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]">
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]">
                             <button
-                              onClick={() => {
-                                insertText('![Image](', ')')
-                                setShowMoreDropdown(false)
-                              }}
+                              onClick={() => { insertText('![Image](', ')'); setShowMoreDropdown(false) }}
                               className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
                             >
                               Image
                             </button>
                             <button
-                              onClick={() => {
-                                insertText('[Link](', ')')
-                                setShowMoreDropdown(false)
-                              }}
+                              onClick={() => { insertText('[Link](', ')'); setShowMoreDropdown(false) }}
                               className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
                             >
-                              Link
+                              <span className="inline-flex items-center"><LinkIcon className="h-3 w-3 mr-2" />Link</span>
                             </button>
                             <button
-                              onClick={() => {
-                                insertText('```\n', '\n```')
-                                setShowMoreDropdown(false)
-                              }}
+                              onClick={() => { insertText('```\n', '\n```'); setShowMoreDropdown(false) }}
                               className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
                             >
                               Code Block
                             </button>
                             <button
-                              onClick={() => {
-                                insertText('| Column 1 | Column 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |')
-                                setShowMoreDropdown(false)
-                              }}
+                              onClick={() => { insertText('| Column 1 | Column 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |'); setShowMoreDropdown(false) }}
                               className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors"
                             >
                               Table
@@ -710,36 +838,55 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
 
                       <div className="w-px h-4 bg-gray-300" />
 
-                      {/* AI Button */}
-                      <button className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors">
-                        <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded mr-2 flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">AI</span>
-                        </div>
-                        AI
-                        <ChevronDown className="ml-1 h-3 w-3" />
-                      </button>
+                      {/* AI menu (placeholder hook to your integrations) */}
+                      <div className="relative" ref={aiDropdownRef}>
+                        <button
+                          onClick={() => setShowAIDropdown(!showAIDropdown)}
+                          className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                          title="AI"
+                        >
+                          <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 rounded mr-2 flex items-center justify-center">
+                            <span className="text-white text-[10px] font-bold">AI</span>
+                          </div>
+                          AI
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </button>
+                        {showAIDropdown && (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[180px]">
+                            {aiModelOptions.map(m => (
+                              <button
+                                key={m.id}
+                                onClick={() => {
+                                  insertText(`\n<!-- ai:model:${m.id} -->\n`, '\n<!-- /ai -->\n')
+                                  setShowAIDropdown(false)
+                                }}
+                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                              >
+                                Use {m.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
                       <div className="w-px h-4 bg-gray-300" />
 
-                      {/* Font Family */}
+                      {/* Font */}
                       <div className="relative" ref={fontDropdownRef}>
-                        <button 
+                        <button
                           onClick={() => setShowFontDropdown(!showFontDropdown)}
                           className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors min-w-[80px]"
                         >
                           {currentFont}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
+
                         {showFontDropdown && (
                           <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
-                            {fontOptions.map((font) => (
+                            {fontOptions.map(font => (
                               <button
                                 key={font.value}
-                                onClick={() => {
-                                  setCurrentFont(font.value)
-                                  setShowFontDropdown(false)
-                                }}
+                                onClick={() => { setCurrentFont(font.value); setShowFontDropdown(false) }}
                                 className={clsx(
                                   'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors',
                                   currentFont === font.value && 'bg-gray-100'
@@ -753,25 +900,22 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
                         )}
                       </div>
 
-                      {/* Font Size */}
+                      {/* Size */}
                       <div className="relative" ref={sizeDropdownRef}>
-                        <button 
+                        <button
                           onClick={() => setShowSizeDropdown(!showSizeDropdown)}
                           className="flex items-center px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors min-w-[50px]"
                         >
                           {currentSize}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
+
                         {showSizeDropdown && (
                           <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[60px]">
-                            {sizeOptions.map((size) => (
+                            {sizeOptions.map(size => (
                               <button
                                 key={size.value}
-                                onClick={() => {
-                                  setCurrentSize(size.value)
-                                  setShowSizeDropdown(false)
-                                }}
+                                onClick={() => { setCurrentSize(size.value); setShowSizeDropdown(false) }}
                                 className={clsx(
                                   'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors',
                                   currentSize === size.value && 'bg-gray-100'
@@ -786,9 +930,9 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
 
                       <div className="w-px h-4 bg-gray-300" />
 
-                      {/* Text Color */}
+                      {/* Color palette (placeholder for rich text) */}
                       <div className="relative" ref={colorDropdownRef}>
-                        <button 
+                        <button
                           onClick={() => setShowColorDropdown(!showColorDropdown)}
                           className="flex items-center p-1.5 text-gray-700 hover:bg-gray-100 rounded transition-colors"
                           title="Text Color"
@@ -796,16 +940,13 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
                           <div className="w-4 h-4 rounded border border-gray-300 bg-black"></div>
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </button>
-                        
                         {showColorDropdown && (
-                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50">
-                            <div className="grid grid-cols-4 gap-1">
-                              {colorOptions.map((color) => (
+                          <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                            <div className="grid grid-cols-4 gap-1 p-1">
+                              {colorOptions.map(color => (
                                 <button
                                   key={color.value}
-                                  onClick={() => {
-                                    setShowColorDropdown(false)
-                                  }}
+                                  onClick={() => { setShowColorDropdown(false) /* hook into rich-text if added later */ }}
                                   className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
                                   style={{ backgroundColor: color.value }}
                                   title={color.label}
@@ -816,102 +957,31 @@ export function ThemeNoteEditor({ themeId, themeName, selectedNoteId, onNoteSele
                         )}
                       </div>
 
-                      <div className="w-px h-4 bg-gray-300" />
+                      <div className="w-px h-4 bg-gray-300 mx-1" />
 
-                      {/* Undo/Redo */}
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
+                      {/* Undo / Redo */}
+                      <button
+                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
                         title="Undo"
-                        onClick={() => {
-                          // Basic undo functionality - in a real app you'd implement proper undo/redo
-                          document.execCommand('undo')
-                        }}
+                        onClick={() => document.execCommand('undo')}
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                         </svg>
                       </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
+                      <button
+                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
                         title="Redo"
-                        onClick={() => {
-                          document.execCommand('redo')
-                        }}
+                        onClick={() => document.execCommand('redo')}
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10H11a8 8 0 00-8 8v2m18-10l-6-6m6 6l-6 6" />
                         </svg>
                       </button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1" />
-
-                      {/* Text Formatting */}
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors font-bold text-sm" 
-                        onClick={() => insertText('**', '**')}
-                        title="Bold"
-                      >
-                        B
-                      </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors italic text-sm" 
-                        onClick={() => insertText('*', '*')}
-                        title="Italic"
-                      >
-                        I
-                      </button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1" />
-
-                      {/* Lists */}
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
-                        onClick={() => insertAtLineStart('- ')}
-                        title="Bullet List"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                        </svg>
-                      </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
-                        onClick={() => insertAtLineStart('1. ')}
-                        title="Numbered List"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h6a2 2 0 002-2V7a2 2 0 00-2-2H9z" />
-                        </svg>
-                      </button>
-                      <button 
-                        className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors" 
-                        onClick={() => insertAtLineStart('> ')}
-                        title="Quote"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                      </button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1" />
-
-                      {/* More Options */}
-                      <button className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors">
-                        More
-                        <ChevronDown className="ml-1 h-3 w-3" />
-                      </button>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2 text-xs text-gray-500">
-                  <Calendar className="h-3 w-3" />
-                  Last updated {formatDistanceToNow(new Date(selectedNote.updated_at || 0), { addSuffix: true })}
-                  {updateNoteTypeMutation.isPending && (
-                    <div className="flex items-center ml-2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-1" />
-                      <span className="text-xs">Updating...</span>
-                    </div>
-                  )}
-                </div>
+                {/* meta line intentionally omitted here */}
               </div>
             </div>
 

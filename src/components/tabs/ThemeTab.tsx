@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft } from 'lucide-react'
 import { Card } from '../ui/Card'
@@ -39,6 +39,7 @@ export function ThemeTab({ theme }: ThemeTabProps) {
       setHasLocalChanges(false)
     }
   }, [theme.id, theme.theme_type])
+
 
   // ---------- Queries ----------
   const { data: notes } = useQuery({
@@ -157,9 +158,17 @@ export function ThemeTab({ theme }: ThemeTabProps) {
     }
   }
 
-  const handleNoteClick = (noteId: string) => {
+  const handleNoteClick = useCallback((noteId: string) => {
     setSelectedNoteId(noteId)
     setShowNoteEditor(true)
+  }, [])
+
+  const handleNoteSelect = (noteId: string) => {
+    setSelectedNoteId(noteId)
+    // Ensure editor stays visible when selecting notes within the editor
+    if (!showNoteEditor) {
+      setShowNoteEditor(true)
+    }
   }
 
   const handleCreateNote = () => {
@@ -457,7 +466,7 @@ export function ThemeTab({ theme }: ThemeTabProps) {
                   themeId={theme.id}
                   themeName={theme.name}
                   selectedNoteId={selectedNoteId ?? undefined}
-                  onNoteSelect={setSelectedNoteId}
+                  onNoteSelect={handleNoteSelect}
                   onClose={handleCloseNoteEditor}
                 />
               </div>
