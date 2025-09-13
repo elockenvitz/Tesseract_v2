@@ -13,3 +13,6 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# MCP configuration (contains sensitive tokens)
+.mcp.json
