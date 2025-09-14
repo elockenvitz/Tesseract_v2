@@ -12,6 +12,7 @@ import { AddToListButton } from '../lists/AddToListButton'
 import { StockQuote } from '../financial/StockQuote'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
+import { AdvancedChart } from '../charts/AdvancedChart'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { NoteEditor } from '../notes/NoteEditorUnified'
 import { supabase } from '../../lib/supabase'
@@ -604,11 +605,19 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
 
           {activeTab === 'chart' && (
             <div className="space-y-6">
-              <div className="bg-gray-50 rounded-lg p-12 text-center">
-                <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Chart Coming Soon</h3>
-                <p className="text-gray-500">Historical price charts and technical analysis will be available here.</p>
-              </div>
+              {asset.symbol ? (
+                <AdvancedChart
+                  symbol={asset.symbol}
+                  height={500}
+                  className="w-full"
+                />
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-12 text-center">
+                  <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Chart Available</h3>
+                  <p className="text-gray-500">This asset does not have a stock symbol associated with it.</p>
+                </div>
+              )}
             </div>
           )}
 
