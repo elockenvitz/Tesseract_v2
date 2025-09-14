@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { supabase } from './lib/supabase'
 import { useAuth } from './hooks/useAuth'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { DashboardPage } from './pages/DashboardPage'
@@ -10,10 +11,10 @@ import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0, // Always fetch fresh data
+      staleTime: 0,
       retry: 1,
-      refetchOnWindowFocus: true, // Refetch when window regains focus
-      refetchOnMount: true, // Always refetch when component mounts
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
     },
   },
 })
@@ -24,38 +25,43 @@ function AppRoutes() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Loading...</h1>
+          <p className="text-gray-600">Testing useAuth hook</p>
+        </div>
       </div>
     )
   }
+
   return (
     <Routes>
       {/* Public routes */}
-      <Route 
-        path="/login" 
-        element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
+      <Route
+        path="/login"
+        element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />}
       />
-      <Route 
-        path="/signup" 
-        element={user ? <Navigate to="/dashboard" replace /> : <SignupPage />} 
+      <Route
+        path="/signup"
+        element={user ? <Navigate to="/dashboard" replace /> : <SignupPage />}
       />
-      <Route 
-        path="/reset-password" 
-        element={user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />} 
+      <Route
+        path="/reset-password"
+        element={user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />}
       />
-      
+
       {/* Protected routes */}
       <Route path="/*" element={
         <ProtectedRoute>
           <DashboardPage />
         </ProtectedRoute>
       } />
-      
+
       {/* Default redirect */}
-      <Route 
-        path="/" 
-        element={<Navigate to={user ? "/dashboard" : "/login"} replace />} 
+      <Route
+        path="/"
+        element={<Navigate to={user ? "/dashboard" : "/login"} replace />}
       />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
