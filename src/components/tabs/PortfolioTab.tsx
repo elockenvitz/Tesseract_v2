@@ -4,6 +4,7 @@ import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Brief
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { StockQuote } from '../financial/StockQuote'
 import { PortfolioNoteEditor } from '../notes/PortfolioNoteEditorUnified'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
@@ -424,8 +425,8 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
               {holdings && holdings.length > 0 ? (
                 <div className="space-y-4">
                   {holdings.map((holding: any) => (
-                    <Card key={holding.id} padding="sm" className="cursor-pointer hover:shadow-md transition-shadow">
-                      <div className="flex items-center justify-between">
+                    <Card key={holding.id} padding="sm" className="hover:shadow-md transition-shadow">
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div className="flex items-center space-x-3">
                           <div>
                             <h4 className="font-semibold text-gray-900">{holding.assets?.symbol}</h4>
@@ -433,10 +434,17 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                             <p className="text-xs text-gray-500">{holding.assets?.sector}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-gray-900">{holding.shares} shares</p>
-                          <p className="text-sm text-gray-600">@ ${holding.price}</p>
-                          <p className="text-xs text-gray-500">Cost: ${holding.cost.toLocaleString()}</p>
+
+                        <div className="flex items-center">
+                          <StockQuote symbol={holding.assets?.symbol} className="flex-1" />
+                        </div>
+
+                        <div className="text-right space-y-1">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{holding.shares} shares</p>
+                            <p className="text-sm text-gray-600">Cost: ${holding.price}/share</p>
+                            <p className="text-xs text-gray-500">Total: ${holding.cost.toLocaleString()}</p>
+                          </div>
                         </div>
                       </div>
                     </Card>

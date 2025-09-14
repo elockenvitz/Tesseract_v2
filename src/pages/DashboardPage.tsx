@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, Activity, Users } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users } from 'lucide-react'
+import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
@@ -132,6 +133,44 @@ export function DashboardPage() {
         priceTargets: priceTargetsCount.count || 0,
       }
     },
+  })
+
+  // Fetch financial data for assets
+  const { data: financialData } = useQuery({
+    queryKey: ['dashboard-financial-data', assets?.map(a => a.symbol)],
+    queryFn: async () => {
+      if (!assets || assets.length === 0) return {}
+
+      // Fetch quotes for all assets (with delay to prevent API blocking)
+      const quotes: Record<string, any> = {}
+
+      for (let i = 0; i < assets.length; i++) {
+        const asset = assets[i]
+        if (asset.symbol) {
+          try {
+            console.log(`Dashboard: Fetching quote for ${asset.symbol} (${i + 1}/${assets.length})`)
+            // Add delay between requests to prevent API limits
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 200))
+            }
+            const quote = await financialDataService.getQuote(asset.symbol)
+            if (quote) {
+              quotes[asset.symbol] = quote
+              console.log(`Dashboard: Successfully got quote for ${asset.symbol}: $${quote.price}`)
+            } else {
+              console.warn(`Dashboard: No quote returned for ${asset.symbol}`)
+            }
+          } catch (error) {
+            console.warn(`Dashboard: Failed to fetch quote for ${asset.symbol}:`, error)
+          }
+        }
+      }
+
+      return quotes
+    },
+    enabled: !!assets && assets.length > 0,
+    staleTime: 30000, // Cache for 30 seconds
+    refetchInterval: 60000, // Refetch every minute
   })
 
   const getPriorityColor = (priority: string | null) => {
@@ -271,7 +310,7 @@ export function DashboardPage() {
 
     switch (activeTab.type) {
       case 'asset':
-        return <AssetTab asset={activeTab.data} />
+        return activeTab.data ? <AssetTab asset={activeTab.data} /> : <div>Loading asset...</div>
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':
@@ -424,13 +463,32 @@ export function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    {asset.current_price && (
-                      <p className="text-lg font-semibold text-gray-900">${asset.current_price}</p>
-                    )}
-                    <div className="flex items-center text-success-600 text-sm">
-                      <ArrowUpRight className="h-3 w-3 mr-1" />
-                      +2.4%
-                    </div>
+                    {(() => {
+                      const quote = financialData?.[asset.symbol]
+                      if (!quote) {
+                        return (
+                          <div className="text-gray-400 text-sm">
+                            Loading...
+                          </div>
+                        )
+                      }
+
+                      const isPositive = quote.change >= 0
+                      const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
+                      const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
+
+                      return (
+                        <>
+                          <p className="text-lg font-semibold text-gray-900">
+                            ${quote.price.toFixed(2)}
+                          </p>
+                          <div className={`flex items-center ${changeColor} text-sm`}>
+                            <ChangeIcon className="h-3 w-3 mr-1" />
+                            {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                          </div>
+                        </>
+                      )
+                    })()}
                   </div>
                 </div>
               ))}
@@ -491,6 +549,24 @@ export function DashboardPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-gray-900 truncate">{note.title}</h3>
                     <div className="flex items-center space-x-2">
+                      {(() => {
+                        let entityName = null
+                        if (note.type === 'asset' && note.assets?.symbol) {
+                          entityName = note.assets.symbol
+                        } else if (note.type === 'portfolio' && note.portfolios?.name) {
+                          entityName = note.portfolios.name
+                        } else if (note.type === 'theme' && note.themes?.name) {
+                          entityName = note.themes.name
+                        } else if (note.type === 'custom' && note.custom_notebooks?.name) {
+                          entityName = note.custom_notebooks.name
+                        }
+
+                        return entityName ? (
+                          <Badge variant="secondary" size="sm">
+                            {entityName}
+                          </Badge>
+                        ) : null
+                      })()}
                       {note.note_type && (
                         <Badge variant="default" size="sm">
                           {note.note_type}

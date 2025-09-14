@@ -8,9 +8,11 @@ import { Badge } from '../ui/Badge'
 import { BadgeSelect } from '../ui/BadgeSelect'
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
 import { CaseCard } from '../ui/CaseCard'
-import { NoteEditor } from '../notes/NoteEditorUnified'
-import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { AddToListButton } from '../lists/AddToListButton'
+import { StockQuote } from '../financial/StockQuote'
+import { FinancialNews } from '../financial/FinancialNews'
+import { CoverageDisplay } from '../coverage/CoverageDisplay'
+import { NoteEditor } from '../notes/NoteEditorUnified'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -86,7 +88,7 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     refetchOnWindowFocus: true,
   })
 
-  // ---------- MINIMAL ADD: user lookup for created_by / updated_by ----------
+  // User lookup for notes
   const { data: usersById } = useQuery({
     queryKey: ['users-by-id', (notes ?? []).map(n => n.created_by), (notes ?? []).map(n => n.updated_by)],
     enabled: !!notes && notes.length > 0,
@@ -120,7 +122,6 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
     return u.email?.split('@')[0] || 'Unknown'
   }
-  // ------------------------------------------------------------------------
 
   // ---------- Mutations ----------
   const updateAssetMutation = useMutation({
@@ -132,35 +133,6 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
       if (error) throw error
       return { ...updates, updated_at: new Date().toISOString() }
     },
-    onMutate: async (updates) => {
-      await queryClient.cancelQueries({ queryKey: ['assets'] })
-      await queryClient.cancelQueries({ queryKey: ['all-assets'] })
-      const previousAssets = queryClient.getQueryData(['assets'])
-      const previousAllAssets = queryClient.getQueryData(['all-assets'])
-
-      queryClient.setQueryData(['assets'], (oldData: any) => {
-        if (!oldData) return oldData
-        return oldData.map((a: any) =>
-          a.id === asset.id ? { ...a, ...updates, updated_at: new Date().toISOString() } : a
-        )
-      })
-      queryClient.setQueryData(['all-assets'], (oldData: any) => {
-        if (!oldData) return oldData
-        return oldData.map((a: any) =>
-          a.id === asset.id ? { ...a, ...updates, updated_at: new Date().toISOString() } : a
-        )
-      })
-
-      return { previousAssets, previousAllAssets }
-    },
-    onError: (_err, _updates, context) => {
-      if (context?.previousAssets) {
-        queryClient.setQueryData(['assets'], context.previousAssets)
-      }
-      if (context?.previousAllAssets) {
-        queryClient.setQueryData(['all-assets'], context.previousAllAssets)
-      }
-    },
     onSuccess: (result) => {
       Object.assign(asset, result)
       setHasLocalChanges(false)
@@ -171,7 +143,7 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     },
   })
 
-  // ✅ Final autosave mutation: generic RPC + no retries + correct invalidations
+  // Autosave mutation
   const handleSectionSave = (fieldName: string) => {
     return async (content: string) => {
       await updateAssetMutation.mutateAsync({ [fieldName]: content })
@@ -207,30 +179,22 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
   // ---------- Helpers ----------
   const getPriorityColor = (p: string | null) => {
     switch (p) {
-      case 'high':
-        return 'error'
-      case 'medium':
-        return 'warning'
-      case 'low':
-        return 'success'
+      case 'high': return 'error'
+      case 'medium': return 'warning'
+      case 'low': return 'success'
       case 'none':
-      default:
-        return 'default'
+      default: return 'default'
     }
   }
 
   const getStageColor = (s: string | null) => {
     switch (s) {
-      case 'research':
-        return 'primary'
-      case 'analysis':
-        return 'warning'
-      case 'monitoring':
-        return 'success'
+      case 'research': return 'primary'
+      case 'analysis': return 'warning'
+      case 'monitoring': return 'success'
       case 'review':
       case 'archived':
-      default:
-        return 'default'
+      default: return 'default'
     }
   }
 
@@ -335,20 +299,9 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
             {asset.sector && <p className="text-sm text-gray-500">{asset.sector}</p>}
           </div>
 
-          {/* Right side: Price / Market cap */}
+          {/* Right side: Live Financial Data */}
           <div className="text-left">
-            {asset.current_price && (
-              <div className="mb-1">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Price</p>
-                <p className="text-xl font-bold text-gray-900">${asset.current_price}</p>
-              </div>
-            )}
-            {asset.market_cap && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Market Cap</p>
-                <p className="text-sm text-gray-700">{asset.market_cap}</p>
-              </div>
-            )}
+            <StockQuote symbol={asset.symbol} showDetails={true} className="max-w-xs" />
           </div>
 
           {/* Coverage */}
@@ -501,10 +454,24 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
 
           {activeTab === 'chart' && (
             <div className="space-y-6">
-              <div className="bg-gray-50 rounded-lg p-12 text-center">
-                <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Chart Coming Soon</h3>
-                <p className="text-gray-500">Interactive price charts will be available here.</p>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <div className="bg-gray-50 rounded-lg p-12 text-center">
+                    <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Chart Coming Soon</h3>
+                    <p className="text-gray-500">Historical price charts and technical analysis will be available here.</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3">Current Quote</h4>
+                    <StockQuote symbol={asset.symbol} showDetails={true} />
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3">Recent News</h4>
+                    <FinancialNews symbols={[asset.symbol]} limit={5} />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -541,7 +508,7 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
                       padding="sm"
                       className="cursor-pointer hover:shadow-md transition-shadow"
                     >
-                      <div 
+                      <div
                         className="flex items-start justify-between"
                         onClick={() => handleNoteClick(note.id)}
                       >
@@ -567,7 +534,6 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
                               <Calendar className="h-3 w-3 mr-1" />
                               {formatDistanceToNow(new Date(note.updated_at), { addSuffix: true })}
                             </div>
-                            {/* MINIMAL CHANGE: replace "You" with real names */}
                             {note.updated_by && (
                               <div className="flex items-center">
                                 <User className="h-3 w-3 mr-1" />
