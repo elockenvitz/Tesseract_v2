@@ -11,6 +11,7 @@ import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
 import { StockQuote } from '../financial/StockQuote'
 import { FinancialNews } from '../financial/FinancialNews'
+import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { NoteEditor } from '../notes/NoteEditorUnified'
 import { supabase } from '../../lib/supabase'
@@ -113,6 +114,68 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
       for (const u of data || []) map[u.id] = u
       return map
     }
+  })
+
+  // Portfolio holdings query
+  const { data: portfolioHoldings } = useQuery({
+    queryKey: ['portfolio-holdings', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_holdings')
+        .select(`
+          *,
+          portfolios (
+            id,
+            name
+          )
+        `)
+        .eq('asset_id', asset.id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Get all holdings for each portfolio to calculate weights
+  const { data: portfolioTotals } = useQuery({
+    queryKey: ['portfolio-totals', portfolioHoldings?.map(h => h.portfolio_id)],
+    queryFn: async () => {
+      if (!portfolioHoldings || portfolioHoldings.length === 0) return {}
+
+      const portfolioIds = [...new Set(portfolioHoldings.map(h => h.portfolio_id))]
+      const totals: Record<string, number> = {}
+
+      for (const portfolioId of portfolioIds) {
+        const { data, error } = await supabase
+          .from('portfolio_holdings')
+          .select('shares, cost')
+          .eq('portfolio_id', portfolioId)
+
+        if (error) throw error
+
+        // Calculate total cost (cost basis) for this portfolio
+        const totalCost = (data || []).reduce((sum, holding) => {
+          return sum + (parseFloat(holding.shares) * parseFloat(holding.cost))
+        }, 0)
+
+        totals[portfolioId] = totalCost
+      }
+
+      return totals
+    },
+    enabled: !!portfolioHoldings && portfolioHoldings.length > 0,
+  })
+
+  // Current stock price for P&L calculations
+  const { data: currentQuote } = useQuery({
+    queryKey: ['stock-quote', asset.symbol],
+    queryFn: async () => {
+      const quote = await financialDataService.getQuote(asset.symbol)
+      return quote
+    },
+    enabled: !!asset.symbol && portfolioHoldings && portfolioHoldings.length > 0,
+    staleTime: 15000, // Cache for 15 seconds
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
   })
 
   const nameFor = (id?: string | null) => {
@@ -292,20 +355,25 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     <div className="space-y-6">
       {/* Asset Header */}
       <div className="flex items-start justify-between">
-        <div className="flex items-start space-x-8 flex-1">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">{asset.symbol}</h1>
-            <p className="text-lg text-gray-600 mb-1">{asset.company_name}</p>
-            {asset.sector && <p className="text-sm text-gray-500">{asset.sector}</p>}
-          </div>
+        <div className="flex items-start space-x-10 flex-1">
+          {/* Company Info and Price in same section */}
+          <div className="flex items-start space-x-6">
+            <div className="flex flex-col">
+              <div className="flex items-baseline space-x-4 mb-1">
+                <h1 className="text-2xl font-bold text-gray-900">{asset.symbol}</h1>
+              </div>
+              <p className="text-lg text-gray-600">{asset.company_name}</p>
+              {asset.sector && <p className="text-sm text-gray-500">{asset.sector}</p>}
+            </div>
 
-          {/* Right side: Live Financial Data */}
-          <div className="text-left">
-            <StockQuote symbol={asset.symbol} showDetails={true} className="max-w-xs" />
+            {/* Live Financial Data */}
+            <div className="flex-shrink-0">
+              <StockQuote symbol={asset.symbol} compact={true} className="min-w-0" />
+            </div>
           </div>
 
           {/* Coverage */}
-          <div className="text-left">
+          <div className="flex-shrink-0">
             <CoverageDisplay assetId={asset.id} coverage={coverage || []} />
           </div>
         </div>
@@ -449,29 +517,97 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
                 <CaseCard caseType="base" priceTarget={getPriceTarget('base')} onPriceTargetSave={handlePriceTargetSave} />
                 <CaseCard caseType="bear" priceTarget={getPriceTarget('bear')} onPriceTargetSave={handlePriceTargetSave} />
               </div>
+
+              {/* Portfolio Holdings Section */}
+              {portfolioHoldings && portfolioHoldings.length > 0 && (
+                <div className="bg-white border border-gray-200 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Portfolio Holdings</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Cost</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized P&L</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {portfolioHoldings.map((holding: any) => {
+                          const currentPrice = currentQuote?.price || 0
+                          const shares = parseFloat(holding.shares)
+                          const costPerShare = parseFloat(holding.cost)
+                          const totalCost = shares * costPerShare
+                          const currentValue = shares * currentPrice
+                          const unrealizedPnL = currentValue - totalCost
+                          const unrealizedPercentage = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0
+                          const isPositive = unrealizedPnL >= 0
+
+                          // Calculate weight as percentage of total portfolio
+                          const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
+                          const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
+
+                          return (
+                            <tr key={holding.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {holding.portfolios?.name || 'Unknown Portfolio'}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '--'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {shares.toLocaleString()}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${costPerShare.toFixed(2)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {currentPrice > 0 ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {currentPrice > 0 ? (
+                                  <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                    {isPositive ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">--</span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {currentPrice > 0 ? (
+                                  <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                    {isPositive ? '+' : ''}{unrealizedPercentage.toFixed(2)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">--</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'chart' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2">
-                  <div className="bg-gray-50 rounded-lg p-12 text-center">
-                    <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Chart Coming Soon</h3>
-                    <p className="text-gray-500">Historical price charts and technical analysis will be available here.</p>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-gray-900 mb-3">Current Quote</h4>
-                    <StockQuote symbol={asset.symbol} showDetails={true} />
-                  </div>
-                  <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-gray-900 mb-3">Recent News</h4>
-                    <FinancialNews symbols={[asset.symbol]} limit={5} />
-                  </div>
-                </div>
+              <div className="bg-gray-50 rounded-lg p-12 text-center">
+                <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Chart Coming Soon</h3>
+                <p className="text-gray-500">Historical price charts and technical analysis will be available here.</p>
               </div>
             </div>
           )}

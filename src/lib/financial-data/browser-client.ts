@@ -34,9 +34,9 @@ export interface NewsItem {
 export class BrowserFinancialService {
   private alphaVantageKey: string | null = null
   private cache: Map<string, { data: Quote; timestamp: number }> = new Map()
-  private readonly CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+  private readonly CACHE_TTL = 30 * 1000 // 30 seconds for faster updates
   private lastApiCall = 0
-  private readonly API_CALL_DELAY = 1000 // 1 second between API calls (more reasonable)
+  private readonly API_CALL_DELAY = 250 // 250ms between API calls for faster loading
   private dailyCallCount = 0
   private lastResetDate = new Date().getDate()
 
@@ -63,51 +63,61 @@ export class BrowserFinancialService {
   async getQuote(symbol: string): Promise<Quote | null> {
     try {
       const upperSymbol = symbol.toUpperCase()
+      console.log(`🎯 Getting quote for ${upperSymbol}`)
 
       // Check cache first
       const cached = this.cache.get(upperSymbol)
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+        console.log(`📋 Using cached data for ${upperSymbol}, volume: ${cached.data.volume}`)
         return cached.data
       }
 
       // Try Alpha Vantage first if we have an API key
       if (this.alphaVantageKey) {
+        console.log(`🔄 Trying Alpha Vantage for ${upperSymbol}`)
         const quote = await this.fetchFromAlphaVantage(upperSymbol)
         if (quote) {
           // Cache successful result
           this.cache.set(upperSymbol, { data: quote, timestamp: Date.now() })
+          console.log(`✅ Alpha Vantage successful for ${upperSymbol}, volume: ${quote.volume}`)
           return quote
         }
+        console.log(`❌ Alpha Vantage failed for ${upperSymbol}`)
+      } else {
+        console.log(`⚠️ No Alpha Vantage API key, skipping`)
       }
 
       // Fallback to Yahoo Finance
-      console.log(`Alpha Vantage failed, trying Yahoo Finance for ${upperSymbol}`)
+      console.log(`🔄 Trying Yahoo Finance for ${upperSymbol}`)
       const yahooQuote = await this.fetchFromYahooFinance(upperSymbol)
       if (yahooQuote) {
         // Cache successful result
         this.cache.set(upperSymbol, { data: yahooQuote, timestamp: Date.now() })
+        console.log(`✅ Yahoo Finance successful for ${upperSymbol}, volume: ${yahooQuote.volume}`)
         return yahooQuote
       }
+      console.log(`❌ Yahoo Finance failed for ${upperSymbol}`)
 
       // Fallback to Finnhub (free tier)
-      console.log(`Yahoo Finance failed, trying Finnhub for ${upperSymbol}`)
+      console.log(`🔄 Trying Finnhub for ${upperSymbol}`)
       const finnhubQuote = await this.fetchFromFinnhub(upperSymbol)
       if (finnhubQuote) {
         // Cache successful result
         this.cache.set(upperSymbol, { data: finnhubQuote, timestamp: Date.now() })
+        console.log(`✅ Finnhub successful for ${upperSymbol}, volume: ${finnhubQuote.volume}`)
         return finnhubQuote
       }
+      console.log(`❌ Finnhub failed for ${upperSymbol}`)
 
-      // If we have cached data (even if expired), return it rather than random mock data
+      // If we have cached data (even if expired), return it rather than null
       if (cached) {
         console.log(`Using expired cache for ${upperSymbol}`)
         return cached.data
       }
 
-      // Only create mock data if we have no cached data at all
-      const mockQuote = this.createConsistentMockQuote(upperSymbol)
-      this.cache.set(upperSymbol, { data: mockQuote, timestamp: Date.now() })
-      return mockQuote
+      // No real data available from any source
+      console.log(`No real data available for ${upperSymbol} from any API provider`)
+      return null
     } catch (error) {
       console.warn('Failed to fetch quote for', symbol, error)
 
@@ -115,7 +125,8 @@ export class BrowserFinancialService {
       const cached = this.cache.get(symbol.toUpperCase())
       if (cached) return cached.data
 
-      return this.createConsistentMockQuote(symbol.toUpperCase())
+      // No real data available in error case either
+      return null
     }
   }
 
@@ -207,7 +218,8 @@ export class BrowserFinancialService {
         dayLow: parseFloat(quote['04. low'] || '0')
       }
 
-      console.log(`Successfully fetched real data for ${symbol}:`, result.price)
+      console.log(`Successfully fetched real Alpha Vantage data for ${symbol}: $${result.price}, volume: ${result.volume}`)
+      console.log(`🔍 Alpha Vantage raw volume field for ${symbol}:`, quote['06. volume'])
       return result
     } catch (error) {
       console.warn('Alpha Vantage request failed:', error)
@@ -275,14 +287,15 @@ export class BrowserFinancialService {
         high: highs[latestIndex] || currentPrice,
         low: lows[latestIndex] || currentPrice,
         previousClose: previousClose,
-        volume: volumes[latestIndex] || 0,
+        volume: meta.regularMarketVolume || 0,
         marketCap: meta.marketCap,
         timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
         dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
         dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice
       }
 
-      console.log(`Successfully fetched real Yahoo data for ${symbol}: $${result.price}`)
+      console.log(`Successfully fetched real Yahoo data for ${symbol}: $${result.price}, volume: ${result.volume}`)
+      console.log(`🔍 Yahoo Finance volume for ${symbol}: regularMarketVolume=${meta.regularMarketVolume}, volumes[latest]=${volumes[latestIndex]}`)
       return result
     } catch (error) {
       console.warn('Yahoo Finance request failed:', error)
@@ -292,28 +305,43 @@ export class BrowserFinancialService {
 
   private async fetchFromFinnhub(symbol: string): Promise<Quote | null> {
     try {
-      // Finnhub API (free tier: 60 calls/minute, no API key needed for basic quotes)
-      const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=demo`
-      console.log(`Fetching real data for ${symbol} from Finnhub API`)
+      // Try to get both quote and volume data from Finnhub
+      const [quoteResponse, volumeResponse] = await Promise.all([
+        fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=demo`),
+        // Try to get volume from candle data (last trading day)
+        fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&count=1&token=demo`)
+      ])
 
-      const response = await fetch(url)
-
-      if (!response.ok) {
-        console.warn(`Finnhub API error: ${response.status} ${response.statusText}`)
+      if (!quoteResponse.ok) {
+        console.warn(`Finnhub quote API error: ${quoteResponse.status} ${quoteResponse.statusText}`)
         return null
       }
 
-      const data = await response.json()
-      console.log(`Finnhub raw response for ${symbol}:`, JSON.stringify(data, null, 2))
+      const quoteData = await quoteResponse.json()
+      console.log(`Finnhub quote response for ${symbol}:`, JSON.stringify(quoteData, null, 2))
 
       // Finnhub returns: {c: current, h: high, l: low, o: open, pc: previous close, t: timestamp}
-      if (!data.c || data.c === 0) {
+      if (!quoteData.c || quoteData.c === 0) {
         console.warn('No price data available from Finnhub')
         return null
       }
 
-      const currentPrice = data.c
-      const previousClose = data.pc || currentPrice
+      let volume = 0
+
+      // Try to get volume from candle data
+      if (volumeResponse.ok) {
+        const volumeData = await volumeResponse.json()
+        console.log(`Finnhub volume response for ${symbol}:`, JSON.stringify(volumeData, null, 2))
+
+        if (volumeData.v && volumeData.v.length > 0) {
+          // Get the most recent volume
+          volume = volumeData.v[volumeData.v.length - 1] || 0
+          console.log(`Got volume from Finnhub candle data: ${volume}`)
+        }
+      }
+
+      const currentPrice = quoteData.c
+      const previousClose = quoteData.pc || currentPrice
       const change = currentPrice - previousClose
       const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
 
@@ -322,17 +350,17 @@ export class BrowserFinancialService {
         price: currentPrice,
         change: change,
         changePercent: changePercent,
-        open: data.o || currentPrice,
-        high: data.h || currentPrice,
-        low: data.l || currentPrice,
+        open: quoteData.o || currentPrice,
+        high: quoteData.h || currentPrice,
+        low: quoteData.l || currentPrice,
         previousClose: previousClose,
-        volume: 0, // Finnhub free tier doesn't include volume in quote endpoint
-        timestamp: new Date(data.t * 1000).toISOString(),
-        dayHigh: data.h || currentPrice,
-        dayLow: data.l || currentPrice
+        volume: volume,
+        timestamp: new Date(quoteData.t * 1000).toISOString(),
+        dayHigh: quoteData.h || currentPrice,
+        dayLow: quoteData.l || currentPrice
       }
 
-      console.log(`Successfully fetched real Finnhub data for ${symbol}: $${result.price}`)
+      console.log(`Successfully fetched real Finnhub data for ${symbol}: $${result.price}, volume: ${result.volume}`)
       return result
     } catch (error) {
       console.warn('Finnhub request failed:', error)
@@ -364,63 +392,6 @@ export class BrowserFinancialService {
     }
   }
 
-  private createConsistentMockQuote(symbol: string): Quote {
-    // Realistic mock data for common stocks (approximate recent prices)
-    const realisticPrices: Record<string, number> = {
-      'AAPL': 234.07,
-      'GOOGL': 175.50,
-      'MSFT': 420.15,
-      'AMZN': 185.20,
-      'TSLA': 248.50,
-      'META': 520.80,
-      'NVDA': 139.90,
-      'NFLX': 680.75,
-      'PLTR': 65.25,
-      'GOOG': 175.50,
-      'AVGO': 274.18,
-      'WMT': 99.35,
-      'LLY': 772.87
-    }
-
-    const upperSymbol = symbol.toUpperCase()
-    let basePrice = realisticPrices[upperSymbol]
-
-    if (!basePrice) {
-      // Fallback to hash-based price for unknown symbols
-      const symbolHash = symbol.split('').reduce((a, b) => {
-        a = ((a << 5) - a) + b.charCodeAt(0)
-        return a & a // Keep it 32-bit
-      }, 0)
-      basePrice = 50 + Math.abs(symbolHash % 200) // Price between $50-250 for unknown stocks
-    }
-
-    // Add small random daily variation (±2%)
-    const symbolHash = symbol.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0)
-      return a & a
-    }, 0)
-
-    const variationPercent = ((symbolHash % 400) - 200) / 10000 // ±2%
-    const change = basePrice * variationPercent
-    const currentPrice = basePrice + change
-
-    console.log(`Using realistic mock data for ${symbol}: $${currentPrice.toFixed(2)} (base: $${basePrice.toFixed(2)})`)
-
-    return {
-      symbol: symbol.toUpperCase(),
-      price: currentPrice,
-      change: change,
-      changePercent: variationPercent * 100,
-      open: basePrice,
-      high: currentPrice + Math.abs(change) * 0.5,
-      low: currentPrice - Math.abs(change) * 0.5,
-      previousClose: basePrice,
-      volume: Math.abs(symbolHash % 10000000),
-      timestamp: new Date().toISOString(),
-      dayHigh: currentPrice + Math.abs(change) * 0.5,
-      dayLow: currentPrice - Math.abs(change) * 0.5
-    }
-  }
 
   private createMockNews(symbols?: string[], limit: number = 5): NewsItem[] {
     const mockHeadlines = [
@@ -452,4 +423,5 @@ export const financialDataService = new BrowserFinancialService()
 financialDataService.clearCache()
 
 // Force cache refresh for testing - remove this line after verification
-console.log('🚀 Financial data service reloaded with Yahoo Finance fallback enabled')
+console.log('🚀 Financial data service reloaded with Yahoo Finance fallback enabled - VOLUME FIX APPLIED')
+financialDataService.clearCache()

@@ -136,41 +136,49 @@ export function DashboardPage() {
   })
 
   // Fetch financial data for assets
-  const { data: financialData } = useQuery({
+  const { data: financialData, isLoading: financialDataLoading } = useQuery({
     queryKey: ['dashboard-financial-data', assets?.map(a => a.symbol)],
     queryFn: async () => {
       if (!assets || assets.length === 0) return {}
 
-      // Fetch quotes for all assets (with delay to prevent API blocking)
+      // Fetch quotes for all assets in parallel for better performance
       const quotes: Record<string, any> = {}
 
-      for (let i = 0; i < assets.length; i++) {
-        const asset = assets[i]
-        if (asset.symbol) {
+      // Create parallel promises for all assets
+      const fetchPromises = assets
+        .filter(asset => asset.symbol)
+        .map(async (asset, index) => {
           try {
-            console.log(`Dashboard: Fetching quote for ${asset.symbol} (${i + 1}/${assets.length})`)
-            // Add delay between requests to prevent API limits
-            if (i > 0) {
-              await new Promise(resolve => setTimeout(resolve, 200))
-            }
+            console.log(`Dashboard: Fetching quote for ${asset.symbol} (${index + 1}/${assets.length})`)
             const quote = await financialDataService.getQuote(asset.symbol)
             if (quote) {
-              quotes[asset.symbol] = quote
               console.log(`Dashboard: Successfully got quote for ${asset.symbol}: $${quote.price}`)
+              return { symbol: asset.symbol, quote }
             } else {
               console.warn(`Dashboard: No quote returned for ${asset.symbol}`)
+              return null
             }
           } catch (error) {
             console.warn(`Dashboard: Failed to fetch quote for ${asset.symbol}:`, error)
+            return null
           }
+        })
+
+      // Wait for all requests to complete
+      const results = await Promise.all(fetchPromises)
+
+      // Build the quotes object
+      results.forEach(result => {
+        if (result && result.quote) {
+          quotes[result.symbol] = result.quote
         }
-      }
+      })
 
       return quotes
     },
     enabled: !!assets && assets.length > 0,
-    staleTime: 30000, // Cache for 30 seconds
-    refetchInterval: 60000, // Refetch every minute
+    staleTime: 15000, // Cache for 15 seconds (shorter for more real-time feel)
+    refetchInterval: 30000, // Refetch every 30 seconds for live updates
   })
 
   const getPriorityColor = (priority: string | null) => {
@@ -465,10 +473,23 @@ export function DashboardPage() {
                   <div className="text-right">
                     {(() => {
                       const quote = financialData?.[asset.symbol]
+
+                      // Show colored pulse animation while loading
+                      if (financialDataLoading) {
+                        return (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-primary-200 rounded w-16 mb-1"></div>
+                            <div className="h-4 bg-primary-200 rounded w-12"></div>
+                          </div>
+                        )
+                      }
+
+                      // Show dashes when no data available
                       if (!quote) {
                         return (
                           <div className="text-gray-400 text-sm">
-                            Loading...
+                            <p className="text-lg font-semibold">--</p>
+                            <div className="text-sm">--</div>
                           </div>
                         )
                       }
