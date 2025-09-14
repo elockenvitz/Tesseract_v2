@@ -125,7 +125,7 @@ export class BrowserFinancialService {
       const cached = this.cache.get(symbol.toUpperCase())
       if (cached) return cached.data
 
-      // No real data available in error case either
+      // No data available - return null so UI can handle appropriately
       return null
     }
   }
@@ -229,74 +229,92 @@ export class BrowserFinancialService {
 
   private async fetchFromYahooFinance(symbol: string): Promise<Quote | null> {
     try {
-      // Use CORS proxy to access Yahoo Finance API
-      const proxyUrl = 'https://api.allorigins.win/raw?url='
+      // Use different CORS proxy services as fallbacks
+      const corsProxies = [
+        'https://cors-anywhere.herokuapp.com/',
+        'https://api.allorigins.win/raw?url=',
+        'https://corsproxy.io/?'
+      ]
+
       const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
-      const url = proxyUrl + encodeURIComponent(targetUrl)
 
-      console.log(`Fetching real data for ${symbol} from Yahoo Finance via CORS proxy`)
+      // Try each proxy until one works
+      for (const proxyUrl of corsProxies) {
+        try {
+          const url = proxyUrl + encodeURIComponent(targetUrl)
+          console.log(`Trying Yahoo Finance for ${symbol} via proxy: ${proxyUrl}`)
 
-      const response = await fetch(url)
+          const response = await fetch(url)
 
-      if (!response.ok) {
-        console.warn(`Yahoo Finance API error: ${response.status} ${response.statusText}`)
-        return null
+          if (!response.ok) {
+            console.warn(`Proxy ${proxyUrl} failed: ${response.status} ${response.statusText}`)
+            continue // Try next proxy
+          }
+
+          const data = await response.json()
+          console.log(`Yahoo Finance success for ${symbol} via ${proxyUrl}`)
+
+          const chart = data?.chart?.result?.[0]
+          if (!chart) {
+            console.warn('No chart data returned from Yahoo Finance')
+            continue // Try next proxy
+          }
+
+          const meta = chart.meta
+          const quote = chart.indicators?.quote?.[0]
+
+          if (!meta || !quote) {
+            console.warn('Invalid data structure from Yahoo Finance')
+            continue // Try next proxy
+          }
+
+          // Get the latest data points
+          const prices = quote.close || []
+          const volumes = quote.volume || []
+          const opens = quote.open || []
+          const highs = quote.high || []
+          const lows = quote.low || []
+
+          const latestIndex = prices.length - 1
+          if (latestIndex < 0) {
+            console.warn('No price data available from Yahoo Finance')
+            continue // Try next proxy
+          }
+
+          const currentPrice = prices[latestIndex]
+          const previousClose = meta.previousClose || currentPrice
+          const change = currentPrice - previousClose
+          const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
+
+          const result = {
+            symbol: meta.symbol || symbol.toUpperCase(),
+            price: currentPrice,
+            change: change,
+            changePercent: changePercent,
+            open: opens[latestIndex] || currentPrice,
+            high: highs[latestIndex] || currentPrice,
+            low: lows[latestIndex] || currentPrice,
+            previousClose: previousClose,
+            volume: meta.regularMarketVolume || 0,
+            marketCap: meta.marketCap,
+            timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
+            dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
+            dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice
+          }
+
+          console.log(`Successfully fetched real Yahoo data for ${symbol}: $${result.price}, volume: ${result.volume}`)
+          console.log(`🔍 Yahoo Finance volume for ${symbol}: regularMarketVolume=${meta.regularMarketVolume}, volumes[latest]=${volumes[latestIndex]}`)
+          return result
+
+        } catch (proxyError) {
+          console.warn(`Proxy ${proxyUrl} failed:`, proxyError)
+          continue // Try next proxy
+        }
       }
 
-      const data = await response.json()
-      console.log(`Yahoo Finance raw response for ${symbol}:`, JSON.stringify(data, null, 2))
-
-      const chart = data?.chart?.result?.[0]
-      if (!chart) {
-        console.warn('No chart data returned from Yahoo Finance')
-        return null
-      }
-
-      const meta = chart.meta
-      const quote = chart.indicators?.quote?.[0]
-
-      if (!meta || !quote) {
-        console.warn('Invalid data structure from Yahoo Finance')
-        return null
-      }
-
-      // Get the latest data points
-      const prices = quote.close || []
-      const volumes = quote.volume || []
-      const opens = quote.open || []
-      const highs = quote.high || []
-      const lows = quote.low || []
-
-      const latestIndex = prices.length - 1
-      if (latestIndex < 0) {
-        console.warn('No price data available from Yahoo Finance')
-        return null
-      }
-
-      const currentPrice = prices[latestIndex]
-      const previousClose = meta.previousClose || currentPrice
-      const change = currentPrice - previousClose
-      const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
-
-      const result = {
-        symbol: meta.symbol || symbol.toUpperCase(),
-        price: currentPrice,
-        change: change,
-        changePercent: changePercent,
-        open: opens[latestIndex] || currentPrice,
-        high: highs[latestIndex] || currentPrice,
-        low: lows[latestIndex] || currentPrice,
-        previousClose: previousClose,
-        volume: meta.regularMarketVolume || 0,
-        marketCap: meta.marketCap,
-        timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
-        dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
-        dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice
-      }
-
-      console.log(`Successfully fetched real Yahoo data for ${symbol}: $${result.price}, volume: ${result.volume}`)
-      console.log(`🔍 Yahoo Finance volume for ${symbol}: regularMarketVolume=${meta.regularMarketVolume}, volumes[latest]=${volumes[latestIndex]}`)
-      return result
+      // All proxies failed
+      console.warn('All Yahoo Finance proxies failed for', symbol)
+      return null
     } catch (error) {
       console.warn('Yahoo Finance request failed:', error)
       return null
