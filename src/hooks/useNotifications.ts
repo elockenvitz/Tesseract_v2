@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
 export function useNotifications() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false)
 
   // Fetch unread notification count
@@ -18,6 +19,7 @@ export function useNotifications() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('is_read', false)
+        .eq('dismissed', false)
 
       if (error) throw error
       return count || 0

@@ -1,13 +1,15 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical } from 'lucide-react'
+import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { financialDataService } from '../../lib/financial-data/browser-client'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { Select } from '../ui/Select'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { ShareListDialog } from '../lists/ShareListDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 
@@ -62,6 +64,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [draggedOverStage, setDraggedOverStage] = useState<string | null>(null)
   const [dragPosition, setDragPosition] = useState<'above' | 'below' | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [showShareDialog, setShowShareDialog] = useState(false)
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -84,6 +87,49 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     }
   })
 
+  // Fetch financial data for all assets in the list
+  const { data: financialData, isLoading: financialDataLoading } = useQuery({
+    queryKey: ['list-financial-data', listItems?.map(item => item.assets?.symbol).filter(Boolean)],
+    queryFn: async () => {
+      if (!listItems || listItems.length === 0) return {}
+
+      const quotes: Record<string, any> = {}
+      const symbols = listItems
+        .map(item => item.assets?.symbol)
+        .filter(Boolean) as string[]
+
+      // Fetch quotes for all assets in parallel
+      const fetchPromises = symbols.map(async (symbol) => {
+        try {
+          console.log(`ListTab: Fetching quote for ${symbol}`)
+          const quote = await financialDataService.getQuote(symbol)
+          if (quote) {
+            console.log(`ListTab: Got quote for ${symbol}: $${quote.price}`)
+            return { symbol, quote }
+          }
+          return null
+        } catch (error) {
+          console.warn(`ListTab: Failed to fetch quote for ${symbol}:`, error)
+          return null
+        }
+      })
+
+      const results = await Promise.all(fetchPromises)
+
+      // Build the quotes object
+      results.forEach(result => {
+        if (result && result.quote) {
+          quotes[result.symbol] = result.quote
+        }
+      })
+
+      return quotes
+    },
+    enabled: !!listItems && listItems.length > 0,
+    staleTime: 15000, // Cache for 15 seconds
+    refetchInterval: 30000, // Refetch every 30 seconds
+  })
+
   // Fetch list collaborators
   const { data: collaborators } = useQuery({
     queryKey: ['asset-list-collaborators', list.id],
@@ -96,9 +142,54 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         `)
         .eq('list_id', list.id)
         .order('created_at', { ascending: false })
-      
+
       if (error) throw error
       return data || []
+    }
+  })
+
+  // Check if list is favorited by current user
+  const { data: isFavorited, refetch: refetchFavorite } = useQuery({
+    queryKey: ['list-favorite', list.id, user?.id],
+    queryFn: async () => {
+      if (!user) return false
+      const { data, error } = await supabase
+        .from('asset_list_favorites')
+        .select('id')
+        .eq('list_id', list.id)
+        .eq('user_id', user.id)
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error // PGRST116 means no rows found
+      return !!data
+    },
+    enabled: !!user
+  })
+
+  // Mutation to toggle favorite
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error('User not authenticated')
+
+      if (isFavorited) {
+        // Remove from favorites
+        const { error } = await supabase
+          .from('asset_list_favorites')
+          .delete()
+          .eq('list_id', list.id)
+          .eq('user_id', user.id)
+        if (error) throw error
+      } else {
+        // Add to favorites
+        const { error } = await supabase
+          .from('asset_list_favorites')
+          .insert({ list_id: list.id, user_id: user.id })
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      refetchFavorite()
+      queryClient.invalidateQueries({ queryKey: ['user-favorite-lists'] })
     }
   })
 
@@ -148,8 +239,11 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           bValue = b.assets?.company_name || ''
           break
         case 'current_price':
-          aValue = a.assets?.current_price || 0
-          bValue = b.assets?.current_price || 0
+          // Use real-time price if available, otherwise fallback to saved price
+          const aQuote = financialData?.[a.assets?.symbol || '']
+          const bQuote = financialData?.[b.assets?.symbol || '']
+          aValue = aQuote?.price || a.assets?.current_price || 0
+          bValue = bQuote?.price || b.assets?.current_price || 0
           break
         case 'priority':
           const priorityOrder = { high: 4, medium: 3, low: 2, none: 1 }
@@ -178,7 +272,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     })
 
     return filtered
-  }, [listItems, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder])
+  }, [listItems, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder, financialData])
 
   // Remove asset from list mutation
   const removeFromListMutation = useMutation({
@@ -563,13 +657,48 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
             {/* Price */}
             <div className="col-span-1">
-              {item.assets?.current_price ? (
-                <span className="text-sm font-semibold text-gray-900">
-                  ${item.assets.current_price}
-                </span>
-              ) : (
-                <span className="text-sm text-gray-400">—</span>
-              )}
+              {(() => {
+                const quote = financialData?.[item.assets?.symbol || '']
+
+                // Show loading state
+                if (financialDataLoading) {
+                  return (
+                    <div className="animate-pulse">
+                      <div className="h-4 bg-gray-200 rounded w-16"></div>
+                    </div>
+                  )
+                }
+
+                // Show real-time data if available
+                if (quote) {
+                  const isPositive = quote.change >= 0
+                  const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
+                  const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
+
+                  return (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        ${quote.price.toFixed(2)}
+                      </p>
+                      <div className={`flex items-center ${changeColor} text-xs`}>
+                        <ChangeIcon className="h-3 w-3 mr-0.5" />
+                        {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Fall back to saved price or show dash
+                if (item.assets?.current_price) {
+                  return (
+                    <span className="text-sm text-gray-900">
+                      ${item.assets.current_price}
+                    </span>
+                  )
+                }
+
+                return <span className="text-sm text-gray-400">—</span>
+              })()}
             </div>
 
             {/* Priority */}
@@ -671,9 +800,18 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 style={{ backgroundColor: list.color || '#3b82f6' }}
               />
               <h1 className="text-2xl font-bold text-gray-900">{list.name}</h1>
-              {list.is_default && (
-                <Star className="h-5 w-5 text-yellow-500" />
-              )}
+              <button
+                onClick={() => toggleFavoriteMutation.mutate()}
+                className="transition-colors"
+                title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Star
+                  className={clsx(
+                    'h-5 w-5 transition-colors',
+                    isFavorited ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400 hover:text-yellow-500'
+                  )}
+                />
+              </button>
             </div>
             {list.description && (
               <p className="text-lg text-gray-600 mb-1">{list.description}</p>
@@ -695,10 +833,20 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
         
         <div className="flex items-center space-x-3">
+          {list.created_by === user?.id && (
+            <Button
+              onClick={() => setShowShareDialog(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Share2 className="h-4 w-4 mr-2" />
+              Share
+            </Button>
+          )}
           {collaborators && collaborators.length > 0 && (
             <Badge variant="primary" size="sm">
-              <Share2 className="h-3 w-3 mr-1" />
-              Shared
+              <Users className="h-3 w-3 mr-1" />
+              {collaborators.length} Shared
             </Badge>
           )}
         </div>
@@ -993,6 +1141,13 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         cancelText="Cancel"
         variant="warning"
         isLoading={removeFromListMutation.isPending}
+      />
+
+      {/* Share Dialog */}
+      <ShareListDialog
+        isOpen={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        list={list}
       />
     </div>
   )

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List } from 'lucide-react'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
@@ -354,57 +354,113 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <div className="flex items-center">
-            <div className="p-2 bg-primary-100 rounded-lg">
+      {/* Navigation Buttons */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'idea-generator',
+            title: 'Idea Generator',
+            type: 'idea-generator',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center mb-3">
+              <Lightbulb className="h-6 w-6 text-purple-600" />
+            </div>
+            <span className="text-gray-900 font-semibold">Idea Generator</span>
+            <span className="text-gray-500 text-xs mt-1">Discover insights</span>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'assets-list',
+            title: 'All Assets',
+            type: 'assets-list',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mb-3">
               <TrendingUp className="h-6 w-6 text-primary-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Assets</p>
-              <p className="text-3xl font-bold text-gray-900">{stats?.assets || 0}</p>
-            </div>
-            <ArrowUpRight className="h-4 w-4 text-success-500 ml-auto" />
+            <span className="text-gray-900 font-semibold">Assets</span>
+            <span className="text-gray-500 text-xs mt-1">Investment ideas</span>
           </div>
         </Card>
 
-        <Card>
-          <div className="flex items-center">
-            <div className="p-2 bg-success-100 rounded-lg">
-              <Target className="h-6 w-6 text-success-600" />
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'portfolios-list',
+            title: 'All Portfolios',
+            type: 'portfolios-list',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-success-100 rounded-lg flex items-center justify-center mb-3">
+              <Briefcase className="h-6 w-6 text-success-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Price Targets</p>
-              <p className="text-3xl font-bold text-gray-900">{stats?.priceTargets || 0}</p>
-            </div>
-            <Activity className="h-4 w-4 text-warning-500 ml-auto" />
+            <span className="text-gray-900 font-semibold">Portfolios</span>
+            <span className="text-gray-500 text-xs mt-1">Track performance</span>
           </div>
         </Card>
 
-        <Card>
-          <div className="flex items-center">
-            <div className="p-2 bg-warning-100 rounded-lg">
-              <FileText className="h-6 w-6 text-warning-600" />
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'themes-list',
+            title: 'All Themes',
+            type: 'themes-list',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-3">
+              <Tag className="h-6 w-6 text-indigo-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Research Notes</p>
-              <p className="text-3xl font-bold text-gray-900">{stats?.notes || 0}</p>
-            </div>
-            <FileText className="h-4 w-4 text-primary-500 ml-auto" />
+            <span className="text-gray-900 font-semibold">Themes</span>
+            <span className="text-gray-500 text-xs mt-1">Organize by topic</span>
           </div>
         </Card>
 
-        <Card>
-          <div className="flex items-center">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Users className="h-6 w-6 text-gray-600" />
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'notes-list',
+            title: 'All Notes',
+            type: 'notes-list',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center mb-3">
+              <FileText className="h-6 w-6 text-slate-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Active Ideas</p>
-              <p className="text-3xl font-bold text-gray-900">12</p>
+            <span className="text-gray-900 font-semibold">Notes</span>
+            <span className="text-gray-500 text-xs mt-1">All your notes</span>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'lists',
+            title: 'Asset Lists',
+            type: 'lists',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
+              <List className="h-6 w-6 text-purple-600" />
             </div>
-            <ArrowUpRight className="h-4 w-4 text-success-500 ml-auto" />
+            <span className="text-gray-900 font-semibold">Lists</span>
+            <span className="text-gray-500 text-xs mt-1">Organize assets</span>
           </div>
         </Card>
       </div>

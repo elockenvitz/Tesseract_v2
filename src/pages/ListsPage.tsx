@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { List, Search, Plus, Star, Users, Calendar } from 'lucide-react'
+import { List, Search, Plus, Star, Users, Calendar, Share2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -16,6 +17,8 @@ interface ListsPageProps {
 export function ListsPage({ onListSelect }: ListsPageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showListManager, setShowListManager] = useState(false)
+  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false)
+  const { user } = useAuth()
 
   // Fetch all user's lists
   const { data: assetLists, isLoading } = useQuery({
@@ -34,9 +37,9 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         `)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
-      
+
       if (error) throw error
-      
+
       return (data || []).map(list => ({
         ...list,
         item_count: list.asset_list_items?.length || 0,
@@ -48,11 +51,33 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     }
   })
 
-  const filteredLists = assetLists?.filter(list =>
-    !searchQuery ||
-    list.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (list.description && list.description.toLowerCase().includes(searchQuery.toLowerCase()))
-  ) || []
+  // Fetch user's favorite lists
+  const { data: favoriteLists } = useQuery({
+    queryKey: ['user-favorite-lists', user?.id],
+    queryFn: async () => {
+      if (!user) return []
+      const { data, error } = await supabase
+        .from('asset_list_favorites')
+        .select('list_id')
+        .eq('user_id', user.id)
+
+      if (error) throw error
+      return (data || []).map(f => f.list_id)
+    },
+    enabled: !!user
+  })
+
+  const filteredLists = assetLists?.filter(list => {
+    // Search filter
+    const matchesSearch = !searchQuery ||
+      list.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (list.description && list.description.toLowerCase().includes(searchQuery.toLowerCase()))
+
+    // Favorites filter
+    const matchesFavorites = !showOnlyFavorites || favoriteLists?.includes(list.id)
+
+    return matchesSearch && matchesFavorites
+  }) || []
 
   const handleListClick = (list: any) => {
     if (onListSelect) {
@@ -81,17 +106,36 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         </Button>
       </div>
 
-      {/* Search */}
+      {/* Search and Filters */}
       <Card>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search lists by name or description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-          />
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search lists by name or description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
+              className={clsx(
+                'flex items-center space-x-2 px-3 py-1 rounded-lg transition-colors',
+                showOnlyFavorites
+                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              )}
+            >
+              <Star className={clsx(
+                'h-4 w-4',
+                showOnlyFavorites && 'fill-yellow-500'
+              )} />
+              <span className="text-sm font-medium">Favorites only</span>
+            </button>
+          </div>
         </div>
       </Card>
 
@@ -133,8 +177,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                       <h3 className="font-semibold text-gray-900 truncate">
                         {list.name}
                       </h3>
-                      {list.is_default && (
-                        <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                      {favoriteLists?.includes(list.id) && (
+                        <Star className="h-4 w-4 text-yellow-500 fill-yellow-500 flex-shrink-0" />
                       )}
                     </div>
                     {list.description && (

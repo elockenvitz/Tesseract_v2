@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Search, Filter, Plus, Calendar, Target, FileText, ArrowUpDown, ChevronDown } from 'lucide-react'
+import { TrendingUp, Search, Filter, Plus, Calendar, Target, FileText, ArrowUpDown, ChevronDown, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { financialDataService } from '../lib/financial-data/browser-client'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -23,7 +24,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const [showFilters, setShowFilters] = useState(false)
 
   // Fetch all assets
-  const { data: assets, isLoading } = useQuery({
+  const { data: assets, isLoading: assetsLoading } = useQuery({
     queryKey: ['all-assets'],
     queryFn: async () => {
       console.log('🔍 Fetching all assets from database...')
@@ -46,6 +47,48 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
     },
     staleTime: 0, // Always fetch fresh data
     refetchOnWindowFocus: true, // Refetch when window regains focus
+  })
+
+  // Fetch financial data for all assets
+  const { data: financialData, isLoading: financialDataLoading } = useQuery({
+    queryKey: ['assets-financial-data', assets?.map(a => a.symbol)],
+    queryFn: async () => {
+      if (!assets || assets.length === 0) return {}
+
+      const quotes: Record<string, any> = {}
+
+      // Fetch quotes for all assets in parallel
+      const fetchPromises = assets
+        .filter(asset => asset.symbol)
+        .map(async (asset) => {
+          try {
+            console.log(`AssetsListPage: Fetching quote for ${asset.symbol}`)
+            const quote = await financialDataService.getQuote(asset.symbol)
+            if (quote) {
+              console.log(`AssetsListPage: Got quote for ${asset.symbol}: $${quote.price}`)
+              return { symbol: asset.symbol, quote }
+            }
+            return null
+          } catch (error) {
+            console.warn(`AssetsListPage: Failed to fetch quote for ${asset.symbol}:`, error)
+            return null
+          }
+        })
+
+      const results = await Promise.all(fetchPromises)
+
+      // Build the quotes object
+      results.forEach(result => {
+        if (result && result.quote) {
+          quotes[result.symbol] = result.quote
+        }
+      })
+
+      return quotes
+    },
+    enabled: !!assets && assets.length > 0,
+    staleTime: 15000, // Cache for 15 seconds
+    refetchInterval: 30000, // Refetch every 30 seconds
   })
 
   // Get unique sectors for filter
@@ -92,8 +135,11 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
           bValue = b.company_name
           break
         case 'current_price':
-          aValue = a.current_price || 0
-          bValue = b.current_price || 0
+          // Use real-time price if available, otherwise fallback to saved price
+          const aQuote = financialData?.[a.symbol]
+          const bQuote = financialData?.[b.symbol]
+          aValue = aQuote?.price || a.current_price || 0
+          bValue = bQuote?.price || b.current_price || 0
           break
         case 'priority':
           const priorityOrder = { high: 4, medium: 3, low: 2, none: 1 }
@@ -126,7 +172,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
     })
 
     return filtered
-  }, [assets, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder])
+  }, [assets, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder, financialData])
 
   const getPriorityColor = (priority: string | null) => {
     switch (priority) {
@@ -302,7 +348,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
 
       {/* Assets List */}
       <Card padding="none">
-        {isLoading ? (
+        {assetsLoading ? (
           <div className="p-6">
             <div className="space-y-4">
               {[...Array(5)].map((_, i) => (
@@ -417,20 +463,54 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
 
                   {/* Price */}
                   <div className="col-span-2">
-                    {asset.current_price ? (
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          ${asset.current_price}
-                        </p>
-                        {asset.market_cap && (
-                          <p className="text-xs text-gray-500">
-                            {asset.market_cap}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">—</span>
-                    )}
+                    {(() => {
+                      const quote = financialData?.[asset.symbol]
+
+                      // Show loading state
+                      if (financialDataLoading) {
+                        return (
+                          <div className="animate-pulse">
+                            <div className="h-4 bg-gray-200 rounded w-16 mb-1"></div>
+                            <div className="h-3 bg-gray-200 rounded w-12"></div>
+                          </div>
+                        )
+                      }
+
+                      // Show real-time data if available
+                      if (quote) {
+                        const isPositive = quote.change >= 0
+                        const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
+                        const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
+
+                        return (
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">
+                              ${quote.price.toFixed(2)}
+                            </p>
+                            <div className={`flex items-center ${changeColor} text-xs`}>
+                              <ChangeIcon className="h-3 w-3 mr-0.5" />
+                              {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // Fall back to saved price or show dash
+                      if (asset.current_price) {
+                        return (
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">
+                              ${asset.current_price}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Saved price
+                            </p>
+                          </div>
+                        )
+                      }
+
+                      return <span className="text-sm text-gray-400">—</span>
+                    })()}
                   </div>
 
                   {/* Priority */}
