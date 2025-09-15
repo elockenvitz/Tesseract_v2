@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Send, Users, Settings, Quote, X, ChevronDown, Search, Filter, Calendar, User, Pin, Reply, MoreVertical } from 'lucide-react'
+import { MessageCircle, Send, Users, Settings, Quote, X, ChevronDown, Search, Filter, Calendar, User, Pin, Reply, MoreVertical, ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -18,6 +18,7 @@ interface MessagingSectionProps {
   onCite?: (content: string, fieldName?: string) => void
   onContextChange?: (contextType: string, contextId: string, contextTitle: string) => void
   onShowCoverageManager?: () => void
+  onBack?: () => void
 }
 
 interface Message {
@@ -42,7 +43,8 @@ export function MessagingSection({
   fieldName,
   onCite,
   onContextChange,
-  onShowCoverageManager
+  onShowCoverageManager,
+  onBack
 }: MessagingSectionProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -125,11 +127,33 @@ export function MessagingSection({
         .from('messages')
         .update({ is_pinned: !isPinned })
         .eq('id', messageId)
-      
+
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
+    }
+  })
+
+  // Mark messages as read mutation
+  const markMessagesAsReadMutation = useMutation({
+    mutationFn: async (messageIds: string[]) => {
+      if (messageIds.length === 0) return
+
+      const { error } = await supabase
+        .from('messages')
+        .update({
+          is_read: true,
+          read_at: new Date().toISOString()
+        })
+        .in('id', messageIds)
+        .eq('is_read', false)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
+      queryClient.invalidateQueries({ queryKey: ['unread-messages-count'] })
     }
   })
 
@@ -185,10 +209,44 @@ export function MessagingSection({
     scrollToBottom()
   }, [messages])
 
+  // Mark unread messages as read when viewing this conversation
+  useEffect(() => {
+    if (!messages || messages.length === 0 || !user?.id) return
+
+    const unreadMessages = messages.filter(
+      message => !message.is_read && message.user_id !== user.id
+    )
+
+    if (unreadMessages.length > 0) {
+      // Use a timeout to mark as read after a brief delay to ensure user has seen them
+      const timer = setTimeout(() => {
+        markMessagesAsReadMutation.mutate(unreadMessages.map(m => m.id))
+      }, 1000)
+
+      return () => clearTimeout(timer)
+    }
+  }, [messages, user?.id])
+
   return (
     <div className="flex flex-col h-full">
       {/* Context Header */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+        {/* Header with Back Button */}
+        {contextType && contextId && onBack && (
+          <div className="flex items-center space-x-3 mb-3">
+            <button
+              onClick={onBack}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              title="Back to conversations"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {contextTitle || 'Discussion'}
+            </h3>
+          </div>
+        )}
+
         {/* Search and Filter */}
         <div className="flex items-center space-x-2 mb-3">
           <div className="relative flex-1">
@@ -233,106 +291,108 @@ export function MessagingSection({
       </div>
 
       {/* Messages List */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {!contextType || !contextId ? (
-          <div className="p-6 text-center text-gray-500">
-            <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm">Select an asset, portfolio, or theme to start a discussion</p>
-          </div>
-        ) : isLoading ? (
-          <div className="p-4 space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="flex items-start space-x-3">
-                  <div className="w-6 h-6 bg-gray-200 rounded-full"></div>
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 bg-gray-200 rounded w-1/4"></div>
-                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filteredMessages.length > 0 ? (
-          <div className="p-4 space-y-4">
-            {filteredMessages.map((message) => (
-              <div key={message.id} className="flex items-start space-x-3 group">
-                <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-primary-600 text-xs font-semibold">
-                    {getUserInitials(message.user)}
-                  </span>
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className="text-xs font-medium text-gray-900">
-                      {getUserDisplayName(message.user)}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                    </span>
-                    {message.is_pinned && (
-                      <Pin className="h-3 w-3 text-warning-500" />
-                    )}
-                    {message.field_name && (
-                      <Badge variant="primary" size="sm">
-                        {message.field_name}
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  {/* Reply indicator */}
-                  {message.reply_to && (
-                    <div className="text-xs text-gray-500 mb-1 flex items-center">
-                      <Reply className="h-3 w-3 mr-1" />
-                      Replying to message
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="h-full overflow-y-auto custom-scrollbar pb-4">
+          {!contextType || !contextId ? (
+            <div className="p-6 text-center text-gray-500">
+              <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-sm">Select an asset, portfolio, or theme to start a discussion</p>
+            </div>
+          ) : isLoading ? (
+            <div className="p-4 space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-6 h-6 bg-gray-200 rounded-full"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
                     </div>
-                  )}
-                  
-                  {/* Cited content */}
-                  {message.cited_content && (
-                    <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
-                      <p className="text-xs text-gray-600 italic">
-                        {message.cited_content.substring(0, 100)}...
-                      </p>
-                    </div>
-                  )}
-                  
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {message.content}
-                  </div>
-                  
-                  {/* Message Actions */}
-                  <div className="flex items-center space-x-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleReply(message.id)}
-                      className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
-                    >
-                      Reply
-                    </button>
-                    <button
-                      onClick={() => handleTogglePin(message.id, message.is_pinned)}
-                      className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
-                    >
-                      {message.is_pinned ? 'Unpin' : 'Pin'}
-                    </button>
                   </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        ) : (
-          <div className="p-6 text-center text-gray-500">
-            <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm">No messages yet</p>
-            <p className="text-xs">Start the discussion!</p>
-          </div>
-        )}
+              ))}
+            </div>
+          ) : filteredMessages.length > 0 ? (
+            <div className="p-4 space-y-4">
+              {filteredMessages.map((message) => (
+                <div key={message.id} className="flex items-start space-x-3 group">
+                  <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-primary-600 text-xs font-semibold">
+                      {getUserInitials(message.user)}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <span className="text-xs font-medium text-gray-900">
+                        {getUserDisplayName(message.user)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                      </span>
+                      {message.is_pinned && (
+                        <Pin className="h-3 w-3 text-warning-500" />
+                      )}
+                      {message.field_name && (
+                        <Badge variant="primary" size="sm">
+                          {message.field_name}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Reply indicator */}
+                    {message.reply_to && (
+                      <div className="text-xs text-gray-500 mb-1 flex items-center">
+                        <Reply className="h-3 w-3 mr-1" />
+                        Replying to message
+                      </div>
+                    )}
+
+                    {/* Cited content */}
+                    {message.cited_content && (
+                      <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
+                        <p className="text-xs text-gray-600 italic">
+                          {message.cited_content.substring(0, 100)}...
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {message.content}
+                    </div>
+
+                    {/* Message Actions */}
+                    <div className="flex items-center space-x-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleReply(message.id)}
+                        className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                      >
+                        Reply
+                      </button>
+                      <button
+                        onClick={() => handleTogglePin(message.id, message.is_pinned)}
+                        className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                      >
+                        {message.is_pinned ? 'Unpin' : 'Pin'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} className="h-4" />
+            </div>
+          ) : (
+            <div className="p-6 text-center text-gray-500">
+              <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-sm">No messages yet</p>
+              <p className="text-xs">Start the discussion!</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
         {/* Reply indicator */}
         {replyToMessage && replyToMessageData && (
           <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">

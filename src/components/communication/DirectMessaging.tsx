@@ -161,6 +161,30 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     }
   }, [messages])
 
+  // Mark conversation as read when viewing messages
+  useEffect(() => {
+    if (!selectedConversationId || !user?.id) return
+
+    const markAsRead = async () => {
+      try {
+        await supabase
+          .from('conversation_participants')
+          .update({ last_read_at: new Date().toISOString() })
+          .eq('conversation_id', selectedConversationId)
+          .eq('user_id', user.id)
+
+        // Invalidate the unread messages query to update the red dot
+        queryClient.invalidateQueries({ queryKey: ['unread-messages', user.id] })
+      } catch (error) {
+        console.error('Error marking conversation as read:', error)
+      }
+    }
+
+    // Mark as read after a short delay to ensure user has seen the messages
+    const timer = setTimeout(markAsRead, 1000)
+    return () => clearTimeout(timer)
+  }, [selectedConversationId, user?.id, messages])
+
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId, content }: { conversationId: string; content: string }) => {
@@ -613,14 +637,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   // Show selected conversation chat
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* Chat Header */}
-      <div className="p-4 border-b border-gray-200 flex-shrink-0">
+    <div className="flex flex-col h-full bg-white">
+      {/* Chat Header - Pinned to top */}
+      <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0 z-10 relative shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setSelectedConversationId(null)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-600 hover:text-gray-800 transition-colors p-1 rounded-lg hover:bg-gray-100"
+              title="Back to conversations"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
@@ -637,10 +662,10 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
             )}
             <div>
               <h3 className="font-semibold text-gray-900">
-                {selectedConversation ? getConversationTitle(selectedConversation) : 'Chat'}
+                {selectedConversation ? getConversationTitle(selectedConversation) : 'Loading...'}
               </h3>
               <p className="text-sm text-gray-500">
-                {selectedConversation?.is_group 
+                {selectedConversation?.is_group
                   ? `${selectedConversation.participants?.length || 0} members`
                   : 'Direct message'
                 }
@@ -653,64 +678,66 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto min-h-0 pb-20">
-        {messagesLoading ? (
-          <div className="space-y-3 p-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                    <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+      {/* Messages - Scrollable area between header and input */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="h-full overflow-y-auto custom-scrollbar">
+          {messagesLoading ? (
+            <div className="space-y-3 p-4">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : messages && messages.length > 0 ? (
-          <div className="space-y-4 p-4">
-            {messages.map((message) => (
-              <div key={message.id} className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-primary-600 text-sm font-semibold">
-                    {getUserInitials(message.user)}
-                  </span>
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className="text-sm font-medium text-gray-900">
-                      {getUserDisplayName(message.user)}
+              ))}
+            </div>
+          ) : messages && messages.length > 0 ? (
+            <div className="space-y-4 p-4">
+              {messages.map((message) => (
+                <div key={message.id} className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-primary-600 text-sm font-semibold">
+                      {getUserInitials(message.user)}
                     </span>
-                    <span className="text-xs text-gray-500">
-                      {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                    </span>
-                    {message.is_edited && (
-                      <span className="text-xs text-gray-400">(edited)</span>
-                    )}
                   </div>
-                  
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {message.content}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <span className="text-sm font-medium text-gray-900">
+                        {getUserDisplayName(message.user)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                      </span>
+                      {message.is_edited && (
+                        <span className="text-xs text-gray-400">(edited)</span>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {message.content}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500 p-4">
-            <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm">No messages yet</p>
-            <p className="text-xs">Start the conversation!</p>
-          </div>
-        )}
+              ))}
+              <div ref={messagesEndRef} className="h-4" />
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 p-4">
+              <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-sm">No messages yet</p>
+              <p className="text-xs">Start the conversation!</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Message Input */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 bg-white">
+      {/* Message Input - Pinned to bottom */}
+      <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 z-10 relative">
         <div className="flex space-x-2">
           <textarea
             ref={textareaRef}

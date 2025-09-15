@@ -53,17 +53,59 @@ export function Header({
     queryKey: ['user-details', user?.id],
     queryFn: async () => {
       if (!user?.id) return null
-      
+
       const { data, error } = await supabase
         .from('users')
         .select('first_name, last_name, email')
         .eq('id', user.id)
         .single()
-      
+
       if (error) throw error
       return data
     },
     enabled: !!user?.id
+  })
+
+  // Check for unread messages (both context messages and direct messages)
+  const { data: hasUnreadDirectMessages } = useQuery({
+    queryKey: ['unread-messages', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return false
+
+      // Check context-based messages (messages table)
+      const { data: contextMessages, error: contextError } = await supabase
+        .from('messages')
+        .select('id')
+        .neq('user_id', user.id)
+        .eq('is_read', false)
+        .limit(1)
+
+      if (contextError) throw contextError
+
+      // Check direct messages (conversation_messages)
+      const { data: directMessages, error: directError } = await supabase
+        .from('conversation_messages')
+        .select(`
+          id,
+          created_at,
+          conversation_id,
+          conversation_participants!inner(last_read_at)
+        `)
+        .neq('user_id', user.id)
+        .eq('conversation_participants.user_id', user.id)
+
+      if (directError) throw directError
+
+      // Check if there are any direct messages created after the user's last_read_at
+      const hasUnreadDirect = directMessages?.some(msg =>
+        !msg.conversation_participants?.[0]?.last_read_at ||
+        new Date(msg.created_at) > new Date(msg.conversation_participants[0].last_read_at)
+      ) || false
+
+      return (contextMessages && contextMessages.length > 0) || hasUnreadDirect
+    },
+    enabled: !!user?.id,
+    refetchInterval: 30000 // Check every 30 seconds
   })
 
   // Close dropdowns when clicking outside
@@ -186,6 +228,9 @@ export function Header({
               title="Direct messages"
             >
               <Mail className="h-5 w-5" />
+              {hasUnreadDirectMessages && (
+                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500"></span>
+              )}
             </button>
             
             {/* Communication Toggle */}
