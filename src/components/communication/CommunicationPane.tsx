@@ -39,6 +39,13 @@ export function CommunicationPane({
   onContextChange,
   onShowCoverageManager
 }: CommunicationPaneProps) {
+
+  const handleBackToConversations = () => {
+    // Clear the current context to go back to conversation selection
+    if (onContextChange) {
+      onContextChange('', '', '')
+    }
+  }
   const getViewTitle = () => {
     switch (view) {
       case 'ai':
@@ -90,27 +97,24 @@ export function CommunicationPane({
         )
       case 'direct-messages':
         return (
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <DirectMessaging
-              isOpen={true}
-              onClose={onToggle}
-            />
-          </div>
+          <DirectMessaging
+            isOpen={true}
+            onClose={onToggle}
+          />
         )
       case 'messages':
         return (
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <MessagingSection
-              contextType={contextType}
-              contextId={contextId}
-              contextTitle={contextTitle}
-              citedContent={citedContent}
-              fieldName={fieldName}
-              onCite={onCite}
-              onContextChange={onContextChange}
-              onShowCoverageManager={onShowCoverageManager}
-            />
-          </div>
+          <MessagingSection
+            contextType={contextType}
+            contextId={contextId}
+            contextTitle={contextTitle}
+            citedContent={citedContent}
+            fieldName={fieldName}
+            onCite={onCite}
+            onContextChange={onContextChange}
+            onShowCoverageManager={onShowCoverageManager}
+            onBack={handleBackToConversations}
+          />
         )
       case 'notifications':
         return (
@@ -168,7 +172,7 @@ export function CommunicationPane({
         {/* Tab Navigation - Only show for non-AI views */}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-hidden">
           {renderContent()}
         </div>
       </div>
