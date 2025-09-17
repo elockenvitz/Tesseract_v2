@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft } from 'lucide-react'
+import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { BadgeSelect } from '../ui/BadgeSelect'
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
+import { InvestmentTimeline } from '../ui/InvestmentTimeline'
+import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
+import { SmartStageManager } from '../ui/SmartStageManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
 import { StockQuote } from '../financial/StockQuote'
@@ -26,13 +29,39 @@ interface AssetTabProps {
 export function AssetTab({ asset, onCite }: AssetTabProps) {
   const { user } = useAuth()
   const [priority, setPriority] = useState(asset.priority || 'none')
-  const [stage, setStage] = useState(asset.process_stage || 'research')
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes'>('thesis')
+
+  // Timeline stages mapping for backward compatibility
+  const stageMapping = {
+    // Legacy mappings
+    'research': 'initiated',
+    'analysis': 'prioritized',
+    'monitoring': 'monitor', // Updated to map to new monitor stage
+    'archived': 'action',
+    // Current system mappings (these should pass through as-is)
+    'outdated': 'outdated',
+    'initiated': 'initiated',
+    'prioritized': 'prioritized',
+    'in_progress': 'in_progress',
+    'recommend': 'recommend',
+    'review': 'review',
+    'action': 'action',
+    'monitor': 'monitor'
+  }
+
+  // Map old stage values to new timeline stages
+  const mapToTimelineStage = (oldStage: string | null): string => {
+    if (!oldStage) return 'initiated'
+    return stageMapping[oldStage as keyof typeof stageMapping] || oldStage
+  }
+
+  const [stage, setStage] = useState(mapToTimelineStage(asset.process_stage))
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage'>('thesis')
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [showNoteEditor, setShowNoteEditor] = useState(false)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showCoverageManager, setShowCoverageManager] = useState(false)
+  const [viewingStageId, setViewingStageId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   // Refs for EditableSectionWithHistory components
@@ -40,13 +69,21 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
   const whereDifferentRef = useRef<EditableSectionWithHistoryRef>(null)
   const risksRef = useRef<EditableSectionWithHistoryRef>(null)
 
-  // Update local state only when switching to a different asset and no unsaved changes
+  // Update local state when switching to a different asset
   useEffect(() => {
-    if (asset.id && !hasLocalChanges) {
+    if (asset.id) {
       setPriority(asset.priority || 'none')
-      setStage(asset.process_stage || 'research')
+      setStage(mapToTimelineStage(asset.process_stage))
+      setHasLocalChanges(false) // Reset local changes flag when loading new asset
     }
-  }, [asset.id, hasLocalChanges, asset.priority, asset.process_stage])
+  }, [asset.id])
+
+  // Sync priority changes from external sources (but not stage to prevent reversion)
+  useEffect(() => {
+    if (!hasLocalChanges) {
+      setPriority(asset.priority || 'none')
+    }
+  }, [asset.priority, hasLocalChanges])
 
   // ---------- Queries ----------
   const { data: coverage } = useQuery({
@@ -269,9 +306,58 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
   }
 
   const handleStageChange = (newStage: string) => {
+    const prevStage = stage
     setStage(newStage)
     setHasLocalChanges(true)
+
+    // Update the asset object immediately to prevent reversion
+    asset.process_stage = newStage
+
     updateAssetMutation.mutate({ process_stage: newStage })
+
+    // Send analyst notification when stock is initiated
+    if (newStage === 'initiated' && prevStage !== 'initiated') {
+      sendAnalystNotification()
+    }
+  }
+
+  const sendAnalystNotification = async () => {
+    try {
+      // Create a notification in the database for analysts
+      const { error } = await supabase
+        .from('notifications')
+        .insert([
+          {
+            type: 'asset_initiated',
+            title: `New Asset Initiated: ${asset.symbol}`,
+            message: `${asset.symbol} (${asset.company_name}) has been initiated and requires analyst attention.`,
+            asset_id: asset.id,
+            created_by: user?.id,
+            target_role: 'analyst', // Target analysts specifically
+            is_read: false
+          }
+        ])
+
+      if (error) {
+        console.error('Failed to send analyst notification:', error)
+      } else {
+        console.log(`Analyst notification sent for ${asset.symbol}`)
+      }
+    } catch (error) {
+      console.error('Error sending analyst notification:', error)
+    }
+  }
+
+  const handleTimelineStageClick = (stageId: string) => {
+    // This could be used for showing stage-specific information or actions
+    console.log('Timeline stage clicked:', stageId)
+  }
+
+  const handleStageView = (stageId: string) => {
+    // Switch to stage tab to view the selected stage
+    setActiveTab('stage')
+    // Set the stage to view
+    setViewingStageId(stageId)
   }
 
   const handleEditStart = (sectionName: string) => {
@@ -338,18 +424,11 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
   }
 
   const priorityOptions = [
-    { value: 'none', label: 'No Priority Set' },
+    { value: 'critical', label: 'Critical Priority' },
     { value: 'high', label: 'High Priority' },
     { value: 'medium', label: 'Medium Priority' },
     { value: 'low', label: 'Low Priority' },
-  ]
-
-  const stageOptions = [
-    { value: 'research', label: 'Research' },
-    { value: 'analysis', label: 'Analysis' },
-    { value: 'monitoring', label: 'Monitoring' },
-    { value: 'review', label: 'Review' },
-    { value: 'archived', label: 'Archived' },
+    { value: 'maintenance', label: 'Maintenance Priority' },
   ]
 
   return (
@@ -382,14 +461,13 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
         {/* Status Badges */}
         <div className="flex items-center space-x-3">
           <AddToListButton assetId={asset.id} assetSymbol={asset.symbol} variant="outline" size="sm" />
-          <BadgeSelect
-            value={priority}
-            onChange={handlePriorityChange}
-            options={priorityOptions.map((opt) => ({ ...opt, label: `${opt.label.split(' ')[0]} priority` }))}
-            variant={getPriorityColor(priority)}
-            size="sm"
+          <SmartStageManager
+            currentStage={stage}
+            currentPriority={priority}
+            onStageChange={handleStageChange}
+            onPriorityChange={handlePriorityChange}
+            onStageView={handleStageView}
           />
-          <BadgeSelect value={stage} onChange={handleStageChange} options={stageOptions} variant={getStageColor(stage)} size="sm" />
         </div>
       </div>
 
@@ -455,6 +533,20 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
                     {notes.length}
                   </Badge>
                 )}
+              </div>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('stage')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'stage'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Activity className="h-4 w-4" />
+                <span>Stage</span>
               </div>
             </button>
           </nav>
@@ -710,6 +802,20 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
               )}
             </div>
           ))}
+
+          {activeTab === 'stage' && (
+            <div className="space-y-6">
+              <InvestmentTimeline
+                currentStage={stage}
+                onStageChange={handleStageChange}
+                onStageClick={handleTimelineStageClick}
+                assetSymbol={asset.symbol}
+                assetId={asset.id}
+                viewingStageId={viewingStageId}
+                onViewingStageChange={setViewingStageId}
+              />
+            </div>
+          )}
         </div>
       </Card>
     </div>

@@ -39,18 +39,10 @@ export function StockQuote({ symbol, showDetails = false, compact = false, class
     if (compact) {
       return (
         <div className={`animate-pulse ${className}`}>
-          <div className="flex items-start gap-6">
-            <div className="flex flex-col">
-              <div className="h-8 bg-primary-200 rounded w-24 mb-2"></div>
-              <div className="h-4 bg-primary-200 rounded w-20 mb-1"></div>
-              <div className="h-3 bg-primary-200 rounded w-16"></div>
-            </div>
-            <div className="flex flex-col space-y-1">
-              <div className="h-3 bg-primary-200 rounded w-20"></div>
-              <div className="h-3 bg-primary-200 rounded w-20"></div>
-              <div className="h-3 bg-primary-200 rounded w-20"></div>
-              <div className="h-3 bg-primary-200 rounded w-16"></div>
-            </div>
+          <div className="flex flex-col">
+            <div className="h-8 bg-primary-200 rounded w-24 mb-2"></div>
+            <div className="h-4 bg-primary-200 rounded w-20 mb-1"></div>
+            <div className="h-3 bg-primary-200 rounded w-16"></div>
           </div>
         </div>
       )
@@ -87,24 +79,13 @@ export function StockQuote({ symbol, showDetails = false, compact = false, class
   if (compact) {
     return (
       <div className={`${className}`}>
-        <div className="flex items-start gap-6">
-          {/* Price and Change */}
-          <div className="flex flex-col">
-            <div className="text-2xl font-bold text-gray-900">${quote.price.toFixed(2)}</div>
-            <div className={`text-sm font-medium ${changeColor}`}>
-              {changeSymbol}{quote.change.toFixed(2)} ({changeSymbol}{quote.changePercent.toFixed(2)}%)
-            </div>
-            <div className="text-xs text-gray-400 mt-1">
-              {new Date(quote.timestamp).toLocaleTimeString()}
-            </div>
+        <div className="flex flex-col">
+          <div className="text-2xl font-bold text-gray-900">${quote.price.toFixed(2)}</div>
+          <div className={`text-sm font-medium ${changeColor}`}>
+            {changeSymbol}{quote.change.toFixed(2)} ({changeSymbol}{quote.changePercent.toFixed(2)}%)
           </div>
-
-          {/* Market Data */}
-          <div className="flex flex-col text-xs text-gray-600 space-y-1">
-            <div><span className="text-gray-500">Open:</span> ${quote.open.toFixed(2)}</div>
-            <div><span className="text-gray-500">High:</span> ${quote.dayHigh.toFixed(2)}</div>
-            <div><span className="text-gray-500">Low:</span> ${quote.dayLow.toFixed(2)}</div>
-            <div><span className="text-gray-500">Vol:</span> {quote.volume > 0 ? `${(quote.volume / 1000000).toFixed(1)}M` : '--'}</div>
+          <div className="text-xs text-gray-400 mt-1">
+            {new Date(quote.timestamp).toLocaleTimeString()}
           </div>
         </div>
       </div>

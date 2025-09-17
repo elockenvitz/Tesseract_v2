@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
+import { TesseractLoader } from './components/ui/TesseractLoader'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,11 +25,8 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Loading...</h1>
-          <p className="text-gray-600">Testing useAuth hook</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <TesseractLoader size={120} text="Initializing Tesseract..." />
       </div>
     )
   }

@@ -30,65 +30,29 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
       console.log('🔍 Fetching all assets from database...')
       const { data, error } = await supabase
         .from('assets')
-        .select(`
-          *,
-          price_targets(type, price),
-          asset_notes(id, title, updated_at)
-        `)
+        .select('*')
         .order('updated_at', { ascending: false })
-      
+
       if (error) {
         console.error('❌ Failed to fetch all assets:', error)
         throw error
       }
-      
+
       console.log('✅ All assets fetched:', data?.length || 0, 'records')
       return data || []
     },
-    staleTime: 0, // Always fetch fresh data
-    refetchOnWindowFocus: true, // Refetch when window regains focus
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    refetchOnWindowFocus: false, // Don't refetch on focus
   })
 
-  // Fetch financial data for all assets
+  // Fetch financial data for all assets (lazy load)
   const { data: financialData, isLoading: financialDataLoading } = useQuery({
     queryKey: ['assets-financial-data', assets?.map(a => a.symbol)],
     queryFn: async () => {
-      if (!assets || assets.length === 0) return {}
-
-      const quotes: Record<string, any> = {}
-
-      // Fetch quotes for all assets in parallel
-      const fetchPromises = assets
-        .filter(asset => asset.symbol)
-        .map(async (asset) => {
-          try {
-            console.log(`AssetsListPage: Fetching quote for ${asset.symbol}`)
-            const quote = await financialDataService.getQuote(asset.symbol)
-            if (quote) {
-              console.log(`AssetsListPage: Got quote for ${asset.symbol}: $${quote.price}`)
-              return { symbol: asset.symbol, quote }
-            }
-            return null
-          } catch (error) {
-            console.warn(`AssetsListPage: Failed to fetch quote for ${asset.symbol}:`, error)
-            return null
-          }
-        })
-
-      const results = await Promise.all(fetchPromises)
-
-      // Build the quotes object
-      results.forEach(result => {
-        if (result && result.quote) {
-          quotes[result.symbol] = result.quote
-        }
-      })
-
-      return quotes
+      return {} // Return empty initially, load on demand
     },
-    enabled: !!assets && assets.length > 0,
-    staleTime: 15000, // Cache for 15 seconds
-    refetchInterval: 30000, // Refetch every 30 seconds
+    enabled: false, // Disable automatic fetching
+    staleTime: 60000, // Cache for 1 minute
   })
 
   // Get unique sectors for filter
@@ -102,77 +66,88 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const filteredAssets = useMemo(() => {
     if (!assets) return []
 
-    let filtered = assets.filter(asset => {
-      // Search filter
-      const matchesSearch = !searchQuery || 
-        asset.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (asset.sector && asset.sector.toLowerCase().includes(searchQuery.toLowerCase()))
+    let filtered = assets
 
-      // Priority filter
-      const matchesPriority = priorityFilter === 'all' || asset.priority === priorityFilter
+    // Apply filters only if they're set (avoid unnecessary work)
+    if (searchQuery || priorityFilter !== 'all' || stageFilter !== 'all' || sectorFilter !== 'all') {
+      filtered = assets.filter(asset => {
+        // Search filter
+        if (searchQuery) {
+          const searchLower = searchQuery.toLowerCase()
+          const matchesSearch =
+            asset.symbol.toLowerCase().includes(searchLower) ||
+            asset.company_name.toLowerCase().includes(searchLower) ||
+            (asset.sector && asset.sector.toLowerCase().includes(searchLower))
+          if (!matchesSearch) return false
+        }
 
-      // Stage filter
-      const matchesStage = stageFilter === 'all' || asset.process_stage === stageFilter
+        // Priority filter
+        if (priorityFilter !== 'all' && asset.priority !== priorityFilter) return false
 
-      // Sector filter
-      const matchesSector = sectorFilter === 'all' || asset.sector === sectorFilter
+        // Stage filter
+        if (stageFilter !== 'all' && asset.process_stage !== stageFilter) return false
 
-      return matchesSearch && matchesPriority && matchesStage && matchesSector
-    })
+        // Sector filter
+        if (sectorFilter !== 'all' && asset.sector !== sectorFilter) return false
 
-    // Sort assets
-    filtered.sort((a, b) => {
-      let aValue, bValue
+        return true
+      })
+    }
 
-      switch (sortBy) {
-        case 'symbol':
-          aValue = a.symbol
-          bValue = b.symbol
-          break
-        case 'company_name':
-          aValue = a.company_name
-          bValue = b.company_name
-          break
-        case 'current_price':
-          // Use real-time price if available, otherwise fallback to saved price
-          const aQuote = financialData?.[a.symbol]
-          const bQuote = financialData?.[b.symbol]
-          aValue = aQuote?.price || a.current_price || 0
-          bValue = bQuote?.price || b.current_price || 0
-          break
-        case 'priority':
-          const priorityOrder = { high: 4, medium: 3, low: 2, none: 1 }
-          aValue = priorityOrder[a.priority as keyof typeof priorityOrder] || 0
-          bValue = priorityOrder[b.priority as keyof typeof priorityOrder] || 0
-          break
-        case 'process_stage':
-          const stageOrder = { research: 1, analysis: 2, monitoring: 3, review: 4, archived: 5 }
-          aValue = stageOrder[a.process_stage as keyof typeof stageOrder] || 0
-          bValue = stageOrder[b.process_stage as keyof typeof stageOrder] || 0
-          break
-        case 'created_at':
-          aValue = new Date(a.created_at || 0).getTime()
-          bValue = new Date(b.created_at || 0).getTime()
-          break
-        case 'updated_at':
-        default:
-          aValue = new Date(a.updated_at || 0).getTime()
-          bValue = new Date(b.updated_at || 0).getTime()
-          break
-      }
+    // Sort assets only if not default sort
+    if (sortBy !== 'updated_at' || sortOrder !== 'desc') {
+      filtered = [...filtered].sort((a, b) => {
+        let aValue, bValue
 
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortOrder === 'asc' 
-          ? aValue.localeCompare(bValue)
-          : bValue.localeCompare(aValue)
-      }
+        switch (sortBy) {
+          case 'symbol':
+            aValue = a.symbol
+            bValue = b.symbol
+            break
+          case 'company_name':
+            aValue = a.company_name
+            bValue = b.company_name
+            break
+          case 'current_price':
+            aValue = a.current_price || 0
+            bValue = b.current_price || 0
+            break
+          case 'priority':
+            const priorityOrder = { high: 4, medium: 3, low: 2, none: 1 }
+            aValue = priorityOrder[a.priority as keyof typeof priorityOrder] || 0
+            bValue = priorityOrder[b.priority as keyof typeof priorityOrder] || 0
+            break
+          case 'process_stage':
+            const stageOrder = {
+              outdated: 1, initiated: 2, prioritized: 3, in_progress: 4,
+              recommend: 5, review: 6, action: 7, monitor: 8
+            }
+            aValue = stageOrder[a.process_stage as keyof typeof stageOrder] || 0
+            bValue = stageOrder[b.process_stage as keyof typeof stageOrder] || 0
+            break
+          case 'created_at':
+            aValue = new Date(a.created_at || 0).getTime()
+            bValue = new Date(b.created_at || 0).getTime()
+            break
+          case 'updated_at':
+          default:
+            aValue = new Date(a.updated_at || 0).getTime()
+            bValue = new Date(b.updated_at || 0).getTime()
+            break
+        }
 
-      return sortOrder === 'asc' ? aValue - bValue : bValue - aValue
-    })
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortOrder === 'asc'
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue)
+        }
+
+        return sortOrder === 'asc' ? aValue - bValue : bValue - aValue
+      })
+    }
 
     return filtered
-  }, [assets, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder, financialData])
+  }, [assets, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder])
 
   const getPriorityColor = (priority: string | null) => {
     switch (priority) {
@@ -186,12 +161,39 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
 
   const getStageColor = (stage: string | null) => {
     switch (stage) {
+      case 'outdated': return 'default'
+      case 'initiated': return 'error'
+      case 'prioritized': return 'warning'
+      case 'in_progress': return 'primary'
+      case 'recommend': return 'warning'
+      case 'review': return 'success'
+      case 'action': return 'success'
+      case 'monitor': return 'default'
+      // Legacy mappings
       case 'research': return 'primary'
       case 'analysis': return 'warning'
       case 'monitoring': return 'success'
-      case 'review': return 'default'
       case 'archived': return 'default'
       default: return 'default'
+    }
+  }
+
+  const getStageLabel = (stage: string | null) => {
+    switch (stage) {
+      case 'outdated': return 'Outdated'
+      case 'initiated': return 'Initiated'
+      case 'prioritized': return 'Prioritize'
+      case 'in_progress': return 'Research'
+      case 'recommend': return 'Recommend'
+      case 'review': return 'Review'
+      case 'action': return 'Action'
+      case 'monitor': return 'Monitor'
+      // Legacy mappings
+      case 'research': return 'Initiated'
+      case 'analysis': return 'Prioritize'
+      case 'monitoring': return 'Monitor'
+      case 'archived': return 'Action'
+      default: return stage || 'Research'
     }
   }
 
@@ -309,11 +311,14 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
                 onChange={(e) => setStageFilter(e.target.value)}
                 options={[
                   { value: 'all', label: 'All Stages' },
-                  { value: 'research', label: 'Research' },
-                  { value: 'analysis', label: 'Analysis' },
-                  { value: 'monitoring', label: 'Monitoring' },
+                  { value: 'outdated', label: 'Outdated' },
+                  { value: 'initiated', label: 'Initiated' },
+                  { value: 'prioritized', label: 'Prioritize' },
+                  { value: 'in_progress', label: 'Research' },
+                  { value: 'recommend', label: 'Recommend' },
                   { value: 'review', label: 'Review' },
-                  { value: 'archived', label: 'Archived' }
+                  { value: 'action', label: 'Action' },
+                  { value: 'monitor', label: 'Monitor' }
                 ]}
               />
 
@@ -463,54 +468,18 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
 
                   {/* Price */}
                   <div className="col-span-2">
-                    {(() => {
-                      const quote = financialData?.[asset.symbol]
-
-                      // Show loading state
-                      if (financialDataLoading) {
-                        return (
-                          <div className="animate-pulse">
-                            <div className="h-4 bg-gray-200 rounded w-16 mb-1"></div>
-                            <div className="h-3 bg-gray-200 rounded w-12"></div>
-                          </div>
-                        )
-                      }
-
-                      // Show real-time data if available
-                      if (quote) {
-                        const isPositive = quote.change >= 0
-                        const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
-                        const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
-
-                        return (
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">
-                              ${quote.price.toFixed(2)}
-                            </p>
-                            <div className={`flex items-center ${changeColor} text-xs`}>
-                              <ChangeIcon className="h-3 w-3 mr-0.5" />
-                              {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
-                            </div>
-                          </div>
-                        )
-                      }
-
-                      // Fall back to saved price or show dash
-                      if (asset.current_price) {
-                        return (
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">
-                              ${asset.current_price}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Saved price
-                            </p>
-                          </div>
-                        )
-                      }
-
-                      return <span className="text-sm text-gray-400">—</span>
-                    })()}
+                    {asset.current_price ? (
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          ${asset.current_price}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Last saved
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">—</span>
+                    )}
                   </div>
 
                   {/* Priority */}
@@ -523,7 +492,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
                   {/* Stage */}
                   <div className="col-span-2">
                     <Badge variant={getStageColor(asset.process_stage)} size="sm">
-                      {asset.process_stage || 'research'}
+                      {getStageLabel(asset.process_stage)}
                     </Badge>
                   </div>
 
