@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
+import { TesseractLogo } from '../ui/TesseractLogo'
 
 interface HeaderProps {
   onSearchResult: (result: any) => void
@@ -178,14 +179,10 @@ export function Header({
           {/* Logo and Search */}
           <div className="flex items-center space-x-6 flex-1">
             <div className="flex items-center space-x-3">
-            <img 
-              src="/Tesseract Icon.png" 
-              alt="Tesseract" 
-              className="w-8 h-8"
-            />
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">Tesseract</h1>
-            </div>
+              <TesseractLogo size={32} />
+              <div>
+                <h1 className="text-lg font-bold text-gray-900">Tesseract</h1>
+              </div>
             </div>
 
             {/* Search */}
