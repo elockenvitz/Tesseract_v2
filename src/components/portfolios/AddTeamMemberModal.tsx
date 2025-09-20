@@ -88,13 +88,13 @@ export function AddTeamMemberModal({
   })
 
   const { data: existingTeamMembers, isLoading: existingTeamLoading } = useQuery<
-    Array<{ user_id: string; role: string }>
+    Array<{ user_id: string; role: string; focus: string }>
   >({
     queryKey: ['portfolio-team', portfolioId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_team')
-        .select('user_id, role')
+        .select('user_id, role, focus')
         .eq('portfolio_id', portfolioId)
       if (error) throw error
       return data || []
@@ -107,15 +107,16 @@ export function AddTeamMemberModal({
   const userOptions = useMemo(() => {
     if (!allUsers) return []
 
-    const existingUserRoles = new Set(
-      (existingTeamMembers || []).map((tm) => `${tm.user_id}-${tm.role}`)
+    const existingRoleFocusCombinations = new Set(
+      (existingTeamMembers || []).map((tm) => `${tm.user_id}-${tm.role}-${tm.focus || 'null'}`)
     )
 
     return allUsers.filter((u) => {
-      // Filter out users already assigned this specific role
-      const isAlreadyAssignedRole = role ? existingUserRoles.has(`${u.id}-${role}`) : false;
-      
-      return !isAlreadyAssignedRole;
+      // Filter out users only if they already have this exact role+focus combination
+      const currentCombination = `${u.id}-${role}-${focus || 'null'}`
+      const isAlreadyAssignedExactCombo = role ? existingRoleFocusCombinations.has(currentCombination) : false;
+
+      return !isAlreadyAssignedExactCombo;
     }).map((user) => ({
       value: user.id,
       label: getUserDisplayName(user),
@@ -124,7 +125,7 @@ export function AddTeamMemberModal({
       last_name: user.last_name,
       ...user // Spread all user properties
     }));
-  }, [allUsers, existingTeamMembers, role, currentUser]);
+  }, [allUsers, existingTeamMembers, role, focus, currentUser]);
 
 
   const addTeamMemberMutation = useMutation({
