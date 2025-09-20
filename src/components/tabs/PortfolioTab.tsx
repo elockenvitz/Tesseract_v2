@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2 } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -32,6 +32,10 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
     userName: '',
     role: ''
   })
+  const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null)
+  const [selectedDetailTopic, setSelectedDetailTopic] = useState<string | null>(null)
+  const [sortColumn, setSortColumn] = useState<string>('symbol')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -65,7 +69,17 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
         .from('portfolio_holdings')
         .select(`
           *,
-          assets(symbol, company_name, current_price, sector)
+          assets(
+            symbol,
+            company_name,
+            sector,
+            thesis,
+            where_different,
+            risks_to_thesis,
+            priority,
+            process_stage,
+            price_targets(type, price, timeframe, reasoning)
+          )
         `)
         .eq('portfolio_id', portfolio.id)
         .order('date', { ascending: false })
@@ -109,33 +123,52 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
     },
   })
 
-  // Group team members by role
+  // Group team members by role, then by user
   const teamMembersByRole = useMemo(() => {
     if (!teamWithUsers) return {}
-    const grouped: { [role: string]: Array<any> } = {} // Changed to group by role
+    const grouped: { [role: string]: Array<any> } = {}
 
     for (const row of teamWithUsers as any[]) {
       const role = row.role as string
       if (!grouped[role]) {
         grouped[role] = []
       }
-      grouped[role].push({
-        id: row.id, // The ID of the portfolio_team record
-        user: row.user,
-        focus: row.focus,
-        created_at: row.created_at,
-      })
+
+      // Check if this user already exists in this role
+      const existingUserIndex = grouped[role].findIndex(
+        member => member.user.id === row.user.id
+      )
+
+      if (existingUserIndex !== -1) {
+        // User exists, add focus to their focuses array
+        if (row.focus && !grouped[role][existingUserIndex].focuses.includes(row.focus)) {
+          grouped[role][existingUserIndex].focuses.push(row.focus)
+        }
+        // Keep track of all team record IDs for deletion purposes
+        grouped[role][existingUserIndex].teamRecordIds.push(row.id)
+      } else {
+        // New user for this role
+        grouped[role].push({
+          id: row.id, // Primary team record ID
+          teamRecordIds: [row.id], // Array of all team record IDs
+          user: row.user,
+          focuses: row.focus ? [row.focus] : [], // Array of focuses
+          created_at: row.created_at,
+        })
+      }
     }
     return grouped
   }, [teamWithUsers])
 
   // Delete team member mutation
   const deleteTeamMemberMutation = useMutation({
-    mutationFn: async (teamMemberId: string) => {
+    mutationFn: async (teamMemberIds: string) => {
+      const ids = teamMemberIds.split(',') // Split comma-separated IDs
+
       const { error } = await supabase
         .from('portfolio_team')
         .delete()
-        .eq('id', teamMemberId)
+        .in('id', ids) // Delete all records with these IDs
 
       if (error) throw error
     },
@@ -208,6 +241,29 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
     setDeleteConfirm({ isOpen: false, teamMemberId: null, userName: '', role: '' });
   }
 
+  const handleAssetRowClick = (assetId: string, event: React.MouseEvent) => {
+    if (expandedAssetId === assetId) {
+      setExpandedAssetId(null)
+      setSelectedDetailTopic(null)
+    } else {
+      setExpandedAssetId(assetId)
+      setSelectedDetailTopic(null)
+    }
+  }
+
+  const handleDetailTopicSelect = (topic: string) => {
+    setSelectedDetailTopic(selectedDetailTopic === topic ? null : topic)
+  }
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }
+
   const getUserDisplayName = (user: any) => {
     if (!user) return 'Unknown User'
     if (user.first_name && user.last_name) {
@@ -228,9 +284,86 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
     return user.email?.substring(0, 2).toUpperCase() || 'UU'
   }
 
+  // Sorted holdings
+  const sortedHoldings = useMemo(() => {
+    if (!holdings) return []
+
+    return [...holdings].sort((a, b) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortColumn) {
+        case 'symbol':
+          aValue = a.assets?.symbol || ''
+          bValue = b.assets?.symbol || ''
+          break
+        case 'company':
+          aValue = a.assets?.company_name || ''
+          bValue = b.assets?.company_name || ''
+          break
+        case 'sector':
+          aValue = a.assets?.sector || ''
+          bValue = b.assets?.sector || ''
+          break
+        case 'shares':
+          aValue = parseFloat(a.shares) || 0
+          bValue = parseFloat(b.shares) || 0
+          break
+        case 'avgCost':
+          aValue = parseFloat(a.cost) || 0
+          bValue = parseFloat(b.cost) || 0
+          break
+        case 'gainLoss':
+          const aShares = parseFloat(a.shares) || 0
+          const aCurrentPrice = parseFloat(a.price) || 0
+          const aAvgCost = parseFloat(a.cost) || 0
+          const aGainLoss = (aShares * aCurrentPrice) - (aShares * aAvgCost)
+
+          const bShares = parseFloat(b.shares) || 0
+          const bCurrentPrice = parseFloat(b.price) || 0
+          const bAvgCost = parseFloat(b.cost) || 0
+          const bGainLoss = (bShares * bCurrentPrice) - (bShares * bAvgCost)
+
+          aValue = aGainLoss
+          bValue = bGainLoss
+          break
+        case 'returnPercent':
+          const aSharesRet = parseFloat(a.shares) || 0
+          const aCurrentPriceRet = parseFloat(a.price) || 0
+          const aAvgCostRet = parseFloat(a.cost) || 0
+          const aTotalCostBasis = aSharesRet * aAvgCostRet
+          const aMarketValue = aSharesRet * aCurrentPriceRet
+          const aGainLossRet = aMarketValue - aTotalCostBasis
+          const aReturnPercent = aTotalCostBasis > 0 ? (aGainLossRet / aTotalCostBasis) * 100 : 0
+
+          const bSharesRet = parseFloat(b.shares) || 0
+          const bCurrentPriceRet = parseFloat(b.price) || 0
+          const bAvgCostRet = parseFloat(b.cost) || 0
+          const bTotalCostBasis = bSharesRet * bAvgCostRet
+          const bMarketValue = bSharesRet * bCurrentPriceRet
+          const bGainLossRet = bMarketValue - bTotalCostBasis
+          const bReturnPercent = bTotalCostBasis > 0 ? (bGainLossRet / bTotalCostBasis) * 100 : 0
+
+          aValue = aReturnPercent
+          bValue = bReturnPercent
+          break
+        default:
+          return 0
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue)
+        return sortDirection === 'asc' ? comparison : -comparison
+      } else {
+        const comparison = aValue - bValue
+        return sortDirection === 'asc' ? comparison : -comparison
+      }
+    })
+  }, [holdings, sortColumn, sortDirection])
+
   // Metrics
   const totalValue =
-    holdings?.reduce((sum: number, h: any) => sum + h.shares * (h.assets?.current_price || 0), 0) || 0
+    holdings?.reduce((sum: number, h: any) => sum + h.shares * h.price, 0) || 0
   const totalCost = holdings?.reduce((sum: number, h: any) => sum + h.cost, 0) || 0
   const totalReturn = totalValue - totalCost
   const returnPercentage = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0
@@ -248,21 +381,6 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
             {portfolio.benchmark && (
               <p className="text-sm text-gray-500">Benchmark: {portfolio.benchmark}</p>
             )}
-          </div>
-
-          <div className="text-left">
-            {holdings && holdings.length > 0 && (
-              <div className="mb-1">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Holdings</p>
-                <p className="text-xl font-bold text-gray-900">{holdings.length}</p>
-              </div>
-            )}
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</p>
-              <p className="text-sm text-gray-700">
-                {formatDistanceToNow(new Date(portfolio.created_at || 0), { addSuffix: true })}
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -423,32 +541,313 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
           {activeTab === 'holdings' && (
             <div className="space-y-6">
               {holdings && holdings.length > 0 ? (
-                <div className="space-y-4">
-                  {holdings.map((holding: any) => (
-                    <Card key={holding.id} padding="sm" className="hover:shadow-md transition-shadow">
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <div className="flex items-center space-x-3">
-                          <div>
-                            <h4 className="font-semibold text-gray-900">{holding.assets?.symbol}</h4>
-                            <p className="text-sm text-gray-600">{holding.assets?.company_name}</p>
-                            <p className="text-xs text-gray-500">{holding.assets?.sector}</p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort('symbol')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Asset
+                            {sortColumn === 'symbol' ? (
+                              sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                            ) : <ChevronUp className="h-3 w-3 opacity-30" />}
                           </div>
-                        </div>
-
-                        <div className="flex items-center">
-                          <StockQuote symbol={holding.assets?.symbol} className="flex-1" />
-                        </div>
-
-                        <div className="text-right space-y-1">
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">{holding.shares} shares</p>
-                            <p className="text-sm text-gray-600">Cost: ${holding.price}/share</p>
-                            <p className="text-xs text-gray-500">Total: ${holding.cost.toLocaleString()}</p>
+                        </th>
+                        <th
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort('sector')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Sector
+                            {sortColumn === 'sector' ? (
+                              sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                            ) : <ChevronUp className="h-3 w-3 opacity-30" />}
                           </div>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Current Price
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Daily Change
+                        </th>
+                        <th
+                          className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort('shares')}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Shares
+                            {sortColumn === 'shares' ? (
+                              sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                            ) : <ChevronUp className="h-3 w-3 opacity-30" />}
+                          </div>
+                        </th>
+                        <th
+                          className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort('avgCost')}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Avg Cost
+                            {sortColumn === 'avgCost' ? (
+                              sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                            ) : <ChevronUp className="h-3 w-3 opacity-30" />}
+                          </div>
+                        </th>
+                        <th
+                          className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort('gainLoss')}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Gain/Loss
+                            {sortColumn === 'gainLoss' ? (
+                              sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                            ) : <ChevronUp className="h-3 w-3 opacity-30" />}
+                          </div>
+                        </th>
+                        <th
+                          className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort('returnPercent')}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Return %
+                            {sortColumn === 'returnPercent' ? (
+                              sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                            ) : <ChevronUp className="h-3 w-3 opacity-30" />}
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sortedHoldings.map((holding: any) => {
+                        const shares = parseFloat(holding.shares) || 0
+                        const currentPrice = parseFloat(holding.price) || 0 // This appears to be current price
+                        const avgCostPerShare = parseFloat(holding.cost) || 0 // This appears to be avg cost per share
+
+                        const totalCostBasis = shares * avgCostPerShare
+                        const marketValue = shares * currentPrice
+                        const gainLoss = marketValue - totalCostBasis
+                        const returnPercent = totalCostBasis > 0 ? (gainLoss / totalCostBasis) * 100 : 0
+                        const isExpanded = expandedAssetId === holding.asset_id
+
+                        return (
+                          <React.Fragment key={holding.id}>
+                            <tr
+                              className={`hover:bg-gray-50 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50' : ''}`}
+                              onClick={(e) => handleAssetRowClick(holding.asset_id, e)}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <div className="flex-shrink-0 mr-3">
+                                    <div className={`w-2 h-2 rounded-full transition-transform duration-200 ${isExpanded ? 'bg-blue-500 rotate-90' : 'bg-gray-300'}`}></div>
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-semibold text-gray-900">{holding.assets?.symbol}</div>
+                                    <div className="text-sm text-gray-600 max-w-xs truncate">{holding.assets?.company_name}</div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm text-gray-900">{holding.assets?.sector || '—'}</span>
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <StockQuote symbol={holding.assets?.symbol} showOnlyPrice={true} />
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <StockQuote symbol={holding.assets?.symbol} showOnlyChange={true} />
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <span className="text-sm font-medium text-gray-900">{shares.toLocaleString()}</span>
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <span className="text-sm text-gray-900">${avgCostPerShare.toFixed(2)}</span>
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <span className={`text-sm font-medium ${gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)}
+                                </span>
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <span className={`text-sm font-medium ${returnPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {returnPercent >= 0 ? '+' : ''}{returnPercent.toFixed(1)}%
+                                </span>
+                              </td>
+                            </tr>
+
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={8} className="px-0 py-0">
+                                  <div className="bg-gray-50 border-l-4 border-blue-500 px-6 py-2">
+                                    {/* Compact Tile Grid */}
+                                    <div className="grid grid-cols-3 gap-2 mb-2">
+                                      {/* Thesis Tile */}
+                                      <button
+                                        onClick={() => handleDetailTopicSelect('thesis')}
+                                        className={`p-2 rounded border text-left text-xs ${
+                                          selectedDetailTopic === 'thesis'
+                                            ? 'border-blue-500 bg-blue-50'
+                                            : 'border-gray-200 bg-white hover:border-gray-300'
+                                        }`}
+                                      >
+                                        <div className="font-semibold text-gray-700">Thesis</div>
+                                      </button>
+
+                                      {/* Combined Stage & Priority Tile */}
+                                      <button
+                                        onClick={() => handleDetailTopicSelect('stage-priority')}
+                                        className={`p-2 rounded border text-left text-xs ${
+                                          selectedDetailTopic === 'stage-priority'
+                                            ? 'border-blue-500 bg-blue-50'
+                                            : 'border-gray-200 bg-white hover:border-gray-300'
+                                        }`}
+                                      >
+                                        <div className="font-semibold text-gray-700">Stage & Priority</div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <span className="text-gray-600 capitalize text-xs">
+                                            {holding.assets?.process_stage || 'Unknown'}
+                                          </span>
+                                          <span className="text-gray-400">•</span>
+                                          <span className={`font-medium capitalize text-xs ${
+                                            holding.assets?.priority === 'critical' ? 'text-red-600' :
+                                            holding.assets?.priority === 'high' ? 'text-orange-500' :
+                                            holding.assets?.priority === 'medium' ? 'text-blue-500' :
+                                            holding.assets?.priority === 'low' ? 'text-gray-500' :
+                                            holding.assets?.priority === 'maintenance' ? 'text-green-600' : 'text-gray-600'
+                                          }`}>
+                                            {holding.assets?.priority || 'None'}
+                                          </span>
+                                        </div>
+                                      </button>
+
+                                      {/* Outcomes Tile */}
+                                      <button
+                                        onClick={() => handleDetailTopicSelect('outcomes')}
+                                        className={`p-2 rounded border text-left text-xs ${
+                                          selectedDetailTopic === 'outcomes'
+                                            ? 'border-blue-500 bg-blue-50'
+                                            : 'border-gray-200 bg-white hover:border-gray-300'
+                                        }`}
+                                      >
+                                        <div className="font-semibold text-gray-700">Outcomes</div>
+                                      </button>
+                                    </div>
+
+                                    {/* Detailed View */}
+                                    {selectedDetailTopic && (
+                                      <div className="mt-2">
+                                        <div className="bg-white rounded border border-gray-200 p-3 shadow-sm">
+                                        <div className="flex items-start justify-between">
+                                          <div className="text-xs text-gray-700 space-y-1 flex-1">
+                                          {selectedDetailTopic === 'thesis' && (
+                                            <div className="space-y-2">
+                                              <div>
+                                                <h5 className="text-xs font-semibold text-gray-600 mb-1">Investment Thesis</h5>
+                                                <p className="text-xs">{holding.assets?.thesis || 'No thesis has been defined for this asset.'}</p>
+                                              </div>
+                                              <div>
+                                                <h5 className="text-xs font-semibold text-gray-600 mb-1">Where Different</h5>
+                                                <p className="text-xs">{holding.assets?.where_different || 'No differentiation factors have been specified.'}</p>
+                                              </div>
+                                              <div>
+                                                <h5 className="text-xs font-semibold text-gray-600 mb-1">Risks to Thesis</h5>
+                                                <p className="text-xs">{holding.assets?.risks_to_thesis || 'No risks to the thesis have been identified.'}</p>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {selectedDetailTopic === 'stage-priority' && (
+                                            <div className="space-y-2">
+                                              <div>
+                                                <h5 className="text-xs font-semibold text-gray-600 mb-1">Current Stage</h5>
+                                                <p className="text-xs mb-1">
+                                                  <span className="font-medium capitalize">{holding.assets?.process_stage || 'Unknown'}</span>
+                                                </p>
+                                                <p className="text-xs text-gray-500">Current research and analysis stage for this asset.</p>
+                                              </div>
+                                              <div>
+                                                <h5 className="text-xs font-semibold text-gray-600 mb-1">Priority Level</h5>
+                                                <p className="text-xs mb-1">
+                                                  <span className={`font-medium capitalize ${
+                                                    holding.assets?.priority === 'critical' ? 'text-red-600' :
+                                                    holding.assets?.priority === 'high' ? 'text-orange-500' :
+                                                    holding.assets?.priority === 'medium' ? 'text-blue-500' :
+                                                    holding.assets?.priority === 'low' ? 'text-gray-500' :
+                                                    holding.assets?.priority === 'maintenance' ? 'text-green-600' : 'text-gray-600'
+                                                  }`}>{holding.assets?.priority || 'None'}</span>
+                                                </p>
+                                                <p className="text-xs text-gray-500">Relative importance and urgency of this asset in the portfolio.</p>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {selectedDetailTopic === 'outcomes' && (
+                                            <div className="space-y-1">
+                                              <h5 className="text-xs font-semibold text-gray-600 mb-1">Price Targets</h5>
+                                              {holding.assets?.price_targets && holding.assets.price_targets.length > 0 ? (
+                                                <div className="space-y-1">
+                                                  {['bull', 'base', 'bear'].map(caseType => {
+                                                    const target = holding.assets.price_targets.find((pt: any) => pt.type === caseType)
+                                                    if (!target) return null
+
+                                                    const getCaseColor = (type: string) => {
+                                                      switch(type) {
+                                                        case 'bull': return 'text-green-600'
+                                                        case 'base': return 'text-blue-600'
+                                                        case 'bear': return 'text-red-600'
+                                                        default: return 'text-gray-600'
+                                                      }
+                                                    }
+
+                                                    return (
+                                                      <div key={caseType} className="flex items-center gap-2 text-xs">
+                                                        <span className={`font-medium capitalize ${getCaseColor(caseType)}`}>
+                                                          {caseType}: ${target.price || '—'}
+                                                        </span>
+                                                        {target.timeframe && (
+                                                          <span className="text-gray-500">
+                                                            {target.timeframe}
+                                                          </span>
+                                                        )}
+                                                        {target.reasoning && (
+                                                          <span className="text-gray-600 flex-1">
+                                                            - {target.reasoning}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    )
+                                                  })}
+                                                </div>
+                                              ) : (
+                                                <p className="text-xs text-gray-500">No price targets have been set for this asset.</p>
+                                              )}
+                                            </div>
+                                          )}
+                                          </div>
+                                          <button
+                                            onClick={() => setSelectedDetailTopic(null)}
+                                            className="text-gray-400 hover:text-gray-600 text-xs ml-2"
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               ) : (
                 <div className="text-center py-12">
@@ -602,8 +1001,10 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                                   <div>
                                     <h4 className="font-semibold text-gray-900">{displayName}</h4>
                                     <p className="text-sm text-gray-600">{u?.email || '—'}</p>
-                                    {member.focus && (
-                                      <p className="text-xs text-gray-500">Focus: {member.focus}</p>
+                                    {member.focuses && member.focuses.length > 0 && (
+                                      <p className="text-xs text-gray-500">
+                                        Focus: {member.focuses.join(', ')}
+                                      </p>
                                     )}
                                   </div>
                                 </div>
@@ -612,7 +1013,7 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                                   size="sm"
                                   onClick={() => setDeleteConfirm({
                                     isOpen: true,
-                                    teamMemberId: member.id,
+                                    teamMemberId: member.teamRecordIds.join(','), // Pass all record IDs
                                     userName: displayName,
                                     role: role
                                   })}
@@ -660,9 +1061,9 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
         isOpen={deleteConfirm.isOpen}
         onClose={handleCancelDelete}
         onConfirm={handleConfirmDelete}
-        title="Remove Team Member Role"
-        message={`Are you sure you want to remove ${deleteConfirm.userName} as a "${deleteConfirm.role}" from this portfolio?`}
-        confirmText="Remove Role"
+        title="Remove Team Member"
+        message={`Are you sure you want to remove ${deleteConfirm.userName} as "${deleteConfirm.role}" from this portfolio? This will remove all focus areas for this role.`}
+        confirmText="Remove"
         cancelText="Cancel"
         variant="danger"
         isLoading={deleteTeamMemberMutation.isPending}

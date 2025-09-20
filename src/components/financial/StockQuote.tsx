@@ -5,10 +5,12 @@ interface StockQuoteProps {
   symbol: string
   showDetails?: boolean
   compact?: boolean
+  showOnlyPrice?: boolean
+  showOnlyChange?: boolean
   className?: string
 }
 
-export function StockQuote({ symbol, showDetails = false, compact = false, className = '' }: StockQuoteProps) {
+export function StockQuote({ symbol, showDetails = false, compact = false, showOnlyPrice = false, showOnlyChange = false, className = '' }: StockQuoteProps) {
   const [quote, setQuote] = useState<Quote | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +38,14 @@ export function StockQuote({ symbol, showDetails = false, compact = false, class
   }, [symbol])
 
   if (loading) {
+    if (showOnlyPrice || showOnlyChange) {
+      return (
+        <div className={`animate-pulse ${className}`}>
+          <div className="h-4 bg-gray-200 rounded w-16"></div>
+        </div>
+      )
+    }
+
     if (compact) {
       return (
         <div className={`animate-pulse ${className}`}>
@@ -67,13 +77,31 @@ export function StockQuote({ symbol, showDetails = false, compact = false, class
   if (!quote) {
     return (
       <div className={`text-gray-500 text-sm ${className}`}>
-        No data available
+        {showOnlyPrice || showOnlyChange ? '—' : 'No data available'}
       </div>
     )
   }
 
   const changeColor = quote.change >= 0 ? 'text-green-600' : 'text-red-600'
   const changeSymbol = quote.change >= 0 ? '+' : ''
+
+  // Price only mode for table cells
+  if (showOnlyPrice) {
+    return (
+      <div className={`text-sm text-gray-900 ${className}`}>
+        ${quote.price.toFixed(2)}
+      </div>
+    )
+  }
+
+  // Change only mode for table cells
+  if (showOnlyChange) {
+    return (
+      <div className={`text-sm ${changeColor} ${className}`}>
+        {changeSymbol}{quote.changePercent.toFixed(2)}%
+      </div>
+    )
+  }
 
   // Compact mode for header sections
   if (compact) {
