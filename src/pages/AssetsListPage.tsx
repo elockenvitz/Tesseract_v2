@@ -119,8 +119,8 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
             break
           case 'process_stage':
             const stageOrder = {
-              outdated: 1, initiated: 2, prioritized: 3, in_progress: 4,
-              recommend: 5, review: 6, action: 7, monitor: 8
+              outdated: 1, prioritized: 2, in_progress: 3,
+              recommend: 4, review: 5, action: 6, monitor: 7
             }
             aValue = stageOrder[a.process_stage as keyof typeof stageOrder] || 0
             bValue = stageOrder[b.process_stage as keyof typeof stageOrder] || 0
@@ -162,7 +162,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const getStageColor = (stage: string | null) => {
     switch (stage) {
       case 'outdated': return 'default'
-      case 'initiated': return 'error'
       case 'prioritized': return 'warning'
       case 'in_progress': return 'primary'
       case 'recommend': return 'warning'
@@ -181,7 +180,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const getStageLabel = (stage: string | null) => {
     switch (stage) {
       case 'outdated': return 'Outdated'
-      case 'initiated': return 'Initiated'
       case 'prioritized': return 'Prioritize'
       case 'in_progress': return 'Research'
       case 'recommend': return 'Recommend'
@@ -189,7 +187,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
       case 'action': return 'Action'
       case 'monitor': return 'Monitor'
       // Legacy mappings
-      case 'research': return 'Initiated'
+      case 'research': return 'Prioritize'
       case 'analysis': return 'Prioritize'
       case 'monitoring': return 'Monitor'
       case 'archived': return 'Action'
@@ -312,7 +310,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
                 options={[
                   { value: 'all', label: 'All Stages' },
                   { value: 'outdated', label: 'Outdated' },
-                  { value: 'initiated', label: 'Initiated' },
                   { value: 'prioritized', label: 'Prioritize' },
                   { value: 'in_progress', label: 'Research' },
                   { value: 'recommend', label: 'Recommend' },

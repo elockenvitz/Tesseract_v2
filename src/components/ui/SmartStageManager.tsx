@@ -1,10 +1,13 @@
 import React, { useState } from 'react'
-import { ChevronDown, Zap, Clock, Target, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react'
+import { ChevronDown, Zap, Clock, Target, TrendingUp, AlertTriangle, CheckCircle, Play } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
 import { Badge } from './Badge'
 
 interface SmartStageManagerProps {
   currentStage: string
   currentPriority: string
+  workflowId?: string
   onStageChange: (stage: string) => void
   onPriorityChange: (priority: string) => void
   onStageView?: (stage: string) => void
@@ -17,8 +20,20 @@ interface StageConfig {
   color: string
   icon: React.ElementType
   description: string
-  suggestedPriorities: PriorityLevel[]
-  urgencyFactor: number
+  suggestedPriorities: string[]
+  standard_deadline_days: number
+}
+
+interface WorkflowStage {
+  id: string
+  stage_key: string
+  stage_label: string
+  stage_description: string
+  stage_color: string
+  stage_icon: string
+  sort_order: number
+  standard_deadline_days: number
+  suggested_priorities: string[]
 }
 
 interface PriorityLevel {
@@ -27,6 +42,20 @@ interface PriorityLevel {
   color: string
   icon: React.ElementType
   description: string
+}
+
+// Icon mapping helper
+const getIconComponent = (iconName: string): React.ElementType => {
+  const iconMap: Record<string, React.ElementType> = {
+    'alert-triangle': AlertTriangle,
+    'zap': Zap,
+    'trending-up': TrendingUp,
+    'target': Target,
+    'check-circle': CheckCircle,
+    'clock': Clock,
+    'play': Play
+  }
+  return iconMap[iconName] || Clock
 }
 
 const PRIORITY_LEVELS: PriorityLevel[] = [
@@ -54,97 +83,27 @@ const PRIORITY_LEVELS: PriorityLevel[] = [
   {
     value: 'low',
     label: 'Low',
-    color: 'bg-gray-500 text-white',
+    color: 'bg-green-500 text-white',
     icon: Clock,
     description: 'Background monitoring'
-  },
-  {
-    value: 'maintenance',
-    label: 'Maintenance',
-    color: 'bg-green-600 text-white',
-    icon: CheckCircle,
-    description: 'Stable monitoring'
   }
 ]
 
-const STAGE_CONFIGS: StageConfig[] = [
-  {
-    id: 'outdated',
-    label: 'Outdated',
-    color: 'bg-gray-600',
-    icon: AlertTriangle,
-    description: 'Requires data refresh',
-    suggestedPriorities: ['low', 'medium'],
-    urgencyFactor: 0.3
-  },
-  {
-    id: 'initiated',
-    label: 'Initiated',
-    color: 'bg-red-600',
-    icon: Target,
-    description: 'Starting research',
-    suggestedPriorities: ['medium', 'high'],
-    urgencyFactor: 0.7
-  },
-  {
-    id: 'prioritized',
-    label: 'Prioritize',
-    color: 'bg-orange-600',
-    icon: Zap,
-    description: 'Active focus required',
-    suggestedPriorities: ['high', 'critical'],
-    urgencyFactor: 0.8
-  },
-  {
-    id: 'in_progress',
-    label: 'Research',
-    color: 'bg-blue-500',
-    icon: TrendingUp,
-    description: 'Deep analysis underway',
-    suggestedPriorities: ['high', 'critical'],
-    urgencyFactor: 0.9
-  },
-  {
-    id: 'recommend',
-    label: 'Recommend',
-    color: 'bg-yellow-500',
-    icon: Target,
-    description: 'Preparing recommendation',
-    suggestedPriorities: ['high', 'critical'],
-    urgencyFactor: 0.8
-  },
-  {
-    id: 'review',
-    label: 'Review',
-    color: 'bg-green-400',
-    icon: CheckCircle,
-    description: 'Committee review',
-    suggestedPriorities: ['medium', 'high'],
-    urgencyFactor: 0.6
-  },
-  {
-    id: 'action',
-    label: 'Action',
-    color: 'bg-green-700',
-    icon: Zap,
-    description: 'Execution phase',
-    suggestedPriorities: ['high', 'critical'],
-    urgencyFactor: 0.8
-  },
-  {
-    id: 'monitor',
-    label: 'Monitor',
-    color: 'bg-teal-500',
-    icon: TrendingUp,
-    description: 'Ongoing tracking',
-    suggestedPriorities: ['low', 'medium', 'maintenance'],
-    urgencyFactor: 0.3
-  }
-]
+// Helper function to convert workflow stage to stage config
+const convertWorkflowStageToConfig = (stage: WorkflowStage): StageConfig => ({
+  id: stage.stage_key,
+  label: stage.stage_label,
+  color: `bg-${stage.stage_color}`,
+  icon: getIconComponent(stage.stage_icon),
+  description: stage.stage_description,
+  suggestedPriorities: stage.suggested_priorities,
+  standard_deadline_days: stage.standard_deadline_days
+})
 
 export function SmartStageManager({
   currentStage,
   currentPriority,
+  workflowId,
   onStageChange,
   onPriorityChange,
   onStageView,
@@ -152,7 +111,54 @@ export function SmartStageManager({
 }: SmartStageManagerProps) {
   const [isOpen, setIsOpen] = useState(false)
 
-  const currentStageConfig = STAGE_CONFIGS.find(s => s.id === currentStage) || STAGE_CONFIGS[1]
+  // Fetch workflow stages dynamically
+  const { data: workflowStages } = useQuery({
+    queryKey: ['workflow-stages', workflowId],
+    queryFn: async () => {
+      if (!workflowId) {
+        // Fall back to default workflow if no workflowId provided
+        const { data: defaultWorkflow } = await supabase
+          .from('workflows')
+          .select('id')
+          .eq('is_default', true)
+          .single()
+
+        if (!defaultWorkflow) return []
+
+        const { data: stages, error } = await supabase
+          .from('workflow_stages')
+          .select('*')
+          .eq('workflow_id', defaultWorkflow.id)
+          .order('sort_order')
+
+        if (error) throw error
+        return stages as WorkflowStage[]
+      }
+
+      const { data: stages, error } = await supabase
+        .from('workflow_stages')
+        .select('*')
+        .eq('workflow_id', workflowId)
+        .order('sort_order')
+
+      if (error) throw error
+      return stages as WorkflowStage[]
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Convert workflow stages to stage configs
+  const STAGE_CONFIGS = workflowStages ? workflowStages.map(convertWorkflowStageToConfig) : []
+
+  const currentStageConfig = STAGE_CONFIGS.find(s => s.id === currentStage) || STAGE_CONFIGS[0] || {
+    id: 'loading',
+    label: 'Loading...',
+    color: 'bg-gray-400',
+    icon: Clock,
+    description: 'Loading stage information',
+    suggestedPriorities: [],
+    standard_deadline_days: 7
+  }
   const currentPriorityConfig = PRIORITY_LEVELS.find(p => p.value === currentPriority) || PRIORITY_LEVELS[2]
 
   const handleStageSelect = (stageId: string) => {
@@ -170,33 +176,45 @@ export function SmartStageManager({
 
   return (
     <div className={`relative ${className}`}>
-      {/* Main Display */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-4 px-6 py-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 hover:shadow-md transition-all duration-200 min-w-[280px]"
-      >
-        {/* Stage Indicator */}
-        <div className="flex items-center space-x-3">
-          <div className={`w-6 h-6 rounded-full ${currentStageConfig.color} flex items-center justify-center shadow-sm`}>
-            <currentStageConfig.icon className="w-3 h-3 text-white" />
-          </div>
-          <div className="text-left">
-            <div className="text-sm font-semibold text-gray-800">{currentStageConfig.label}</div>
-            <div className="text-xs text-gray-500">{currentStageConfig.description}</div>
-          </div>
-        </div>
+      <div className="flex items-center space-x-2">
+        {/* Initiate Research Button for Outdated Stage - Small Square */}
+        {currentStage === 'outdated' && (
+          <button
+            onClick={() => onStageChange('prioritized')}
+            className="w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm flex items-center justify-center"
+            title="Initiate Research"
+          >
+            <Play className="w-4 h-4" />
+          </button>
+        )}
 
-        {/* Priority Indicator */}
-        <div className="flex items-center space-x-2">
-          <div className={`px-2 py-1 rounded-lg text-xs font-medium ${currentPriorityConfig.color} flex items-center space-x-1`}>
-            <currentPriorityConfig.icon className="w-3 h-3" />
-            <span>{currentPriorityConfig.label}</span>
+        {/* Main Display */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center space-x-4 px-6 py-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 hover:shadow-md transition-all duration-200 min-w-[280px]"
+        >
+          {/* Stage Indicator */}
+          <div className="flex items-center space-x-3">
+            <div className={`w-6 h-6 rounded-full ${currentStageConfig.color} flex items-center justify-center shadow-sm`}>
+              <currentStageConfig.icon className="w-3 h-3 text-white" />
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-gray-800">{currentStageConfig.label}</div>
+              <div className="text-xs text-gray-500">{currentStageConfig.description}</div>
+            </div>
           </div>
-        </div>
 
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
+          {/* Priority Indicator */}
+          <div className="flex items-center space-x-2">
+            <div className={`px-2 py-1 rounded-lg text-xs font-medium ${currentPriorityConfig.color} flex items-center space-x-1`}>
+              <currentPriorityConfig.icon className="w-3 h-3" />
+              <span>{currentPriorityConfig.label}</span>
+            </div>
+          </div>
 
+          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
 
       {/* Dropdown */}
       {isOpen && (
@@ -210,12 +228,10 @@ export function SmartStageManager({
           {/* Dropdown Content */}
           <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden">
             <div className="p-4">
-              <div className="text-sm font-semibold text-gray-900 mb-3">Research Stage & Priority</div>
-
               {/* Priority Selection */}
               <div className="mb-4">
                 <div className="text-sm font-medium text-gray-700 mb-3">Set Priority:</div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {PRIORITY_LEVELS.map((priority) => (
                     <button
                       key={priority.value}

@@ -1,0 +1,1072 @@
+import React, { useState } from 'react'
+import { X, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown, Palette, Eye, Workflow, Settings2, Users, UserPlus, UserMinus } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
+import { Button } from './Button'
+import { Badge } from './Badge'
+
+interface WorkflowManagerProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+interface Workflow {
+  id: string
+  name: string
+  description: string
+  color: string
+  is_default: boolean
+  is_public: boolean
+  created_by: string
+  cadence_days: number
+}
+
+interface WorkflowStage {
+  id: string
+  workflow_id: string
+  stage_key: string
+  stage_label: string
+  stage_description: string
+  stage_color: string
+  stage_icon: string
+  sort_order: number
+  standard_deadline_days: number
+  suggested_priorities: string[]
+}
+
+interface WorkflowCollaboration {
+  id: string
+  workflow_id: string
+  user_id: string
+  permission: 'read' | 'write' | 'admin'
+  invited_by: string
+  created_at: string
+  user?: {
+    email: string
+    first_name?: string
+    last_name?: string
+  }
+}
+
+interface User {
+  id: string
+  email: string
+  first_name?: string
+  last_name?: string
+}
+
+const ICON_OPTIONS = [
+  'clock', 'alert-triangle', 'zap', 'trending-up', 'target', 'check-circle',
+  'play', 'pause', 'stop', 'fast-forward', 'rewind', 'flag', 'star',
+  'activity', 'bar-chart', 'pie-chart', 'eye', 'search', 'filter'
+]
+
+const COLOR_OPTIONS = [
+  'gray-600', 'red-600', 'orange-600', 'yellow-500', 'green-400', 'green-700',
+  'blue-500', 'blue-600', 'indigo-600', 'purple-600', 'pink-600', 'teal-500'
+]
+
+export function WorkflowManager({ isOpen, onClose }: WorkflowManagerProps) {
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null)
+  const [editingWorkflow, setEditingWorkflow] = useState<Partial<Workflow> | null>(null)
+  const [editingStages, setEditingStages] = useState<WorkflowStage[]>([])
+  const [isCreatingNew, setIsCreatingNew] = useState(false)
+  const [showCollaborators, setShowCollaborators] = useState(false)
+  const [newCollaboratorEmail, setNewCollaboratorEmail] = useState('')
+  const [newCollaboratorPermission, setNewCollaboratorPermission] = useState<'read' | 'write' | 'admin'>('read')
+  const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([])
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const queryClient = useQueryClient()
+
+  const { data: workflows, isLoading } = useQuery({
+    queryKey: ['workflows'],
+    queryFn: async () => {
+      console.log('Fetching workflows...')
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+      console.log('User ID:', userId)
+
+      let query = supabase
+        .from('workflows')
+        .select('*')
+
+      if (userId) {
+        // Get shared workflow IDs first
+        const sharedIds = await getSharedWorkflowIds(userId)
+        console.log('Shared workflow IDs:', sharedIds)
+
+        // Build the OR condition based on what we have
+        if (sharedIds.length > 0) {
+          // Get workflows the user owns, public workflows, or workflows shared with them
+          query = query.or(`is_public.eq.true,created_by.eq.${userId},id.in.(${sharedIds.join(',')})`)
+        } else {
+          // Get workflows the user owns or public workflows
+          query = query.or(`is_public.eq.true,created_by.eq.${userId}`)
+        }
+      } else {
+        // If no user, only show public workflows
+        console.log('No user ID, showing only public workflows')
+        query = query.eq('is_public', true)
+      }
+
+      const { data, error } = await query
+        .order('is_default', { ascending: false })
+        .order('name')
+
+      console.log('Workflows query result:', { data, error })
+
+      if (error) {
+        console.error('Workflows fetch error:', error)
+        throw error
+      }
+
+      console.log('Returning workflows:', data)
+      return data as Workflow[]
+    },
+    enabled: isOpen
+  })
+
+  // Helper function to get workflow IDs shared with the user
+  const getSharedWorkflowIds = async (userId: string | undefined) => {
+    if (!userId) return []
+
+    const { data, error } = await supabase
+      .from('workflow_collaborations')
+      .select('workflow_id')
+      .eq('user_id', userId)
+
+    if (error) return []
+
+    return data.map(collab => collab.workflow_id)
+  }
+
+  const { data: workflowStages } = useQuery({
+    queryKey: ['workflow-stages', selectedWorkflow],
+    queryFn: async () => {
+      if (!selectedWorkflow) return []
+
+      const { data, error } = await supabase
+        .from('workflow_stages')
+        .select('*')
+        .eq('workflow_id', selectedWorkflow)
+        .order('sort_order')
+
+      if (error) throw error
+      return data as WorkflowStage[]
+    },
+    enabled: !!selectedWorkflow
+  })
+
+  const { data: collaborations } = useQuery({
+    queryKey: ['workflow-collaborations', selectedWorkflow],
+    queryFn: async () => {
+      if (!selectedWorkflow) return []
+
+      const { data, error } = await supabase
+        .from('workflow_collaborations')
+        .select(`
+          *,
+          user:users(email, first_name, last_name)
+        `)
+        .eq('workflow_id', selectedWorkflow)
+        .order('created_at')
+
+      if (error) throw error
+      return data as WorkflowCollaboration[]
+    },
+    enabled: !!selectedWorkflow
+  })
+
+  const { data: allUsers } = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .order('email')
+
+      if (error) throw error
+      return data as User[]
+    },
+    enabled: isOpen
+  })
+
+  const createWorkflowMutation = useMutation({
+    mutationFn: async (workflowData: { workflow: Partial<Workflow>, stages: Partial<WorkflowStage>[] }) => {
+      console.log('Creating workflow:', workflowData)
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('User not authenticated')
+
+      // Create workflow with created_by field
+      const workflowToInsert = {
+        ...workflowData.workflow,
+        created_by: user.id
+      }
+
+      const { data: newWorkflow, error: workflowError } = await supabase
+        .from('workflows')
+        .insert([workflowToInsert])
+        .select()
+        .single()
+
+      if (workflowError) {
+        console.error('Workflow creation error:', workflowError)
+        throw workflowError
+      }
+
+      console.log('Created workflow:', newWorkflow)
+
+      // Create stages
+      const stagesWithWorkflowId = workflowData.stages.map(stage => ({
+        ...stage,
+        workflow_id: newWorkflow.id
+      }))
+
+      console.log('Creating stages:', stagesWithWorkflowId)
+
+      const { error: stagesError } = await supabase
+        .from('workflow_stages')
+        .insert(stagesWithWorkflowId)
+
+      if (stagesError) {
+        console.error('Stages creation error:', stagesError)
+        throw stagesError
+      }
+
+      return newWorkflow
+    },
+    onSuccess: () => {
+      console.log('Workflow created successfully')
+      // Force refresh the workflows list with multiple invalidation strategies
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
+      // Also force an immediate refetch
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ['workflows'] })
+      }, 100)
+      setIsCreatingNew(false)
+      setEditingWorkflow(null)
+      setEditingStages([])
+    },
+    onError: (error) => {
+      console.error('Create workflow mutation error:', error)
+      alert(`Failed to create workflow: ${error.message}`)
+    }
+  })
+
+  const updateWorkflowMutation = useMutation({
+    mutationFn: async (workflowData: { workflow: Partial<Workflow>, stages: WorkflowStage[] }) => {
+      console.log('Updating workflow:', workflowData)
+
+      // Update workflow
+      const { error: workflowError } = await supabase
+        .from('workflows')
+        .update(workflowData.workflow)
+        .eq('id', workflowData.workflow.id)
+
+      if (workflowError) {
+        console.error('Workflow update error:', workflowError)
+        throw workflowError
+      }
+
+      console.log('Updated workflow')
+
+      // Delete existing stages
+      const { error: deleteError } = await supabase
+        .from('workflow_stages')
+        .delete()
+        .eq('workflow_id', workflowData.workflow.id)
+
+      if (deleteError) {
+        console.error('Stage deletion error:', deleteError)
+        throw deleteError
+      }
+
+      console.log('Deleted existing stages')
+
+      // Insert updated stages
+      const { error: stagesError } = await supabase
+        .from('workflow_stages')
+        .insert(workflowData.stages)
+
+      if (stagesError) {
+        console.error('Stage insertion error:', stagesError)
+        throw stagesError
+      }
+
+      console.log('Inserted updated stages')
+    },
+    onSuccess: () => {
+      console.log('Workflow updated successfully')
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
+      setEditingWorkflow(null)
+      setEditingStages([])
+    },
+    onError: (error) => {
+      console.error('Update workflow mutation error:', error)
+      alert(`Failed to update workflow: ${error.message}`)
+    }
+  })
+
+  const deleteWorkflowMutation = useMutation({
+    mutationFn: async (workflowId: string) => {
+      const { error } = await supabase
+        .from('workflows')
+        .delete()
+        .eq('id', workflowId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      setSelectedWorkflow(null)
+      setEditingWorkflow(null)
+      setEditingStages([])
+      setIsCreatingNew(false)
+    }
+  })
+
+  const addCollaboratorMutation = useMutation({
+    mutationFn: async ({ workflowId, userId, permission }: { workflowId: string, userId: string, permission: string }) => {
+      // Add collaboration
+      const { error } = await supabase
+        .from('workflow_collaborations')
+        .insert([{
+          workflow_id: workflowId,
+          user_id: userId,
+          permission,
+          invited_by: (await supabase.auth.getUser()).data.user?.id
+        }])
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-collaborations'] })
+      setNewCollaboratorEmail('')
+      setSelectedUser(null)
+      setShowUserDropdown(false)
+      setFilteredUsers([])
+    }
+  })
+
+  const removeCollaboratorMutation = useMutation({
+    mutationFn: async (collaborationId: string) => {
+      const { error } = await supabase
+        .from('workflow_collaborations')
+        .delete()
+        .eq('id', collaborationId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-collaborations'] })
+    }
+  })
+
+  const updateCollaboratorMutation = useMutation({
+    mutationFn: async ({ collaborationId, permission }: { collaborationId: string, permission: string }) => {
+      const { error } = await supabase
+        .from('workflow_collaborations')
+        .update({ permission })
+        .eq('id', collaborationId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-collaborations'] })
+    }
+  })
+
+  const handleCreateNew = () => {
+    setIsCreatingNew(true)
+    setEditingWorkflow({
+      name: '',
+      description: '',
+      color: '#3b82f6',
+      is_default: false,
+      is_public: false,
+      cadence_days: 365
+    })
+    setEditingStages([
+      {
+        id: crypto.randomUUID(),
+        workflow_id: '',
+        stage_key: 'stage_1',
+        stage_label: 'Stage 1',
+        stage_description: '',
+        stage_color: 'blue-500',
+        stage_icon: 'clock',
+        sort_order: 1,
+        standard_deadline_days: 7,
+        suggested_priorities: ['medium']
+      }
+    ])
+  }
+
+  const handleEditWorkflow = (workflow: Workflow) => {
+    setEditingWorkflow(workflow)
+    setEditingStages(workflowStages || [])
+    setIsCreatingNew(false)
+  }
+
+  const handleSaveWorkflow = () => {
+    console.log('handleSaveWorkflow called')
+    console.log('editingWorkflow:', editingWorkflow)
+    console.log('editingStages:', editingStages)
+    console.log('isCreatingNew:', isCreatingNew)
+
+    if (!editingWorkflow) {
+      console.log('No editing workflow, returning')
+      return
+    }
+
+    if (isCreatingNew) {
+      console.log('Creating new workflow')
+      createWorkflowMutation.mutate({
+        workflow: editingWorkflow,
+        stages: editingStages
+      })
+    } else {
+      console.log('Updating existing workflow')
+      updateWorkflowMutation.mutate({
+        workflow: editingWorkflow,
+        stages: editingStages
+      })
+    }
+  }
+
+  const addStage = () => {
+    const newStage: WorkflowStage = {
+      id: crypto.randomUUID(),
+      workflow_id: editingWorkflow?.id || '',
+      stage_key: `stage_${editingStages.length + 1}`,
+      stage_label: `Stage ${editingStages.length + 1}`,
+      stage_description: '',
+      stage_color: 'gray-500',
+      stage_icon: 'clock',
+      sort_order: editingStages.length + 1,
+      standard_deadline_days: 7,
+      suggested_priorities: ['medium']
+    }
+    setEditingStages([...editingStages, newStage])
+  }
+
+  const updateStage = (index: number, updates: Partial<WorkflowStage>) => {
+    const updated = [...editingStages]
+    updated[index] = { ...updated[index], ...updates }
+    setEditingStages(updated)
+  }
+
+  const removeStage = (index: number) => {
+    const updated = editingStages.filter((_, i) => i !== index)
+    // Reorder sort_order
+    updated.forEach((stage, i) => {
+      stage.sort_order = i + 1
+    })
+    setEditingStages(updated)
+  }
+
+  const moveStage = (index: number, direction: 'up' | 'down') => {
+    const updated = [...editingStages]
+    const newIndex = direction === 'up' ? index - 1 : index + 1
+
+    if (newIndex < 0 || newIndex >= updated.length) return
+
+    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]]
+
+    // Update sort_order
+    updated.forEach((stage, i) => {
+      stage.sort_order = i + 1
+    })
+
+    setEditingStages(updated)
+  }
+
+  const handleUserSearch = (searchTerm: string) => {
+    setNewCollaboratorEmail(searchTerm)
+    setSelectedUser(null)
+
+    if (searchTerm.trim().length < 2) {
+      setFilteredUsers([])
+      setShowUserDropdown(false)
+      return
+    }
+
+    if (allUsers) {
+      const filtered = allUsers.filter(user => {
+        const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim().toLowerCase()
+        const email = user.email.toLowerCase()
+        const search = searchTerm.toLowerCase()
+
+        return fullName.includes(search) || email.includes(search)
+      }).slice(0, 5) // Limit to 5 results
+
+      setFilteredUsers(filtered)
+      setShowUserDropdown(filtered.length > 0)
+    }
+  }
+
+  const handleUserSelect = (user: User) => {
+    setSelectedUser(user)
+    setNewCollaboratorEmail(`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email)
+    setShowUserDropdown(false)
+    setFilteredUsers([])
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <Settings2 className="w-6 h-6 text-blue-600" />
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Workflow Management</h2>
+              <p className="text-sm text-gray-500">Create and customize workflows for your team</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex h-[calc(90vh-120px)]">
+          {/* Workflow List */}
+          <div className="w-1/3 border-r border-gray-200 p-4 overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-gray-900">Workflows</h3>
+              <Button
+                size="sm"
+                onClick={handleCreateNew}
+                className="flex items-center space-x-1"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New</span>
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              {workflows?.map((workflow) => (
+                <div
+                  key={workflow.id}
+                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                    selectedWorkflow === workflow.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  onClick={() => setSelectedWorkflow(workflow.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: workflow.color }}
+                      />
+                      <span className="font-medium text-sm">{workflow.name}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      {workflow.is_default && (
+                        <Badge variant="secondary" size="sm">Default</Badge>
+                      )}
+                      {workflow.is_public && (
+                        <Badge variant="success" size="sm">Public</Badge>
+                      )}
+                    </div>
+                  </div>
+                  {workflow.description && (
+                    <p className="text-xs text-gray-500 mt-1">{workflow.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Workflow Editor */}
+          <div className="flex-1 p-6 overflow-y-auto">
+            {editingWorkflow ? (
+              <div className="space-y-6">
+                {/* Workflow Details */}
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-4">
+                    {isCreatingNew ? 'Create New Workflow' : 'Edit Workflow'}
+                  </h4>
+
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Workflow Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editingWorkflow.name || ''}
+                        onChange={(e) => setEditingWorkflow({ ...editingWorkflow, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter workflow name"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Color
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="color"
+                          value={editingWorkflow.color || '#3b82f6'}
+                          onChange={(e) => setEditingWorkflow({ ...editingWorkflow, color: e.target.value })}
+                          className="w-10 h-10 rounded-lg border border-gray-300"
+                        />
+                        <input
+                          type="text"
+                          value={editingWorkflow.color || '#3b82f6'}
+                          onChange={(e) => setEditingWorkflow({ ...editingWorkflow, color: e.target.value })}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Cadence (Days)
+                      </label>
+                      <input
+                        type="number"
+                        min="30"
+                        max="1095"
+                        value={editingWorkflow.cadence_days || 365}
+                        onChange={(e) => setEditingWorkflow({ ...editingWorkflow, cadence_days: parseInt(e.target.value) || 365 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="How often to restart workflow"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={editingWorkflow.description || ''}
+                      onChange={(e) => setEditingWorkflow({ ...editingWorkflow, description: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      rows={3}
+                      placeholder="Describe this workflow..."
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-4 mb-6">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={editingWorkflow.is_public || false}
+                        onChange={(e) => setEditingWorkflow({ ...editingWorkflow, is_public: e.target.checked })}
+                        className="mr-2 rounded"
+                      />
+                      <span className="text-sm text-gray-700">Make public (visible to all users)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Tabs */}
+                <div>
+                  <div className="border-b border-gray-200 mb-6">
+                    <nav className="-mb-px flex space-x-8">
+                      <button
+                        onClick={() => setShowCollaborators(false)}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                          !showCollaborators
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <Settings2 className="w-4 h-4 mr-1 inline" />
+                        Stages
+                      </button>
+                      {!editingWorkflow.is_public && (
+                        <button
+                          onClick={() => setShowCollaborators(true)}
+                          className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            showCollaborators
+                              ? 'border-blue-500 text-blue-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          <Users className="w-4 h-4 mr-1 inline" />
+                          Collaborators
+                        </button>
+                      )}
+                    </nav>
+                  </div>
+
+                  {!showCollaborators || editingWorkflow.is_public ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium text-gray-900">Workflow Stages</h4>
+                        <Button size="sm" onClick={addStage}>
+                          <Plus className="w-4 h-4 mr-1" />
+                          Add Stage
+                        </Button>
+                      </div>
+
+                  <div className="space-y-4">
+                    {editingStages.map((stage, index) => (
+                      <div key={stage.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-medium text-sm text-gray-700">Stage {index + 1}</span>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => moveStage(index, 'up')}
+                              disabled={index === 0}
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                            >
+                              <ArrowUp className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => moveStage(index, 'down')}
+                              disabled={index === editingStages.length - 1}
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                            >
+                              <ArrowDown className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => removeStage(index)}
+                              className="p-1 text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Stage Key
+                            </label>
+                            <input
+                              type="text"
+                              value={stage.stage_key}
+                              onChange={(e) => updateStage(index, { stage_key: e.target.value })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Display Label
+                            </label>
+                            <input
+                              type="text"
+                              value={stage.stage_label}
+                              onChange={(e) => updateStage(index, { stage_label: e.target.value })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Standard Deadline (Days)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="365"
+                              value={stage.standard_deadline_days}
+                              onChange={(e) => updateStage(index, { standard_deadline_days: parseInt(e.target.value) || 7 })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              placeholder="Days to complete this stage"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Description
+                          </label>
+                          <input
+                            type="text"
+                            value={stage.stage_description}
+                            onChange={(e) => updateStage(index, { stage_description: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                            placeholder="Brief description of this stage..."
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 mt-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Color
+                            </label>
+                            <select
+                              value={stage.stage_color}
+                              onChange={(e) => updateStage(index, { stage_color: e.target.value })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                            >
+                              {COLOR_OPTIONS.map(color => (
+                                <option key={color} value={color}>{color}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Icon
+                            </label>
+                            <select
+                              value={stage.stage_icon}
+                              onChange={(e) => updateStage(index, { stage_icon: e.target.value })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                            >
+                              {ICON_OPTIONS.map(icon => (
+                                <option key={icon} value={icon}>{icon}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium text-gray-900">Collaborators</h4>
+                        <div className="flex items-center space-x-2">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="Search by name or email"
+                              value={newCollaboratorEmail}
+                              onChange={(e) => handleUserSearch(e.target.value)}
+                              onFocus={() => {
+                                if (filteredUsers.length > 0) setShowUserDropdown(true)
+                              }}
+                              onBlur={() => {
+                                // Delay hiding dropdown to allow clicks
+                                setTimeout(() => setShowUserDropdown(false), 200)
+                              }}
+                              className="px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
+                            />
+
+                            {/* Search Results Dropdown */}
+                            {showUserDropdown && filteredUsers.length > 0 && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-40 overflow-y-auto">
+                                {filteredUsers.map((user) => (
+                                  <button
+                                    key={user.id}
+                                    onClick={() => handleUserSelect(user)}
+                                    className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                  >
+                                    <div className="text-sm font-medium text-gray-900">
+                                      {user.first_name && user.last_name
+                                        ? `${user.first_name} ${user.last_name}`
+                                        : user.email
+                                      }
+                                    </div>
+                                    <div className="text-xs text-gray-500">{user.email}</div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <select
+                            value={newCollaboratorPermission}
+                            onChange={(e) => setNewCollaboratorPermission(e.target.value as 'read' | 'write' | 'admin')}
+                            className="px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="read">Read</option>
+                            <option value="write">Write</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              if (selectedUser) {
+                                addCollaboratorMutation.mutate({
+                                  workflowId: editingWorkflow.id!,
+                                  userId: selectedUser.id,
+                                  permission: newCollaboratorPermission
+                                })
+                              }
+                            }}
+                            disabled={!selectedUser || !editingWorkflow.id}
+                          >
+                            <UserPlus className="w-4 h-4 mr-1" />
+                            Add
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {collaborations?.map((collab) => (
+                          <div key={collab.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                                <Users className="w-4 h-4 text-gray-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {collab.user?.first_name && collab.user?.last_name
+                                    ? `${collab.user.first_name} ${collab.user.last_name}`
+                                    : collab.user?.email
+                                  }
+                                </p>
+                                <p className="text-xs text-gray-500">{collab.user?.email}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <select
+                                value={collab.permission}
+                                onChange={(e) => updateCollaboratorMutation.mutate({
+                                  collaborationId: collab.id,
+                                  permission: e.target.value
+                                })}
+                                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              >
+                                <option value="read">Read</option>
+                                <option value="write">Write</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <button
+                                onClick={() => removeCollaboratorMutation.mutate(collab.id)}
+                                className="p-1 text-gray-400 hover:text-red-600"
+                              >
+                                <UserMinus className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {(!collaborations || collaborations.length === 0) && (
+                          <div className="text-center py-8 text-gray-500">
+                            <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                            <p>No collaborators yet</p>
+                            <p className="text-sm">Add users above to share this workflow</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+                  <div>
+                    {!isCreatingNew && !editingWorkflow.is_default && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => {
+                          if (editingWorkflow.id && confirm('Are you sure you want to delete this workflow?')) {
+                            deleteWorkflowMutation.mutate(editingWorkflow.id)
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Delete Workflow
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setEditingWorkflow(null)
+                        setEditingStages([])
+                        setIsCreatingNew(false)
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSaveWorkflow}
+                      disabled={!editingWorkflow.name || editingStages.length === 0}
+                    >
+                      <Save className="w-4 h-4 mr-1" />
+                      Save Workflow
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : selectedWorkflow && workflowStages ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-gray-900">Workflow Details</h4>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const workflow = workflows?.find(w => w.id === selectedWorkflow)
+                      if (workflow) handleEditWorkflow(workflow)
+                    }}
+                  >
+                    <Edit className="w-4 h-4 mr-1" />
+                    Edit
+                  </Button>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Name:</span>
+                      <p className="text-sm text-gray-900">{workflows?.find(w => w.id === selectedWorkflow)?.name}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Stages:</span>
+                      <p className="text-sm text-gray-900">{workflowStages.length} stages</p>
+                    </div>
+                  </div>
+                  {workflows?.find(w => w.id === selectedWorkflow)?.description && (
+                    <div className="mt-3">
+                      <span className="text-sm font-medium text-gray-700">Description:</span>
+                      <p className="text-sm text-gray-900">{workflows?.find(w => w.id === selectedWorkflow)?.description}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h5 className="font-medium text-gray-900 mb-3">Stages</h5>
+                  <div className="space-y-3">
+                    {workflowStages.map((stage, index) => (
+                      <div key={stage.id} className="flex items-center space-x-4 p-3 border border-gray-200 rounded-lg">
+                        <div className="flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full text-sm font-medium text-gray-600">
+                          {index + 1}
+                        </div>
+                        <div className={`w-4 h-4 rounded-full bg-${stage.stage_color}`}></div>
+                        <div className="flex-1">
+                          <div className="font-medium text-sm text-gray-900">{stage.stage_label}</div>
+                          {stage.stage_description && (
+                            <div className="text-xs text-gray-500">{stage.stage_description}</div>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Deadline: {stage.standard_deadline_days} days
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="text-center">
+                  <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <p>Select a workflow to view details or create a new one</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

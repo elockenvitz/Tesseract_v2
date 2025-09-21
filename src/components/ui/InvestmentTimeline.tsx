@@ -1,9 +1,12 @@
 import React, { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Check, ArrowRight, Info, AlertTriangle, Calendar, Users, MessageSquare, X } from 'lucide-react'
+import { Check, Info, AlertTriangle, Calendar, Users, MessageSquare, X, Plus, Trash2, Edit3, Paperclip, Upload, Download, FileText, ChevronDown, Zap, Target, Clock, Play, Square } from 'lucide-react'
 import { Badge } from './Badge'
+import { BadgeSelect } from './BadgeSelect'
 import { Button } from './Button'
 import { Card } from './Card'
+import { OutdatedStageView } from './OutdatedStageView'
+import { StageDeadlineManager } from './StageDeadlineManager'
 import { supabase } from '../../lib/supabase'
 
 interface ChecklistItem {
@@ -12,6 +15,19 @@ interface ChecklistItem {
   completed: boolean
   comment?: string
   completedAt?: string
+  isCustom?: boolean
+  sortOrder?: number
+  attachments?: ChecklistAttachment[]
+}
+
+interface ChecklistAttachment {
+  id: string
+  file_name: string
+  file_path: string
+  file_size?: number
+  file_type?: string
+  uploaded_by?: string
+  uploaded_at: string
 }
 
 interface TimelineStage {
@@ -30,6 +46,9 @@ interface InvestmentTimelineProps {
   assetId?: string
   viewingStageId?: string | null
   onViewingStageChange?: (stageId: string | null) => void
+  workflowId?: string
+  currentPriority?: string // kept for backward compatibility but not used
+  onPriorityChange?: (priority: string) => void // kept for backward compatibility but not used
 }
 
 const TIMELINE_STAGES: TimelineStage[] = [
@@ -37,26 +56,7 @@ const TIMELINE_STAGES: TimelineStage[] = [
     id: 'outdated',
     label: 'Outdated',
     description: 'Asset research needs to be refreshed or updated',
-    checklist: [
-      { id: 'review_financials', text: 'Review latest financial statements', completed: false },
-      { id: 'update_models', text: 'Update financial models with recent data', completed: false },
-      { id: 'check_earnings', text: 'Review recent earnings releases', completed: false },
-      { id: 'market_conditions', text: 'Assess current market conditions', completed: false },
-      { id: 'competitive_landscape', text: 'Update competitive landscape analysis', completed: false }
-    ]
-  },
-  {
-    id: 'initiated',
-    label: 'Initiated',
-    description: 'Initial idea captured, basic research started',
-    checklist: [
-      { id: 'basic_profile', text: 'Create basic company profile', completed: false },
-      { id: 'initial_thesis', text: 'Draft initial investment thesis', completed: false },
-      { id: 'assign_analyst', text: 'Assign primary research analyst', completed: false },
-      { id: 'setup_models', text: 'Set up basic financial models', completed: false },
-      { id: 'industry_overview', text: 'Complete industry overview research', completed: false },
-      { id: 'key_metrics', text: 'Identify key performance metrics', completed: false }
-    ]
+    checklist: []
   },
   {
     id: 'prioritized',
@@ -147,13 +147,225 @@ export function InvestmentTimeline({
   className = '',
   assetId,
   viewingStageId,
-  onViewingStageChange
+  onViewingStageChange,
+  workflowId,
+  currentPriority = 'none',
+  onPriorityChange
 }: InvestmentTimelineProps) {
   const [showStageDetails, setShowStageDetails] = useState<string | null>(null)
   const [stageChecklists, setStageChecklists] = useState<Record<string, ChecklistItem[]>>({})
   const [commentingItem, setCommentingItem] = useState<{stageId: string, itemId: string} | null>(null)
   const [commentText, setCommentText] = useState('')
+  const [addingItemToStage, setAddingItemToStage] = useState<string | null>(null)
+  const [newItemText, setNewItemText] = useState('')
+  const [uploadingFiles, setUploadingFiles] = useState<{[key: string]: boolean}>({})
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
+  const [showStopConfirmation, setShowStopConfirmation] = useState(false)
   const queryClient = useQueryClient()
+
+  // Helper function to get default checklist items for a stage
+  const getDefaultChecklistForStage = (stageKey: string): ChecklistItem[] => {
+    // Find the corresponding hardcoded stage for default checklist items
+    const defaultStage = TIMELINE_STAGES.find(s => s.id === stageKey)
+    return defaultStage?.checklist || []
+  }
+
+  // Query to load workflow stages
+  const { data: workflowStages } = useQuery({
+    queryKey: ['workflow-stages', workflowId],
+    queryFn: async () => {
+      if (!workflowId) return []
+
+      const { data, error } = await supabase
+        .from('workflow_stages')
+        .select('*')
+        .eq('workflow_id', workflowId)
+        .order('sort_order')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!workflowId
+  })
+
+  // Query to load workflow-specific priority for this asset
+  const { data: workflowPriority } = useQuery({
+    queryKey: ['asset-workflow-priority', assetId, workflowId],
+    queryFn: async () => {
+      if (!assetId || !workflowId) return null
+
+      const { data, error } = await supabase
+        .from('asset_workflow_priorities')
+        .select('priority')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error
+      }
+
+      return data?.priority || 'medium' // default to medium if no priority set
+    },
+    enabled: !!assetId && !!workflowId
+  })
+
+  // Query to load workflow-specific progress for this asset
+  const { data: workflowProgress } = useQuery({
+    queryKey: ['asset-workflow-progress', assetId, workflowId],
+    queryFn: async () => {
+      if (!assetId || !workflowId) return null
+
+      const { data, error } = await supabase
+        .from('asset_workflow_progress')
+        .select('*')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error
+      }
+
+      return data
+    },
+    enabled: !!assetId && !!workflowId
+  })
+
+  // Use workflow-specific priority if available, otherwise fall back to asset priority
+  const effectivePriority = workflowPriority || currentPriority
+
+  // Mutation to save workflow-specific priority
+  const saveWorkflowPriorityMutation = useMutation({
+    mutationFn: async ({ assetId, workflowId, priority }: {
+      assetId: string
+      workflowId: string
+      priority: string
+    }) => {
+      const { error } = await supabase
+        .from('asset_workflow_priorities')
+        .upsert({
+          asset_id: assetId,
+          workflow_id: workflowId,
+          priority
+        }, {
+          onConflict: 'asset_id,workflow_id'
+        })
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-priority', assetId, workflowId] })
+    },
+    onError: (error) => {
+      console.error('Error saving workflow priority:', error)
+      alert('Failed to save workflow priority. Please try again.')
+    }
+  })
+
+  // Handler for workflow-specific priority changes
+  const handleWorkflowPriorityChange = (priority: string) => {
+    if (!assetId || !workflowId) {
+      console.error('Cannot save workflow priority: missing assetId or workflowId')
+      return
+    }
+
+    saveWorkflowPriorityMutation.mutate({
+      assetId,
+      workflowId,
+      priority
+    })
+  }
+
+  // Convert workflow stages to timeline stages format with default checklists
+  const timelineStages: TimelineStage[] = React.useMemo(() => {
+    console.log('InvestmentTimeline: workflowId:', workflowId, 'workflowStages:', workflowStages)
+
+    if (!workflowId || !workflowStages || workflowStages.length === 0) {
+      // Fallback to hardcoded stages if no workflow is selected
+      console.log('InvestmentTimeline: Using hardcoded TIMELINE_STAGES')
+      return TIMELINE_STAGES
+    }
+
+    console.log('InvestmentTimeline: Converting workflow stages to timeline stages')
+    return workflowStages.map(stage => ({
+      id: stage.stage_key,
+      label: stage.stage_label,
+      description: stage.stage_description || '',
+      checklist: getDefaultChecklistForStage(stage.stage_key)
+    }))
+  }, [workflowId, workflowStages])
+
+  // Check if this specific workflow is started for this asset
+  const isWorkflowStarted = workflowProgress?.is_started || false
+
+  // Mutation to manage workflow progress
+  const manageWorkflowProgressMutation = useMutation({
+    mutationFn: async ({ action, stageKey }: { action: 'start' | 'stop', stageKey?: string }) => {
+      if (!assetId || !workflowId) throw new Error('Missing assetId or workflowId')
+
+      if (action === 'start') {
+        const { error } = await supabase
+          .from('asset_workflow_progress')
+          .upsert({
+            asset_id: assetId,
+            workflow_id: workflowId,
+            current_stage_key: stageKey,
+            is_started: true,
+            started_at: new Date().toISOString()
+          }, {
+            onConflict: 'asset_id,workflow_id'
+          })
+
+        if (error) throw error
+
+        // Also update the asset's current stage if this is the current workflow
+        if (stageKey) {
+          onStageChange(stageKey)
+        }
+      } else {
+        const { error } = await supabase
+          .from('asset_workflow_progress')
+          .upsert({
+            asset_id: assetId,
+            workflow_id: workflowId,
+            current_stage_key: null,
+            is_started: false,
+            completed_at: new Date().toISOString()
+          }, {
+            onConflict: 'asset_id,workflow_id'
+          })
+
+        if (error) throw error
+
+        // Reset asset stage to outdated if this is the current workflow
+        onStageChange('outdated')
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+    },
+    onError: (error) => {
+      console.error('Error managing workflow progress:', error)
+      alert('Failed to update workflow. Please try again.')
+    }
+  })
+
+  // Handle starting workflow
+  const handleStartWorkflow = () => {
+    if (timelineStages && timelineStages[0]) {
+      manageWorkflowProgressMutation.mutate({
+        action: 'start',
+        stageKey: timelineStages[0].id
+      })
+    }
+  }
+
+  // Handle stopping workflow
+  const handleStopWorkflow = () => {
+    manageWorkflowProgressMutation.mutate({ action: 'stop' })
+    setShowStopConfirmation(false)
+  }
 
   // Query to load checklist state from database
   const { data: savedChecklistItems } = useQuery({
@@ -164,6 +376,38 @@ export function InvestmentTimeline({
         .from('asset_checklist_items')
         .select('*')
         .eq('asset_id', assetId)
+        .order('sort_order', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!assetId
+  })
+
+  // Query to load stage deadlines
+  const { data: stageDeadlines } = useQuery({
+    queryKey: ['asset-deadlines', assetId],
+    queryFn: async () => {
+      if (!assetId) return []
+      const { data, error } = await supabase
+        .from('asset_stage_deadlines')
+        .select('*')
+        .eq('asset_id', assetId)
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!assetId
+  })
+
+  // Query to load checklist attachments
+  const { data: checklistAttachments } = useQuery({
+    queryKey: ['asset-checklist-attachments', assetId],
+    queryFn: async () => {
+      if (!assetId) return []
+      const { data, error } = await supabase
+        .from('asset_checklist_attachments')
+        .select('*')
+        .eq('asset_id', assetId)
+        .order('uploaded_at', { ascending: false })
       if (error) throw error
       return data || []
     },
@@ -203,12 +447,13 @@ export function InvestmentTimeline({
     }
   })
 
-  // Initialize checklists for all stages, merging with saved data
+  // Initialize checklists for all stages, merging with saved data and custom items
   React.useEffect(() => {
     const initialChecklists: Record<string, ChecklistItem[]> = {}
 
-    TIMELINE_STAGES.forEach(stage => {
-      initialChecklists[stage.id] = stage.checklist.map(item => {
+    timelineStages.forEach(stage => {
+      // Start with default stage items
+      const defaultItems = stage.checklist.map((item, index) => {
         // Look for saved state for this item
         const savedItem = savedChecklistItems?.find(
           saved => saved.stage_id === stage.id && saved.item_id === item.id
@@ -219,16 +464,49 @@ export function InvestmentTimeline({
             ...item,
             completed: savedItem.completed,
             comment: savedItem.comment || undefined,
-            completedAt: savedItem.completed_at || undefined
+            completedAt: savedItem.completed_at || undefined,
+            sortOrder: index,
+            attachments: checklistAttachments?.filter(
+              att => att.stage_id === stage.id && att.item_id === item.id
+            ) || []
           }
         }
 
-        return { ...item }
+        return {
+          ...item,
+          sortOrder: index,
+          attachments: checklistAttachments?.filter(
+            att => att.stage_id === stage.id && att.item_id === item.id
+          ) || []
+        }
       })
+
+      // Add custom items from database
+      const customItems = savedChecklistItems?.filter(
+        saved => saved.stage_id === stage.id && saved.is_custom
+      ).map(saved => ({
+        id: saved.item_id,
+        text: saved.item_text || saved.item_id,
+        completed: saved.completed,
+        comment: saved.comment || undefined,
+        completedAt: saved.completed_at || undefined,
+        isCustom: true,
+        sortOrder: saved.sort_order || 999,
+        attachments: checklistAttachments?.filter(
+          att => att.stage_id === stage.id && att.item_id === saved.item_id
+        ) || []
+      })) || []
+
+      // Combine and sort by sort_order
+      const allItems = [...defaultItems, ...customItems].sort((a, b) =>
+        (a.sortOrder || 0) - (b.sortOrder || 0)
+      )
+
+      initialChecklists[stage.id] = allItems
     })
 
     setStageChecklists(initialChecklists)
-  }, [assetId, savedChecklistItems])
+  }, [assetId, savedChecklistItems, checklistAttachments, timelineStages])
 
   // Handle external viewing stage requests
   React.useEffect(() => {
@@ -243,7 +521,7 @@ export function InvestmentTimeline({
   }, [viewingStageId, showStageDetails, onStageClick, onViewingStageChange])
 
   const getCurrentStageIndex = () => {
-    return TIMELINE_STAGES.findIndex(stage => stage.id === currentStage)
+    return timelineStages.findIndex(stage => stage.id === currentStage)
   }
 
   const getStageStatus = (stageIndex: number) => {
@@ -259,7 +537,6 @@ export function InvestmentTimeline({
     // Progressive color scheme reflecting stage progression
     const colors = [
       'bg-gray-600',   // outdated
-      'bg-red-600',    // initiated
       'bg-orange-600', // prioritized
       'bg-blue-500',   // research (in_progress)
       'bg-yellow-500', // recommend
@@ -289,32 +566,31 @@ export function InvestmentTimeline({
   const isCurrentStageCompleted = () => {
     const currentIndex = getCurrentStageIndex()
     const currentStageId = TIMELINE_STAGES[currentIndex]?.id
-    if (!currentStageId || !stageChecklists[currentStageId]) return false
+    if (!currentStageId) return false
+
+    // Outdated stage is always considered "complete" since it has no checklist
+    if (currentStageId === 'outdated') return true
+
+    if (!stageChecklists[currentStageId]) return false
 
     return stageChecklists[currentStageId].every(item => item.completed)
   }
 
   const isStageEditable = (stageId: string) => {
-    const stageIndex = TIMELINE_STAGES.findIndex(stage => stage.id === stageId)
-    const currentIndex = getCurrentStageIndex()
-    // Can only edit current stage
-    return stageIndex === currentIndex
+    // Allow editing any stage to enable flexible workflow
+    return true
   }
 
-  const handleAdvanceStage = async () => {
-    if (!isCurrentStageCompleted()) {
-      alert('Please complete all checklist items before advancing to the next stage.')
-      return
-    }
 
+  const handleAdvanceStage = async () => {
     if (!assetId) {
       alert('No asset ID available. Cannot advance stage.')
       return
     }
 
     const currentIndex = getCurrentStageIndex()
-    if (currentIndex < TIMELINE_STAGES.length - 1) {
-      const currentStageId = TIMELINE_STAGES[currentIndex].id
+    if (currentIndex < timelineStages.length - 1) {
+      const currentStageId = timelineStages[currentIndex].id
       const currentTime = new Date().toISOString()
 
       // Update completion timestamps for all completed items in current stage
@@ -346,7 +622,7 @@ export function InvestmentTimeline({
         }))
 
         // Advance to next stage
-        const nextStage = TIMELINE_STAGES[currentIndex + 1]
+        const nextStage = timelineStages[currentIndex + 1]
         onStageChange(nextStage.id)
 
         // Focus on the new stage
@@ -361,7 +637,7 @@ export function InvestmentTimeline({
   const handleRegressStage = () => {
     const currentIndex = getCurrentStageIndex()
     if (currentIndex > 0) {
-      const prevStage = TIMELINE_STAGES[currentIndex - 1]
+      const prevStage = timelineStages[currentIndex - 1]
       onStageChange(prevStage.id)
 
       // Focus on the previous stage
@@ -452,40 +728,314 @@ export function InvestmentTimeline({
     setCommentText('')
   }
 
-  const currentStageData = TIMELINE_STAGES.find(stage => stage.id === currentStage)
+  const handleAddCustomItem = async (stageId: string) => {
+    if (!newItemText.trim() || !assetId) return
+
+    try {
+      const newItemId = `custom_${Date.now()}`
+      const maxSortOrder = Math.max(
+        ...(stageChecklists[stageId]?.map(item => item.sortOrder || 0) || [0])
+      )
+
+      // Save to database
+      const { error } = await supabase
+        .from('asset_checklist_items')
+        .insert({
+          asset_id: assetId,
+          stage_id: stageId,
+          item_id: newItemId,
+          item_text: newItemText.trim(),
+          is_custom: true,
+          completed: false,
+          sort_order: maxSortOrder + 1,
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        })
+
+      if (error) throw error
+
+      // Update local state
+      setStageChecklists(prev => ({
+        ...prev,
+        [stageId]: [
+          ...(prev[stageId] || []),
+          {
+            id: newItemId,
+            text: newItemText.trim(),
+            completed: false,
+            isCustom: true,
+            sortOrder: maxSortOrder + 1
+          }
+        ].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+      }))
+
+      // Reset form
+      setNewItemText('')
+      setAddingItemToStage(null)
+
+      // Refresh the query
+      queryClient.invalidateQueries({ queryKey: ['asset-checklist', assetId] })
+    } catch (error) {
+      console.error('Error adding custom item:', error)
+      alert('Failed to add custom checklist item. Please try again.')
+    }
+  }
+
+  const handleRemoveCustomItem = async (stageId: string, itemId: string) => {
+    if (!assetId) return
+
+    try {
+      // Remove from database
+      const { error } = await supabase
+        .from('asset_checklist_items')
+        .delete()
+        .eq('asset_id', assetId)
+        .eq('stage_id', stageId)
+        .eq('item_id', itemId)
+        .eq('is_custom', true)
+
+      if (error) throw error
+
+      // Update local state
+      setStageChecklists(prev => ({
+        ...prev,
+        [stageId]: prev[stageId]?.filter(item => item.id !== itemId) || []
+      }))
+
+      // Refresh the query
+      queryClient.invalidateQueries({ queryKey: ['asset-checklist', assetId] })
+    } catch (error) {
+      console.error('Error removing custom item:', error)
+      alert('Failed to remove custom checklist item. Please try again.')
+    }
+  }
+
+  const handleFileUpload = async (stageId: string, itemId: string, files: FileList) => {
+    if (!assetId || !files.length) return
+
+    const uploadKey = `${stageId}-${itemId}`
+    setUploadingFiles(prev => ({ ...prev, [uploadKey]: true }))
+
+    try {
+      for (const file of Array.from(files)) {
+        // Upload file to Supabase Storage
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+        const filePath = `checklist-attachments/${assetId}/${stageId}/${itemId}/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('assets')
+          .upload(filePath, file)
+
+        if (uploadError) throw uploadError
+
+        // Save attachment record to database
+        const { data: user } = await supabase.auth.getUser()
+        const { error: dbError } = await supabase
+          .from('asset_checklist_attachments')
+          .insert({
+            asset_id: assetId,
+            stage_id: stageId,
+            item_id: itemId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size,
+            file_type: file.type,
+            uploaded_by: user.user?.id
+          })
+
+        if (dbError) throw dbError
+      }
+
+      // Refresh attachments
+      queryClient.invalidateQueries({ queryKey: ['asset-checklist-attachments', assetId] })
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      alert('Failed to upload file. Please try again.')
+    } finally {
+      setUploadingFiles(prev => ({ ...prev, [uploadKey]: false }))
+    }
+  }
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    try {
+      // Get attachment details first
+      const { data: attachment } = await supabase
+        .from('asset_checklist_attachments')
+        .select('file_path')
+        .eq('id', attachmentId)
+        .single()
+
+      if (attachment) {
+        // Delete file from storage
+        await supabase.storage
+          .from('assets')
+          .remove([attachment.file_path])
+      }
+
+      // Delete attachment record
+      const { error } = await supabase
+        .from('asset_checklist_attachments')
+        .delete()
+        .eq('id', attachmentId)
+
+      if (error) throw error
+
+      // Refresh attachments
+      queryClient.invalidateQueries({ queryKey: ['asset-checklist-attachments', assetId] })
+    } catch (error) {
+      console.error('Error deleting attachment:', error)
+      alert('Failed to delete attachment. Please try again.')
+    }
+  }
+
+  const handleDownloadAttachment = async (attachment: ChecklistAttachment) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('assets')
+        .download(attachment.file_path)
+
+      if (error) throw error
+
+      // Create download link
+      const url = URL.createObjectURL(data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = attachment.file_name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error downloading file:', error)
+      alert('Failed to download file. Please try again.')
+    }
+  }
+
+  const getStageDeadline = (stageId: string) => {
+    return stageDeadlines?.find(deadline => deadline.stage_id === stageId)
+  }
+
+  const getDeadlineStatus = (dateString: string) => {
+    const deadline = new Date(dateString)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    deadline.setHours(0, 0, 0, 0)
+
+    const diffTime = deadline.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays < 0) return 'overdue'
+    if (diffDays === 0) return 'today'
+    if (diffDays <= 3) return 'urgent'
+    return 'upcoming'
+  }
+
+  const currentStageData = timelineStages.find(stage => stage.id === currentStage)
   const currentIndex = getCurrentStageIndex()
+
+  // Safety check to prevent blank screen
+  if (!timelineStages || timelineStages.length === 0) {
+    console.log('InvestmentTimeline: No timeline stages available, rendering loading state')
+    return (
+      <div className={`space-y-6 ${className}`}>
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="text-center">
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-48 mx-auto mb-4"></div>
+              <div className="h-2 bg-gray-200 rounded w-full mb-2"></div>
+              <div className="h-2 bg-gray-200 rounded w-3/4 mx-auto"></div>
+            </div>
+            <p className="text-sm text-gray-500 mt-4">Loading workflow stages...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`space-y-6 ${className}`}>
       {/* Timeline Visualization */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Research Lifecycle</h3>
-          <div className="flex items-center space-x-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleRegressStage}
-              disabled={currentIndex === 0}
-              className="text-gray-600 hover:text-gray-800"
-            >
-              ← Previous
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleAdvanceStage}
-              disabled={currentIndex === TIMELINE_STAGES.length - 1 || !isCurrentStageCompleted()}
-              className={`${
-                !isCurrentStageCompleted() && currentIndex < TIMELINE_STAGES.length - 1
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-blue-600 hover:text-blue-800'
+        <div className="mb-4 flex items-center justify-between">
+          {/* Workflow Priority on the left */}
+          {assetId && workflowId && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-medium text-gray-700">Workflow Priority:</span>
+              <div className="relative">
+                {(() => {
+                  const priorityConfig = {
+                    'critical': { color: 'bg-red-600 text-white', icon: AlertTriangle, label: 'Critical' },
+                    'high': { color: 'bg-orange-500 text-white', icon: Zap, label: 'High' },
+                    'medium': { color: 'bg-blue-500 text-white', icon: Target, label: 'Medium' },
+                    'low': { color: 'bg-green-500 text-white', icon: Clock, label: 'Low' }
+                  }
+                  const current = priorityConfig[effectivePriority as keyof typeof priorityConfig] || priorityConfig['medium']
+
+                  return (
+                    <>
+                      <button
+                        onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+                        className={`px-2 py-1 rounded-lg text-xs font-medium ${current.color} flex items-center space-x-1 hover:opacity-90 transition-opacity`}
+                      >
+                        <current.icon className="w-3 h-3" />
+                        <span>{current.label}</span>
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+
+                      {showPriorityDropdown && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => setShowPriorityDropdown(false)}
+                          />
+                          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                            <div className="p-2">
+                              {Object.entries(priorityConfig).map(([value, config]) => (
+                                <button
+                                  key={value}
+                                  onClick={() => {
+                                    handleWorkflowPriorityChange(value)
+                                    setShowPriorityDropdown(false)
+                                  }}
+                                  className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                                    value === effectivePriority
+                                      ? config.color + ' ring-2 ring-offset-1 ring-blue-300'
+                                      : config.color + ' opacity-70 hover:opacity-100'
+                                  } flex items-center space-x-1 mb-1 last:mb-0`}
+                                >
+                                  <config.icon className="w-3 h-3" />
+                                  <span>{config.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Play/Stop Button on the right */}
+          {timelineStages && timelineStages.length > 0 && (
+            <button
+              onClick={isWorkflowStarted ? () => setShowStopConfirmation(true) : handleStartWorkflow}
+              className={`w-8 h-8 rounded-full transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center ${
+                isWorkflowStarted
+                  ? 'bg-red-500 hover:bg-red-600 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
-              title={!isCurrentStageCompleted() ? 'Complete all checklist items to advance' : ''}
+              title={isWorkflowStarted ? 'Stop Workflow' : 'Start Workflow'}
             >
-              Next →
-            </Button>
-          </div>
+              {isWorkflowStarted ? (
+                <Square className="w-3 h-3" />
+              ) : (
+                <Play className="w-3 h-3 ml-0.5" />
+              )}
+            </button>
+          )}
         </div>
 
         {/* Desktop Timeline */}
@@ -495,36 +1045,60 @@ export function InvestmentTimeline({
             <div className="absolute top-8 left-0 right-0 h-1 bg-gray-200 rounded-full">
               <div
                 className="h-full bg-gradient-to-r from-gray-600 via-red-600 via-orange-600 via-blue-500 via-yellow-500 via-green-400 via-green-700 to-teal-500 transition-all duration-500 rounded-full"
-                style={{ width: `${(currentIndex / (TIMELINE_STAGES.length - 1)) * 100}%` }}
+                style={{ width: `${(currentIndex / (timelineStages.length - 1)) * 100}%` }}
               />
             </div>
 
             {/* Stage Nodes */}
             <div className="relative flex justify-between">
-              {TIMELINE_STAGES.map((stage, index) => {
+              {timelineStages.map((stage, index) => {
                 const status = getStageStatus(index)
                 const isClickable = true // Allow viewing all stages
+                const isOutdated = stage.id === 'outdated' || currentStage === 'outdated'
+                const isFirstActiveStage = index === 1 && (currentStage === 'outdated' || timelineStages[0]?.id === 'outdated')
 
                 return (
-                  <div key={stage.id} className="flex flex-col items-center">
-                    {/* Stage Circle */}
-                    <button
-                      onClick={() => handleStageClick(stage, index)}
-                      className={`relative z-10 w-16 h-16 rounded-full border-4 border-white shadow-lg transition-all duration-300 ${
-                        getStageColor(status, index)
-                      } hover:scale-110 cursor-pointer ${
-                        showStageDetails === stage.id ? 'ring-4 ring-blue-200' : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-center h-full">
-                        {status === 'completed' ? (
-                          <Check className="w-6 h-6 text-white" />
-                        ) : status === 'current' ? (
-                          <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
-                        ) : (
-                          <div className="w-3 h-3 bg-white rounded-full" />
-                        )}
-                      </div>
+                  <React.Fragment key={stage.id}>
+                    <div className="flex flex-col items-center">
+                      {/* Stage Circle */}
+                      <button
+                        onClick={() => handleStageClick(stage, index)}
+                        className={`relative z-10 w-16 h-16 rounded-full border-4 border-white shadow-lg transition-all duration-300 ${
+                          getStageColor(status, index)
+                        } hover:scale-110 cursor-pointer ${
+                          showStageDetails === stage.id ? 'ring-4 ring-blue-200' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-center h-full">
+                          {status === 'completed' ? (
+                            <Check className="w-6 h-6 text-white" />
+                          ) : status === 'current' ? (
+                            <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+                          ) : (
+                            <div className="w-3 h-3 bg-white rounded-full" />
+                          )}
+                        </div>
+
+                      {/* Deadline Indicator */}
+                      {(() => {
+                        const deadline = getStageDeadline(stage.id)
+                        if (!deadline) return null
+
+                        const deadlineStatus = getDeadlineStatus(deadline.deadline_date)
+                        const statusConfig = {
+                          overdue: { bg: 'bg-red-500', text: 'text-white', icon: '⚠️' },
+                          today: { bg: 'bg-orange-500', text: 'text-white', icon: '📅' },
+                          urgent: { bg: 'bg-yellow-500', text: 'text-white', icon: '⏰' },
+                          upcoming: { bg: 'bg-blue-500', text: 'text-white', icon: '📆' }
+                        }
+                        const config = statusConfig[deadlineStatus]
+
+                        return (
+                          <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-full ${config.bg} flex items-center justify-center text-xs shadow-lg`}>
+                            <Calendar className="w-3 h-3 text-white" />
+                          </div>
+                        )
+                      })()}
                     </button>
 
                     {/* Stage Label */}
@@ -537,10 +1111,43 @@ export function InvestmentTimeline({
                           Current
                         </Badge>
                       )}
+                      {(() => {
+                        const deadline = getStageDeadline(stage.id)
+                        if (!deadline) return null
+
+                        const deadlineStatus = getDeadlineStatus(deadline.deadline_date)
+                        const getDaysUntilDeadline = (dateString: string) => {
+                          const deadline = new Date(dateString)
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+                          deadline.setHours(0, 0, 0, 0)
+                          const diffTime = deadline.getTime() - today.getTime()
+                          return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                        }
+
+                        const daysUntil = getDaysUntilDeadline(deadline.deadline_date)
+                        const statusText = daysUntil < 0 ? `${Math.abs(daysUntil)}d overdue` :
+                                         daysUntil === 0 ? 'Due today' :
+                                         daysUntil === 1 ? 'Due tomorrow' :
+                                         `${daysUntil}d left`
+
+                        const textColor = deadlineStatus === 'overdue' ? 'text-red-600' :
+                                         deadlineStatus === 'today' ? 'text-orange-600' :
+                                         deadlineStatus === 'urgent' ? 'text-yellow-600' : 'text-blue-600'
+
+                        return (
+                          <div className={`text-xs ${textColor} font-medium mt-1`}>
+                            {statusText}
+                          </div>
+                        )
+                      })()}
                     </div>
+
                   </div>
+                </React.Fragment>
                 )
               })}
+
             </div>
           </div>
         </div>
@@ -548,7 +1155,7 @@ export function InvestmentTimeline({
         {/* Mobile Timeline */}
         <div className="md:hidden">
           <div className="space-y-3">
-            {TIMELINE_STAGES.map((stage, index) => {
+            {timelineStages.map((stage, index) => {
               const status = getStageStatus(index)
               const isClickable = true // Allow viewing all stages
 
@@ -564,7 +1171,7 @@ export function InvestmentTimeline({
                       : 'border-gray-200 bg-gray-50'
                   } hover:shadow-md`}
                 >
-                  <div className={`w-8 h-8 rounded-full ${getStageColor(status, index)} flex items-center justify-center mr-3`}>
+                  <div className={`relative w-8 h-8 rounded-full ${getStageColor(status, index)} flex items-center justify-center mr-3`}>
                     {status === 'completed' ? (
                       <Check className="w-4 h-4 text-white" />
                     ) : status === 'current' ? (
@@ -572,6 +1179,27 @@ export function InvestmentTimeline({
                     ) : (
                       <div className="w-2 h-2 bg-white rounded-full" />
                     )}
+
+                    {/* Deadline Indicator for Mobile */}
+                    {(() => {
+                      const deadline = getStageDeadline(stage.id)
+                      if (!deadline) return null
+
+                      const deadlineStatus = getDeadlineStatus(deadline.deadline_date)
+                      const statusConfig = {
+                        overdue: { bg: 'bg-red-500' },
+                        today: { bg: 'bg-orange-500' },
+                        urgent: { bg: 'bg-yellow-500' },
+                        upcoming: { bg: 'bg-blue-500' }
+                      }
+                      const config = statusConfig[deadlineStatus]
+
+                      return (
+                        <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full ${config.bg} flex items-center justify-center`}>
+                          <Calendar className="w-2 h-2 text-white" />
+                        </div>
+                      )
+                    })()}
                   </div>
                   <div className="flex-1 text-left">
                     <div className={`font-medium ${getTextColor(status)}`}>
@@ -580,12 +1208,44 @@ export function InvestmentTimeline({
                     <div className="text-xs text-gray-500">
                       {stage.description}
                     </div>
+                    {(() => {
+                      const deadline = getStageDeadline(stage.id)
+                      if (!deadline) return null
+
+                      const deadlineStatus = getDeadlineStatus(deadline.deadline_date)
+                      const getDaysUntilDeadline = (dateString: string) => {
+                        const deadline = new Date(dateString)
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+                        deadline.setHours(0, 0, 0, 0)
+                        const diffTime = deadline.getTime() - today.getTime()
+                        return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                      }
+
+                      const daysUntil = getDaysUntilDeadline(deadline.deadline_date)
+                      const statusText = daysUntil < 0 ? `${Math.abs(daysUntil)}d overdue` :
+                                       daysUntil === 0 ? 'Due today' :
+                                       daysUntil === 1 ? 'Due tomorrow' :
+                                       `${daysUntil}d left`
+
+                      const textColor = deadlineStatus === 'overdue' ? 'text-red-600' :
+                                       deadlineStatus === 'today' ? 'text-orange-600' :
+                                       deadlineStatus === 'urgent' ? 'text-yellow-600' : 'text-blue-600'
+
+                      return (
+                        <div className={`text-xs ${textColor} font-medium mt-1`}>
+                          {statusText}
+                        </div>
+                      )
+                    })()}
                   </div>
-                  {status === 'current' && (
-                    <Badge variant="primary" size="sm">
-                      Current
-                    </Badge>
-                  )}
+                  <div className="flex flex-col items-end space-y-1">
+                    {status === 'current' && (
+                      <Badge variant="primary" size="sm">
+                        Current
+                      </Badge>
+                    )}
+                  </div>
                 </button>
               )
             })}
@@ -598,8 +1258,8 @@ export function InvestmentTimeline({
         <Card>
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center space-x-3">
-              <div className={`w-10 h-10 rounded-full ${getStageColor(getStageStatus(TIMELINE_STAGES.findIndex(s => s.id === showStageDetails)), TIMELINE_STAGES.findIndex(s => s.id === showStageDetails))} flex items-center justify-center`}>
-                {getStageStatus(TIMELINE_STAGES.findIndex(s => s.id === showStageDetails)) === 'completed' ? (
+              <div className={`w-10 h-10 rounded-full ${getStageColor(getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)), timelineStages.findIndex(s => s.id === showStageDetails))} flex items-center justify-center`}>
+                {getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)) === 'completed' ? (
                   <Check className="w-5 h-5 text-white" />
                 ) : (
                   <Info className="w-5 h-5 text-white" />
@@ -626,35 +1286,30 @@ export function InvestmentTimeline({
           </div>
 
           <div className="grid grid-cols-1 gap-6">
-            {/* Stage Checklist */}
-            {showStageDetails && stageChecklists[showStageDetails] && (
+            {/* Special view for Outdated stage */}
+            {showStageDetails === 'outdated' && assetId && (
+              <OutdatedStageView assetId={assetId} assetSymbol={assetSymbol || 'Unknown'} />
+            )}
+
+            {/* Stage Checklist for non-outdated stages */}
+            {showStageDetails && showStageDetails !== 'outdated' && stageChecklists[showStageDetails] && (
               <div>
                 <div className="mb-4">
-                  <h5 className="font-medium text-gray-900 flex items-center">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Stage Checklist
-                    <span className="ml-2 text-xs text-gray-500">
-                      ({stageChecklists[showStageDetails].filter(item => item.completed).length}/{stageChecklists[showStageDetails].length} completed)
-                    </span>
-                  </h5>
-                  {!isStageEditable(showStageDetails) && (
-                    <div className="mt-2 flex items-center text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      View only - This stage is locked for editing
-                    </div>
-                  )}
-                  {isStageEditable(showStageDetails) && (
-                    <div className="mt-2 flex items-center text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-                      <Check className="w-3 h-3 mr-1" />
-                      Current stage - You can edit this checklist
-                    </div>
-                  )}
-                  {saveChecklistItemMutation.isPending && (
-                    <div className="mt-2 flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                      <div className="animate-spin w-3 h-3 border border-blue-600 border-t-transparent rounded-full mr-1"></div>
-                      Saving changes...
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between">
+                    <h5 className="font-medium text-gray-900 flex items-center">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Checklist
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({stageChecklists[showStageDetails].filter(item => item.completed).length}/{stageChecklists[showStageDetails].length} completed)
+                      </span>
+                    </h5>
+                    <StageDeadlineManager
+                      assetId={assetId || ''}
+                      stageId={showStageDetails}
+                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                      isCurrentStage={showStageDetails === currentStage}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-3">
                   {stageChecklists[showStageDetails].map((item) => {
@@ -721,6 +1376,44 @@ export function InvestmentTimeline({
                                   <MessageSquare className="w-4 h-4 text-blue-600" title="Has comment" />
                                 ) : null}
 
+                                {isEditable ? (
+                                  <label className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-blue-600 cursor-pointer">
+                                    <input
+                                      type="file"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        if (e.target.files) {
+                                          handleFileUpload(showStageDetails, item.id, e.target.files)
+                                          e.target.value = '' // Reset input
+                                        }
+                                      }}
+                                    />
+                                    <Paperclip className="w-4 h-4" />
+                                  </label>
+                                ) : (item.attachments && item.attachments.length > 0) ? (
+                                  <div className="flex items-center">
+                                    <Paperclip className="w-4 h-4 text-blue-600" />
+                                    <span className="text-xs text-blue-600 ml-1">{item.attachments.length}</span>
+                                  </div>
+                                ) : null}
+
+                                {uploadingFiles[`${showStageDetails}-${item.id}`] && (
+                                  <div className="flex items-center">
+                                    <div className="animate-spin w-4 h-4 border border-blue-600 border-t-transparent rounded-full"></div>
+                                  </div>
+                                )}
+
+                                {item.isCustom && (
+                                  <button
+                                    onClick={() => handleRemoveCustomItem(showStageDetails, item.id)}
+                                    className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                    title="Remove custom item"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+
                                 {!isEditable && (
                                   <AlertTriangle className="w-4 h-4 text-orange-400" title="Checklist is locked" />
                                 )}
@@ -730,6 +1423,42 @@ export function InvestmentTimeline({
                             {item.comment && !isCommenting && (
                               <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-gray-600 border-l-2 border-blue-200">
                                 {item.comment}
+                              </div>
+                            )}
+
+                            {item.attachments && item.attachments.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                {item.attachments.map((attachment) => (
+                                  <div key={attachment.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs border">
+                                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                      <FileText className="w-3 h-3 text-gray-500 flex-shrink-0" />
+                                      <span className="truncate text-gray-700">{attachment.file_name}</span>
+                                      {attachment.file_size && (
+                                        <span className="text-gray-400 flex-shrink-0">
+                                          ({Math.round(attachment.file_size / 1024)}KB)
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center space-x-1 ml-2">
+                                      <button
+                                        onClick={() => handleDownloadAttachment(attachment)}
+                                        className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                                        title="Download file"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                      </button>
+                                      {isEditable && (
+                                        <button
+                                          onClick={() => handleDeleteAttachment(attachment.id)}
+                                          className="p-1 text-gray-400 hover:text-red-600 rounded"
+                                          title="Delete file"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -766,6 +1495,55 @@ export function InvestmentTimeline({
                       </div>
                     )
                   })}
+
+                  {/* Add Custom Item Section */}
+                  {showStageDetails && showStageDetails !== 'outdated' && (
+                    <div className="mt-3">
+                      {addingItemToStage === showStageDetails ? (
+                        <div className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                          <Plus className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                          <input
+                            type="text"
+                            value={newItemText}
+                            onChange={(e) => setNewItemText(e.target.value)}
+                            placeholder="Add custom item..."
+                            className="flex-1 px-2 py-1 text-sm border-0 bg-transparent focus:outline-none focus:ring-0 placeholder-blue-400"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && newItemText.trim()) {
+                                handleAddCustomItem(showStageDetails)
+                              } else if (e.key === 'Escape') {
+                                setAddingItemToStage(null)
+                                setNewItemText('')
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!newItemText.trim()) {
+                                setAddingItemToStage(null)
+                                setNewItemText('')
+                              }
+                            }}
+                          />
+                          {newItemText.trim() && (
+                            <button
+                              onClick={() => handleAddCustomItem(showStageDetails)}
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setAddingItemToStage(showStageDetails)}
+                          className="flex items-center space-x-2 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors w-full"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add custom item...</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -775,43 +1553,76 @@ export function InvestmentTimeline({
           <div className="mt-6 pt-4 border-t border-gray-200">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-600">
-                <div>Stage {currentIndex + 1} of {TIMELINE_STAGES.length}</div>
+                <div>Stage {currentIndex + 1} of {timelineStages.length}</div>
                 {showStageDetails === currentStage && (
-                  <div className={`text-xs mt-1 ${
-                    isCurrentStageCompleted() ? 'text-green-600' : 'text-orange-600'
-                  }`}>
-                    {isCurrentStageCompleted()
-                      ? '✓ All checklist items completed'
-                      : `${stageChecklists[currentStage]?.filter(item => !item.completed).length || 0} items remaining`
+                  <div className="text-xs mt-1 text-blue-600">
+                    {currentStage === 'outdated'
+                      ? '✓ Portfolio review stage - ready to prioritize'
+                      : `${stageChecklists[currentStage]?.filter(item => item.completed).length || 0} of ${stageChecklists[currentStage]?.length || 0} items completed`
                     }
                   </div>
                 )}
               </div>
-              <div className="flex space-x-2">
+
+              {/* Stage Action Buttons */}
+              <div className="flex items-center space-x-2">
                 {currentIndex > 0 && (
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={handleRegressStage}
+                    className="text-gray-600 hover:text-gray-800"
                   >
-                    Move to {TIMELINE_STAGES[currentIndex - 1]?.label}
+                    ← Move to {timelineStages[currentIndex - 1]?.label}
                   </Button>
                 )}
-                {currentIndex < TIMELINE_STAGES.length - 1 && (
+
+                {currentIndex < timelineStages.length - 1 && showStageDetails === currentStage && (
                   <Button
                     size="sm"
                     onClick={handleAdvanceStage}
-                    disabled={!isCurrentStageCompleted()}
-                    className={!isCurrentStageCompleted() ? 'opacity-50 cursor-not-allowed' : ''}
-                    title={!isCurrentStageCompleted() ? 'Complete all checklist items to advance' : ''}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    title="Advance to next stage"
                   >
-                    Advance to {TIMELINE_STAGES[currentIndex + 1]?.label}
+                    {currentStage === 'outdated' ? 'Initiate →' : 'Advance Stage →'}
                   </Button>
+                )}
+
+                {currentIndex === timelineStages.length - 1 && showStageDetails === currentStage && (
+                  <div className="text-sm text-green-600 font-medium">
+                    🎯 Final stage - Monitor ongoing performance
+                  </div>
                 )}
               </div>
             </div>
           </div>
         </Card>
+      )}
+
+      {/* Stop Workflow Confirmation Dialog */}
+      {showStopConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">End Workflow?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to end this workflow? This will reset the asset to an unstarted state.
+            </p>
+            <div className="flex space-x-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowStopConfirmation(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleStopWorkflow}
+              >
+                End Workflow
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

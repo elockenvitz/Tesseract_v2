@@ -16,7 +16,6 @@ interface QuickStageSwitcherProps {
 
 const STAGES: Stage[] = [
   { id: 'outdated', label: 'Outdated', color: 'bg-gray-600' },
-  { id: 'initiated', label: 'Initiated', color: 'bg-red-600' },
   { id: 'prioritized', label: 'Prioritize', color: 'bg-orange-600' },
   { id: 'in_progress', label: 'Research', color: 'bg-blue-500' },
   { id: 'recommend', label: 'Recommend', color: 'bg-yellow-500' },
