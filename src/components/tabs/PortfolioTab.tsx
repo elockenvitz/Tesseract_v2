@@ -719,8 +719,7 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                                             holding.assets?.priority === 'critical' ? 'text-red-600' :
                                             holding.assets?.priority === 'high' ? 'text-orange-500' :
                                             holding.assets?.priority === 'medium' ? 'text-blue-500' :
-                                            holding.assets?.priority === 'low' ? 'text-gray-500' :
-                                            holding.assets?.priority === 'maintenance' ? 'text-green-600' : 'text-gray-600'
+                                            holding.assets?.priority === 'low' ? 'text-green-500' : 'text-gray-600'
                                           }`}>
                                             {holding.assets?.priority || 'None'}
                                           </span>
@@ -778,8 +777,7 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                                                     holding.assets?.priority === 'critical' ? 'text-red-600' :
                                                     holding.assets?.priority === 'high' ? 'text-orange-500' :
                                                     holding.assets?.priority === 'medium' ? 'text-blue-500' :
-                                                    holding.assets?.priority === 'low' ? 'text-gray-500' :
-                                                    holding.assets?.priority === 'maintenance' ? 'text-green-600' : 'text-gray-600'
+                                                    holding.assets?.priority === 'low' ? 'text-green-500' : 'text-gray-600'
                                                   }`}>{holding.assets?.priority || 'None'}</span>
                                                 </p>
                                                 <p className="text-xs text-gray-500">Relative importance and urgency of this asset in the portfolio.</p>

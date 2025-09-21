@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity } from 'lucide-react'
+import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
+import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -9,10 +10,13 @@ import { BadgeSelect } from '../ui/BadgeSelect'
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
 import { InvestmentTimeline } from '../ui/InvestmentTimeline'
 import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
-import { SmartStageManager } from '../ui/SmartStageManager'
+import { AssetWorkflowSelector } from '../ui/AssetWorkflowSelector'
+import { WorkflowSelector } from '../ui/WorkflowSelector'
+import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
 import { StockQuote } from '../financial/StockQuote'
+import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { AdvancedChart } from '../charts/AdvancedChart'
@@ -24,22 +28,22 @@ import { formatDistanceToNow } from 'date-fns'
 interface AssetTabProps {
   asset: any
   onCite?: (content: string, fieldName?: string) => void
+  onNavigate?: (tab: { id: string, title: string, type: string, data?: any }) => void
 }
 
-export function AssetTab({ asset, onCite }: AssetTabProps) {
+export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   const { user } = useAuth()
   const [priority, setPriority] = useState(asset.priority || 'none')
 
   // Timeline stages mapping for backward compatibility
   const stageMapping = {
     // Legacy mappings
-    'research': 'initiated',
+    'research': 'prioritized',
     'analysis': 'prioritized',
     'monitoring': 'monitor', // Updated to map to new monitor stage
     'archived': 'action',
     // Current system mappings (these should pass through as-is)
     'outdated': 'outdated',
-    'initiated': 'initiated',
     'prioritized': 'prioritized',
     'in_progress': 'in_progress',
     'recommend': 'recommend',
@@ -50,18 +54,36 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
 
   // Map old stage values to new timeline stages
   const mapToTimelineStage = (oldStage: string | null): string => {
-    if (!oldStage) return 'initiated'
+    if (!oldStage) return 'outdated'
     return stageMapping[oldStage as keyof typeof stageMapping] || oldStage
   }
 
   const [stage, setStage] = useState(mapToTimelineStage(asset.process_stage))
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage'>('thesis')
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage'>(() => {
+    // Initialize with saved state if available
+    const savedState = TabStateManager.loadTabState(asset.id)
+    const initialTab = savedState?.activeTab || 'thesis'
+    console.log(`AssetTab ${asset.id}: Initializing with activeTab:`, initialTab, 'Full saved state:', savedState)
+    return initialTab
+  })
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
-  const [showNoteEditor, setShowNoteEditor] = useState(false)
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  const [showNoteEditor, setShowNoteEditor] = useState(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.showNoteEditor || false
+  })
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.selectedNoteId || null
+  })
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showCoverageManager, setShowCoverageManager] = useState(false)
-  const [viewingStageId, setViewingStageId] = useState<string | null>(null)
+  const [viewingStageId, setViewingStageId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.viewingStageId || null
+  })
+  const [showTimelineView, setShowTimelineView] = useState(false)
+  const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
+  const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const queryClient = useQueryClient()
 
   // Refs for EditableSectionWithHistory components
@@ -84,6 +106,25 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
       setPriority(asset.priority || 'none')
     }
   }, [asset.priority, hasLocalChanges])
+
+  // Mark as initialized once asset is loaded (state is already initialized in useState)
+  useEffect(() => {
+    setIsTabStateInitialized(true)
+  }, [asset.id])
+
+  // Save tab state whenever relevant state changes (but only after initialization)
+  useEffect(() => {
+    if (isTabStateInitialized) {
+      const stateToSave = {
+        activeTab,
+        viewingStageId,
+        showNoteEditor,
+        selectedNoteId
+      }
+      console.log(`AssetTab ${asset.id}: Saving state:`, stateToSave)
+      TabStateManager.saveTabState(asset.id, stateToSave)
+    }
+  }, [asset.id, activeTab, viewingStageId, showNoteEditor, selectedNoteId, isTabStateInitialized])
 
   // ---------- Queries ----------
   const { data: coverage } = useQuery({
@@ -237,10 +278,18 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     onSuccess: (result) => {
       Object.assign(asset, result)
       setHasLocalChanges(false)
+      // Ensure local state is in sync with the updated asset
+      if (result.priority !== undefined) {
+        setPriority(result.priority)
+      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['all-assets'] })
+      // Also invalidate any asset list queries that might contain this asset
+      queryClient.invalidateQueries({ queryKey: ['asset-list-items'] })
+      queryClient.invalidateQueries({ queryKey: ['theme-related-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-holdings'] })
     },
   })
 
@@ -315,9 +364,47 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
 
     updateAssetMutation.mutate({ process_stage: newStage })
 
-    // Send analyst notification when stock is initiated
-    if (newStage === 'initiated' && prevStage !== 'initiated') {
+    // Send analyst notification when stock is prioritized
+    if (newStage === 'prioritized' && prevStage !== 'prioritized') {
       sendAnalystNotification()
+    }
+  }
+
+  const handleWorkflowChange = async (workflowId: string) => {
+    setHasLocalChanges(true)
+
+    try {
+      // Get the first stage of the new workflow
+      const { data: workflowStages, error } = await supabase
+        .from('workflow_stages')
+        .select('stage_key')
+        .eq('workflow_id', workflowId)
+        .order('sort_order')
+        .limit(1)
+
+      if (error) {
+        console.error('Error fetching workflow stages:', error)
+        // Fallback to just updating workflow without changing stage
+        asset.workflow_id = workflowId
+        updateAssetMutation.mutate({ workflow_id: workflowId })
+        return
+      }
+
+      const firstStageKey = workflowStages?.[0]?.stage_key || 'prioritized'
+
+      // Update both workflow and stage
+      asset.workflow_id = workflowId
+      setStage(firstStageKey)
+
+      updateAssetMutation.mutate({
+        workflow_id: workflowId,
+        process_stage: firstStageKey
+      })
+    } catch (error) {
+      console.error('Error in handleWorkflowChange:', error)
+      // Fallback to just updating workflow
+      asset.workflow_id = workflowId
+      updateAssetMutation.mutate({ workflow_id: workflowId })
     }
   }
 
@@ -328,9 +415,9 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
         .from('notifications')
         .insert([
           {
-            type: 'asset_initiated',
-            title: `New Asset Initiated: ${asset.symbol}`,
-            message: `${asset.symbol} (${asset.company_name}) has been initiated and requires analyst attention.`,
+            type: 'asset_prioritized',
+            title: `New Asset Prioritized: ${asset.symbol}`,
+            message: `${asset.symbol} (${asset.company_name}) has been prioritized and requires analyst attention.`,
             asset_id: asset.id,
             created_by: user?.id,
             target_role: 'analyst', // Target analysts specifically
@@ -428,7 +515,6 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
     { value: 'high', label: 'High Priority' },
     { value: 'medium', label: 'Medium Priority' },
     { value: 'low', label: 'Low Priority' },
-    { value: 'maintenance', label: 'Maintenance Priority' },
   ]
 
   return (
@@ -456,17 +542,21 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
           <div className="flex-shrink-0">
             <CoverageDisplay assetId={asset.id} coverage={coverage || []} />
           </div>
+
+          {/* Add to List Button */}
+          <div className="flex-shrink-0">
+            <AddToListButton assetId={asset.id} assetSymbol={asset.symbol} variant="outline" size="sm" />
+          </div>
         </div>
 
         {/* Status Badges */}
         <div className="flex items-center space-x-3">
-          <AddToListButton assetId={asset.id} assetSymbol={asset.symbol} variant="outline" size="sm" />
-          <SmartStageManager
-            currentStage={stage}
+          <AssetWorkflowSelector
+            assetId={asset.id}
+            currentWorkflowId={asset.workflow_id}
             currentPriority={priority}
-            onStageChange={handleStageChange}
+            onWorkflowChange={handleWorkflowChange}
             onPriorityChange={handlePriorityChange}
-            onStageView={handleStageView}
           />
         </div>
       </div>
@@ -805,19 +895,75 @@ export function AssetTab({ asset, onCite }: AssetTabProps) {
 
           {activeTab === 'stage' && (
             <div className="space-y-6">
-              <InvestmentTimeline
-                currentStage={stage}
-                onStageChange={handleStageChange}
-                onStageClick={handleTimelineStageClick}
-                assetSymbol={asset.symbol}
-                assetId={asset.id}
-                viewingStageId={viewingStageId}
-                onViewingStageChange={setViewingStageId}
-              />
+              <div className="flex justify-between items-center">
+                {showTimelineView ? (
+                  <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
+                ) : (
+                  <WorkflowSelector
+                    currentWorkflowId={asset.workflow_id}
+                    onWorkflowChange={handleWorkflowChange}
+                    onManageWorkflows={() => setShowWorkflowManager(true)}
+                    onViewAllWorkflows={() => {
+                      if (onNavigate) {
+                        onNavigate({
+                          id: 'workflows',
+                          title: 'Workflows',
+                          type: 'workflows',
+                          data: null
+                        })
+                      }
+                    }}
+                  />
+                )}
+                <button
+                  onClick={() => setShowTimelineView(!showTimelineView)}
+                  className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300"
+                >
+                  {showTimelineView ? (
+                    <>
+                      <Activity className="w-4 h-4" />
+                      <span>Stage View</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4" />
+                      <span>Timeline View</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {showTimelineView ? (
+                <AssetTimelineView
+                  assetId={asset.id}
+                  assetSymbol={asset.symbol}
+                  workflowId={asset.workflow_id}
+                  isOpen={true}
+                  onClose={() => setShowTimelineView(false)}
+                  inline={true}
+                />
+              ) : (
+                <InvestmentTimeline
+                  currentStage={stage}
+                  onStageChange={handleStageChange}
+                  onStageClick={handleTimelineStageClick}
+                  assetSymbol={asset.symbol}
+                  assetId={asset.id}
+                  viewingStageId={viewingStageId}
+                  onViewingStageChange={setViewingStageId}
+                  workflowId={asset.workflow_id}
+                />
+              )}
             </div>
           )}
         </div>
       </Card>
+
+      {/* Workflow Manager Modal */}
+      <WorkflowManager
+        isOpen={showWorkflowManager}
+        onClose={() => setShowWorkflowManager(false)}
+      />
     </div>
   )
 }

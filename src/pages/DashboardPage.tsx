@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow } from 'lucide-react'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
+import { TabStateManager } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
 import { AssetsListPage } from './AssetsListPage'
 import { ThemesListPage } from './ThemesListPage'
@@ -23,12 +24,14 @@ import { formatDistanceToNow } from 'date-fns'
 import { ProfilePage } from './ProfilePage'
 import { SettingsPage } from './SettingsPage'
 import { IdeaGeneratorPage } from './IdeaGeneratorPage'
+import { WorkflowsPage } from './WorkflowsPage'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
     { id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }
   ])
   const [activeTabId, setActiveTabId] = useState('dashboard')
+  const [isInitialized, setIsInitialized] = useState(false)
 
   const { data: assets, isLoading: assetsLoading } = useQuery({
     queryKey: ['assets'],
@@ -181,6 +184,41 @@ export function DashboardPage() {
     refetchInterval: 30000, // Refetch every 30 seconds for live updates
   })
 
+  // Initialize tab state from persistence on component mount
+  useEffect(() => {
+    const savedState = TabStateManager.loadMainTabState()
+    if (savedState) {
+      // Ensure dashboard tab always exists
+      const hasDashboard = savedState.tabs.some(tab => tab.id === 'dashboard')
+      if (!hasDashboard) {
+        savedState.tabs.unshift({
+          id: 'dashboard',
+          title: 'Dashboard',
+          type: 'dashboard',
+          isActive: false
+        })
+      }
+
+      // Restore tabs and active tab
+      setTabs(savedState.tabs.map(tab => ({
+        ...tab,
+        isActive: tab.id === savedState.activeTabId
+      })))
+      setActiveTabId(savedState.activeTabId)
+    }
+    setIsInitialized(true)
+  }, [])
+
+  // Save tab state whenever tabs or activeTabId changes (but only after initialization)
+  useEffect(() => {
+    if (isInitialized) {
+      // Preserve existing tabStates when saving main state
+      const currentState = TabStateManager.loadMainTabState()
+      const existingTabStates = currentState?.tabStates || {}
+      TabStateManager.saveMainTabState(tabs, activeTabId, existingTabStates)
+    }
+  }, [tabs, activeTabId, isInitialized])
+
   const getPriorityColor = (priority: string | null) => {
     switch (priority) {
       case 'high': return 'error'
@@ -257,10 +295,13 @@ export function DashboardPage() {
 
   const handleTabClose = (tabId: string) => {
     if (tabId === 'dashboard') return // Can't close dashboard tab
-    
+
     const tabIndex = tabs.findIndex(tab => tab.id === tabId)
     const newTabs = tabs.filter(tab => tab.id !== tabId)
-    
+
+    // Remove the tab's stored state
+    TabStateManager.removeTabState(tabId)
+
     // If closing active tab, switch to dashboard or previous tab
     if (activeTabId === tabId) {
       const newActiveTab = newTabs.length > 0 ? newTabs[Math.max(0, tabIndex - 1)] : newTabs[0]
@@ -318,7 +359,7 @@ export function DashboardPage() {
 
     switch (activeTab.type) {
       case 'asset':
-        return activeTab.data ? <AssetTab asset={activeTab.data} /> : <div>Loading asset...</div>
+        return activeTab.data ? <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading asset...</div>
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':
@@ -333,6 +374,8 @@ export function DashboardPage() {
         return <ListTab list={activeTab.data} onAssetSelect={handleSearchResult} />
       case 'idea-generator':
         return <IdeaGeneratorPage onItemSelect={handleSearchResult} />
+      case 'workflows':
+        return <WorkflowsPage />
       case 'note':
         return <NotebookTab notebook={activeTab.data} />
       case 'theme':
@@ -371,6 +414,24 @@ export function DashboardPage() {
             </div>
             <span className="text-gray-900 font-semibold">Idea Generator</span>
             <span className="text-gray-500 text-xs mt-1">Discover insights</span>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'workflows',
+            title: 'Workflows',
+            type: 'workflows',
+            data: null
+          })}
+        >
+          <div className="flex flex-col items-center p-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center mb-3">
+              <Workflow className="h-6 w-6 text-blue-600" />
+            </div>
+            <span className="text-gray-900 font-semibold">Workflows</span>
+            <span className="text-gray-500 text-xs mt-1">Manage processes</span>
           </div>
         </Card>
 

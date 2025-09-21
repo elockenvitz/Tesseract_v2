@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Play } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { useAuth } from '../../hooks/useAuth'
@@ -39,6 +39,66 @@ interface ListItem {
     last_name?: string
   }
 }
+
+// Stage configurations matching SmartStageManager
+const STAGE_CONFIGS = [
+  {
+    id: 'outdated',
+    label: 'Outdated',
+    color: 'bg-gray-600',
+    textColor: 'text-gray-600',
+    icon: AlertTriangle,
+    description: 'Requires data refresh'
+  },
+  {
+    id: 'prioritized',
+    label: 'Prioritize',
+    color: 'bg-orange-600',
+    textColor: 'text-orange-600',
+    icon: Zap,
+    description: 'Active focus required'
+  },
+  {
+    id: 'in_progress',
+    label: 'Research',
+    color: 'bg-blue-500',
+    textColor: 'text-blue-500',
+    icon: TrendingUp,
+    description: 'Deep analysis underway'
+  },
+  {
+    id: 'recommend',
+    label: 'Recommend',
+    color: 'bg-yellow-500',
+    textColor: 'text-yellow-500',
+    icon: Target,
+    description: 'Preparing recommendation'
+  },
+  {
+    id: 'review',
+    label: 'Review',
+    color: 'bg-green-400',
+    textColor: 'text-green-400',
+    icon: CheckCircle,
+    description: 'Committee review'
+  },
+  {
+    id: 'action',
+    label: 'Action',
+    color: 'bg-green-700',
+    textColor: 'text-green-700',
+    icon: Zap,
+    description: 'Execution phase'
+  },
+  {
+    id: 'monitor',
+    label: 'Monitor',
+    color: 'bg-teal-500',
+    textColor: 'text-teal-500',
+    icon: TrendingUp,
+    description: 'Ongoing tracking'
+  }
+]
 
 export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
@@ -251,7 +311,15 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           bValue = priorityOrder[b.assets?.priority as keyof typeof priorityOrder] || 0
           break
         case 'process_stage':
-          const stageOrder = { research: 1, analysis: 2, monitoring: 3, review: 4, archived: 5 }
+          const stageOrder = {
+            outdated: 1,
+            prioritized: 2,
+            in_progress: 3,
+            recommend: 4,
+            review: 5,
+            action: 6,
+            monitor: 7
+          }
           aValue = stageOrder[a.assets?.process_stage as keyof typeof stageOrder] || 0
           bValue = stageOrder[b.assets?.process_stage as keyof typeof stageOrder] || 0
           break
@@ -298,7 +366,24 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         .from('assets')
         .update({ process_stage: newStage, updated_at: new Date().toISOString() })
         .eq('id', assetId)
-      
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['all-assets'] })
+    }
+  })
+
+  // Initiate research mutation (moves from outdated to prioritized)
+  const initiateResearchMutation = useMutation({
+    mutationFn: async (assetId: string) => {
+      const { error } = await supabase
+        .from('assets')
+        .update({ process_stage: 'prioritized', updated_at: new Date().toISOString() })
+        .eq('id', assetId)
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -451,14 +536,21 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   }
 
   const getStageColor = (stage: string | null) => {
-    switch (stage) {
-      case 'research': return 'primary'
-      case 'analysis': return 'warning'
-      case 'monitoring': return 'success'
-      case 'review': return 'default'
-      case 'archived': return 'default'
-      default: return 'default'
+    const stageConfig = STAGE_CONFIGS.find(config => config.id === stage)
+    if (stageConfig) {
+      // Convert bg-color to badge variant
+      switch (stageConfig.color) {
+        case 'bg-gray-600': return 'default'
+        case 'bg-orange-600': return 'warning'
+        case 'bg-blue-500': return 'primary'
+        case 'bg-yellow-500': return 'warning'
+        case 'bg-green-400': return 'success'
+        case 'bg-green-700': return 'success'
+        case 'bg-teal-500': return 'primary'
+        default: return 'default'
+      }
     }
+    return 'default'
   }
 
   const handleSort = (field: string) => {
@@ -538,31 +630,50 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
       )}
     >
       <Card className="cursor-pointer hover:shadow-md transition-shadow group">
-        <div 
-          className="p-4"
-          onClick={() => item.assets && handleAssetClick(item.assets)}
-        >
-          {/* Asset Info */}
-          <div className="mb-3">
-            <h4 className="font-semibold text-gray-900 text-sm mb-1">
-              {item.assets?.symbol || 'Unknown'}
-            </h4>
-            <p className="text-xs text-gray-600 line-clamp-2 mb-1">
-              {item.assets?.company_name || 'Unknown Company'}
-            </p>
-            {item.assets?.sector && (
-              <p className="text-xs text-gray-500">{item.assets.sector}</p>
-            )}
+        <div className="p-4">
+          <div onClick={() => item.assets && handleAssetClick(item.assets)}>
+            {/* Asset Info */}
+            <div className="mb-3">
+              <h4 className="font-semibold text-gray-900 text-sm mb-1">
+                {item.assets?.symbol || 'Unknown'}
+              </h4>
+              <p className="text-xs text-gray-600 line-clamp-2 mb-1">
+                {item.assets?.company_name || 'Unknown Company'}
+              </p>
+              {item.assets?.sector && (
+                <p className="text-xs text-gray-500">{item.assets.sector}</p>
+              )}
+            </div>
+
+            {/* Badges */}
+            <div className="flex flex-wrap gap-1 mt-3">
+              {item.assets?.priority && (
+                <Badge variant={getPriorityColor(item.assets.priority)} size="sm">
+                  {item.assets.priority}
+                </Badge>
+              )}
+            </div>
           </div>
-          
-          {/* Badges */}
-          <div className="flex flex-wrap gap-1 mt-3">
-            {item.assets?.priority && (
-              <Badge variant={getPriorityColor(item.assets.priority)} size="sm">
-                {item.assets.priority}
-              </Badge>
-            )}
-          </div>
+
+          {/* Initiate Button for Outdated Assets */}
+          {item.assets?.process_stage === 'outdated' && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <Button
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (item.assets) {
+                    initiateResearchMutation.mutate(item.assets.id)
+                  }
+                }}
+                disabled={initiateResearchMutation.isPending}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Play className="h-3 w-3 mr-1" />
+                {initiateResearchMutation.isPending ? 'Initiating...' : 'Initiate Research'}
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
     </div>
@@ -762,31 +873,43 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     </div>
   )
 
-  const renderKanbanColumn = (stage: string, items: ListItem[]) => (
-    <div 
-      key={stage} 
-      className="flex-1 min-w-[300px]"
-      onDragOver={handleDragOver}
-      onDragEnter={(e) => handleDragEnter(e, undefined, stage)}
-      onDragLeave={handleDragLeave}
-      onDrop={(e) => handleDrop(e, undefined, stage)}
-    >
-      <div className={clsx(
-        "bg-gray-50 rounded-lg p-4 min-h-[200px] transition-colors",
-        draggedOverStage === stage && 'bg-primary-50 border-2 border-primary-300 border-dashed'
-      )}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900 capitalize">{stage}</h3>
-          <Badge variant={getStageColor(stage)} size="sm">
-            {items.length}
-          </Badge>
-        </div>
-        <div className="space-y-3">
-          {items.map(item => renderAssetCard(item))}
+  const renderKanbanColumn = (stage: string, items: ListItem[], stageConfig: any) => {
+    const StageIcon = stageConfig.icon
+
+    return (
+      <div
+        key={stage}
+        className="flex-1 min-w-[300px]"
+        onDragOver={handleDragOver}
+        onDragEnter={(e) => handleDragEnter(e, undefined, stage)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, undefined, stage)}
+      >
+        <div className={clsx(
+          "bg-gray-50 rounded-lg p-4 min-h-[200px] transition-colors",
+          draggedOverStage === stage && 'bg-primary-50 border-2 border-primary-300 border-dashed'
+        )}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className={`w-6 h-6 rounded-full ${stageConfig.color} flex items-center justify-center`}>
+                <StageIcon className="w-3 h-3 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">{stageConfig.label}</h3>
+                <p className="text-xs text-gray-500">{stageConfig.description}</p>
+              </div>
+            </div>
+            <Badge variant={getStageColor(stage)} size="sm">
+              {items.length}
+            </Badge>
+          </div>
+          <div className="space-y-3">
+            {items.map(item => renderAssetCard(item))}
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -960,11 +1083,10 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 onChange={(e) => setStageFilter(e.target.value)}
                 options={[
                   { value: 'all', label: 'All Stages' },
-                  { value: 'research', label: 'Research' },
-                  { value: 'analysis', label: 'Analysis' },
-                  { value: 'monitoring', label: 'Monitoring' },
-                  { value: 'review', label: 'Review' },
-                  { value: 'archived', label: 'Archived' }
+                  ...STAGE_CONFIGS.map(stage => ({
+                    value: stage.id,
+                    label: stage.label
+                  }))
                 ]}
               />
 
@@ -1104,9 +1226,9 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
           {viewMode === 'kanban' && (
             <div className="flex space-x-6 overflow-x-auto pb-4 min-h-[400px]">
-              {['research', 'analysis', 'monitoring', 'review', 'archived'].map(stage => {
-                const stageItems = filteredItems.filter(item => item.assets?.process_stage === stage)
-                return renderKanbanColumn(stage, stageItems)
+              {STAGE_CONFIGS.map(stageConfig => {
+                const stageItems = filteredItems.filter(item => item.assets?.process_stage === stageConfig.id)
+                return renderKanbanColumn(stageConfig.id, stageItems, stageConfig)
               })}
             </div>
           )}
