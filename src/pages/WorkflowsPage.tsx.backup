@@ -1,0 +1,1371 @@
+import React, { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Search, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, Shield, Target, CheckSquare, UserCog, Calendar, X } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { Card } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
+import { Badge } from '../components/ui/Badge'
+import { WorkflowManager } from '../components/ui/WorkflowManager'
+
+interface WorkflowWithStats {
+  id: string
+  name: string
+  description: string
+  color: string
+  is_default: boolean
+  is_public: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  usage_count: number
+  active_assets: number
+  completed_assets: number
+  creator_name?: string
+  is_favorited?: boolean
+  user_permission?: 'read' | 'write' | 'admin' | 'owner'
+  collaborators?: WorkflowCollaborator[]
+  stages?: WorkflowStage[]
+}
+
+interface WorkflowCollaborator {
+  id: string
+  user_id: string
+  permission: 'read' | 'write' | 'admin'
+  user_name: string
+  user_email: string
+}
+
+interface WorkflowStage {
+  id: string
+  stage_key: string
+  stage_label: string
+  stage_description: string
+  sort_order: number
+  standard_deadline_days: number
+}
+
+interface WorkflowAutomationRule {
+  id: string
+  workflow_id: string
+  rule_name: string
+  rule_type: 'trigger' | 'reset' | 'reminder'
+  condition_type: 'earnings_date' | 'custom_date' | 'time_based' | 'field_change' | 'stage_completion'
+  condition_value: any
+  action_type: 'start_workflow' | 'reset_workflow' | 'send_reminder' | 'advance_stage'
+  action_value: any
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface WorkflowsPageProps {
+  className?: string
+}
+
+export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>('all')
+  const [showWorkflowManager, setShowWorkflowManager] = useState(false)
+  const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
+  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'checklist' | 'admins' | 'cadence'>('overview')
+  const [editingStage, setEditingStage] = useState<string | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<string | null>(null)
+  const [editingRule, setEditingRule] = useState<string | null>(null)
+  const [showRuleEditor, setShowRuleEditor] = useState(false)
+  const [stageForm, setStageForm] = useState({ label: '', description: '', deadlineDays: 0 })
+  const [templateForm, setTemplateForm] = useState({ title: '', items: [''] })
+  const [ruleForm, setRuleForm] = useState({
+    rule_name: '',
+    rule_type: 'trigger' as 'trigger' | 'reset' | 'reminder',
+    condition_type: 'earnings_date' as 'earnings_date' | 'custom_date' | 'time_based' | 'field_change' | 'stage_completion',
+    condition_value: { days_before: 20 },
+    action_type: 'start_workflow' as 'start_workflow' | 'reset_workflow' | 'send_reminder' | 'advance_stage',
+    action_value: { target_stage: '' },
+    is_active: true
+  })
+  const queryClient = useQueryClient()
+
+  // Mutation for updating workflow stages
+  const updateStageMutation = useMutation({
+    mutationFn: async ({ workflowId, stageKey, updates }: { workflowId: string, stageKey: string, updates: any }) => {
+      const { error } = await supabase
+        .from('workflow_stages')
+        .update({
+          stage_label: updates.label,
+          stage_description: updates.description,
+          standard_deadline_days: updates.deadlineDays,
+          updated_at: new Date().toISOString()
+        })
+        .eq('workflow_id', workflowId)
+        .eq('stage_key', stageKey)
+
+      if (error) throw error
+      return { workflowId, stageKey, updates }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
+      setEditingStage(null)
+    },
+    onError: (error) => {
+      console.error('Error updating stage:', error)
+      alert('Failed to update stage. Please try again.')
+    }
+  })
+
+  // Mutation for updating checklist templates
+  const updateTemplateMutation = useMutation({
+    mutationFn: async ({ workflowId, templateData }: { workflowId: string, templateData: any }) => {
+      const { error } = await supabase
+        .from('workflow_checklist_templates')
+        .upsert({
+          workflow_id: workflowId,
+          stage: editingTemplate!,
+          title: templateData.title,
+          items: templateData.items.filter((item: string) => item.trim() !== ''),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+
+      if (error) throw error
+      return templateData
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      setEditingTemplate(null)
+    },
+    onError: (error) => {
+      console.error('Error updating template:', error)
+      alert('Failed to update checklist template. Please try again.')
+    }
+  })
+
+  // Mutations for automation rules
+  const createRuleMutation = useMutation({
+    mutationFn: async ({ workflowId, ruleData }: { workflowId: string, ruleData: any }) => {
+      const { error } = await supabase
+        .from('workflow_automation_rules')
+        .insert({
+          workflow_id: workflowId,
+          rule_name: ruleData.rule_name,
+          rule_type: ruleData.rule_type,
+          condition_type: ruleData.condition_type,
+          condition_value: ruleData.condition_value,
+          action_type: ruleData.action_type,
+          action_value: ruleData.action_value,
+          is_active: ruleData.is_active,
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        })
+
+      if (error) throw error
+      return ruleData
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+      setShowRuleEditor(false)
+      setEditingRule(null)
+    },
+    onError: (error) => {
+      console.error('Error creating rule:', error)
+      alert('Failed to create automation rule. Please try again.')
+    }
+  })
+
+  const updateRuleMutation = useMutation({
+    mutationFn: async ({ ruleId, ruleData }: { ruleId: string, ruleData: any }) => {
+      const { error } = await supabase
+        .from('workflow_automation_rules')
+        .update({
+          rule_name: ruleData.rule_name,
+          rule_type: ruleData.rule_type,
+          condition_type: ruleData.condition_type,
+          condition_value: ruleData.condition_value,
+          action_type: ruleData.action_type,
+          action_value: ruleData.action_value,
+          is_active: ruleData.is_active,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ruleId)
+
+      if (error) throw error
+      return ruleData
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+      setShowRuleEditor(false)
+      setEditingRule(null)
+    },
+    onError: (error) => {
+      console.error('Error updating rule:', error)
+      alert('Failed to update automation rule. Please try again.')
+    }
+  })
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: async (ruleId: string) => {
+      const { error } = await supabase
+        .from('workflow_automation_rules')
+        .delete()
+        .eq('id', ruleId)
+
+      if (error) throw error
+      return ruleId
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+    },
+    onError: (error) => {
+      console.error('Error deleting rule:', error)
+      alert('Failed to delete automation rule. Please try again.')
+    }
+  })
+
+  // Query for workflow stages
+  const { data: workflowStages } = useQuery({
+    queryKey: ['workflow-stages'],
+    staleTime: 0,
+    cacheTime: 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('workflow_stages')
+        .select('*')
+        .order('workflow_id')
+        .order('sort_order')
+
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  // Query for workflow automation rules
+  const { data: automationRules } = useQuery({
+    queryKey: ['workflow-automation-rules'],
+    staleTime: 0,
+    cacheTime: 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('workflow_automation_rules')
+        .select('*')
+        .order('workflow_id')
+        .order('created_at')
+
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  const { data: workflows, isLoading } = useQuery({
+    queryKey: ['workflows-full', filterBy],
+    staleTime: 0,
+    cacheTime: 0,
+    queryFn: async () => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+
+      if (!userId) return []
+
+      let workflowQuery = supabase.from('workflows').select(`
+        *,
+        users:created_by (
+          first_name,
+          last_name,
+          email
+        )
+      `)
+
+      switch (filterBy) {
+        case 'my':
+          workflowQuery = workflowQuery.eq('created_by', userId)
+          break
+        case 'public':
+          workflowQuery = workflowQuery.eq('is_public', true)
+          break
+        default:
+          workflowQuery = workflowQuery.or(`is_public.eq.true,created_by.eq.${userId}`)
+          break
+      }
+
+      const { data: workflowData, error } = await workflowQuery
+
+      if (error) throw error
+
+      const { data: usageStats } = await supabase
+        .from('asset_workflow_progress')
+        .select('workflow_id, is_started, completed_at')
+
+      const workflowsWithStats: WorkflowWithStats[] = (workflowData || []).map(workflow => {
+        const workflowUsage = usageStats?.filter(stat => stat.workflow_id === workflow.id) || []
+        const activeAssets = workflowUsage.filter(stat => stat.is_started && !stat.completed_at).length
+        const completedAssets = workflowUsage.filter(stat => stat.completed_at).length
+        const totalUsage = workflowUsage.length
+
+        const creator = workflow.users
+        const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
+
+        // For Research Workflow, current user should be admin if not owner
+        let userPermission: 'read' | 'write' | 'admin' | 'owner' = 'read'
+        if (workflow.created_by === userId) {
+          userPermission = 'owner'
+        } else if (workflow.name === 'Research Workflow') {
+          // For now, all logged-in users can be admin of Research Workflow for testing
+          userPermission = 'admin'
+        }
+
+        // Get stages for this workflow from workflowStages query
+        const workflowStagesData = workflowStages?.filter(stage => stage.workflow_id === workflow.id) || []
+
+        // Debug logging for workflow data
+        console.log('Workflow:', workflow.name, 'CreatorName:', creatorName, 'UserPermission:', userPermission, 'UserId:', userId)
+
+        return {
+          ...workflow,
+          usage_count: totalUsage,
+          active_assets: activeAssets,
+          completed_assets: completedAssets,
+          creator_name: creatorName,
+          is_favorited: false,
+          user_permission: userPermission,
+          collaborators: [],
+          stages: workflowStagesData
+        }
+      })
+
+      return workflowsWithStats
+    }
+  })
+
+  const filteredWorkflows = workflows?.filter(workflow =>
+    workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    workflow.description.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || []
+
+  const handleCreateWorkflow = () => {
+    setSelectedWorkflow(null)
+    setShowWorkflowManager(true)
+  }
+
+  const handleSelectWorkflow = (workflow: WorkflowWithStats) => {
+    setSelectedWorkflow(workflow)
+    setActiveView('overview')
+  }
+
+  const handleEditWorkflow = (workflowId: string) => {
+    const workflow = workflows?.find(w => w.id === workflowId)
+    if (workflow) {
+      setSelectedWorkflow(workflow)
+      setShowWorkflowManager(true)
+    }
+  }
+
+  const handleEditStage = (stage: any) => {
+    setEditingStage(stage.stage_key)
+    setStageForm({
+      label: stage.stage_label,
+      description: stage.stage_description,
+      deadlineDays: stage.standard_deadline_days
+    })
+  }
+
+  const handleSaveStage = () => {
+    if (!selectedWorkflow || !editingStage) return
+
+    updateStageMutation.mutate({
+      workflowId: selectedWorkflow.id,
+      stageKey: editingStage,
+      updates: {
+        label: stageForm.label,
+        description: stageForm.description,
+        deadlineDays: stageForm.deadlineDays
+      }
+    })
+  }
+
+  const handleCancelStageEdit = () => {
+    setEditingStage(null)
+    setStageForm({ label: '', description: '', deadlineDays: 0 })
+  }
+
+  const handleAddRule = () => {
+    setEditingRule(null)
+    setRuleForm({
+      rule_name: '',
+      rule_type: 'trigger',
+      condition_type: 'earnings_date',
+      condition_value: { days_before: 20 },
+      action_type: 'start_workflow',
+      action_value: { target_stage: '' },
+      is_active: true
+    })
+    setShowRuleEditor(true)
+  }
+
+  const handleEditRule = (rule: WorkflowAutomationRule) => {
+    setEditingRule(rule.id)
+    setRuleForm({
+      rule_name: rule.rule_name,
+      rule_type: rule.rule_type,
+      condition_type: rule.condition_type,
+      condition_value: rule.condition_value,
+      action_type: rule.action_type,
+      action_value: rule.action_value,
+      is_active: rule.is_active
+    })
+    setShowRuleEditor(true)
+  }
+
+  const handleSaveRule = () => {
+    if (!selectedWorkflow) return
+
+    if (editingRule) {
+      updateRuleMutation.mutate({
+        ruleId: editingRule,
+        ruleData: ruleForm
+      })
+    } else {
+      createRuleMutation.mutate({
+        workflowId: selectedWorkflow.id,
+        ruleData: ruleForm
+      })
+    }
+  }
+
+  const handleCancelRuleEdit = () => {
+    setShowRuleEditor(false)
+    setEditingRule(null)
+  }
+
+  const handleDeleteRule = (ruleId: string) => {
+    if (confirm('Are you sure you want to delete this automation rule?')) {
+      deleteRuleMutation.mutate(ruleId)
+    }
+  }
+
+  const handleEditTemplate = (template: any) => {
+    setEditingTemplate(template.stage)
+    setTemplateForm({
+      title: template.title,
+      items: [...template.items]
+    })
+  }
+
+  const handleSaveTemplate = () => {
+    if (!selectedWorkflow || !editingTemplate) return
+
+    updateTemplateMutation.mutate({
+      workflowId: selectedWorkflow.id,
+      templateData: templateForm
+    })
+  }
+
+  const handleCancelTemplateEdit = () => {
+    setEditingTemplate(null)
+    setTemplateForm({ title: '', items: [''] })
+  }
+
+  const handleAddTemplateItem = () => {
+    setTemplateForm(prev => ({
+      ...prev,
+      items: [...prev.items, '']
+    }))
+  }
+
+  const handleRemoveTemplateItem = (index: number) => {
+    setTemplateForm(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleTemplateItemChange = (index: number, value: string) => {
+    setTemplateForm(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) => i === index ? value : item)
+    }))
+  }
+
+  if (isLoading) {
+    return (
+      <div className={`flex h-screen ${className}`}>
+        <div className="w-80 border-r border-gray-200 bg-gray-50">
+          <div className="p-4">
+            <div className="h-4 bg-gray-200 rounded w-16 mb-4"></div>
+            <div className="space-y-3">
+              {Array.from({length: 5}).map((_, i) => (
+                <div key={i} className="h-12 bg-gray-200 rounded"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-pulse text-center">
+            <div className="h-8 bg-gray-200 rounded w-64 mb-6 mx-auto"></div>
+            <div className="h-32 bg-gray-200 rounded w-96 mx-auto"></div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`flex h-full overflow-hidden ${className}`}>
+      {/* Sidebar */}
+      <div className="w-80 border-r border-gray-200 bg-gray-50 flex flex-col">
+        {/* Header */}
+        <div className="pl-1 pr-4 pt-0 pb-4 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-900">Workflows</h2>
+            <Button size="sm" onClick={handleCreateWorkflow}>
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
+
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Search workflows..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {[{id: 'all', label: 'All'}, {id: 'my', label: 'Mine'}, {id: 'public', label: 'Public'}, {id: 'shared', label: 'Shared'}].map(filter => (
+              <button
+                key={filter.id}
+                onClick={() => setFilterBy(filter.id as any)}
+                className={`text-xs px-2 py-1 rounded font-medium transition-colors ${filterBy === filter.id ? 'bg-primary-100 text-primary-700' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Workflow List */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="divide-y divide-gray-200">
+            {filteredWorkflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                onClick={() => handleSelectWorkflow(workflow)}
+                className={`px-4 py-3 cursor-pointer transition-colors group ${
+                  selectedWorkflow?.id === workflow.id
+                    ? 'bg-primary-50 border-r-2 border-primary-500'
+                    : 'hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-3 min-w-0 flex-1">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
+                      style={{ backgroundColor: workflow.color }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <h3 className="text-sm font-semibold text-gray-900 truncate">{workflow.name}</h3>
+                        {workflow.is_default && (
+                          <Badge variant="secondary" size="sm">Default</Badge>
+                        )}
+                        {workflow.user_permission === 'owner' && (
+                          <Shield className="w-3 h-3 text-primary-500" title="Owner" />
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 truncate mb-1">
+                        {workflow.description || 'No description'}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>
+                          {workflow.usage_count > 0 && workflow.active_assets > 0 && `${workflow.usage_count} uses • ${workflow.active_assets} active`}
+                          {workflow.usage_count > 0 && workflow.active_assets === 0 && `${workflow.usage_count} uses`}
+                          {workflow.usage_count === 0 && workflow.active_assets > 0 && `${workflow.active_assets} active`}
+                          {workflow.usage_count === 0 && workflow.active_assets === 0 && 'New workflow'}
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          <Users className="w-3 h-3" />
+                          <span>1</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {selectedWorkflow ? (
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-6">
+              {/* Page Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
+                <div className="flex items-center space-x-4">
+                  <div
+                    className="w-12 h-12 rounded-full"
+                    style={{ backgroundColor: selectedWorkflow.color }}
+                  />
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">{selectedWorkflow.name}</h1>
+                    <p className="text-gray-600">{selectedWorkflow.description}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <Card>
+                <div className="border-b border-gray-200">
+                  <nav className="flex space-x-8 px-6">
+                    {[
+                      { id: 'overview', label: 'Overview', icon: BarChart3 },
+                      { id: 'stages', label: 'Stages', icon: Target },
+                      { id: 'checklist', label: 'Checklist Templates', icon: CheckSquare },
+                      { id: 'admins', label: 'Team & Admins', icon: UserCog },
+                      { id: 'cadence', label: 'Cadence', icon: Calendar }
+                    ].map((tab) => {
+                      const Icon = tab.icon
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveView(tab.id as any)}
+                          className={`flex items-center space-x-2 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
+                            activeView === tab.id
+                              ? 'border-primary-500 text-primary-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span>{tab.label}</span>
+                        </button>
+                      )
+                    })}
+                  </nav>
+                </div>
+
+                {/* Tab Content */}
+                <div className="p-6">
+                  {activeView === 'overview' && (
+                    <div className="space-y-6">
+                      {/* Stats Cards */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <Card>
+                          <div className="text-center p-6">
+                            <div className="text-3xl font-bold text-primary-600 mb-2">{selectedWorkflow.usage_count}</div>
+                            <div className="text-sm text-gray-500">Total Uses</div>
+                          </div>
+                        </Card>
+                        <Card>
+                          <div className="text-center p-6">
+                            <div className="text-3xl font-bold text-orange-600 mb-2">{selectedWorkflow.active_assets}</div>
+                            <div className="text-sm text-gray-500">Active Assets</div>
+                          </div>
+                        </Card>
+                        <Card>
+                          <div className="text-center p-6">
+                            <div className="text-3xl font-bold text-green-600 mb-2">{selectedWorkflow.completed_assets}</div>
+                            <div className="text-sm text-gray-500">Completed</div>
+                          </div>
+                        </Card>
+                      </div>
+
+                      {/* Workflow Details */}
+                      <Card>
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold text-gray-900">Workflow Details</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-3">
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-500">Created by:</span>
+                                <span className="text-sm font-medium text-gray-900">{selectedWorkflow.creator_name}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-500">Created:</span>
+                                <span className="text-sm text-gray-900">{new Date(selectedWorkflow.created_at).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-3">
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-500">Last updated:</span>
+                                <span className="text-sm text-gray-900">{new Date(selectedWorkflow.updated_at).toLocaleDateString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-500">Visibility:</span>
+                                <div className="space-x-2">
+                                  {selectedWorkflow.is_public && (
+                                    <Badge variant="success" size="sm">Public</Badge>
+                                  )}
+                                  {selectedWorkflow.is_default && (
+                                    <Badge variant="secondary" size="sm">Default</Badge>
+                                  )}
+                                  {!selectedWorkflow.is_public && !selectedWorkflow.is_default && (
+                                    <Badge variant="default" size="sm">Private</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  )}
+
+                  {activeView === 'stages' && (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
+                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          <Button size="sm">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Stage
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        {(selectedWorkflow?.stages || []).map((stage, index) => (
+                          <Card key={stage.stage_key}>
+                            {editingStage === stage.stage_key ? (
+                              // Edit mode
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Stage Name</label>
+                                    <input
+                                      type="text"
+                                      value={stageForm.label}
+                                      onChange={(e) => setStageForm(prev => ({ ...prev, label: e.target.value }))}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Deadline (days)</label>
+                                    <input
+                                      type="number"
+                                      value={stageForm.deadlineDays}
+                                      onChange={(e) => setStageForm(prev => ({ ...prev, deadlineDays: parseInt(e.target.value) || 0 }))}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                  <textarea
+                                    value={stageForm.description}
+                                    onChange={(e) => setStageForm(prev => ({ ...prev, description: e.target.value }))}
+                                    rows={2}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                  />
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={handleSaveStage}
+                                    disabled={updateStageMutation.isPending}
+                                  >
+                                    {updateStageMutation.isPending ? 'Saving...' : 'Save'}
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={handleCancelStageEdit}>
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              // View mode
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-4">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+                                  </div>
+                                  <div>
+                                    <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
+                                    <p className="text-sm text-gray-500">{stage.stage_description}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                  <div className="text-sm text-gray-500">
+                                    <Clock className="w-4 h-4 inline mr-1" />
+                                    {stage.standard_deadline_days} days
+                                  </div>
+                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    <Button variant="outline" size="sm" onClick={() => handleEditStage(stage)}>
+                                      <Edit3 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeView === 'checklist' && (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">Checklist Templates</h3>
+                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          <Button size="sm">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Template
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        {[
+                          { stage: 'prioritized', title: 'Initial Research Checklist', items: ['Review company overview', 'Check recent news', 'Identify key metrics'] },
+                          { stage: 'in_progress', title: 'Deep Analysis Checklist', items: ['Financial statement analysis', 'Competitive analysis', 'Management assessment', 'Risk evaluation'] },
+                          { stage: 'recommend', title: 'Recommendation Checklist', items: ['Price target calculation', 'Investment thesis summary', 'Risk/reward analysis'] },
+                          { stage: 'review', title: 'Final Review Checklist', items: ['Peer review completed', 'Compliance check', 'Documentation complete'] }
+                        ].map((template) => (
+                          <Card key={template.stage}>
+                            {editingTemplate === template.stage ? (
+                              // Edit mode
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Template Title</label>
+                                  <input
+                                    type="text"
+                                    value={templateForm.title}
+                                    onChange={(e) => setTemplateForm(prev => ({ ...prev, title: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Checklist Items</label>
+                                  <div className="space-y-2">
+                                    {templateForm.items.map((item, idx) => (
+                                      <div key={idx} className="flex items-center space-x-2">
+                                        <CheckSquare className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                        <input
+                                          type="text"
+                                          value={item}
+                                          onChange={(e) => handleTemplateItemChange(idx, e.target.value)}
+                                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                          placeholder="Enter checklist item..."
+                                        />
+                                        {templateForm.items.length > 1 && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleRemoveTemplateItem(idx)}
+                                            className="p-1"
+                                          >
+                                            <X className="w-4 h-4" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleAddTemplateItem}
+                                    className="mt-2"
+                                  >
+                                    <Plus className="w-4 h-4 mr-1" />
+                                    Add Item
+                                  </Button>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={handleSaveTemplate}
+                                    disabled={updateTemplateMutation.isPending}
+                                  >
+                                    {updateTemplateMutation.isPending ? 'Saving...' : 'Save'}
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={handleCancelTemplateEdit}>
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              // View mode
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h4 className="font-medium text-gray-900">{template.title}</h4>
+                                    <p className="text-sm text-gray-500">Applied during {template.stage} stage</p>
+                                  </div>
+                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    <div className="flex items-center space-x-2">
+                                      <Button variant="outline" size="sm" onClick={() => handleEditTemplate(template)}>
+                                        <Edit3 className="w-4 h-4" />
+                                      </Button>
+                                      <Button variant="outline" size="sm">
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="space-y-2">
+                                  {template.items.map((item, idx) => (
+                                    <div key={idx} className="flex items-center space-x-2 text-sm text-gray-600">
+                                      <CheckSquare className="w-4 h-4 text-gray-400" />
+                                      <span>{item}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeView === 'admins' && (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">Team & Admins</h3>
+                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          <Button size="sm">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Invite User
+                          </Button>
+                        )}
+                      </div>
+
+                      <Card>
+                        <div className="space-y-0 divide-y divide-gray-200">
+                          {/* For Research Workflow, only show Eric as Admin */}
+                          {selectedWorkflow.name === 'Research Workflow' ? (
+                            <div className="flex items-center justify-between p-4">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                  <span className="text-sm font-medium text-green-600">EL</span>
+                                </div>
+                                <div>
+                                  <h4 className="font-medium text-gray-900">Eric Lockenvitz</h4>
+                                  <p className="text-sm text-gray-500">Research Team Lead</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Badge variant="warning" size="sm">Admin</Badge>
+                                {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  <Button variant="outline" size="sm">
+                                    <Settings className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            /* For custom workflows, show the creator */
+                            <div className="flex items-center justify-between p-4">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <span className="text-sm font-medium text-blue-600">
+                                    {selectedWorkflow.creator_name?.charAt(0) || 'U'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <h4 className="font-medium text-gray-900">{selectedWorkflow.creator_name}</h4>
+                                  <p className="text-sm text-gray-500">Workflow Creator</p>
+                                </div>
+                              </div>
+                              <Badge variant="primary" size="sm">Owner</Badge>
+                            </div>
+                          )}
+
+                          {/* Additional team members section */}
+                          {(selectedWorkflow.name !== 'Research Workflow' || selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                            <div className="text-center py-8 text-gray-500">
+                              <Users className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                              <p>
+                                {selectedWorkflow.name === 'Research Workflow'
+                                  ? 'No additional team members'
+                                  : 'No additional team members yet'
+                                }
+                              </p>
+                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                <p className="text-sm mt-1">
+                                  {selectedWorkflow.name === 'Research Workflow'
+                                    ? 'Add team members and promote to admins'
+                                    : 'Invite team members to collaborate on this workflow'
+                                  }
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+
+                      {/* Admin Permissions Notice */}
+                      {selectedWorkflow.user_permission === 'admin' && selectedWorkflow.name === 'Research Workflow' && (
+                        <Card>
+                          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="flex items-start space-x-3">
+                              <Shield className="w-5 h-5 text-amber-600 mt-0.5" />
+                              <div>
+                                <h4 className="font-medium text-amber-800">Admin Permissions</h4>
+                                <p className="text-sm text-amber-700 mt-1">
+                                  As an admin of the Research Workflow, you can modify stages,
+                                  manage checklist templates, and invite additional team members.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {activeView === 'cadence' && (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">Automation Rules</h3>
+                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          <Button size="sm" onClick={handleAddRule}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Rule
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Display actual automation rules */}
+                        {(() => {
+                          const workflowRules = automationRules?.filter(rule => rule.workflow_id === selectedWorkflow.id) || []
+
+                          if (workflowRules.length === 0) {
+                            return (
+                              <Card>
+                                <div className="p-8 text-center border-2 border-dashed border-gray-200">
+                                  <Calendar className="w-8 h-8 mx-auto mb-3 text-gray-400" />
+                                  <h4 className="font-medium text-gray-900 mb-2">No Automation Rules</h4>
+                                  <p className="text-sm text-gray-500 mb-4">
+                                    Create rules to automatically start, reset, or remind about this workflow based on dates, events, or conditions.
+                                  </p>
+                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    <Button size="sm" variant="outline" onClick={handleAddRule}>
+                                      <Plus className="w-4 h-4 mr-2" />
+                                      Create First Rule
+                                    </Button>
+                                  )}
+                                </div>
+                              </Card>
+                            )
+                          }
+
+                          return workflowRules.map((rule) => {
+                            const getConditionText = () => {
+                              switch (rule.condition_type) {
+                                case 'earnings_date':
+                                  return `${rule.condition_value.days_before || 20} days before projected earnings date`
+                                case 'time_based':
+                                  return `${rule.condition_value.interval_days || 90} days after workflow completion`
+                                case 'custom_date':
+                                  return `Custom date: ${rule.condition_value.date || 'Not set'}`
+                                default:
+                                  return 'Custom condition'
+                              }
+                            }
+
+                            const getActionText = () => {
+                              switch (rule.action_type) {
+                                case 'start_workflow':
+                                  return `Initialize ${selectedWorkflow.name} workflow for asset`
+                                case 'reset_workflow':
+                                  return `Reset workflow to ${rule.action_value.reset_to_stage || 'initial'} stage`
+                                case 'send_reminder':
+                                  return 'Send reminder notification'
+                                case 'advance_stage':
+                                  return `Advance to ${rule.action_value.target_stage || 'next'} stage`
+                                default:
+                                  return 'Custom action'
+                              }
+                            }
+
+                            const getIconProps = () => {
+                              switch (rule.rule_type) {
+                                case 'trigger':
+                                  return { icon: Calendar, bgColor: 'bg-blue-100', iconColor: 'text-blue-600' }
+                                case 'reset':
+                                  return { icon: Clock, bgColor: 'bg-green-100', iconColor: 'text-green-600' }
+                                case 'reminder':
+                                  return { icon: Target, bgColor: 'bg-yellow-100', iconColor: 'text-yellow-600' }
+                                default:
+                                  return { icon: Calendar, bgColor: 'bg-gray-100', iconColor: 'text-gray-600' }
+                              }
+                            }
+
+                            const { icon: Icon, bgColor, iconColor } = getIconProps()
+
+                            return (
+                              <Card key={rule.id}>
+                                <div className="p-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-3">
+                                      <div className={`w-8 h-8 ${bgColor} rounded-full flex items-center justify-center`}>
+                                        <Icon className={`w-4 h-4 ${iconColor}`} />
+                                      </div>
+                                      <div>
+                                        <h4 className="font-medium text-gray-900">{rule.rule_name}</h4>
+                                        <p className="text-sm text-gray-500 capitalize">{rule.rule_type} rule</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <Badge variant={rule.is_active ? "success" : "default"} size="sm">
+                                        {rule.is_active ? 'Active' : 'Inactive'}
+                                      </Badge>
+                                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                        <div className="flex items-center space-x-1">
+                                          <Button variant="outline" size="sm" onClick={() => handleEditRule(rule)}>
+                                            <Settings className="w-4 h-4" />
+                                          </Button>
+                                          <Button variant="outline" size="sm" onClick={() => handleDeleteRule(rule.id)}>
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 pl-11">
+                                    <div className="text-sm text-gray-600">
+                                      <strong>Condition:</strong> {getConditionText()}
+                                    </div>
+                                    <div className="text-sm text-gray-600 mt-1">
+                                      <strong>Action:</strong> {getActionText()}
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            )
+                          })
+                        })()}
+                      </div>
+
+                      {/* Rule types explanation */}
+                      <Card>
+                        <div className="p-4 bg-blue-50 border border-blue-200">
+                          <div className="flex items-start space-x-3">
+                            <Target className="w-5 h-5 text-blue-600 mt-0.5" />
+                            <div>
+                              <h4 className="font-medium text-blue-800">Available Rule Types</h4>
+                              <div className="text-sm text-blue-700 mt-2 space-y-1">
+                                <div><strong>Trigger Rules:</strong> Start workflows based on dates or events</div>
+                                <div><strong>Reset Rules:</strong> Automatically reset completed workflows</div>
+                                <div><strong>Reminder Rules:</strong> Send notifications for overdue tasks</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+
+                      {/* Rule Editor Modal */}
+                      {showRuleEditor && (
+                        <>
+                          <div className="fixed inset-0 bg-black bg-opacity-50 z-50" onClick={handleCancelRuleEdit} />
+                          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                              <div className="p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                  <h3 className="text-lg font-semibold text-gray-900">
+                                    {editingRule ? 'Edit Automation Rule' : 'Create Automation Rule'}
+                                  </h3>
+                                  <Button variant="outline" size="sm" onClick={handleCancelRuleEdit}>
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
+
+                                <div className="space-y-6">
+                                  {/* Rule Name */}
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Rule Name</label>
+                                    <input
+                                      type="text"
+                                      value={ruleForm.rule_name}
+                                      onChange={(e) => setRuleForm(prev => ({ ...prev, rule_name: e.target.value }))}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      placeholder="e.g., Earnings Date Trigger"
+                                    />
+                                  </div>
+
+                                  {/* Rule Type */}
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Rule Type</label>
+                                    <select
+                                      value={ruleForm.rule_type}
+                                      onChange={(e) => setRuleForm(prev => ({ ...prev, rule_type: e.target.value as any }))}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    >
+                                      <option value="trigger">Trigger - Start workflow automatically</option>
+                                      <option value="reset">Reset - Reset completed workflow</option>
+                                      <option value="reminder">Reminder - Send notifications</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Condition Type */}
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Condition</label>
+                                    <select
+                                      value={ruleForm.condition_type}
+                                      onChange={(e) => setRuleForm(prev => ({ ...prev, condition_type: e.target.value as any }))}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    >
+                                      <option value="earnings_date">Earnings Date</option>
+                                      <option value="time_based">Time Based</option>
+                                      <option value="custom_date">Custom Date</option>
+                                      <option value="field_change">Field Change</option>
+                                      <option value="stage_completion">Stage Completion</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Condition Value */}
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Condition Details</label>
+                                    {ruleForm.condition_type === 'earnings_date' && (
+                                      <div className="flex items-center space-x-2">
+                                        <input
+                                          type="number"
+                                          value={ruleForm.condition_value.days_before || 20}
+                                          onChange={(e) => setRuleForm(prev => ({
+                                            ...prev,
+                                            condition_value: { days_before: parseInt(e.target.value) || 20 }
+                                          }))}
+                                          className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        />
+                                        <span className="text-sm text-gray-600">days before earnings date</span>
+                                      </div>
+                                    )}
+                                    {ruleForm.condition_type === 'time_based' && (
+                                      <div className="flex items-center space-x-2">
+                                        <input
+                                          type="number"
+                                          value={ruleForm.condition_value.interval_days || 90}
+                                          onChange={(e) => setRuleForm(prev => ({
+                                            ...prev,
+                                            condition_value: { interval_days: parseInt(e.target.value) || 90 }
+                                          }))}
+                                          className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        />
+                                        <span className="text-sm text-gray-600">days after completion</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Action Type */}
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Action</label>
+                                    <select
+                                      value={ruleForm.action_type}
+                                      onChange={(e) => setRuleForm(prev => ({ ...prev, action_type: e.target.value as any }))}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    >
+                                      <option value="start_workflow">Start Workflow</option>
+                                      <option value="reset_workflow">Reset Workflow</option>
+                                      <option value="send_reminder">Send Reminder</option>
+                                      <option value="advance_stage">Advance Stage</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Action Value */}
+                                  {(ruleForm.action_type === 'reset_workflow' || ruleForm.action_type === 'advance_stage') && (
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">Target Stage</label>
+                                      <select
+                                        value={ruleForm.action_value.target_stage || ruleForm.action_value.reset_to_stage || ''}
+                                        onChange={(e) => setRuleForm(prev => ({
+                                          ...prev,
+                                          action_value: {
+                                            ...(ruleForm.action_type === 'reset_workflow'
+                                              ? { reset_to_stage: e.target.value }
+                                              : { target_stage: e.target.value })
+                                          }
+                                        }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      >
+                                        <option value="">Select a stage</option>
+                                        {(selectedWorkflow?.stages || []).map(stage => (
+                                          <option key={stage.stage_key} value={stage.stage_key}>
+                                            {stage.stage_label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+
+                                  {/* Active Status */}
+                                  <div className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id="is_active"
+                                      checked={ruleForm.is_active}
+                                      onChange={(e) => setRuleForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
+                                      Rule is active
+                                    </label>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
+                                  <Button variant="outline" onClick={handleCancelRuleEdit}>
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    onClick={handleSaveRule}
+                                    disabled={!ruleForm.rule_name || createRuleMutation.isPending || updateRuleMutation.isPending}
+                                  >
+                                    {createRuleMutation.isPending || updateRuleMutation.isPending ? 'Saving...' : 'Save Rule'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center max-w-md">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Workflow className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {filteredWorkflows.length === 0 ? 'No workflows found' : 'Select a workflow'}
+              </h3>
+              <p className="text-gray-500 mb-4">
+                {filteredWorkflows.length === 0
+                  ? 'Create your first workflow to get started managing your investment process.'
+                  : 'Choose a workflow from the sidebar to view details, manage stages, and configure settings.'
+                }
+              </p>
+              {filteredWorkflows.length === 0 && (
+                <Button onClick={handleCreateWorkflow}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Your First Workflow
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showWorkflowManager && (
+        <WorkflowManager
+          isOpen={true}
+          onClose={() => {
+            setShowWorkflowManager(false)
+            setSelectedWorkflow(null)
+          }}
+          selectedWorkflowId={selectedWorkflow?.id || null}
+          onWorkflowSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+          }}
+        />
+      )}
+    </div>
+  )
+}

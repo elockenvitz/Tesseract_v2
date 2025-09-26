@@ -7,6 +7,7 @@ import { Button } from './Button'
 import { Card } from './Card'
 import { OutdatedStageView } from './OutdatedStageView'
 import { StageDeadlineManager } from './StageDeadlineManager'
+import { ContentTile } from './ContentTile'
 import { supabase } from '../../lib/supabase'
 
 interface ChecklistItem {
@@ -165,7 +166,20 @@ export function InvestmentTimeline({
 
   // Helper function to get default checklist items for a stage
   const getDefaultChecklistForStage = (stageKey: string): ChecklistItem[] => {
-    // Find the corresponding hardcoded stage for default checklist items
+    // First try to get workflow-specific checklist templates
+    if (workflowChecklistTemplates && workflowChecklistTemplates.length > 0) {
+      const stageTemplates = workflowChecklistTemplates.filter(template => template.stage_id === stageKey)
+      if (stageTemplates.length > 0) {
+        return stageTemplates.map(template => ({
+          id: template.item_id,
+          text: template.item_text,
+          completed: false,
+          isCustom: false
+        }))
+      }
+    }
+
+    // Fallback to hardcoded stage checklist if no workflow templates exist
     const defaultStage = TIMELINE_STAGES.find(s => s.id === stageKey)
     return defaultStage?.checklist || []
   }
@@ -181,6 +195,24 @@ export function InvestmentTimeline({
         .select('*')
         .eq('workflow_id', workflowId)
         .order('sort_order')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!workflowId
+  })
+
+  // Query to load workflow checklist templates
+  const { data: workflowChecklistTemplates } = useQuery({
+    queryKey: ['workflow-checklist-templates', workflowId],
+    queryFn: async () => {
+      if (!workflowId) return []
+
+      const { data, error } = await supabase
+        .from('workflow_checklist_templates')
+        .select('*')
+        .eq('workflow_id', workflowId)
+        .order('stage_id, sort_order')
 
       if (error) throw error
       return data || []
@@ -279,7 +311,7 @@ export function InvestmentTimeline({
 
   // Convert workflow stages to timeline stages format with default checklists
   const timelineStages: TimelineStage[] = React.useMemo(() => {
-    console.log('InvestmentTimeline: workflowId:', workflowId, 'workflowStages:', workflowStages)
+    console.log('InvestmentTimeline: workflowId:', workflowId, 'workflowStages:', workflowStages, 'workflowChecklistTemplates:', workflowChecklistTemplates)
 
     if (!workflowId || !workflowStages || workflowStages.length === 0) {
       // Fallback to hardcoded stages if no workflow is selected
@@ -294,10 +326,15 @@ export function InvestmentTimeline({
       description: stage.stage_description || '',
       checklist: getDefaultChecklistForStage(stage.stage_key)
     }))
-  }, [workflowId, workflowStages])
+  }, [workflowId, workflowStages, workflowChecklistTemplates])
 
   // Check if this specific workflow is started for this asset
   const isWorkflowStarted = workflowProgress?.is_started || false
+
+  // Use workflow-specific current stage if workflow is started, otherwise use first stage
+  const effectiveCurrentStage = isWorkflowStarted && workflowProgress?.current_stage_key
+    ? workflowProgress.current_stage_key
+    : timelineStages?.[0]?.id || 'outdated'
 
   // Mutation to manage workflow progress
   const manageWorkflowProgressMutation = useMutation({
@@ -358,6 +395,12 @@ export function InvestmentTimeline({
         action: 'start',
         stageKey: timelineStages[0].id
       })
+
+      // Automatically select the first stage to show what needs to be done
+      if (onViewingStageChange) {
+        onViewingStageChange(timelineStages[0].id)
+      }
+      onStageClick(timelineStages[0].id)
     }
   }
 
@@ -367,51 +410,74 @@ export function InvestmentTimeline({
     setShowStopConfirmation(false)
   }
 
-  // Query to load checklist state from database
+  // Query to load workflow-specific checklist state from database
   const { data: savedChecklistItems } = useQuery({
-    queryKey: ['asset-checklist', assetId],
+    queryKey: ['asset-workflow-checklist', assetId, workflowId],
     queryFn: async () => {
-      if (!assetId) return []
+      if (!assetId || !workflowId) return []
       const { data, error } = await supabase
         .from('asset_checklist_items')
         .select('*')
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .order('sort_order', { ascending: true })
       if (error) throw error
       return data || []
     },
-    enabled: !!assetId
+    enabled: !!assetId && !!workflowId
   })
 
-  // Query to load stage deadlines
+  // Query to load workflow-specific stage deadlines
   const { data: stageDeadlines } = useQuery({
-    queryKey: ['asset-deadlines', assetId],
+    queryKey: ['asset-workflow-deadlines', assetId, workflowId],
     queryFn: async () => {
-      if (!assetId) return []
+      if (!assetId || !workflowId) return []
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
         .select('*')
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
       if (error) throw error
       return data || []
     },
-    enabled: !!assetId
+    enabled: !!assetId && !!workflowId
   })
 
-  // Query to load checklist attachments
+  // Query to load workflow-specific checklist attachments
   const { data: checklistAttachments } = useQuery({
-    queryKey: ['asset-checklist-attachments', assetId],
+    queryKey: ['asset-workflow-checklist-attachments', assetId, workflowId],
     queryFn: async () => {
-      if (!assetId) return []
+      if (!assetId || !workflowId) return []
       const { data, error } = await supabase
         .from('asset_checklist_attachments')
         .select('*')
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .order('uploaded_at', { ascending: false })
       if (error) throw error
       return data || []
     },
-    enabled: !!assetId
+    enabled: !!assetId && !!workflowId
+  })
+
+  // Query to get content tiles for the current workflow and stage
+  const { data: contentTiles } = useQuery({
+    queryKey: ['workflow-stage-content-tiles', workflowId, showStageDetails],
+    queryFn: async () => {
+      if (!workflowId || !showStageDetails) return []
+
+      const { data, error } = await supabase
+        .from('workflow_stage_content_tiles')
+        .select('*')
+        .eq('workflow_id', workflowId)
+        .eq('stage_id', showStageDetails)
+        .eq('is_enabled', true)
+        .order('sort_order', { ascending: true })
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!workflowId && !!showStageDetails
   })
 
   // Mutation to save checklist item changes
@@ -428,18 +494,19 @@ export function InvestmentTimeline({
         .from('asset_checklist_items')
         .upsert({
           asset_id: assetId,
+          workflow_id: workflowId,
           stage_id: stageId,
           item_id: itemId,
           completed,
           comment: comment || null,
           completed_at: completedAt || null
         }, {
-          onConflict: 'asset_id,stage_id,item_id'
+          onConflict: 'asset_id,workflow_id,stage_id,item_id'
         })
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['asset-checklist', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
     },
     onError: (error) => {
       console.error('Error saving checklist item:', error)
@@ -506,7 +573,7 @@ export function InvestmentTimeline({
     })
 
     setStageChecklists(initialChecklists)
-  }, [assetId, savedChecklistItems, checklistAttachments, timelineStages])
+  }, [assetId, savedChecklistItems, checklistAttachments, timelineStages, workflowChecklistTemplates])
 
   // Handle external viewing stage requests
   React.useEffect(() => {
@@ -521,7 +588,7 @@ export function InvestmentTimeline({
   }, [viewingStageId, showStageDetails, onStageClick, onViewingStageChange])
 
   const getCurrentStageIndex = () => {
-    return timelineStages.findIndex(stage => stage.id === currentStage)
+    return timelineStages.findIndex(stage => stage.id === effectiveCurrentStage)
   }
 
   const getStageStatus = (stageIndex: number) => {
@@ -623,6 +690,25 @@ export function InvestmentTimeline({
 
         // Advance to next stage
         const nextStage = timelineStages[currentIndex + 1]
+
+        // Update workflow-specific progress
+        if (workflowId && assetId) {
+          await supabase
+            .from('asset_workflow_progress')
+            .upsert({
+              asset_id: assetId,
+              workflow_id: workflowId,
+              current_stage_key: nextStage.id,
+              is_started: true,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'asset_id,workflow_id'
+            })
+
+          // Refresh workflow progress
+          queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+        }
+
         onStageChange(nextStage.id)
 
         // Focus on the new stage
@@ -634,10 +720,29 @@ export function InvestmentTimeline({
     }
   }
 
-  const handleRegressStage = () => {
+  const handleRegressStage = async () => {
     const currentIndex = getCurrentStageIndex()
     if (currentIndex > 0) {
       const prevStage = timelineStages[currentIndex - 1]
+
+      // Update workflow-specific progress
+      if (workflowId && assetId) {
+        await supabase
+          .from('asset_workflow_progress')
+          .upsert({
+            asset_id: assetId,
+            workflow_id: workflowId,
+            current_stage_key: prevStage.id,
+            is_started: true,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'asset_id,workflow_id'
+          })
+
+        // Refresh workflow progress
+        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+      }
+
       onStageChange(prevStage.id)
 
       // Focus on the previous stage
@@ -742,6 +847,7 @@ export function InvestmentTimeline({
         .from('asset_checklist_items')
         .insert({
           asset_id: assetId,
+          workflow_id: workflowId,
           stage_id: stageId,
           item_id: newItemId,
           item_text: newItemText.trim(),
@@ -773,7 +879,7 @@ export function InvestmentTimeline({
       setAddingItemToStage(null)
 
       // Refresh the query
-      queryClient.invalidateQueries({ queryKey: ['asset-checklist', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
     } catch (error) {
       console.error('Error adding custom item:', error)
       alert('Failed to add custom checklist item. Please try again.')
@@ -789,6 +895,7 @@ export function InvestmentTimeline({
         .from('asset_checklist_items')
         .delete()
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
         .eq('item_id', itemId)
         .eq('is_custom', true)
@@ -802,7 +909,7 @@ export function InvestmentTimeline({
       }))
 
       // Refresh the query
-      queryClient.invalidateQueries({ queryKey: ['asset-checklist', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
     } catch (error) {
       console.error('Error removing custom item:', error)
       alert('Failed to remove custom checklist item. Please try again.')
@@ -834,6 +941,7 @@ export function InvestmentTimeline({
           .from('asset_checklist_attachments')
           .insert({
             asset_id: assetId,
+            workflow_id: workflowId,
             stage_id: stageId,
             item_id: itemId,
             file_name: file.name,
@@ -847,7 +955,7 @@ export function InvestmentTimeline({
       }
 
       // Refresh attachments
-      queryClient.invalidateQueries({ queryKey: ['asset-checklist-attachments', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist-attachments', assetId, workflowId] })
     } catch (error) {
       console.error('Error uploading file:', error)
       alert('Failed to upload file. Please try again.')
@@ -881,7 +989,7 @@ export function InvestmentTimeline({
       if (error) throw error
 
       // Refresh attachments
-      queryClient.invalidateQueries({ queryKey: ['asset-checklist-attachments', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist-attachments', assetId, workflowId] })
     } catch (error) {
       console.error('Error deleting attachment:', error)
       alert('Failed to delete attachment. Please try again.')
@@ -930,7 +1038,7 @@ export function InvestmentTimeline({
     return 'upcoming'
   }
 
-  const currentStageData = timelineStages.find(stage => stage.id === currentStage)
+  const currentStageData = timelineStages.find(stage => stage.id === effectiveCurrentStage)
   const currentIndex = getCurrentStageIndex()
 
   // Safety check to prevent blank screen
@@ -1054,8 +1162,8 @@ export function InvestmentTimeline({
               {timelineStages.map((stage, index) => {
                 const status = getStageStatus(index)
                 const isClickable = true // Allow viewing all stages
-                const isOutdated = stage.id === 'outdated' || currentStage === 'outdated'
-                const isFirstActiveStage = index === 1 && (currentStage === 'outdated' || timelineStages[0]?.id === 'outdated')
+                const isOutdated = stage.id === 'outdated' || effectiveCurrentStage === 'outdated'
+                const isFirstActiveStage = index === 1 && (effectiveCurrentStage === 'outdated' || timelineStages[0]?.id === 'outdated')
 
                 return (
                   <React.Fragment key={stage.id}>
@@ -1267,11 +1375,11 @@ export function InvestmentTimeline({
               </div>
               <div>
                 <h4 className="text-lg font-semibold text-gray-900">
-                  {currentStageData?.label} Stage
+                  {timelineStages.find(s => s.id === showStageDetails)?.label} Stage
                 </h4>
                 <p className="text-sm text-gray-600">
                   {assetSymbol && `For ${assetSymbol} • `}
-                  {currentStageData?.description}
+                  {timelineStages.find(s => s.id === showStageDetails)?.description}
                 </p>
               </div>
             </div>
@@ -1307,7 +1415,7 @@ export function InvestmentTimeline({
                       assetId={assetId || ''}
                       stageId={showStageDetails}
                       stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                      isCurrentStage={showStageDetails === currentStage}
+                      isCurrentStage={showStageDetails === effectiveCurrentStage}
                     />
                   </div>
                 </div>
@@ -1547,6 +1655,38 @@ export function InvestmentTimeline({
                 </div>
               </div>
             )}
+
+            {/* Content Tiles for non-outdated stages */}
+            {showStageDetails && showStageDetails !== 'outdated' && contentTiles && contentTiles.length > 0 && (
+              <div className="mt-6">
+                <div className="space-y-4">
+                  {contentTiles.map((tile) => (
+                    <ContentTile
+                      key={tile.id}
+                      tile={tile}
+                      assetId={assetId}
+                      assetSymbol={assetSymbol}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Content Tiles for outdated stage */}
+            {showStageDetails === 'outdated' && assetId && contentTiles && contentTiles.length > 0 && (
+              <div className="mt-6">
+                <div className="space-y-4">
+                  {contentTiles.map((tile) => (
+                    <ContentTile
+                      key={tile.id}
+                      tile={tile}
+                      assetId={assetId}
+                      assetSymbol={assetSymbol}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Stage Progression Actions */}
@@ -1554,11 +1694,11 @@ export function InvestmentTimeline({
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-600">
                 <div>Stage {currentIndex + 1} of {timelineStages.length}</div>
-                {showStageDetails === currentStage && (
+                {showStageDetails === effectiveCurrentStage && (
                   <div className="text-xs mt-1 text-blue-600">
-                    {currentStage === 'outdated'
+                    {effectiveCurrentStage === 'outdated'
                       ? '✓ Portfolio review stage - ready to prioritize'
-                      : `${stageChecklists[currentStage]?.filter(item => item.completed).length || 0} of ${stageChecklists[currentStage]?.length || 0} items completed`
+                      : `${stageChecklists[effectiveCurrentStage]?.filter(item => item.completed).length || 0} of ${stageChecklists[effectiveCurrentStage]?.length || 0} items completed`
                     }
                   </div>
                 )}
@@ -1577,18 +1717,18 @@ export function InvestmentTimeline({
                   </Button>
                 )}
 
-                {currentIndex < timelineStages.length - 1 && showStageDetails === currentStage && (
+                {currentIndex < timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && (
                   <Button
                     size="sm"
                     onClick={handleAdvanceStage}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
                     title="Advance to next stage"
                   >
-                    {currentStage === 'outdated' ? 'Initiate →' : 'Advance Stage →'}
+                    {effectiveCurrentStage === 'outdated' ? 'Initiate →' : 'Advance Stage →'}
                   </Button>
                 )}
 
-                {currentIndex === timelineStages.length - 1 && showStageDetails === currentStage && (
+                {currentIndex === timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && (
                   <div className="text-sm text-green-600 font-medium">
                     🎯 Final stage - Monitor ongoing performance
                   </div>

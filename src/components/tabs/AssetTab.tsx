@@ -373,28 +373,51 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   const handleWorkflowChange = async (workflowId: string) => {
     setHasLocalChanges(true)
 
-    try {
-      // Get the first stage of the new workflow
-      const { data: workflowStages, error } = await supabase
-        .from('workflow_stages')
-        .select('stage_key')
-        .eq('workflow_id', workflowId)
-        .order('sort_order')
-        .limit(1)
+    // Clear the viewing stage initially to prevent showing stale information from previous workflow
+    setViewingStageId(null)
 
-      if (error) {
-        console.error('Error fetching workflow stages:', error)
+    try {
+      // Get the first stage of the new workflow and check if there's an active workflow progress
+      const [workflowStagesResult, workflowProgressResult] = await Promise.all([
+        supabase
+          .from('workflow_stages')
+          .select('stage_key')
+          .eq('workflow_id', workflowId)
+          .order('sort_order')
+          .limit(1),
+        supabase
+          .from('asset_workflow_progress')
+          .select('current_stage_key, is_started')
+          .eq('asset_id', asset.id)
+          .eq('workflow_id', workflowId)
+          .single()
+      ])
+
+      if (workflowStagesResult.error) {
+        console.error('Error fetching workflow stages:', workflowStagesResult.error)
         // Fallback to just updating workflow without changing stage
         asset.workflow_id = workflowId
         updateAssetMutation.mutate({ workflow_id: workflowId })
         return
       }
 
-      const firstStageKey = workflowStages?.[0]?.stage_key || 'prioritized'
+      const firstStageKey = workflowStagesResult.data?.[0]?.stage_key || 'prioritized'
+
+      // Determine which stage to show: current active stage if workflow is started, otherwise first stage
+      const workflowProgress = workflowProgressResult.data
+      const isWorkflowStarted = workflowProgress?.is_started || false
+      const effectiveCurrentStage = isWorkflowStarted && workflowProgress?.current_stage_key
+        ? workflowProgress.current_stage_key
+        : firstStageKey
 
       // Update both workflow and stage
       asset.workflow_id = workflowId
       setStage(firstStageKey)
+
+      // Auto-select the appropriate stage to show what needs to be done
+      setTimeout(() => {
+        setViewingStageId(effectiveCurrentStage)
+      }, 100) // Small delay to ensure the workflow data is updated
 
       updateAssetMutation.mutate({
         workflow_id: workflowId,

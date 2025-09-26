@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown, Palette, Eye, Workflow, Settings2, Users, UserPlus, UserMinus } from 'lucide-react'
+import { X, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown, Palette, Eye, Workflow, Settings2, Users, UserPlus, UserMinus, Search } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { Button } from './Button'
@@ -8,6 +8,9 @@ import { Badge } from './Badge'
 interface WorkflowManagerProps {
   isOpen: boolean
   onClose: () => void
+  mode?: 'full' | 'selection' // full = complete editor, selection = enhanced for asset page
+  currentWorkflowId?: string // for asset page integration
+  onWorkflowSelect?: (workflowId: string) => void // callback for asset page
 }
 
 interface Workflow {
@@ -66,8 +69,14 @@ const COLOR_OPTIONS = [
   'blue-500', 'blue-600', 'indigo-600', 'purple-600', 'pink-600', 'teal-500'
 ]
 
-export function WorkflowManager({ isOpen, onClose }: WorkflowManagerProps) {
-  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null)
+export function WorkflowManager({
+  isOpen,
+  onClose,
+  mode = 'full',
+  currentWorkflowId,
+  onWorkflowSelect
+}: WorkflowManagerProps) {
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(currentWorkflowId || null)
   const [editingWorkflow, setEditingWorkflow] = useState<Partial<Workflow> | null>(null)
   const [editingStages, setEditingStages] = useState<WorkflowStage[]>([])
   const [isCreatingNew, setIsCreatingNew] = useState(false)
@@ -78,6 +87,11 @@ export function WorkflowManager({ isOpen, onClose }: WorkflowManagerProps) {
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const queryClient = useQueryClient()
+
+  // Enhanced state for selection mode
+  const [viewMode, setViewMode] = useState<'list' | 'details' | 'create'>('list')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterType, setFilterType] = useState<'all' | 'my' | 'shared' | 'public'>('all')
 
   const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows'],
@@ -517,18 +531,74 @@ export function WorkflowManager({ isOpen, onClose }: WorkflowManagerProps) {
     setFilteredUsers([])
   }
 
+  // Helper functions for selection mode
+  const filteredWorkflows = workflows?.filter(workflow => {
+    // Filter by search term
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase()
+      if (!workflow.name.toLowerCase().includes(searchLower) &&
+          !workflow.description?.toLowerCase().includes(searchLower)) {
+        return false
+      }
+    }
+
+    // Filter by type
+    if (filterType === 'my') {
+      return workflow.created_by === (async () => await supabase.auth.getUser())
+    }
+    if (filterType === 'public') {
+      return workflow.is_public
+    }
+    if (filterType === 'shared') {
+      // This would need to be enhanced with collaboration data
+      return true // For now, show all
+    }
+
+    return true
+  })
+
+  const handleWorkflowSelectClick = (workflowId: string) => {
+    if (mode === 'selection' && onWorkflowSelect) {
+      onWorkflowSelect(workflowId)
+      onClose()
+    } else {
+      setSelectedWorkflow(workflowId)
+      if (mode === 'selection') {
+        setViewMode('details')
+      }
+    }
+  }
+
+  const getWorkflowUsageStats = (workflow: Workflow) => {
+    // This would be enhanced with real usage data
+    return {
+      activeAssets: Math.floor(Math.random() * 20),
+      completedAssets: Math.floor(Math.random() * 100),
+      averageCompletionTime: Math.floor(Math.random() * 30) + ' days'
+    }
+  }
+
   if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+      <div className={`bg-white rounded-xl shadow-xl w-full max-h-[90vh] overflow-hidden ${
+        mode === 'selection' ? 'max-w-5xl' : 'max-w-6xl'
+      }`}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
             <Settings2 className="w-6 h-6 text-blue-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Workflow Management</h2>
-              <p className="text-sm text-gray-500">Create and customize workflows for your team</p>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {mode === 'selection' ? 'Select Workflow' : 'Workflow Management'}
+              </h2>
+              <p className="text-sm text-gray-500">
+                {mode === 'selection'
+                  ? 'Choose a workflow for your asset or create a new one'
+                  : 'Create and customize workflows for your team'
+                }
+              </p>
             </div>
           </div>
           <button
@@ -539,9 +609,195 @@ export function WorkflowManager({ isOpen, onClose }: WorkflowManagerProps) {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex h-[calc(90vh-120px)]">
-          {/* Workflow List */}
+        {mode === 'selection' ? (
+          /* Enhanced Selection Mode */
+          <div className="h-[calc(90vh-120px)]">
+            {/* Search and Filter Bar */}
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center space-x-4">
+                <div className="flex-1 relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search workflows..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as any)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">All Workflows</option>
+                  <option value="my">My Workflows</option>
+                  <option value="shared">Shared with Me</option>
+                  <option value="public">Public</option>
+                </select>
+                <Button
+                  size="sm"
+                  onClick={() => setViewMode('create')}
+                  className="flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>New</span>
+                </Button>
+              </div>
+            </div>
+
+            {viewMode === 'list' && (
+              /* Workflow Grid */
+              <div className="p-6 overflow-y-auto h-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredWorkflows?.map((workflow) => {
+                    const stats = getWorkflowUsageStats(workflow)
+                    const isSelected = workflow.id === currentWorkflowId
+
+                    return (
+                      <div
+                        key={workflow.id}
+                        className={`relative p-4 border-2 rounded-xl cursor-pointer transition-all hover:shadow-md ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 shadow-md'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        onClick={() => handleWorkflowSelectClick(workflow.id)}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2">
+                            <Badge variant="primary" size="sm">Current</Badge>
+                          </div>
+                        )}
+
+                        <div className="flex items-start space-x-3 mb-3">
+                          <div
+                            className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
+                            style={{ backgroundColor: workflow.color }}
+                          >
+                            <Workflow className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-gray-900 truncate">{workflow.name}</h4>
+                            <p className="text-sm text-gray-600 line-clamp-2">{workflow.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">Active</span>
+                            <span className="font-medium">{stats.activeAssets}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">Completed</span>
+                            <span className="font-medium">{stats.completedAssets}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">Avg. Time</span>
+                            <span className="font-medium">{stats.averageCompletionTime}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                          <div className="flex items-center space-x-2">
+                            {workflow.is_default && (
+                              <Badge variant="secondary" size="xs">Default</Badge>
+                            )}
+                            {workflow.is_public && (
+                              <Badge variant="success" size="xs">Public</Badge>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedWorkflow(workflow.id)
+                              setViewMode('details')
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            View Details →
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {(!filteredWorkflows || filteredWorkflows.length === 0) && (
+                    <div className="col-span-full text-center py-12">
+                      <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                      <p className="text-gray-500">No workflows found</p>
+                      <Button
+                        size="sm"
+                        onClick={() => setViewMode('create')}
+                        className="mt-3"
+                      >
+                        Create New Workflow
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'details' && selectedWorkflow && (
+              /* Detailed View */
+              <div className="p-6 overflow-y-auto h-full">
+                <div className="max-w-3xl mx-auto">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                    >
+                      ← Back to List
+                    </button>
+                    <h3 className="text-lg font-semibold text-gray-900">Workflow Details</h3>
+                  </div>
+
+                  {/* Enhanced workflow details would go here */}
+                  <div className="space-y-6">
+                    {/* Workflow info, stages, collaboration, etc. */}
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-600">
+                        Detailed workflow view with stages, permissions, usage analytics, etc.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'create' && (
+              /* Inline Creation */
+              <div className="p-6 overflow-y-auto h-full">
+                <div className="max-w-3xl mx-auto">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                    >
+                      ← Back to List
+                    </button>
+                    <h3 className="text-lg font-semibold text-gray-900">Create New Workflow</h3>
+                  </div>
+
+                  {/* Inline creation form would go here */}
+                  <div className="space-y-6">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-600">
+                        Inline workflow creation form with all the necessary fields.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Full Management Mode - Original Content */
+          <div className="flex h-[calc(90vh-120px)]">
+            {/* Workflow List */}
           <div className="w-1/3 border-r border-gray-200 p-4 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-medium text-gray-900">Workflows</h3>
@@ -1065,7 +1321,8 @@ export function WorkflowManager({ isOpen, onClose }: WorkflowManagerProps) {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )

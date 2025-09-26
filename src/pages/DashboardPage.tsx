@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock } from 'lucide-react'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
@@ -136,6 +136,81 @@ export function DashboardPage() {
         priceTargets: priceTargetsCount.count || 0,
       }
     },
+  })
+
+  // Fetch workflows for the workflow map
+  const { data: workflows, isLoading: workflowsLoading } = useQuery({
+    queryKey: ['dashboard-workflows'],
+    queryFn: async () => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+
+      if (!userId) return []
+
+      // Helper function to get workflow IDs shared with the user
+      const getSharedWorkflowIds = async (userId: string | undefined) => {
+        if (!userId) return []
+
+        const { data, error } = await supabase
+          .from('workflow_collaborations')
+          .select('workflow_id')
+          .eq('user_id', userId)
+
+        if (error) return []
+
+        return data.map(collab => collab.workflow_id)
+      }
+
+      // Get workflows the user owns, public workflows, or workflows shared with them
+      const sharedIds = await getSharedWorkflowIds(userId)
+
+      let query = supabase
+        .from('workflows')
+        .select('*')
+
+      if (sharedIds.length > 0) {
+        query = query.or(`is_public.eq.true,created_by.eq.${userId},id.in.(${sharedIds.join(',')})`)
+      } else {
+        query = query.or(`is_public.eq.true,created_by.eq.${userId}`)
+      }
+
+      const { data: workflows, error } = await query
+        .order('is_default', { ascending: false })
+        .order('name')
+
+      if (error) throw error
+
+      // Get usage stats for each workflow
+      const workflowIds = (workflows || []).map(w => w.id)
+
+      if (workflowIds.length === 0) return []
+
+      const { data: usageStats, error: usageError } = await supabase
+        .from('asset_workflow_progress')
+        .select('workflow_id, is_started, is_completed')
+        .in('workflow_id', workflowIds)
+
+      if (usageError) {
+        console.error('Error fetching usage stats:', usageError)
+      }
+
+      // Calculate stats for each workflow
+      const workflowsWithStats = (workflows || []).map(workflow => {
+        const workflowUsage = (usageStats || []).filter(stat => stat.workflow_id === workflow.id)
+        const activeAssets = workflowUsage.filter(stat => stat.is_started && !stat.is_completed).length
+        const completedAssets = workflowUsage.filter(stat => stat.is_completed).length
+        const totalAssets = workflowUsage.length
+
+        return {
+          ...workflow,
+          usage_count: totalAssets,
+          active_assets: activeAssets,
+          completed_assets: completedAssets
+        }
+      })
+
+      return workflowsWithStats
+    }
   })
 
   // Fetch financial data for assets
@@ -398,9 +473,9 @@ export function DashboardPage() {
       </div>
 
       {/* Navigation Buttons */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="flex items-center space-x-4 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'idea-generator',
             title: 'Idea Generator',
@@ -412,13 +487,13 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center mb-3">
               <Lightbulb className="h-6 w-6 text-purple-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Idea Generator</span>
-            <span className="text-gray-500 text-xs mt-1">Discover insights</span>
+            <span className="text-gray-900 font-semibold text-center">Ideas</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">Discover insights</span>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'workflows',
             title: 'Workflows',
@@ -430,13 +505,13 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center mb-3">
               <Workflow className="h-6 w-6 text-blue-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Workflows</span>
-            <span className="text-gray-500 text-xs mt-1">Manage processes</span>
+            <span className="text-gray-900 font-semibold text-center">Workflows</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">Manage processes</span>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'assets-list',
             title: 'All Assets',
@@ -448,13 +523,13 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mb-3">
               <TrendingUp className="h-6 w-6 text-primary-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Assets</span>
-            <span className="text-gray-500 text-xs mt-1">Investment ideas</span>
+            <span className="text-gray-900 font-semibold text-center">Assets</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">Investment ideas</span>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'portfolios-list',
             title: 'All Portfolios',
@@ -466,13 +541,13 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-success-100 rounded-lg flex items-center justify-center mb-3">
               <Briefcase className="h-6 w-6 text-success-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Portfolios</span>
-            <span className="text-gray-500 text-xs mt-1">Track performance</span>
+            <span className="text-gray-900 font-semibold text-center">Portfolios</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">Track performance</span>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'themes-list',
             title: 'All Themes',
@@ -484,13 +559,13 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-3">
               <Tag className="h-6 w-6 text-indigo-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Themes</span>
-            <span className="text-gray-500 text-xs mt-1">Organize by topic</span>
+            <span className="text-gray-900 font-semibold text-center">Themes</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">Organize by topic</span>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'notes-list',
             title: 'All Notes',
@@ -502,13 +577,13 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center mb-3">
               <FileText className="h-6 w-6 text-slate-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Notes</span>
-            <span className="text-gray-500 text-xs mt-1">All your notes</span>
+            <span className="text-gray-900 font-semibold text-center">Notes</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">All your notes</span>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
+          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'lists',
             title: 'Asset Lists',
@@ -520,11 +595,156 @@ export function DashboardPage() {
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
               <List className="h-6 w-6 text-purple-600" />
             </div>
-            <span className="text-gray-900 font-semibold">Lists</span>
-            <span className="text-gray-500 text-xs mt-1">Organize assets</span>
+            <span className="text-gray-900 font-semibold text-center">Lists</span>
+            <span className="text-gray-500 text-xs mt-1 text-center">Organize assets</span>
           </div>
         </Card>
       </div>
+
+      {/* Active Workflows */}
+      <Card>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Active Workflows</h2>
+            <p className="text-sm text-gray-500">All available workflows with usage statistics</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary-600 hover:text-primary-700"
+            onClick={() => handleSearchResult({
+              id: 'workflows',
+              title: 'Workflows',
+              type: 'workflows',
+              data: null
+            })}
+          >
+            Manage workflows →
+          </Button>
+        </div>
+
+        {workflowsLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="animate-pulse">
+                <div className="h-32 bg-gray-200 rounded-lg"></div>
+              </div>
+            ))}
+          </div>
+        ) : workflows && workflows.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {workflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                className="relative p-4 border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+                onClick={() => handleSearchResult({
+                  id: 'workflows',
+                  title: 'Workflows',
+                  type: 'workflows',
+                  data: { selectedWorkflowId: workflow.id }
+                })}
+              >
+                {/* Header with color indicator and default badge */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <div
+                      className="w-4 h-4 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: workflow.color }}
+                    />
+                    <h3 className="font-semibold text-gray-900 truncate flex-1">
+                      {workflow.name}
+                    </h3>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {workflow.is_default && (
+                      <div className="text-yellow-500">
+                        <Star className="w-4 h-4 fill-current" />
+                      </div>
+                    )}
+                    {workflow.is_public && (
+                      <Badge variant="secondary" size="sm">
+                        Public
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Description */}
+                {workflow.description && (
+                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+                    {workflow.description}
+                  </p>
+                )}
+
+                {/* Statistics */}
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="bg-blue-50 rounded-lg p-2">
+                    <div className="text-lg font-semibold text-blue-600">
+                      {workflow.usage_count || 0}
+                    </div>
+                    <div className="text-xs text-blue-600 font-medium">
+                      Total
+                    </div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-2">
+                    <div className="text-lg font-semibold text-green-600">
+                      {workflow.active_assets || 0}
+                    </div>
+                    <div className="text-xs text-green-600 font-medium">
+                      Active
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <div className="text-lg font-semibold text-gray-600">
+                      {workflow.completed_assets || 0}
+                    </div>
+                    <div className="text-xs text-gray-600 font-medium">
+                      Done
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cadence info */}
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center space-x-1">
+                      <Clock className="w-3 h-3" />
+                      <span>{workflow.cadence_days} day cycle</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Activity className="w-3 h-3" />
+                      <span>
+                        {workflow.active_assets > 0
+                          ? `${Math.round((workflow.completed_assets / workflow.usage_count) * 100) || 0}% complete`
+                          : 'Ready to use'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Workflow className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No workflows available</h3>
+            <p className="text-gray-500 mb-4">Create your first workflow to start tracking your investment process.</p>
+            <Button
+              onClick={() => handleSearchResult({
+                id: 'workflows',
+                title: 'Workflows',
+                type: 'workflows',
+                data: null
+              })}
+            >
+              Create Workflow
+            </Button>
+          </div>
+        )}
+      </Card>
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
