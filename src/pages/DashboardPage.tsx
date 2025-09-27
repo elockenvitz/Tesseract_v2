@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock } from 'lucide-react'
+import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
@@ -294,15 +295,6 @@ export function DashboardPage() {
     }
   }, [tabs, activeTabId, isInitialized])
 
-  const getPriorityColor = (priority: string | null) => {
-    switch (priority) {
-      case 'high': return 'error'
-      case 'medium': return 'warning'
-      case 'low': return 'success'
-      case 'none': return 'default'
-      default: return 'default'
-    }
-  }
 
   const getStageColor = (stage: string | null) => {
     switch (stage) {
@@ -811,9 +803,7 @@ export function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
                         <h3 className="font-semibold text-gray-900">{asset.symbol}</h3>
-                        <Badge variant={getPriorityColor(asset.priority)} size="sm">
-                          {asset.priority}
-                        </Badge>
+                        <PriorityBadge priority={asset.priority} />
                       </div>
                       <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>
                       <p className="text-xs text-gray-500">

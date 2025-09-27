@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { Card } from '../ui/Card'
+import { PriorityBadge } from '../ui/PriorityBadge'
 import { clsx } from 'clsx'
 
 interface AddAssetToThemeModalProps {
@@ -98,15 +99,6 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
     )
   }
 
-  const getPriorityColor = (priority: string | null) => {
-    switch (priority) {
-      case 'high': return 'error'
-      case 'medium': return 'warning'
-      case 'low': return 'success'
-      case 'none': return 'default'
-      default: return 'default'
-    }
-  }
 
   const getStageColor = (stage: string | null) => {
     switch (stage) {
@@ -235,9 +227,7 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
                           <div className="flex items-center space-x-2 mb-1">
                             <h4 className="font-semibold text-gray-900">{asset.symbol}</h4>
                             {asset.priority && (
-                              <Badge variant={getPriorityColor(asset.priority)} size="sm">
-                                {asset.priority}
-                              </Badge>
+                              <PriorityBadge priority={asset.priority} />
                             )}
                             {asset.process_stage && (
                               <Badge variant={getStageColor(asset.process_stage)} size="sm">

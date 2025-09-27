@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TrendingUp, Search, Filter, Plus, Calendar, Target, FileText, ArrowUpDown, ChevronDown, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { supabase } from '../lib/supabase'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { Card } from '../components/ui/Card'
@@ -17,7 +18,6 @@ interface AssetsListPageProps {
 export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('all')
-  const [stageFilter, setStageFilter] = useState('all')
   const [sectorFilter, setSectorFilter] = useState('all')
   const [sortBy, setSortBy] = useState('updated_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -69,7 +69,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
     let filtered = assets
 
     // Apply filters only if they're set (avoid unnecessary work)
-    if (searchQuery || priorityFilter !== 'all' || stageFilter !== 'all' || sectorFilter !== 'all') {
+    if (searchQuery || priorityFilter !== 'all' || sectorFilter !== 'all') {
       filtered = assets.filter(asset => {
         // Search filter
         if (searchQuery) {
@@ -84,8 +84,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
         // Priority filter
         if (priorityFilter !== 'all' && asset.priority !== priorityFilter) return false
 
-        // Stage filter
-        if (stageFilter !== 'all' && asset.process_stage !== stageFilter) return false
 
         // Sector filter
         if (sectorFilter !== 'all' && asset.sector !== sectorFilter) return false
@@ -147,53 +145,9 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
     }
 
     return filtered
-  }, [assets, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder])
+  }, [assets, searchQuery, priorityFilter, sectorFilter, sortBy, sortOrder])
 
-  const getPriorityColor = (priority: string | null) => {
-    switch (priority) {
-      case 'high': return 'error'
-      case 'medium': return 'warning'
-      case 'low': return 'success'
-      case 'none': return 'default'
-      default: return 'default'
-    }
-  }
 
-  const getStageColor = (stage: string | null) => {
-    switch (stage) {
-      case 'outdated': return 'default'
-      case 'prioritized': return 'warning'
-      case 'in_progress': return 'primary'
-      case 'recommend': return 'warning'
-      case 'review': return 'success'
-      case 'action': return 'success'
-      case 'monitor': return 'default'
-      // Legacy mappings
-      case 'research': return 'primary'
-      case 'analysis': return 'warning'
-      case 'monitoring': return 'success'
-      case 'archived': return 'default'
-      default: return 'default'
-    }
-  }
-
-  const getStageLabel = (stage: string | null) => {
-    switch (stage) {
-      case 'outdated': return 'Outdated'
-      case 'prioritized': return 'Prioritize'
-      case 'in_progress': return 'Research'
-      case 'recommend': return 'Recommend'
-      case 'review': return 'Review'
-      case 'action': return 'Action'
-      case 'monitor': return 'Monitor'
-      // Legacy mappings
-      case 'research': return 'Prioritize'
-      case 'analysis': return 'Prioritize'
-      case 'monitoring': return 'Monitor'
-      case 'archived': return 'Action'
-      default: return stage || 'Research'
-    }
-  }
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -218,7 +172,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const clearFilters = () => {
     setSearchQuery('')
     setPriorityFilter('all')
-    setStageFilter('all')
     setSectorFilter('all')
     setSortBy('updated_at')
     setSortOrder('desc')
@@ -227,7 +180,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
   const activeFiltersCount = [
     searchQuery,
     priorityFilter !== 'all' ? priorityFilter : null,
-    stageFilter !== 'all' ? stageFilter : null,
     sectorFilter !== 'all' ? sectorFilter : null
   ].filter(Boolean).length
 
@@ -303,21 +255,6 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
                 ]}
               />
 
-              <Select
-                label="Stage"
-                value={stageFilter}
-                onChange={(e) => setStageFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Stages' },
-                  { value: 'outdated', label: 'Outdated' },
-                  { value: 'prioritized', label: 'Prioritize' },
-                  { value: 'in_progress', label: 'Research' },
-                  { value: 'recommend', label: 'Recommend' },
-                  { value: 'review', label: 'Review' },
-                  { value: 'action', label: 'Action' },
-                  { value: 'monitor', label: 'Monitor' }
-                ]}
-              />
 
               <Select
                 label="Sector"
@@ -339,8 +276,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
                   { value: 'symbol', label: 'Symbol' },
                   { value: 'company_name', label: 'Company Name' },
                   { value: 'current_price', label: 'Price' },
-                  { value: 'priority', label: 'Priority' },
-                  { value: 'process_stage', label: 'Stage' }
+                  { value: 'priority', label: 'Priority' }
                 ]}
               />
             </div>
@@ -375,7 +311,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
             {/* Table Header */}
             <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
               <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="col-span-4">
+                <div className="col-span-5">
                   <button
                     onClick={() => handleSort('symbol')}
                     className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
@@ -402,16 +338,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="col-span-2">
-                  <button
-                    onClick={() => handleSort('process_stage')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                  >
-                    <span>Stage</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="col-span-2">
+                <div className="col-span-3">
                   <button
                     onClick={() => handleSort('updated_at')}
                     className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
@@ -432,7 +359,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
               >
                 <div className="grid grid-cols-12 gap-4 items-center">
                   {/* Asset Info */}
-                  <div className="col-span-4">
+                  <div className="col-span-5">
                     <div className="flex items-center space-x-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center space-x-2">
@@ -481,20 +408,11 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
 
                   {/* Priority */}
                   <div className="col-span-2">
-                    <Badge variant={getPriorityColor(asset.priority)} size="sm">
-                      {asset.priority || 'medium'}
-                    </Badge>
-                  </div>
-
-                  {/* Stage */}
-                  <div className="col-span-2">
-                    <Badge variant={getStageColor(asset.process_stage)} size="sm">
-                      {getStageLabel(asset.process_stage)}
-                    </Badge>
+                    <PriorityBadge priority={asset.priority} />
                   </div>
 
                   {/* Last Updated */}
-                  <div className="col-span-2">
+                  <div className="col-span-3">
                     <div className="flex items-center text-sm text-gray-500">
                       <Calendar className="h-3 w-3 mr-1" />
                       {formatDistanceToNow(new Date(asset.updated_at || 0), { addSuffix: true })}

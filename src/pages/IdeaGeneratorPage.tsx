@@ -8,6 +8,7 @@ import {
   ArrowLeft, ArrowRight, Filter, SortDesc, Workflow, BarChart3, Brain,
   Zap, TrendingDown, Award, Bell, Search, Plus
 } from 'lucide-react'
+import { priorityConfig } from '../utils/priorityBadge'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -32,11 +33,12 @@ interface IdeaTile {
   color: string
   icon: React.ReactNode
   actionText: string
+  reason?: string
 }
 
 interface FeedContent {
   id: string
-  type: 'market_insight' | 'research_tip' | 'portfolio_alert' | 'trend_analysis' | 'educational'
+  type: 'market_insight' | 'research_tip' | 'portfolio_alert' | 'trend_analysis' | 'educational' | 'earnings_preview' | 'sector_rotation' | 'risk_alert' | 'technical_analysis' | 'international' | 'crypto_insight' | 'dividend_focus' | 'small_cap'
   title: string
   content: string
   visual?: string
@@ -46,6 +48,7 @@ interface FeedContent {
   comments: number
   shares: number
   tags: string[]
+  reason: string
 }
 
 interface WorkflowAsset {
@@ -64,19 +67,13 @@ interface WorkflowAsset {
 type ViewType = 'discovery' | 'prioritizer' | 'feed'
 
 export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
-  // Priority configuration to match AssetWorkflowSelector
-  const priorityConfig = {
-    'critical': { color: 'bg-red-600 text-white', icon: AlertTriangle, label: 'Critical' },
-    'high': { color: 'bg-orange-500 text-white', icon: Zap, label: 'High' },
-    'medium': { color: 'bg-blue-500 text-white', icon: Target, label: 'Medium' },
-    'low': { color: 'bg-green-500 text-white', icon: Clock, label: 'Low' }
-  }
+  // Priority configuration now imported from standardized utility
 
   // Load initial state from TabStateManager
   const loadedState = TabStateManager.loadTabState('idea-generator')
 
   const [activeView, setActiveView] = useState<ViewType>(loadedState?.activeView || 'discovery')
-  const [tiles, setTiles] = useState<IdeaTile[]>([])
+  const [tiles, setTiles] = useState<IdeaTile[]>(loadedState?.tiles || [])
   const [isShuffling, setIsShuffling] = useState(false)
   const [lastRefresh, setLastRefresh] = useState(new Date())
   const [currentFeedIndex, setCurrentFeedIndex] = useState(loadedState?.currentFeedIndex || 0)
@@ -104,8 +101,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     selectedWorkflow
   })
 
-  // Sample feed content for demonstration
-  const sampleFeedContent: FeedContent[] = [
+  // Extended feed content for discovery with reasons
+  const allFeedContent: FeedContent[] = [
     {
       id: '1',
       type: 'market_insight',
@@ -116,7 +113,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       likes: 1247,
       comments: 89,
       shares: 156,
-      tags: ['Technology', 'FAANG', 'Earnings', 'AI']
+      tags: ['Technology', 'FAANG', 'Earnings', 'AI'],
+      reason: 'Based on your active tech holdings'
     },
     {
       id: '2',
@@ -128,7 +126,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       likes: 892,
       comments: 45,
       shares: 203,
-      tags: ['Education', 'Valuation', 'P/E Ratio', 'Research']
+      tags: ['Education', 'Valuation', 'P/E Ratio', 'Research'],
+      reason: 'Recommended for your research workflow'
     },
     {
       id: '3',
@@ -140,7 +139,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       likes: 234,
       comments: 12,
       shares: 67,
-      tags: ['Portfolio', 'Rebalancing', 'Risk Management']
+      tags: ['Portfolio', 'Rebalancing', 'Risk Management'],
+      reason: 'Portfolio optimization alert'
     },
     {
       id: '4',
@@ -152,7 +152,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       likes: 567,
       comments: 78,
       shares: 134,
-      tags: ['ESG', 'Sustainability', 'Trends', 'Millennials']
+      tags: ['ESG', 'Sustainability', 'Trends', 'Millennials'],
+      reason: 'Trending in your network'
     },
     {
       id: '5',
@@ -164,9 +165,286 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       likes: 1156,
       comments: 167,
       shares: 289,
-      tags: ['Options', 'Greeks', 'Education', 'Trading']
+      tags: ['Options', 'Greeks', 'Education', 'Trading'],
+      reason: 'Educational content you might like'
+    },
+    {
+      id: '6',
+      type: 'market_insight',
+      title: 'Semiconductor Shortage Update',
+      content: 'Global chip shortage continues to impact auto and tech sectors. Intel and TSMC are expanding fab capacity, but relief won\'t come until 2025. Consider semiconductor ETFs for exposure to the recovery.',
+      author: 'Semiconductor Analyst',
+      timestamp: '5 hours ago',
+      likes: 834,
+      comments: 92,
+      shares: 178,
+      tags: ['Semiconductors', 'Supply Chain', 'Technology', 'ETFs'],
+      reason: 'Related to your watchlist items'
+    },
+    {
+      id: '7',
+      type: 'earnings_preview',
+      title: 'Upcoming Earnings Calendar',
+      content: 'This week: AAPL (Tue), MSFT (Wed), GOOGL (Thu). Key metrics to watch: iPhone sales, cloud growth, and advertising spend. Options activity suggests volatility expectations around 5-7%.',
+      author: 'Earnings Tracker',
+      timestamp: '3 hours ago',
+      likes: 1689,
+      comments: 234,
+      shares: 456,
+      tags: ['Earnings', 'AAPL', 'MSFT', 'GOOGL', 'Options'],
+      reason: 'Assets in your earnings preview workflow'
+    },
+    {
+      id: '8',
+      type: 'research_tip',
+      title: 'Reading Cash Flow Statements',
+      content: 'Operating cash flow > net income is a good sign. Watch for: 1) Consistent positive OCF 2) Capex vs depreciation 3) Working capital changes 4) Free cash flow conversion. Quality matters more than growth.',
+      author: 'Financial Analysis Pro',
+      timestamp: '6 hours ago',
+      likes: 723,
+      comments: 67,
+      shares: 145,
+      tags: ['Cash Flow', 'Financial Analysis', 'Education', 'Quality'],
+      reason: 'Popular among research analysts'
+    },
+    {
+      id: '9',
+      type: 'sector_rotation',
+      title: 'Healthcare Sector Gaining Momentum',
+      content: 'Healthcare stocks are showing relative strength as investors seek defensive plays. Biotech M&A activity increasing, and aging demographics provide long-term tailwinds. Consider XLV or individual names.',
+      author: 'Sector Strategist',
+      timestamp: '8 hours ago',
+      likes: 456,
+      comments: 43,
+      shares: 89,
+      tags: ['Healthcare', 'Sector Rotation', 'Demographics', 'Biotech'],
+      reason: 'Sector allocation opportunity'
+    },
+    {
+      id: '10',
+      type: 'risk_alert',
+      title: 'Inflation Data This Week',
+      content: 'CPI report Thursday could impact Fed policy expectations. Current consensus: 3.2% YoY. Higher than expected could trigger rate hike fears. Consider hedging with TIPS or commodity exposure.',
+      author: 'Macro Economist',
+      timestamp: '1 day ago',
+      likes: 892,
+      comments: 123,
+      shares: 267,
+      tags: ['Inflation', 'Federal Reserve', 'Macro', 'Hedging'],
+      reason: 'Important for portfolio risk management'
+    },
+    {
+      id: '11',
+      type: 'technical_analysis',
+      title: 'S&P 500 Testing Key Resistance',
+      content: 'SPY approaching 200-day moving average at 4,200. Volume declining on recent rallies suggests weak conviction. Watch for break above 4,220 or rejection back to 4,100 support.',
+      author: 'Technical Analyst',
+      timestamp: '4 hours ago',
+      likes: 1034,
+      comments: 78,
+      shares: 234,
+      tags: ['Technical Analysis', 'SPY', 'Moving Averages', 'Support'],
+      reason: 'Market timing insight'
+    },
+    {
+      id: '12',
+      type: 'international',
+      title: 'European Markets Outperforming',
+      content: 'European stocks up 12% this quarter vs 8% for US markets. ECB policy divergence and relative valuations creating opportunity. Consider VGK or individual European ADRs.',
+      author: 'Global Strategist',
+      timestamp: '12 hours ago',
+      likes: 567,
+      comments: 45,
+      shares: 123,
+      tags: ['Europe', 'International', 'Outperformance', 'ECB'],
+      reason: 'Geographic diversification opportunity'
+    },
+    {
+      id: '13',
+      type: 'crypto_insight',
+      title: 'Bitcoin Correlation with Nasdaq',
+      content: 'BTC-NASDAQ correlation hits 0.8, highest in 2 years. Crypto increasingly moving with tech stocks rather than as alternative asset. Consider this for portfolio construction.',
+      author: 'Crypto Analyst',
+      timestamp: '18 hours ago',
+      likes: 789,
+      comments: 156,
+      shares: 298,
+      tags: ['Bitcoin', 'Correlation', 'Nasdaq', 'Portfolio'],
+      reason: 'Alternative asset analysis'
+    },
+    {
+      id: '14',
+      type: 'dividend_focus',
+      title: 'High-Quality Dividend Growth',
+      content: 'Focus on companies with 10+ year dividend growth streaks and payout ratios <60%. Favorites: JNJ, PG, KO. Avoid yield traps in telecom and utilities with declining fundamentals.',
+      author: 'Income Investor',
+      timestamp: '1 day ago',
+      likes: 634,
+      comments: 89,
+      shares: 167,
+      tags: ['Dividends', 'Income', 'Quality', 'Growth'],
+      reason: 'Income strategy insight'
+    },
+    {
+      id: '15',
+      type: 'small_cap',
+      title: 'Small Cap Value Opportunity',
+      content: 'Russell 2000 Value trading at 15x earnings vs 25x for growth. Historical mean reversion suggests 20-30% outperformance potential over 2-3 years. IWM vs IWN spread at extremes.',
+      author: 'Value Investor',
+      timestamp: '2 days ago',
+      likes: 445,
+      comments: 67,
+      shares: 134,
+      tags: ['Small Cap', 'Value', 'Mean Reversion', 'Russell 2000'],
+      reason: 'Value investing opportunity'
     }
   ]
+
+  // Shuffle function for feed content
+  const shuffleArray = <T,>(array: T[]): T[] => {
+    const shuffled = [...array]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    return shuffled
+  }
+
+  // Get shuffled feed content
+  const [feedContent, setFeedContent] = useState<FeedContent[]>(() =>
+    shuffleArray(allFeedContent).slice(0, 9)
+  )
+
+  // Generate AI insights based on user's actual data
+  const generateAIInsights = () => {
+    if (!ideaData) return []
+
+    const insights = []
+
+    // Insight based on high priority assets
+    const highPriorityAssets = ideaData.assets.filter(a => a.priority === 'high')
+    if (highPriorityAssets.length > 0) {
+      const asset = highPriorityAssets[0]
+      insights.push({
+        id: `ai_insight_${asset.id}`,
+        type: 'market_insight',
+        title: `📈 Your ${asset.symbol} Analysis Alert`,
+        content: `Based on your portfolio data, ${asset.company_name} requires immediate attention. Recent market movements suggest this high-priority position may need rebalancing. Consider reviewing your thesis and position sizing.`,
+        author: 'Tesseract AI',
+        timestamp: 'Just now',
+        likes: Math.floor(Math.random() * 50) + 20,
+        comments: Math.floor(Math.random() * 15) + 5,
+        shares: Math.floor(Math.random() * 10) + 2,
+        tags: [asset.symbol, 'Portfolio', 'High Priority', 'Alert'],
+        reason: `Generated based on your high-priority ${asset.symbol} position`,
+        data: asset
+      })
+    }
+
+    // Insight based on recent notes
+    if (ideaData.notes.length > 0) {
+      const recentNote = ideaData.notes[0]
+      const symbol = recentNote.source_name || 'your portfolio'
+      insights.push({
+        id: `ai_insight_note_${recentNote.id}`,
+        type: 'research_tip',
+        title: `🧠 Research Synthesis: ${symbol}`,
+        content: `AI analysis of your recent research on ${symbol}: "${recentNote.title}". Key themes suggest focusing on fundamental catalysts. Your research depth indicates strong conviction - consider position sizing accordingly.`,
+        author: 'Tesseract AI',
+        timestamp: '2m ago',
+        likes: Math.floor(Math.random() * 40) + 15,
+        comments: Math.floor(Math.random() * 12) + 3,
+        shares: Math.floor(Math.random() * 8) + 1,
+        tags: ['Research', 'AI Analysis', symbol, 'Deep Dive'],
+        reason: `Based on your recent research note: "${recentNote.title}"`,
+        data: recentNote
+      })
+    }
+
+    // Insight based on price targets
+    const overduePriceTargets = ideaData.priceTargets.filter(pt => {
+      if (!pt.target_date) return false
+      return new Date(pt.target_date) < new Date()
+    })
+    if (overduePriceTargets.length > 0) {
+      const target = overduePriceTargets[0]
+      insights.push({
+        id: `ai_insight_target_${target.id}`,
+        type: 'portfolio_alert',
+        title: `🎯 Price Target Update: ${target.assets?.symbol}`,
+        content: `Your ${target.assets?.symbol} price target of $${target.target_price} has expired. Current price: $${target.assets?.current_price}. AI suggests reassessing target based on recent earnings, market conditions, and your updated investment thesis.`,
+        author: 'Tesseract AI',
+        timestamp: '5m ago',
+        likes: Math.floor(Math.random() * 35) + 10,
+        comments: Math.floor(Math.random() * 10) + 2,
+        shares: Math.floor(Math.random() * 6) + 1,
+        tags: [target.assets?.symbol, 'Price Target', 'Review', 'Update'],
+        reason: `Your price target for ${target.assets?.symbol} needs updating`,
+        data: target
+      })
+    }
+
+    // Insight based on themes
+    if (ideaData.themes.length > 0) {
+      const theme = ideaData.themes[0]
+      insights.push({
+        id: `ai_insight_theme_${theme.id}`,
+        type: 'trend_analysis',
+        title: `🌊 Theme Deep Dive: ${theme.name}`,
+        content: `Your investment theme "${theme.name}" is gaining momentum. AI analysis suggests this trend aligns with current market rotation. Consider increasing allocation or identifying new opportunities within this theme.`,
+        author: 'Tesseract AI',
+        timestamp: '8m ago',
+        likes: Math.floor(Math.random() * 45) + 25,
+        comments: Math.floor(Math.random() * 18) + 7,
+        shares: Math.floor(Math.random() * 12) + 4,
+        tags: [theme.name, 'Theme', 'Trend', 'Opportunity'],
+        reason: `Analysis of your investment theme: "${theme.name}"`,
+        data: theme
+      })
+    }
+
+    // Insight based on portfolio composition
+    const portfoliosWithFewHoldings = ideaData.portfolios.filter(p =>
+      !p.portfolio_holdings || p.portfolio_holdings.length <= 2
+    )
+    if (portfoliosWithFewHoldings.length > 0) {
+      const portfolio = portfoliosWithFewHoldings[0]
+      insights.push({
+        id: `ai_insight_portfolio_${portfolio.id}`,
+        type: 'educational',
+        title: `🎓 Portfolio Optimization: ${portfolio.name}`,
+        content: `Your "${portfolio.name}" portfolio shows concentration risk with only ${portfolio.portfolio_holdings?.length || 0} holdings. AI recommends diversification across 8-12 positions for optimal risk-adjusted returns while maintaining your investment style.`,
+        author: 'Tesseract AI',
+        timestamp: '12m ago',
+        likes: Math.floor(Math.random() * 30) + 12,
+        comments: Math.floor(Math.random() * 8) + 2,
+        shares: Math.floor(Math.random() * 5) + 1,
+        tags: [portfolio.name, 'Diversification', 'Risk', 'Education'],
+        reason: `Portfolio diversification analysis for "${portfolio.name}"`,
+        data: portfolio
+      })
+    }
+
+    // Fallback insight if no user data
+    if (insights.length === 0) {
+      insights.push({
+        id: 'ai_insight_welcome',
+        type: 'educational',
+        title: '🚀 Welcome to AI-Powered Investing',
+        content: 'Start building your portfolio, adding research notes, and setting price targets. Tesseract AI will analyze your data to provide personalized insights, alerts, and investment recommendations tailored to your strategy.',
+        author: 'Tesseract AI',
+        timestamp: 'Now',
+        likes: 42,
+        comments: 8,
+        shares: 3,
+        tags: ['Welcome', 'Getting Started', 'AI', 'Personalized'],
+        reason: 'Getting started guide for new users',
+        data: null
+      })
+    }
+
+    return insights
+  }
 
   // Fetch data for discovery view (existing functionality)
   const { data: ideaData, isLoading, refetch } = useQuery({
@@ -229,6 +507,27 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     refetchOnWindowFocus: false,
   })
 
+  // Generate AI insights after ideaData is available
+  const aiInsights = ideaData ? generateAIInsights() : []
+
+  // Debug logging
+  console.log('🔍 Feed Debug:', {
+    ideaData: !!ideaData,
+    aiInsightsLength: aiInsights.length,
+    currentFeedIndex,
+    isLoading
+  })
+
+  // Shuffle function - regenerate tiles with different random selection
+  const handleShuffle = () => {
+    setIsShuffling(true)
+    setTimeout(() => {
+      generateIdeaTiles() // This will create a new random selection of 9 tiles
+      setLastRefresh(new Date()) // Update the last refresh timestamp
+      setIsShuffling(false)
+    }, 500) // Brief animation delay
+  }
+
   // Fetch workflows and their assets for prioritizer view
   const { data: workflowData, isLoading: workflowLoading, refetch: refetchWorkflowData } = useQuery({
     queryKey: ['prioritizer-workflows'],
@@ -273,6 +572,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         const totalStages = workflowStages?.length || 1
 
         // Get ALL workflow progress assets (both started and not started)
+        // Use DISTINCT ON to prevent duplicate assets from multiple progress entries
         const { data: progressAssets, error: progressError } = await supabase
           .from('asset_workflow_progress')
           .select(`
@@ -281,6 +581,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           `)
           .eq('workflow_id', workflow.id)
           .eq('is_completed', false)
+          .order('asset_id')
+          .order('updated_at', { ascending: false })
 
         if (progressError) {
           console.error(`❌ Error fetching progress for workflow ${workflow.name}:`, progressError)
@@ -305,7 +607,35 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           }
         }
 
-        const assets = progressAssets
+        // Debug: Log original assets before deduplication
+        console.log(`🔍 Before deduplication for ${workflow.name}:`, progressAssets?.map(a => ({
+          id: a.id,
+          asset_id: a.asset_id,
+          symbol: a.assets.symbol,
+          updated_at: a.updated_at
+        })))
+
+        // Deduplicate assets - keep the most recent entry for each asset
+        const deduplicatedAssets = progressAssets ?
+          Object.values(
+            progressAssets.reduce((acc, asset) => {
+              const assetId = asset.assets.id
+              if (!acc[assetId] || new Date(asset.updated_at) > new Date(acc[assetId].updated_at)) {
+                acc[assetId] = asset
+              }
+              return acc
+            }, {} as Record<string, any>)
+          ) : []
+
+        // Debug: Log after deduplication
+        console.log(`🔍 After deduplication for ${workflow.name}:`, deduplicatedAssets.map(a => ({
+          id: a.id,
+          asset_id: a.asset_id,
+          symbol: a.assets.symbol,
+          updated_at: a.updated_at
+        })))
+
+        const assets = deduplicatedAssets
 
         if (assets) {
           workflowAssets[workflow.id] = assets.map(asset => {
@@ -359,6 +689,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       activeView,
       currentFeedIndex,
       selectedWorkflow,
+      tiles,
       // Prioritizer state
       prioritizerView,
       sortBy,
@@ -370,7 +701,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
     console.log('IdeaGeneratorPage: Saving state:', stateToSave)
     TabStateManager.saveTabState('idea-generator', stateToSave)
-  }, [activeView, currentFeedIndex, selectedWorkflow, prioritizerView, sortBy, sortOrder, filterByStatus, filterByPriority, filterByStage])
+  }, [activeView, currentFeedIndex, selectedWorkflow, tiles, prioritizerView, sortBy, sortOrder, filterByStatus, filterByPriority, filterByStage])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -397,59 +728,85 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     }
   }, [showFilterDropdown, showSortDropdown])
 
-  // Generate idea tiles (existing logic)
+  // Generate idea tiles only on initial load if no saved tiles exist
   useEffect(() => {
-    if (ideaData && activeView === 'discovery') {
+    if (ideaData && tiles.length === 0) {
       generateIdeaTiles()
     }
-  }, [ideaData, activeView])
+  }, [ideaData])
 
   // Refetch prioritizer data when switching to prioritizer view
   useEffect(() => {
     if (activeView === 'prioritizer') {
       refetchWorkflowData()
     }
+    // Reset feed index when switching to feed view
+    if (activeView === 'feed') {
+      setCurrentFeedIndex(0)
+    }
   }, [activeView, refetchWorkflowData])
 
   const generateIdeaTiles = () => {
     if (!ideaData) return
 
-    const newTiles: IdeaTile[] = []
-    const maxTiles = 6
+    const allPossibleTiles: IdeaTile[] = []
 
-    // Add high-priority assets
-    const highPriorityAssets = ideaData.assets.filter(a => a.priority === 'high').slice(0, 2)
+    // Add high-priority assets with urgent attention needed
+    const highPriorityAssets = ideaData.assets.filter(a => a.priority === 'high')
     highPriorityAssets.forEach(asset => {
-      newTiles.push({
+      allPossibleTiles.push({
         id: asset.id,
         type: 'asset',
         title: asset.symbol,
         subtitle: asset.company_name,
-        content: `High priority asset that needs attention. Last updated ${formatDistanceToNow(new Date(asset.updated_at), { addSuffix: true })}.`,
+        content: `High priority asset requiring immediate attention. Last updated ${formatDistanceToNow(new Date(asset.updated_at), { addSuffix: true })}.`,
         priority: 'high',
         urgency: 'urgent',
         data: asset,
         color: 'bg-red-50 border-red-200',
         icon: <AlertTriangle className="w-5 h-5 text-red-600" />,
-        actionText: 'Review Now'
+        actionText: 'Review Now',
+        reason: 'High priority asset that needs your immediate attention'
       })
     })
 
-    // Add recent notes from other users (prioritize collaborative content)
-    const recentNotes = ideaData.notes.slice(0, 2)
+    // Add recently updated assets that need review
+    const recentlyUpdatedAssets = ideaData.assets
+      .filter(a => a.priority !== 'high' && new Date(a.updated_at) > new Date(Date.now() - 24 * 60 * 60 * 1000))
+      .slice(0, 3)
+    recentlyUpdatedAssets.forEach(asset => {
+      allPossibleTiles.push({
+        id: `recent_${asset.id}`,
+        type: 'asset',
+        title: asset.symbol,
+        subtitle: asset.company_name,
+        content: `Recently updated asset. Check for new developments and analysis opportunities.`,
+        priority: 'medium',
+        urgency: 'normal',
+        data: asset,
+        color: 'bg-blue-50 border-blue-200',
+        icon: <TrendingUp className="w-5 h-5 text-blue-600" />,
+        actionText: 'Check Updates',
+        reason: 'Asset was recently updated and may need your review'
+      })
+    })
+
+    // Add recent notes that need attention
+    const recentNotes = ideaData.notes.slice(0, 4)
     recentNotes.forEach(note => {
-      newTiles.push({
+      allPossibleTiles.push({
         id: note.id,
         type: 'note',
         title: note.title,
         subtitle: note.source_name ? `${note.source_type}: ${note.source_name}` : note.source_type,
-        content: note.content.substring(0, 100) + '...',
+        content: note.content.substring(0, 120) + '...',
         priority: 'medium',
         urgency: 'normal',
         data: note,
         color: 'bg-blue-50 border-blue-200',
         icon: <FileText className="w-5 h-5 text-blue-600" />,
-        actionText: 'Read More'
+        actionText: 'Read More',
+        reason: 'Recent research note that might contain valuable insights'
       })
     })
 
@@ -457,10 +814,9 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     const overduePriceTargets = ideaData.priceTargets.filter(pt => {
       if (!pt.target_date) return false
       return new Date(pt.target_date) < new Date()
-    }).slice(0, 1)
-
+    })
     overduePriceTargets.forEach(target => {
-      newTiles.push({
+      allPossibleTiles.push({
         id: target.id,
         type: 'price_target',
         title: `${target.assets?.symbol} Price Target`,
@@ -471,39 +827,80 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         data: target,
         color: 'bg-yellow-50 border-yellow-200',
         icon: <Target className="w-5 h-5 text-yellow-600" />,
-        actionText: 'Update Target'
+        actionText: 'Update Target',
+        reason: 'Price target deadline has passed and needs your review'
       })
     })
 
-    // Fill remaining slots with insights and recent themes
-    while (newTiles.length < maxTiles && ideaData.themes.length > 0) {
-      const theme = ideaData.themes[newTiles.length - (maxTiles - ideaData.themes.length)]
-      if (theme) {
-        newTiles.push({
-          id: theme.id,
-          type: 'theme',
-          title: theme.name,
-          subtitle: 'Investment Theme',
-          content: theme.description || 'Explore this investment theme and related opportunities.',
-          priority: 'medium',
-          urgency: 'normal',
-          data: theme,
-          color: 'bg-purple-50 border-purple-200',
-          icon: <Tag className="w-5 h-5 text-purple-600" />,
-          actionText: 'Explore Theme'
-        })
-      }
-    }
+    // Add approaching price targets
+    const approachingTargets = ideaData.priceTargets.filter(pt => {
+      if (!pt.target_date) return false
+      const targetDate = new Date(pt.target_date)
+      const now = new Date()
+      const daysUntil = (targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      return daysUntil > 0 && daysUntil <= 7
+    })
+    approachingTargets.forEach(target => {
+      allPossibleTiles.push({
+        id: `approaching_${target.id}`,
+        type: 'price_target',
+        title: `${target.assets?.symbol} Target Due Soon`,
+        subtitle: target.assets?.company_name,
+        content: `Price target of $${target.target_price} is due ${formatDistanceToNow(new Date(target.target_date), { addSuffix: true })}. Current: $${target.assets?.current_price || 'N/A'}`,
+        priority: 'medium',
+        urgency: 'normal',
+        data: target,
+        color: 'bg-orange-50 border-orange-200',
+        icon: <Clock className="w-5 h-5 text-orange-600" />,
+        actionText: 'Review Progress',
+        reason: 'Price target deadline is approaching within a week'
+      })
+    })
 
-    setTiles(newTiles.slice(0, maxTiles))
+    // Add themes that need exploration
+    ideaData.themes.slice(0, 3).forEach(theme => {
+      allPossibleTiles.push({
+        id: theme.id,
+        type: 'theme',
+        title: theme.name,
+        subtitle: 'Investment Theme',
+        content: theme.description || 'Explore this investment theme and identify related opportunities.',
+        priority: 'medium',
+        urgency: 'normal',
+        data: theme,
+        color: 'bg-purple-50 border-purple-200',
+        icon: <Tag className="w-5 h-5 text-purple-600" />,
+        actionText: 'Explore Theme',
+        reason: 'Investment theme that may have new opportunities'
+      })
+    })
+
+    // Add portfolios that need rebalancing (empty or few holdings)
+    const portfoliosNeedingAttention = ideaData.portfolios.filter(p =>
+      !p.portfolio_holdings || p.portfolio_holdings.length <= 2
+    )
+    portfoliosNeedingAttention.forEach(portfolio => {
+      allPossibleTiles.push({
+        id: portfolio.id,
+        type: 'portfolio',
+        title: portfolio.name,
+        subtitle: 'Portfolio',
+        content: `Portfolio has ${portfolio.portfolio_holdings?.length || 0} holdings and may need diversification or rebalancing.`,
+        priority: 'medium',
+        urgency: 'normal',
+        data: portfolio,
+        color: 'bg-green-50 border-green-200',
+        icon: <Briefcase className="w-5 h-5 text-green-600" />,
+        actionText: 'Add Holdings',
+        reason: 'Portfolio needs more holdings for better diversification'
+      })
+    })
+
+    // Shuffle and take up to 9 tiles
+    const shuffledTiles = shuffleArray([...allPossibleTiles])
+    setTiles(shuffledTiles.slice(0, 9))
   }
 
-  const handleShuffle = async () => {
-    setIsShuffling(true)
-    await refetch()
-    setLastRefresh(new Date())
-    setTimeout(() => setIsShuffling(false), 500)
-  }
 
   const renderTabButton = (view: ViewType, icon: React.ReactNode, label: string) => (
     <button
@@ -548,7 +945,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[...Array(6)].map((_, i) => (
+          {[...Array(9)].map((_, i) => (
             <div key={i} className="animate-pulse">
               <div className="h-48 bg-gray-200 rounded-xl"></div>
             </div>
@@ -588,7 +985,13 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                   )}
                 </div>
               </div>
-              <p className="text-sm text-gray-700 mb-4 line-clamp-3">{tile.content}</p>
+              <p className="text-sm text-gray-700 mb-3 line-clamp-3">{tile.content}</p>
+              {tile.reason && (
+                <div className="mb-4 px-3 py-2 bg-gray-50 rounded-lg border-l-2 border-blue-200">
+                  <p className="text-xs text-gray-600 font-medium">Why we're showing this:</p>
+                  <p className="text-xs text-gray-700">{tile.reason}</p>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <Badge variant="outline" size="sm">{tile.type}</Badge>
                 <span className="text-sm font-medium text-gray-900">{tile.actionText}</span>
@@ -921,9 +1324,33 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                 if (selectedWorkflow === null) {
                   // Combine all assets from all workflows
                   const allAssets = Object.values(workflowData?.workflowAssets || {}).flat()
+
+                  // Debug: Check for AAPL duplicates across all workflows
+                  const aaplAssets = allAssets.filter(a => a.symbol === 'AAPL')
+                  if (aaplAssets.length > 1) {
+                    console.log('🔍 AAPL duplicates found across workflows:', aaplAssets.map(a => ({
+                      id: a.id,
+                      symbol: a.symbol,
+                      workflow_id: a.workflow_id,
+                      workflowName: workflowData?.workflows.find(w => w.id === a.workflow_id)?.name
+                    })))
+                  }
+
                   return allAssets
                 } else {
-                  return workflowData?.workflowAssets[selectedWorkflow] || []
+                  const workflowAssets = workflowData?.workflowAssets[selectedWorkflow] || []
+
+                  // Debug: Check for AAPL duplicates in selected workflow
+                  const aaplAssets = workflowAssets.filter(a => a.symbol === 'AAPL')
+                  if (aaplAssets.length > 1) {
+                    console.log('🔍 AAPL duplicates found in selected workflow:', aaplAssets.map(a => ({
+                      id: a.id,
+                      symbol: a.symbol,
+                      workflow_id: a.workflow_id
+                    })))
+                  }
+
+                  return workflowAssets
                 }
               }
 
@@ -1186,137 +1613,195 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     </div>
   )
 
-  const renderFeedView = () => (
-    <div className="max-w-md mx-auto space-y-1 bg-black rounded-xl overflow-hidden" style={{ height: '600px' }}>
-      {/* Feed Header */}
-      <div className="flex items-center justify-between p-4 bg-black text-white">
-        <div className="flex items-center space-x-3">
-          <Brain className="w-6 h-6 text-blue-400" />
-          <span className="font-semibold">AI Insights</span>
+  const renderFeedView = () => {
+    if (isLoading) {
+      return (
+        <div className="w-full h-full bg-black overflow-hidden flex items-center justify-center">
+          <div className="text-center">
+            <Brain className="w-16 h-16 text-blue-400 mx-auto mb-4 animate-pulse" />
+            <h3 className="text-xl font-semibold text-white mb-2">Generating AI Insights...</h3>
+            <p className="text-gray-300">Analyzing your portfolio data</p>
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="sm" className="text-white hover:bg-gray-800">
-            <Search className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="sm" className="text-white hover:bg-gray-800">
-            <MoreHorizontal className="w-4 h-4" />
-          </Button>
+      )
+    }
+
+    return (
+      <div className="w-full h-full bg-black overflow-hidden">
+        {/* Feed Header */}
+        <div className="flex items-center justify-between p-4 bg-black text-white border-b border-gray-800">
+          <div className="flex items-center space-x-3">
+            <Brain className="w-6 h-6 text-blue-400" />
+            <span className="font-semibold">AI Insights</span>
+            <div className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded">
+              Powered by your data
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="text-xs text-gray-400">
+              {aiInsights.length > 0 ? `${currentFeedIndex + 1} / ${aiInsights.length}` : 'No insights'}
+            </div>
+            <Button variant="ghost" size="sm" className="text-white hover:bg-gray-800">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {/* Current Content */}
-      <div className="relative h-full bg-gradient-to-br from-blue-900 to-purple-900 text-white overflow-hidden">
-        {(() => {
-          const content = sampleFeedContent[currentFeedIndex]
-          if (!content) return null
+        {/* Current Content - Full Screen */}
+        <div className="relative w-full bg-gradient-to-br from-blue-900 to-purple-900 text-white overflow-hidden" style={{ height: 'calc(100vh - 180px)' }}>
+          {(() => {
+            // Always ensure we have some content to display
+            let content = aiInsights[currentFeedIndex] || aiInsights[0]
 
-          const getTypeIcon = (type: string) => {
-            switch (type) {
-              case 'market_insight': return <BarChart3 className="w-5 h-5" />
-              case 'research_tip': return <Lightbulb className="w-5 h-5" />
-              case 'portfolio_alert': return <Bell className="w-5 h-5" />
-              case 'trend_analysis': return <TrendingUp className="w-5 h-5" />
-              case 'educational': return <Award className="w-5 h-5" />
-              default: return <Zap className="w-5 h-5" />
+            // Fallback content if no AI insights
+            if (!content) {
+              content = {
+                id: 'fallback',
+                type: 'educational',
+                title: '🚀 Welcome to Tesseract AI',
+                content: 'Start building your portfolio by adding assets, research notes, and price targets. Tesseract AI will analyze your data to provide personalized insights and recommendations.',
+                author: 'Tesseract AI',
+                timestamp: 'Now',
+                likes: 42,
+                comments: 8,
+                shares: 3,
+                tags: ['Welcome', 'Getting Started', 'AI'],
+                reason: 'Getting started guide'
+              }
             }
-          }
 
-          const getTypeColor = (type: string) => {
-            switch (type) {
-              case 'market_insight': return 'text-green-400'
-              case 'research_tip': return 'text-yellow-400'
-              case 'portfolio_alert': return 'text-red-400'
-              case 'trend_analysis': return 'text-blue-400'
-              case 'educational': return 'text-purple-400'
-              default: return 'text-white'
+            const getTypeIcon = (type: string) => {
+              switch (type) {
+                case 'market_insight': return <BarChart3 className="w-5 h-5" />
+                case 'research_tip': return <Lightbulb className="w-5 h-5" />
+                case 'portfolio_alert': return <Bell className="w-5 h-5" />
+                case 'trend_analysis': return <TrendingUp className="w-5 h-5" />
+                case 'educational': return <Award className="w-5 h-5" />
+                default: return <Zap className="w-5 h-5" />
+              }
             }
-          }
 
-          return (
-            <div className="p-6 h-full flex flex-col justify-between">
-              {/* Content */}
-              <div className="space-y-6">
-                <div className="flex items-center space-x-2">
-                  <div className={getTypeColor(content.type)}>
-                    {getTypeIcon(content.type)}
-                  </div>
-                  <span className="text-sm font-medium capitalize text-gray-300">
-                    {content.type.replace('_', ' ')}
-                  </span>
-                </div>
+            const getTypeColor = (type: string) => {
+              switch (type) {
+                case 'market_insight': return 'text-green-400'
+                case 'research_tip': return 'text-yellow-400'
+                case 'portfolio_alert': return 'text-red-400'
+                case 'trend_analysis': return 'text-blue-400'
+                case 'educational': return 'text-purple-400'
+                default: return 'text-white'
+              }
+            }
 
-                <div>
-                  <h2 className="text-2xl font-bold mb-4 leading-tight">{content.title}</h2>
-                  <p className="text-lg leading-relaxed opacity-90">{content.content}</p>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-2">
-                  {content.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm font-medium"
-                    >
-                      #{tag}
+            return (
+              <div className="p-8 h-full flex flex-col justify-between">
+                {/* Content */}
+                <div className="space-y-8 flex-1 flex flex-col justify-center">
+                  <div className="flex items-center space-x-3">
+                    <div className={getTypeColor(content.type)}>
+                      {getTypeIcon(content.type)}
+                    </div>
+                    <span className="text-base font-medium capitalize text-gray-300">
+                      {content.type.replace('_', ' ')}
                     </span>
-                  ))}
+                    {content.reason && (
+                      <div className="text-xs text-gray-400 bg-gray-800 bg-opacity-50 px-3 py-1 rounded-full">
+                        {content.reason}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-center max-w-4xl mx-auto">
+                    <h2 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">{content.title}</h2>
+                    <p className="text-xl md:text-2xl leading-relaxed opacity-90 max-w-3xl mx-auto">{content.content}</p>
+                  </div>
+
+                  {/* Tags */}
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    {content.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-4 py-2 bg-white bg-opacity-20 rounded-full text-sm font-medium hover:bg-opacity-30 transition-all cursor-pointer"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Interaction Bar */}
+                <div className="space-y-4 mt-8">
+                  <div className="flex items-center justify-between text-sm text-gray-300">
+                    <span className="flex items-center space-x-2">
+                      <Brain className="w-4 h-4 text-blue-400" />
+                      <span>By {content.author}</span>
+                    </span>
+                    <span>{content.timestamp}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-8">
+                      <button className="flex items-center space-x-2 text-white hover:text-red-400 transition-colors">
+                        <Heart className="w-6 h-6" />
+                        <span className="text-lg">{content.likes}</span>
+                      </button>
+                      <button className="flex items-center space-x-2 text-white hover:text-blue-400 transition-colors">
+                        <MessageSquare className="w-6 h-6" />
+                        <span className="text-lg">{content.comments}</span>
+                      </button>
+                      <button className="flex items-center space-x-2 text-white hover:text-green-400 transition-colors">
+                        <Share2 className="w-6 h-6" />
+                        <span className="text-lg">{content.shares}</span>
+                      </button>
+                    </div>
+                    <button className="text-white hover:text-yellow-400 transition-colors">
+                      <Bookmark className="w-6 h-6" />
+                    </button>
+                  </div>
                 </div>
               </div>
+            )
+          })()}
 
-              {/* Interaction Bar */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-sm text-gray-300">
-                  <span>By {content.author}</span>
-                  <span>{content.timestamp}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-6">
-                    <button className="flex items-center space-x-2 text-white hover:text-red-400">
-                      <Heart className="w-5 h-5" />
-                      <span>{content.likes}</span>
-                    </button>
-                    <button className="flex items-center space-x-2 text-white hover:text-blue-400">
-                      <MessageSquare className="w-5 h-5" />
-                      <span>{content.comments}</span>
-                    </button>
-                    <button className="flex items-center space-x-2 text-white hover:text-green-400">
-                      <Share2 className="w-5 h-5" />
-                      <span>{content.shares}</span>
-                    </button>
-                  </div>
-                  <button className="text-white hover:text-yellow-400">
-                    <Bookmark className="w-5 h-5" />
-                  </button>
-                </div>
+          {/* Navigation */}
+          <div className="absolute inset-y-0 left-0 w-1/3 cursor-pointer" onClick={() => {
+            if (aiInsights.length > 0) {
+              setCurrentFeedIndex(prev => prev > 0 ? prev - 1 : aiInsights.length - 1)
+            }
+          }}>
+            <div className="h-full flex items-center justify-start pl-4">
+              <div className="text-white opacity-0 hover:opacity-60 transition-opacity">
+                <ArrowLeft className="w-8 h-8" />
               </div>
             </div>
-          )
-        })()}
+          </div>
+          <div className="absolute inset-y-0 right-0 w-1/3 cursor-pointer" onClick={() => {
+            if (aiInsights.length > 0) {
+              setCurrentFeedIndex(prev => prev < aiInsights.length - 1 ? prev + 1 : 0)
+            }
+          }}>
+            <div className="h-full flex items-center justify-end pr-4">
+              <div className="text-white opacity-0 hover:opacity-60 transition-opacity">
+                <ArrowRight className="w-8 h-8" />
+              </div>
+            </div>
+          </div>
 
-        {/* Navigation */}
-        <div className="absolute inset-y-0 left-0 w-1/3" onClick={() => {
-          setCurrentFeedIndex(prev => prev > 0 ? prev - 1 : sampleFeedContent.length - 1)
-        }}></div>
-        <div className="absolute inset-y-0 right-0 w-1/3" onClick={() => {
-          setCurrentFeedIndex(prev => prev < sampleFeedContent.length - 1 ? prev + 1 : 0)
-        }}></div>
-
-        {/* Progress indicators */}
-        <div className="absolute top-4 left-4 right-4 flex space-x-1">
-          {sampleFeedContent.map((_, index) => (
-            <div
-              key={index}
-              className={clsx(
-                'h-0.5 flex-1 rounded-full',
-                index === currentFeedIndex ? 'bg-white' : 'bg-white bg-opacity-30'
-              )}
-            />
-          ))}
+          {/* Progress indicators */}
+          <div className="absolute top-4 left-4 right-4 flex space-x-1">
+            {aiInsights.map((_, index) => (
+              <div
+                key={index}
+                className={clsx(
+                  'h-0.5 flex-1 rounded-full transition-all',
+                  index === currentFeedIndex ? 'bg-white' : 'bg-white bg-opacity-30'
+                )}
+              />
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="space-y-6">

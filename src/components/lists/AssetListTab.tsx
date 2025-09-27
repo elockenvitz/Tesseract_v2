@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText } from 'lucide-react'
+import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Star } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { PriorityBadge } from '../ui/PriorityBadge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
@@ -106,26 +107,7 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
     }
   })
 
-  const getPriorityColor = (priority: string | null) => {
-    switch (priority) {
-      case 'high': return 'error'
-      case 'medium': return 'warning'
-      case 'low': return 'success'
-      case 'none': return 'default'
-      default: return 'default'
-    }
-  }
 
-  const getStageColor = (stage: string | null) => {
-    switch (stage) {
-      case 'research': return 'primary'
-      case 'analysis': return 'warning'
-      case 'monitoring': return 'success'
-      case 'review': return 'default'
-      case 'archived': return 'default'
-      default: return 'default'
-    }
-  }
 
   const handleAssetClick = (asset: any) => {
     if (onAssetSelect) {
@@ -268,17 +250,12 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                         <h4 className="font-semibold text-gray-900">
                           {item.assets?.symbol || 'Unknown'}
                         </h4>
-                        {item.assets?.priority && (
-                          <Badge variant={getPriorityColor(item.assets.priority)} size="sm">
-                            {item.assets.priority}
-                          </Badge>
-                        )}
-                        {item.assets?.process_stage && (
-                          <Badge variant={getStageColor(item.assets.process_stage)} size="sm">
-                            {item.assets.process_stage}
-                          </Badge>
-                        )}
                       </div>
+                      {item.assets?.priority && (
+                        <div className="mb-1">
+                          <PriorityBadge priority={item.assets.priority} />
+                        </div>
+                      )}
                       <p className="text-sm text-gray-600 truncate">
                         {item.assets?.company_name || 'Unknown Company'}
                       </p>
