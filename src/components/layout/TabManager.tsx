@@ -7,6 +7,7 @@ export interface Tab {
   title: string
   type: 'asset' | 'portfolio' | 'theme' | 'note' | 'dashboard' | 'assets-list'
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
+  | 'idea-generator' | 'workflows'
   data?: any
   isActive: boolean
   isBlank?: boolean

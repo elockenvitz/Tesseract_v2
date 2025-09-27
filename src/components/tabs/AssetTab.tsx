@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock } from 'lucide-react'
+import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
@@ -84,6 +84,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
+  const [showAssetPriorityDropdown, setShowAssetPriorityDropdown] = useState(false)
   const queryClient = useQueryClient()
 
   // Refs for EditableSectionWithHistory components
@@ -94,6 +95,15 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   // Update local state when switching to a different asset
   useEffect(() => {
     if (asset.id) {
+      console.log(`🔍 AssetTab: Loading asset ${asset.symbol} with data:`, {
+        assetId: asset.id,
+        symbol: asset.symbol,
+        workflow_id: asset.workflow_id,
+        hasWorkflowProperty: 'workflow' in asset,
+        assetPriority: asset.priority,
+        fullAsset: asset
+      })
+      console.log(`🎯 AssetTab: Setting priority to:`, asset.priority || 'none')
       setPriority(asset.priority || 'none')
       setStage(mapToTimelineStage(asset.process_stage))
       setHasLocalChanges(false) // Reset local changes flag when loading new asset
@@ -103,6 +113,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   // Sync priority changes from external sources (but not stage to prevent reversion)
   useEffect(() => {
     if (!hasLocalChanges) {
+      console.log(`🔄 AssetTab: Syncing priority from external source for ${asset.symbol}:`, {
+        newPriority: asset.priority || 'none',
+        currentPriority: priority,
+        hasLocalChanges
+      })
       setPriority(asset.priority || 'none')
     }
   }, [asset.priority, hasLocalChanges])
@@ -257,6 +272,55 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   })
 
+  // Query to determine the effective workflow ID for this asset
+  const { data: effectiveWorkflowId } = useQuery({
+    queryKey: ['asset-effective-workflow', asset.id, asset.workflow_id],
+    queryFn: async () => {
+      console.log(`🔍 AssetTab: Determining effective workflow for ${asset.symbol}:`, {
+        assetWorkflowId: asset.workflow_id,
+        hasExplicitWorkflowId: !!asset.workflow_id
+      })
+
+      // If asset has explicit workflow_id, use that
+      if (asset.workflow_id) {
+        console.log(`✅ AssetTab: Using explicit workflow_id: ${asset.workflow_id}`)
+        return asset.workflow_id
+      }
+
+      // Otherwise, check if there's an active workflow progress record
+      const { data: workflowProgress, error } = await supabase
+        .from('asset_workflow_progress')
+        .select('workflow_id')
+        .eq('asset_id', asset.id)
+        .eq('is_started', true)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (error || !workflowProgress) {
+        console.log(`🔍 AssetTab: No active workflow progress, fetching default workflow`)
+        // No active workflow progress, fetch and return the default workflow
+        const { data: defaultWorkflow, error: defaultError } = await supabase
+          .from('workflows')
+          .select('id')
+          .eq('is_default', true)
+          .single()
+
+        if (defaultError || !defaultWorkflow) {
+          console.log(`❌ AssetTab: No default workflow found`)
+          return null
+        }
+
+        console.log(`✅ AssetTab: Using default workflow: ${defaultWorkflow.id}`)
+        return defaultWorkflow.id
+      }
+
+      console.log(`✅ AssetTab: Using active workflow progress: ${workflowProgress.workflow_id}`)
+      return workflowProgress.workflow_id
+    },
+    staleTime: 1000, // Cache for 1 second to be more responsive to workflow changes
+  })
+
   const nameFor = (id?: string | null) => {
     if (!id) return 'Unknown'
     const u = usersById?.[id]
@@ -371,13 +435,14 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   }
 
   const handleWorkflowChange = async (workflowId: string) => {
+    console.log(`🔄 Switching workflow for asset ${asset.symbol} (${asset.id}) to workflow ${workflowId}`)
     setHasLocalChanges(true)
 
     // Clear the viewing stage initially to prevent showing stale information from previous workflow
     setViewingStageId(null)
 
     try {
-      // Get the first stage of the new workflow and check if there's an active workflow progress
+      // Get the first stage of the new workflow and check if there's an existing workflow progress
       const [workflowStagesResult, workflowProgressResult] = await Promise.all([
         supabase
           .from('workflow_stages')
@@ -398,6 +463,8 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         // Fallback to just updating workflow without changing stage
         asset.workflow_id = workflowId
         updateAssetMutation.mutate({ workflow_id: workflowId })
+        // Invalidate the effective workflow query to update the UI immediately
+        queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
         return
       }
 
@@ -410,9 +477,17 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         ? workflowProgress.current_stage_key
         : firstStageKey
 
-      // Update both workflow and stage
+      console.log(`📊 Workflow status for ${asset.symbol}:`, {
+        workflowId,
+        firstStageKey,
+        isWorkflowStarted,
+        currentProgress: workflowProgress,
+        effectiveCurrentStage
+      })
+
+      // Update workflow assignment (but don't automatically start it)
       asset.workflow_id = workflowId
-      setStage(firstStageKey)
+      setStage(effectiveCurrentStage)
 
       // Auto-select the appropriate stage to show what needs to be done
       setTimeout(() => {
@@ -421,13 +496,110 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
 
       updateAssetMutation.mutate({
         workflow_id: workflowId,
-        process_stage: firstStageKey
+        process_stage: effectiveCurrentStage
       })
+
+      // Invalidate the effective workflow query to update the UI immediately
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
     } catch (error) {
       console.error('Error in handleWorkflowChange:', error)
       // Fallback to just updating workflow
       asset.workflow_id = workflowId
       updateAssetMutation.mutate({ workflow_id: workflowId })
+      // Invalidate the effective workflow query to update the UI immediately
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
+    }
+  }
+
+  const handleWorkflowStart = async (workflowId: string) => {
+    console.log(`🔴 AssetTab: handleWorkflowStart called for asset ${asset.symbol} (${asset.id}) in workflow ${workflowId}`)
+
+    try {
+      // Get the first stage of the workflow
+      const { data: workflowStages, error: stagesError } = await supabase
+        .from('workflow_stages')
+        .select('stage_key')
+        .eq('workflow_id', workflowId)
+        .order('sort_order')
+        .limit(1)
+
+      if (stagesError) {
+        console.error('Error fetching workflow stages:', stagesError)
+        return
+      }
+
+      const firstStageKey = workflowStages?.[0]?.stage_key || 'prioritized'
+      const now = new Date().toISOString()
+
+      console.log(`📋 First stage key: ${firstStageKey}, workflow stages:`, workflowStages)
+
+      // Create/update workflow progress as started
+      const progressData = {
+        asset_id: asset.id,
+        workflow_id: workflowId,
+        current_stage_key: firstStageKey,
+        is_started: true,
+        is_completed: false,
+        started_at: now,
+        updated_at: now
+      }
+
+      console.log(`💾 About to upsert workflow progress:`, progressData)
+
+
+      const { error: progressError } = await supabase
+        .from('asset_workflow_progress')
+        .upsert(progressData, {
+          onConflict: 'asset_id,workflow_id'
+        })
+
+      if (progressError) {
+        console.error('❌ Error starting workflow progress:', progressError)
+      } else {
+        console.log(`✅ Workflow started successfully for asset ${asset.symbol} in workflow ${workflowId}`)
+        // Invalidate caches so the workflow shows up as active
+        queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
+        queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
+        queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
+        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
+        queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
+        console.log(`🔄 Cache invalidated for workflow status updates`)
+      }
+    } catch (error) {
+      console.error('Error starting workflow:', error)
+    }
+  }
+
+  const handleWorkflowStop = async (workflowId: string) => {
+    console.log(`⏸️ AssetTab: handleWorkflowStop called for asset ${asset.symbol} (${asset.id}) in workflow ${workflowId}`)
+
+    try {
+      const now = new Date().toISOString()
+
+      // Update workflow progress as stopped
+      const { error: progressError } = await supabase
+        .from('asset_workflow_progress')
+        .update({
+          is_started: false,
+          updated_at: now
+        })
+        .eq('asset_id', asset.id)
+        .eq('workflow_id', workflowId)
+
+      if (progressError) {
+        console.error('❌ Error stopping workflow progress:', progressError)
+      } else {
+        console.log(`✅ Workflow stopped successfully for asset ${asset.symbol} in workflow ${workflowId}`)
+        // Invalidate caches so the workflow no longer shows as active
+        queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
+        queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
+        queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
+        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
+        queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
+        console.log(`🔄 Cache invalidated for workflow stop updates`)
+      }
+    } catch (error) {
+      console.error('Error stopping workflow:', error)
     }
   }
 
@@ -574,12 +746,109 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
 
         {/* Status Badges */}
         <div className="flex items-center space-x-3">
+          {/* Asset Priority Badge */}
+          <div className="relative">
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowAssetPriorityDropdown(!showAssetPriorityDropdown)}
+                className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 hover:opacity-90 transition-opacity ${
+                  priority === 'critical' ? 'bg-red-600 text-white' :
+                  priority === 'high' ? 'bg-orange-500 text-white' :
+                  priority === 'medium' ? 'bg-blue-500 text-white' :
+                  priority === 'low' ? 'bg-green-500 text-white' :
+                  'bg-gray-400 text-white'
+                }`}
+              >
+                {priority === 'critical' && <AlertTriangle className="w-3 h-3" />}
+                {priority === 'high' && <Zap className="w-3 h-3" />}
+                {priority === 'medium' && <Target className="w-3 h-3" />}
+                {priority === 'low' && <Clock className="w-3 h-3" />}
+                {!priority || priority === 'none' && <Clock className="w-3 h-3" />}
+                <span>{priority === 'critical' ? 'Critical' : priority === 'high' ? 'High' : priority === 'medium' ? 'Medium' : priority === 'low' ? 'Low' : 'None'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+
+              {showAssetPriorityDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowAssetPriorityDropdown(false)}
+                  />
+                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                    <div className="p-2">
+                      <button
+                        onClick={() => {
+                          handlePriorityChange('critical')
+                          setShowAssetPriorityDropdown(false)
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-red-600 text-white flex items-center space-x-1 mb-1 ${
+                          priority === 'critical' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>Critical</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handlePriorityChange('high')
+                          setShowAssetPriorityDropdown(false)
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-orange-500 text-white flex items-center space-x-1 mb-1 ${
+                          priority === 'high' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <Zap className="w-3 h-3" />
+                        <span>High</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handlePriorityChange('medium')
+                          setShowAssetPriorityDropdown(false)
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 text-white flex items-center space-x-1 mb-1 ${
+                          priority === 'medium' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <Target className="w-3 h-3" />
+                        <span>Medium</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handlePriorityChange('low')
+                          setShowAssetPriorityDropdown(false)
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-green-500 text-white flex items-center space-x-1 mb-1 ${
+                          priority === 'low' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <Clock className="w-3 h-3" />
+                        <span>Low</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handlePriorityChange('none')
+                          setShowAssetPriorityDropdown(false)
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-gray-400 text-white flex items-center space-x-1 ${
+                          (!priority || priority === 'none') ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <Clock className="w-3 h-3" />
+                        <span>None</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           <AssetWorkflowSelector
             assetId={asset.id}
-            currentWorkflowId={asset.workflow_id}
-            currentPriority={priority}
+            currentWorkflowId={effectiveWorkflowId}
             onWorkflowChange={handleWorkflowChange}
-            onPriorityChange={handlePriorityChange}
+            onWorkflowStart={handleWorkflowStart}
+            onWorkflowStop={handleWorkflowStop}
           />
         </div>
       </div>
@@ -923,8 +1192,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                   <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
                 ) : (
                   <WorkflowSelector
-                    currentWorkflowId={asset.workflow_id}
+                    currentWorkflowId={effectiveWorkflowId}
+                    assetId={asset.id}
                     onWorkflowChange={handleWorkflowChange}
+                    onWorkflowStart={handleWorkflowStart}
+                    onWorkflowStop={handleWorkflowStop}
                     onManageWorkflows={() => setShowWorkflowManager(true)}
                     onViewAllWorkflows={() => {
                       if (onNavigate) {
@@ -960,7 +1232,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                 <AssetTimelineView
                   assetId={asset.id}
                   assetSymbol={asset.symbol}
-                  workflowId={asset.workflow_id}
+                  workflowId={effectiveWorkflowId}
                   isOpen={true}
                   onClose={() => setShowTimelineView(false)}
                   inline={true}
@@ -974,7 +1246,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                   assetId={asset.id}
                   viewingStageId={viewingStageId}
                   onViewingStageChange={setViewingStageId}
-                  workflowId={asset.workflow_id}
+                  workflowId={effectiveWorkflowId}
                 />
               )}
             </div>

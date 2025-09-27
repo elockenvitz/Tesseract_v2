@@ -1,14 +1,14 @@
 import React, { useState } from 'react'
-import { ChevronDown, Workflow, AlertTriangle, Zap, Target, Clock } from 'lucide-react'
+import { ChevronDown, Workflow, AlertTriangle, Zap, Target, Clock, Play, Pause, Square } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
 interface AssetWorkflowSelectorProps {
   assetId: string
   currentWorkflowId?: string
-  currentPriority: string
   onWorkflowChange: (workflowId: string) => void
-  onPriorityChange: (priority: string) => void
+  onWorkflowStart?: (workflowId: string) => void
+  onWorkflowStop?: (workflowId: string) => void
   className?: string
 }
 
@@ -25,13 +25,12 @@ interface WorkflowWithProgress {
 export function AssetWorkflowSelector({
   assetId,
   currentWorkflowId,
-  currentPriority,
   onWorkflowChange,
-  onPriorityChange,
+  onWorkflowStart,
+  onWorkflowStop,
   className = ''
 }: AssetWorkflowSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
 
   // Query to get workflows with progress for this asset
   const { data: workflows, isLoading } = useQuery({
@@ -58,6 +57,7 @@ export function AssetWorkflowSelector({
         .select('workflow_id, is_started')
         .eq('asset_id', assetId)
         .eq('is_started', true)
+        .eq('is_completed', false)
 
       if (progressError && progressError.code !== 'PGRST116') throw progressError
 
@@ -77,22 +77,38 @@ export function AssetWorkflowSelector({
     enabled: !!assetId
   })
 
+  // Query to check if current workflow is started
+  const { data: currentWorkflowStatus } = useQuery({
+    queryKey: ['current-workflow-status', assetId, currentWorkflowId],
+    queryFn: async () => {
+      if (!currentWorkflowId) return null
+
+      const { data, error } = await supabase
+        .from('asset_workflow_progress')
+        .select('is_started, is_completed')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', currentWorkflowId)
+        .single()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching current workflow status:', error)
+        return null
+      }
+
+      return data
+    },
+    enabled: !!assetId && !!currentWorkflowId
+  })
+
   const currentWorkflow = workflows?.find(w => w.id === currentWorkflowId)
   const workflowCount = workflows?.length || 0
+  const isCurrentWorkflowStarted = currentWorkflowStatus?.is_started || false
 
   const handleWorkflowSelect = (workflowId: string) => {
     onWorkflowChange(workflowId)
     setIsOpen(false)
   }
 
-  // Priority configuration
-  const priorityConfig = {
-    'critical': { color: 'bg-red-600 text-white', icon: AlertTriangle, label: 'Critical' },
-    'high': { color: 'bg-orange-500 text-white', icon: Zap, label: 'High' },
-    'medium': { color: 'bg-blue-500 text-white', icon: Target, label: 'Medium' },
-    'low': { color: 'bg-green-500 text-white', icon: Clock, label: 'Low' }
-  }
-  const currentPriorityConfig = priorityConfig[currentPriority as keyof typeof priorityConfig] || priorityConfig['medium']
 
   if (isLoading) {
     return (
@@ -107,48 +123,6 @@ export function AssetWorkflowSelector({
   return (
     <div className={`relative ${className}`}>
       <div className="flex items-center space-x-3">
-        {/* Priority Indicator */}
-        <div className="relative">
-          <button
-            onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
-            className={`px-2 py-1 rounded-lg text-xs font-medium ${currentPriorityConfig.color} flex items-center space-x-1 hover:opacity-90 transition-opacity`}
-          >
-            <currentPriorityConfig.icon className="w-3 h-3" />
-            <span>{currentPriorityConfig.label}</span>
-            <ChevronDown className="w-3 h-3" />
-          </button>
-
-          {showPriorityDropdown && (
-            <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setShowPriorityDropdown(false)}
-              />
-              <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
-                <div className="p-2">
-                  {Object.entries(priorityConfig).map(([value, config]) => (
-                    <button
-                      key={value}
-                      onClick={() => {
-                        onPriorityChange(value)
-                        setShowPriorityDropdown(false)
-                      }}
-                      className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        value === currentPriority
-                          ? config.color + ' ring-2 ring-offset-1 ring-blue-300'
-                          : config.color + ' opacity-70 hover:opacity-100'
-                      } flex items-center space-x-1 mb-1 last:mb-0`}
-                    >
-                      <config.icon className="w-3 h-3" />
-                      <span>{config.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
         {/* Workflows Selector */}
         <button
           onClick={() => setIsOpen(!isOpen)}

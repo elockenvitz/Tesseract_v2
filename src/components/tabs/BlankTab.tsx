@@ -51,7 +51,7 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
               className="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
               onClick={() => onSearchResult({
                 id: 'idea-generator',
-                title: 'Idea Generator',
+                title: 'Ideas',
                 type: 'idea-generator',
                 data: null
               })}
@@ -59,7 +59,7 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
               <div className="w-10 h-10 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center mb-2">
                 <Lightbulb className="h-5 w-5 text-purple-600" />
               </div>
-              <span className="text-gray-700 font-medium">Idea Generator</span>
+              <span className="text-gray-700 font-medium">Ideas</span>
               <span className="text-gray-500 text-xs">Discover insights</span>
             </div>
 

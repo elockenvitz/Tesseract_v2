@@ -1,11 +1,10 @@
 import React, { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Check, Info, AlertTriangle, Calendar, Users, MessageSquare, X, Plus, Trash2, Edit3, Paperclip, Upload, Download, FileText, ChevronDown, Zap, Target, Clock, Play, Square } from 'lucide-react'
+import { Check, Info, AlertTriangle, Calendar, Users, MessageSquare, X, Plus, Trash2, Edit3, Paperclip, Upload, Download, FileText, ChevronDown, Zap, Target, Clock } from 'lucide-react'
 import { Badge } from './Badge'
 import { BadgeSelect } from './BadgeSelect'
 import { Button } from './Button'
 import { Card } from './Card'
-import { OutdatedStageView } from './OutdatedStageView'
 import { StageDeadlineManager } from './StageDeadlineManager'
 import { ContentTile } from './ContentTile'
 import { supabase } from '../../lib/supabase'
@@ -161,7 +160,6 @@ export function InvestmentTimeline({
   const [newItemText, setNewItemText] = useState('')
   const [uploadingFiles, setUploadingFiles] = useState<{[key: string]: boolean}>({})
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
-  const [showStopConfirmation, setShowStopConfirmation] = useState(false)
   const queryClient = useQueryClient()
 
   // Helper function to get default checklist items for a stage
@@ -349,6 +347,7 @@ export function InvestmentTimeline({
             workflow_id: workflowId,
             current_stage_key: stageKey,
             is_started: true,
+            is_completed: false,
             started_at: new Date().toISOString()
           }, {
             onConflict: 'asset_id,workflow_id'
@@ -368,6 +367,7 @@ export function InvestmentTimeline({
             workflow_id: workflowId,
             current_stage_key: null,
             is_started: false,
+            is_completed: true,
             completed_at: new Date().toISOString()
           }, {
             onConflict: 'asset_id,workflow_id'
@@ -381,6 +381,9 @@ export function InvestmentTimeline({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+      queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
+      queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
     },
     onError: (error) => {
       console.error('Error managing workflow progress:', error)
@@ -388,27 +391,6 @@ export function InvestmentTimeline({
     }
   })
 
-  // Handle starting workflow
-  const handleStartWorkflow = () => {
-    if (timelineStages && timelineStages[0]) {
-      manageWorkflowProgressMutation.mutate({
-        action: 'start',
-        stageKey: timelineStages[0].id
-      })
-
-      // Automatically select the first stage to show what needs to be done
-      if (onViewingStageChange) {
-        onViewingStageChange(timelineStages[0].id)
-      }
-      onStageClick(timelineStages[0].id)
-    }
-  }
-
-  // Handle stopping workflow
-  const handleStopWorkflow = () => {
-    manageWorkflowProgressMutation.mutate({ action: 'stop' })
-    setShowStopConfirmation(false)
-  }
 
   // Query to load workflow-specific checklist state from database
   const { data: savedChecklistItems } = useQuery({
@@ -574,6 +556,22 @@ export function InvestmentTimeline({
 
     setStageChecklists(initialChecklists)
   }, [assetId, savedChecklistItems, checklistAttachments, timelineStages, workflowChecklistTemplates])
+
+  // Automatically select the current stage when component loads or stage changes
+  React.useEffect(() => {
+    if (effectiveCurrentStage && !showStageDetails) {
+      setShowStageDetails(effectiveCurrentStage)
+      onStageClick(effectiveCurrentStage)
+    }
+  }, [effectiveCurrentStage, showStageDetails, onStageClick])
+
+  // Ensure the current stage is always shown when workflow starts
+  React.useEffect(() => {
+    if (isWorkflowStarted && effectiveCurrentStage && showStageDetails !== effectiveCurrentStage) {
+      setShowStageDetails(effectiveCurrentStage)
+      onStageClick(effectiveCurrentStage)
+    }
+  }, [isWorkflowStarted, effectiveCurrentStage, showStageDetails, onStageClick])
 
   // Handle external viewing stage requests
   React.useEffect(() => {
@@ -1041,24 +1039,6 @@ export function InvestmentTimeline({
   const currentStageData = timelineStages.find(stage => stage.id === effectiveCurrentStage)
   const currentIndex = getCurrentStageIndex()
 
-  // Safety check to prevent blank screen
-  if (!timelineStages || timelineStages.length === 0) {
-    console.log('InvestmentTimeline: No timeline stages available, rendering loading state')
-    return (
-      <div className={`space-y-6 ${className}`}>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="text-center">
-            <div className="animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-48 mx-auto mb-4"></div>
-              <div className="h-2 bg-gray-200 rounded w-full mb-2"></div>
-              <div className="h-2 bg-gray-200 rounded w-3/4 mx-auto"></div>
-            </div>
-            <p className="text-sm text-gray-500 mt-4">Loading workflow stages...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -1126,24 +1106,6 @@ export function InvestmentTimeline({
             </div>
           )}
 
-          {/* Play/Stop Button on the right */}
-          {timelineStages && timelineStages.length > 0 && (
-            <button
-              onClick={isWorkflowStarted ? () => setShowStopConfirmation(true) : handleStartWorkflow}
-              className={`w-8 h-8 rounded-full transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center ${
-                isWorkflowStarted
-                  ? 'bg-red-500 hover:bg-red-600 text-white'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-              title={isWorkflowStarted ? 'Stop Workflow' : 'Start Workflow'}
-            >
-              {isWorkflowStarted ? (
-                <Square className="w-3 h-3" />
-              ) : (
-                <Play className="w-3 h-3 ml-0.5" />
-              )}
-            </button>
-          )}
         </div>
 
         {/* Desktop Timeline */}
@@ -1153,7 +1115,7 @@ export function InvestmentTimeline({
             <div className="absolute top-8 left-0 right-0 h-1 bg-gray-200 rounded-full">
               <div
                 className="h-full bg-gradient-to-r from-gray-600 via-red-600 via-orange-600 via-blue-500 via-yellow-500 via-green-400 via-green-700 to-teal-500 transition-all duration-500 rounded-full"
-                style={{ width: `${(currentIndex / (timelineStages.length - 1)) * 100}%` }}
+                style={{ width: `${(currentIndex / timelineStages.length) * 100}%` }}
               />
             </div>
 
@@ -1394,10 +1356,6 @@ export function InvestmentTimeline({
           </div>
 
           <div className="grid grid-cols-1 gap-6">
-            {/* Special view for Outdated stage */}
-            {showStageDetails === 'outdated' && assetId && (
-              <OutdatedStageView assetId={assetId} assetSymbol={assetSymbol || 'Unknown'} />
-            )}
 
             {/* Stage Checklist for non-outdated stages */}
             {showStageDetails && showStageDetails !== 'outdated' && stageChecklists[showStageDetails] && (
@@ -1706,7 +1664,7 @@ export function InvestmentTimeline({
 
               {/* Stage Action Buttons */}
               <div className="flex items-center space-x-2">
-                {currentIndex > 0 && (
+                {currentIndex > 0 && isWorkflowStarted && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1717,14 +1675,14 @@ export function InvestmentTimeline({
                   </Button>
                 )}
 
-                {currentIndex < timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && (
+                {currentIndex < timelineStages.length - 1 && isWorkflowStarted && (
                   <Button
                     size="sm"
                     onClick={handleAdvanceStage}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
                     title="Advance to next stage"
                   >
-                    {effectiveCurrentStage === 'outdated' ? 'Initiate →' : 'Advance Stage →'}
+                    Advance Stage →
                   </Button>
                 )}
 
@@ -1739,31 +1697,6 @@ export function InvestmentTimeline({
         </Card>
       )}
 
-      {/* Stop Workflow Confirmation Dialog */}
-      {showStopConfirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">End Workflow?</h3>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to end this workflow? This will reset the asset to an unstarted state.
-            </p>
-            <div className="flex space-x-3 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setShowStopConfirmation(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleStopWorkflow}
-              >
-                End Workflow
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

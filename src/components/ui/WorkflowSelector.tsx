@@ -1,11 +1,15 @@
 import React, { useState } from 'react'
-import { ChevronDown, Settings, Plus, Workflow, MoreHorizontal, Search } from 'lucide-react'
+import { ChevronDown, Settings, Plus, Workflow, MoreHorizontal, Search, Play, Square } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface WorkflowSelectorProps {
   currentWorkflowId?: string
+  assetId?: string
   onWorkflowChange: (workflowId: string) => void
+  onWorkflowStart?: (workflowId: string) => void
+  onWorkflowStop?: (workflowId: string) => void
   onManageWorkflows?: () => void
   onViewAllWorkflows?: () => void
   className?: string
@@ -24,14 +28,44 @@ interface Workflow {
 
 export function WorkflowSelector({
   currentWorkflowId,
+  assetId,
   onWorkflowChange,
+  onWorkflowStart,
+  onWorkflowStop,
   onManageWorkflows,
   onViewAllWorkflows,
   className = ''
 }: WorkflowSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    action: 'start' | 'stop'
+    workflowId: string
+  } | null>(null)
   const queryClient = useQueryClient()
+
+  // Query to check if current workflow is started for this asset
+  const { data: currentWorkflowStatus } = useQuery({
+    queryKey: ['current-workflow-status', assetId, currentWorkflowId],
+    queryFn: async () => {
+      if (!currentWorkflowId || !assetId) return null
+
+      const { data, error } = await supabase
+        .from('asset_workflow_progress')
+        .select('is_started, is_completed')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', currentWorkflowId)
+        .single()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching current workflow status:', error)
+        return null
+      }
+      return data
+    },
+    enabled: !!assetId && !!currentWorkflowId
+  })
 
   // Single query for all workflows
   const { data: allWorkflows, isLoading, error } = useQuery({
@@ -109,6 +143,30 @@ export function WorkflowSelector({
                          allWorkflows?.find(w => w.is_default) ||
                          allWorkflows?.[0]
 
+  // Use effective workflow ID (prop or determined default) for button visibility
+  const effectiveWorkflowId = currentWorkflowId || currentWorkflow?.id
+
+  // Query to check default workflow status when no currentWorkflowId is provided
+  const { data: defaultWorkflowStatus } = useQuery({
+    queryKey: ['default-workflow-status', assetId, currentWorkflow?.id],
+    queryFn: async () => {
+      if (!currentWorkflow?.id || !assetId || currentWorkflowId) return null // Only run when no currentWorkflowId
+
+      const { data, error } = await supabase
+        .from('asset_workflow_progress')
+        .select('is_started, is_completed')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', currentWorkflow.id)
+        .single()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching default workflow status:', error)
+        return null
+      }
+      return data
+    },
+    enabled: !!assetId && !!currentWorkflow?.id && !currentWorkflowId
+  })
 
   // Determine which workflows to show in dropdown
   const isSearching = searchTerm.length > 0
@@ -175,19 +233,91 @@ export function WorkflowSelector({
 
   // Show button immediately with loading state for name only
   const displayName = currentWorkflow?.name || (isLoading ? 'Loading...' : 'Select Workflow')
+  const isCurrentWorkflowStarted = (currentWorkflowStatus?.is_started || defaultWorkflowStatus?.is_started) || false
+
+  const handleConfirmAction = () => {
+    if (!confirmDialog) {
+      console.log('❌ WorkflowSelector: No confirmDialog found')
+      return
+    }
+
+    console.log(`🔄 WorkflowSelector: ${confirmDialog.action} button confirmed for workflow:`, confirmDialog.workflowId)
+    console.log(`🔄 WorkflowSelector: Available handlers - onWorkflowStart:`, !!onWorkflowStart, 'onWorkflowStop:', !!onWorkflowStop)
+
+    if (confirmDialog.action === 'start' && onWorkflowStart) {
+      console.log(`🚀 WorkflowSelector: Calling onWorkflowStart for workflow:`, confirmDialog.workflowId)
+      onWorkflowStart(confirmDialog.workflowId)
+    } else if (confirmDialog.action === 'stop' && onWorkflowStop) {
+      console.log(`⏹️ WorkflowSelector: Calling onWorkflowStop for workflow:`, confirmDialog.workflowId)
+      onWorkflowStop(confirmDialog.workflowId)
+    } else {
+      console.log(`❌ WorkflowSelector: No matching handler for action:`, confirmDialog.action)
+    }
+
+    setConfirmDialog(null)
+  }
+
+  const handleCancelAction = () => {
+    setConfirmDialog(null)
+  }
 
   return (
     <div className={`relative ${className}`}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors"
-      >
-        <Workflow className="w-5 h-5" />
-        <span className="font-medium text-lg">
-          {displayName}
-        </span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
+      <div className="flex items-center space-x-2">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center space-x-2 px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors"
+        >
+          <Workflow className="w-5 h-5" />
+          <span className="font-medium text-lg">
+            {displayName}
+          </span>
+          <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* Play/Stop controls for current workflow */}
+        {effectiveWorkflowId && assetId && onWorkflowStart && onWorkflowStop && (
+          <div className="flex items-center space-x-1">
+            {isCurrentWorkflowStarted ? (
+              <button
+                onClick={() => {
+                  if (effectiveWorkflowId) {
+                    setConfirmDialog({
+                      isOpen: true,
+                      action: 'stop',
+                      workflowId: effectiveWorkflowId
+                    })
+                  }
+                }}
+                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Stop workflow"
+              >
+                <Square className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  console.log(`🎯 WorkflowSelector: Play button clicked for workflow:`, effectiveWorkflowId)
+                  if (effectiveWorkflowId) {
+                    console.log(`🎯 WorkflowSelector: Setting confirm dialog for start action`)
+                    setConfirmDialog({
+                      isOpen: true,
+                      action: 'start',
+                      workflowId: effectiveWorkflowId
+                    })
+                  } else {
+                    console.log(`❌ WorkflowSelector: No effectiveWorkflowId available`)
+                  }
+                }}
+                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                title="Start workflow"
+              >
+                <Play className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {isOpen && (
         <>
@@ -316,6 +446,21 @@ export function WorkflowSelector({
           </div>
         </>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog?.isOpen || false}
+        onClose={handleCancelAction}
+        onConfirm={handleConfirmAction}
+        title={confirmDialog?.action === 'start' ? 'Start Workflow' : 'Stop Workflow'}
+        message={confirmDialog?.action === 'start'
+          ? `Are you sure you want to start the "${currentWorkflow?.name}" workflow?`
+          : `Are you sure you want to stop the "${currentWorkflow?.name}" workflow?`
+        }
+        confirmText={confirmDialog?.action === 'start' ? 'Start' : 'Stop'}
+        cancelText="Cancel"
+        variant={confirmDialog?.action === 'start' ? 'info' : 'danger'}
+      />
     </div>
   )
 }

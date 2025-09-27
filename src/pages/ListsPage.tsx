@@ -21,9 +21,14 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   const { user } = useAuth()
 
   // Fetch all user's lists
-  const { data: assetLists, isLoading } = useQuery({
+  const { data: assetLists, isLoading, error: listsError } = useQuery({
     queryKey: ['asset-lists'],
     queryFn: async () => {
+      if (!user?.id) {
+        return []
+      }
+
+      // Get lists the user owns with asset counts
       const { data, error } = await supabase
         .from('asset_lists')
         .select(`
@@ -35,10 +40,14 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
             collaborator_user:users!asset_list_collaborations_user_id_fkey(email, first_name, last_name)
           )
         `)
+        .eq('created_by', user.id)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('Failed to fetch asset lists:', error)
+        throw error
+      }
 
       return (data || []).map(list => ({
         ...list,
@@ -48,7 +57,9 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
           user: collab.collaborator_user
         }))
       }))
-    }
+    },
+    enabled: !!user, // Only run when user is authenticated
+    retry: false // Don't retry on auth failures
   })
 
   // Fetch user's favorite lists
@@ -100,10 +111,12 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
             Organize your assets into custom lists for better tracking
           </p>
         </div>
-        <Button onClick={() => setShowListManager(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          New List
-        </Button>
+        {user && (
+          <Button onClick={() => setShowListManager(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New List
+          </Button>
+        )}
       </div>
 
       {/* Search and Filters */}
@@ -139,8 +152,33 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         </div>
       </Card>
 
+      {/* Error State */}
+      {listsError && (
+        <Card>
+          <div className="text-center py-8">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <List className="h-8 w-8 text-red-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load lists</h3>
+            <p className="text-gray-500 mb-4">
+              {listsError.message || 'Unable to fetch your asset lists. Please check your connection and try again.'}
+            </p>
+            <div className="space-y-2">
+              <Button onClick={() => window.location.reload()} variant="outline">
+                Refresh Page
+              </Button>
+              {!user && (
+                <p className="text-sm text-amber-600">
+                  ⚠️ You may need to sign in to access your lists
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Lists Grid */}
-      {isLoading ? (
+      {!listsError && isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="animate-pulse">
@@ -230,12 +268,14 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
             {assetLists?.length === 0 ? 'No lists yet' : 'No lists match your search'}
           </h3>
           <p className="text-gray-500 mb-4">
-            {assetLists?.length === 0 
-              ? 'Your default lists should be created automatically. Try refreshing the page.'
+            {assetLists?.length === 0
+              ? user
+                ? 'Create your first list to organize your assets and investment ideas.'
+                : 'Sign in to access your asset lists and create new ones.'
               : 'Try adjusting your search criteria.'
             }
           </p>
-          {assetLists?.length === 0 && (
+          {assetLists?.length === 0 && user && (
             <Button onClick={() => setShowListManager(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Create First List
