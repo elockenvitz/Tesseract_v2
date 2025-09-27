@@ -6,6 +6,7 @@ import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { PriorityBadge } from '../ui/PriorityBadge'
 import { BadgeSelect } from '../ui/BadgeSelect'
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
 import { InvestmentTimeline } from '../ui/InvestmentTimeline'
@@ -409,15 +410,6 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   })
 
   // ---------- Helpers ----------
-  const getPriorityColor = (p: string | null) => {
-    switch (p) {
-      case 'high': return 'error'
-      case 'medium': return 'warning'
-      case 'low': return 'success'
-      case 'none':
-      default: return 'default'
-    }
-  }
 
   const getStageColor = (s: string | null) => {
     switch (s) {

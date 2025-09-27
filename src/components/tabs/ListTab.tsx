@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Play } from 'lucide-react'
+import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Play, Settings, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { PriorityBadge } from '../ui/PriorityBadge'
 import { Select } from '../ui/Select'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
@@ -103,7 +104,6 @@ const STAGE_CONFIGS = [
 export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('all')
-  const [stageFilter, setStageFilter] = useState('all')
   const [sectorFilter, setSectorFilter] = useState('all')
   const [sortBy, setSortBy] = useState('added_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -125,6 +125,15 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [dragPosition, setDragPosition] = useState<'above' | 'below' | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [showShareDialog, setShowShareDialog] = useState(false)
+  const [showColumnSettings, setShowColumnSettings] = useState(false)
+  const [visibleColumns, setVisibleColumns] = useState({
+    symbol: true,
+    price: true,
+    priority: true,
+    sector: true,
+    notes: true,
+    added_date: false // Hidden by default since we removed it
+  })
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -276,13 +285,11 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
       // Priority filter
       const matchesPriority = priorityFilter === 'all' || item.assets.priority === priorityFilter
 
-      // Stage filter
-      const matchesStage = stageFilter === 'all' || item.assets.process_stage === stageFilter
 
       // Sector filter
       const matchesSector = sectorFilter === 'all' || item.assets.sector === sectorFilter
 
-      return matchesSearch && matchesPriority && matchesStage && matchesSector
+      return matchesSearch && matchesPriority && matchesSector
     })
 
     // Sort items
@@ -340,7 +347,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     })
 
     return filtered
-  }, [listItems, searchQuery, priorityFilter, stageFilter, sectorFilter, sortBy, sortOrder, financialData])
+  }, [listItems, searchQuery, priorityFilter, sectorFilter, sortBy, sortOrder, financialData])
 
   // Remove asset from list mutation
   const removeFromListMutation = useMutation({
@@ -525,15 +532,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     setDraggedOverStage(null)
   }
 
-  const getPriorityColor = (priority: string | null) => {
-    switch (priority) {
-      case 'high': return 'error'
-      case 'medium': return 'warning'
-      case 'low': return 'success'
-      case 'none': return 'default'
-      default: return 'default'
-    }
-  }
 
   const getStageColor = (stage: string | null) => {
     const stageConfig = STAGE_CONFIGS.find(config => config.id === stage)
@@ -600,16 +598,38 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const clearFilters = () => {
     setSearchQuery('')
     setPriorityFilter('all')
-    setStageFilter('all')
     setSectorFilter('all')
     setSortBy('added_at')
     setSortOrder('desc')
   }
 
+  const toggleColumn = (columnKey: keyof typeof visibleColumns) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [columnKey]: !prev[columnKey]
+    }))
+  }
+
+  // Close column settings dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showColumnSettings) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.column-settings-dropdown') && !target.closest('button')) {
+          setShowColumnSettings(false)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showColumnSettings])
+
   const activeFiltersCount = [
     searchQuery,
     priorityFilter !== 'all' ? priorityFilter : null,
-    stageFilter !== 'all' ? stageFilter : null,
     sectorFilter !== 'all' ? sectorFilter : null
   ].filter(Boolean).length
 
@@ -648,9 +668,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             {/* Badges */}
             <div className="flex flex-wrap gap-1 mt-3">
               {item.assets?.priority && (
-                <Badge variant={getPriorityColor(item.assets.priority)} size="sm">
-                  {item.assets.priority}
-                </Badge>
+                <PriorityBadge priority={item.assets.priority} />
               )}
             </div>
           </div>
@@ -689,7 +707,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
       onDrop={(e) => handleDrop(e, item.id)}
       onDragEnd={handleDragEnd}
       className={clsx(
-        "px-6 py-4 transition-all duration-200 group relative",
+        "pl-2 pr-6 py-4 transition-all duration-200 group relative",
         !isDragging && "hover:bg-gray-50 cursor-move",
         draggedItem === item.id && 'opacity-30 scale-95 z-10',
         draggedOverItem === item.id && dragPosition === 'above' && 'border-t-4 border-primary-500',
@@ -703,142 +721,123 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     >
       {/* Drop indicator lines */}
       {draggedOverItem === item.id && dragPosition === 'above' && (
-        <div className="absolute top-0 left-6 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
+        <div className="absolute top-0 left-2 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
       )}
       {draggedOverItem === item.id && dragPosition === 'below' && (
-        <div className="absolute bottom-0 left-6 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
+        <div className="absolute bottom-0 left-2 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
       )}
       
-      <div className="grid grid-cols-12 gap-4 items-center">
+      <div className="flex items-center gap-2">
         {/* Drag Handle */}
-        <div className="col-span-1">
+        <div className="flex-shrink-0 w-6">
           <div className={clsx(
-            "p-2 hover:bg-gray-200 rounded-lg transition-all duration-200",
+            "p-1 hover:bg-gray-200 rounded transition-all duration-200",
             isDragging ? "opacity-0" : "opacity-0 group-hover:opacity-100"
           )}
           disabled={isDragging}
           >
-            <GripVertical className="h-4 w-4 text-gray-400 cursor-grab active:cursor-grabbing" />
+            <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
           </div>
         </div>
 
-        <div className="col-span-11">
-          <div className="grid grid-cols-10 gap-4 items-center">
+        <div className="flex-1">
+          <div className="flex items-center justify-between gap-3">
             {/* Asset Info with Drag Handle */}
-            <div className="col-span-3">
+            <div className="flex-1 min-w-0">
               <div 
-                className="flex items-center space-x-4 cursor-pointer"
+                className="cursor-pointer"
                 onClick={() => item.assets && handleAssetClick(item.assets)}
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-3">
-                    <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1">
                       <div className="flex items-center space-x-2 mb-1">
                         <h4 className="font-semibold text-gray-900">
                           {item.assets?.symbol || 'Unknown'}
                         </h4>
-                        {item.assets?.priority && (
-                          <Badge variant={getPriorityColor(item.assets.priority)} size="sm">
-                            {item.assets.priority}
-                          </Badge>
-                        )}
-                        {item.assets?.process_stage && (
-                          <Badge variant={getStageColor(item.assets.process_stage)} size="sm">
-                            {item.assets.process_stage}
-                          </Badge>
-                        )}
                       </div>
                       <p className="text-sm text-gray-600 truncate">
                         {item.assets?.company_name || 'Unknown Company'}
                       </p>
-                      {item.assets?.sector && (
+                      {visibleColumns.sector && item.assets?.sector && (
                         <p className="text-xs text-gray-500">{item.assets.sector}</p>
                       )}
-                      {item.notes && (
+                      {visibleColumns.notes && item.notes && (
                         <p className="text-xs text-gray-600 mt-1 italic">
                           "{item.notes}"
                         </p>
                       )}
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
 
             {/* Price */}
-            <div className="col-span-1">
-              {(() => {
-                const quote = financialData?.[item.assets?.symbol || '']
+            {visibleColumns.price && (
+              <div className="w-20 flex-shrink-0">
+                {(() => {
+                  const quote = financialData?.[item.assets?.symbol || '']
 
-                // Show loading state
-                if (financialDataLoading) {
-                  return (
-                    <div className="animate-pulse">
-                      <div className="h-4 bg-gray-200 rounded w-16"></div>
-                    </div>
-                  )
-                }
-
-                // Show real-time data if available
-                if (quote) {
-                  const isPositive = quote.change >= 0
-                  const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
-                  const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
-
-                  return (
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        ${quote.price.toFixed(2)}
-                      </p>
-                      <div className={`flex items-center ${changeColor} text-xs`}>
-                        <ChangeIcon className="h-3 w-3 mr-0.5" />
-                        {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                  // Show loading state
+                  if (financialDataLoading) {
+                    return (
+                      <div className="animate-pulse">
+                        <div className="h-4 bg-gray-200 rounded w-16"></div>
                       </div>
-                    </div>
-                  )
-                }
+                    )
+                  }
 
-                // Fall back to saved price or show dash
-                if (item.assets?.current_price) {
-                  return (
-                    <span className="text-sm text-gray-900">
-                      ${item.assets.current_price}
-                    </span>
-                  )
-                }
+                  // Show real-time data if available
+                  if (quote) {
+                    const isPositive = quote.change >= 0
+                    const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
+                    const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
 
-                return <span className="text-sm text-gray-400">—</span>
-              })()}
-            </div>
+                    return (
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          ${quote.price.toFixed(2)}
+                        </p>
+                        <div className={`flex items-center ${changeColor} text-xs`}>
+                          <ChangeIcon className="h-3 w-3 mr-0.5" />
+                          {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  // Fall back to saved price or show dash
+                  if (item.assets?.current_price) {
+                    return (
+                      <span className="text-sm text-gray-900">
+                        ${item.assets.current_price}
+                      </span>
+                    )
+                  }
+
+                  return <span className="text-sm text-gray-400">—</span>
+                })()}
+              </div>
+            )}
 
             {/* Priority */}
-            <div className="col-span-1">
-              {item.assets?.priority && (
-                <Badge variant={getPriorityColor(item.assets.priority)} size="sm">
-                  {item.assets.priority}
-                </Badge>
-              )}
-            </div>
-
-            {/* Stage */}
-            <div className="col-span-1">
-              {item.assets?.process_stage && (
-                <Badge variant={getStageColor(item.assets.process_stage)} size="sm">
-                  {item.assets.process_stage}
-                </Badge>
-              )}
-            </div>
+            {visibleColumns.priority && (
+              <div className="w-20 flex-shrink-0">
+                {item.assets?.priority && (
+                  <PriorityBadge priority={item.assets.priority} />
+                )}
+              </div>
+            )}
 
             {/* Added Date */}
-            <div className="col-span-2">
-              <div className="flex items-center text-sm text-gray-500">
-                <Calendar className="h-3 w-3 mr-1" />
-                {formatDistanceToNow(new Date(item.added_at), { addSuffix: true })}
+            {visibleColumns.added_date && (
+              <div className="w-32 flex-shrink-0">
+                <div className="flex items-center text-sm text-gray-500">
+                  <Calendar className="h-3 w-3 mr-1" />
+                  {formatDistanceToNow(new Date(item.added_at), { addSuffix: true })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Actions */}
-            <div className="col-span-2">
+            <div className="w-16 flex-shrink-0 flex justify-end">
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -1049,7 +1048,47 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 </button>
               </div>
             </div>
-            
+
+            {/* Column Settings */}
+            <div className="relative">
+              <button
+                onClick={() => setShowColumnSettings(!showColumnSettings)}
+                className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Columns</span>
+              </button>
+
+              {showColumnSettings && (
+                <div className="absolute right-0 top-12 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 min-w-[200px] column-settings-dropdown">
+                  <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide border-b border-gray-200">
+                    Show Columns
+                  </div>
+                  {Object.entries({
+                    symbol: 'Asset Symbol',
+                    price: 'Price',
+                    priority: 'Priority',
+                    sector: 'Sector',
+                    notes: 'Notes',
+                    added_date: 'Added Date'
+                  }).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => toggleColumn(key as keyof typeof visibleColumns)}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between transition-colors"
+                    >
+                      <span>{label}</span>
+                      {visibleColumns[key as keyof typeof visibleColumns] ? (
+                        <Eye className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <EyeOff className="h-4 w-4 text-gray-400" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {activeFiltersCount > 0 && (
               <button
                 onClick={clearFilters}
@@ -1076,18 +1115,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 ]}
               />
 
-              <Select
-                label="Stage"
-                value={stageFilter}
-                onChange={(e) => setStageFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Stages' },
-                  ...STAGE_CONFIGS.map(stage => ({
-                    value: stage.id,
-                    label: stage.label
-                  }))
-                ]}
-              />
 
               <Select
                 label="Sector"
@@ -1108,8 +1135,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                   { value: 'symbol', label: 'Symbol' },
                   { value: 'company_name', label: 'Company Name' },
                   { value: 'current_price', label: 'Price' },
-                  { value: 'priority', label: 'Priority' },
-                  { value: 'process_stage', label: 'Stage' }
+                  { value: 'priority', label: 'Priority' }
                 ]}
               />
             </div>
@@ -1144,15 +1170,15 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             <Card padding="none">
               <div className="divide-y divide-gray-200">
                 {/* Table Header */}
-                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-                  <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="col-span-1 flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity mr-2">
+                <div className="pl-2 pr-6 py-3 bg-gray-50 border-b border-gray-200">
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <div className="flex-shrink-0 w-6">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                       </div>
                     </div>
-                    <div className="col-span-11">
-                      <div className="grid grid-cols-10 gap-4">
-                        <div className="col-span-3">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
                           <button
                             onClick={() => handleSort('symbol')}
                             className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
@@ -1161,44 +1187,41 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                             <ArrowUpDown className="h-3 w-3" />
                           </button>
                         </div>
-                        <div className="col-span-1">
-                          <button
-                            onClick={() => handleSort('current_price')}
-                            className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                          >
-                            <span>Price</span>
-                            <ArrowUpDown className="h-3 w-3" />
-                          </button>
-                        </div>
-                        <div className="col-span-1">
-                          <button
-                            onClick={() => handleSort('priority')}
-                            className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                          >
-                            <span>Priority</span>
-                            <ArrowUpDown className="h-3 w-3" />
-                          </button>
-                        </div>
-                        <div className="col-span-1">
-                          <button
-                            onClick={() => handleSort('process_stage')}
-                            className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                          >
-                            <span>Stage</span>
-                            <ArrowUpDown className="h-3 w-3" />
-                          </button>
-                        </div>
-                        <div className="col-span-2">
-                          <button
-                            onClick={() => handleSort('added_at')}
-                            className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                          >
-                            <span>Added</span>
-                            <ArrowUpDown className="h-3 w-3" />
-                          </button>
-                        </div>
-                        <div className="col-span-2">
-                          <span>Remove</span>
+                        {visibleColumns.price && (
+                          <div className="w-20 flex-shrink-0">
+                            <button
+                              onClick={() => handleSort('current_price')}
+                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                            >
+                              <span>Price</span>
+                              <ArrowUpDown className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                        {visibleColumns.priority && (
+                          <div className="w-20 flex-shrink-0">
+                            <button
+                              onClick={() => handleSort('priority')}
+                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                            >
+                              <span>Priority</span>
+                              <ArrowUpDown className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                        {visibleColumns.added_date && (
+                          <div className="w-32 flex-shrink-0">
+                            <button
+                              onClick={() => handleSort('added_at')}
+                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                            >
+                              <span>Added</span>
+                              <ArrowUpDown className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                        <div className="w-16 flex-shrink-0 flex justify-end">
+                          <span>Actions</span>
                         </div>
                       </div>
                     </div>
