@@ -376,7 +376,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     }
   })
 
-  // Initiate research mutation (moves from outdated to prioritized)
+  // Advance stage mutation (moves from outdated to prioritized)
   const initiateResearchMutation = useMutation({
     mutationFn: async (assetId: string) => {
       const { error } = await supabase
@@ -654,9 +654,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               )}
             </div>
           </div>
-
-          {/* Initiate Button for Outdated Assets */}
-          {item.assets?.process_stage === 'outdated' && (
+          {/* Advance Button for Outdated Assets */}
+          {item.assets?.process_stage === 'outdated' ? (
             <div className="mt-3 pt-3 border-t border-gray-200">
               <Button
                 size="sm"
@@ -670,13 +669,13 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Play className="h-3 w-3 mr-1" />
-                {initiateResearchMutation.isPending ? 'Initiating...' : 'Initiate Research'}
+                {initiateResearchMutation.isPending ? 'Advancing...' : 'Advance Stage'}
               </Button>
             </div>
-          )}
+          ) : null}
         </div>
       </Card>
-    </div>
+      </div>
   )
 
   const renderTableRow = (item: ListItem) => (

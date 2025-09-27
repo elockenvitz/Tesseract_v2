@@ -66,18 +66,30 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
     )
   }
 
-  if (error) {
-    return (
-      <div className={`text-red-500 text-sm ${className}`}>
-        {error}
-      </div>
-    )
-  }
+  if (error || !quote || quote.price === 0) {
+    if (showOnlyPrice || showOnlyChange) {
+      return (
+        <div className={`text-gray-500 text-sm ${className}`}>
+          —
+        </div>
+      )
+    }
 
-  if (!quote) {
+    if (compact) {
+      return (
+        <div className={`${className}`}>
+          <div className="flex flex-col">
+            <div className="text-2xl font-bold text-gray-500">—</div>
+            <div className="text-sm font-medium text-gray-500">—</div>
+            <div className="text-xs text-gray-400 mt-1">No data available</div>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className={`text-gray-500 text-sm ${className}`}>
-        {showOnlyPrice || showOnlyChange ? '—' : 'No data available'}
+        —
       </div>
     )
   }

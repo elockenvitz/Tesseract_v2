@@ -1,8 +1,9 @@
 import React from 'react'
 import { Calendar, BarChart3, Activity, TrendingUp, FileText, DollarSign, Users, Clock } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
 import { Card } from './Card'
 import { Badge } from './Badge'
-import { OutdatedStageView } from './OutdatedStageView'
 
 interface ContentTileProps {
   tile: {
@@ -65,24 +66,18 @@ export function ContentTile({ tile, assetId, assetSymbol, className = '', isPrev
         return <FinancialMetricsTile assetSymbol={assetSymbol} configuration={tile.configuration} isPreview={isPreview} />
 
       case 'outdated_stage_view':
-        return isPreview ? (
+        return (
           <div className="text-sm text-gray-600">
-            <p className="font-medium mb-2">Complete Outdated Stage View</p>
-            <p>Shows full outdated workflow stage with all sections including portfolio holdings, trading activity, and analysis notes.</p>
+            <p className="font-medium mb-2">Outdated Stage Analysis</p>
+            <p>Use specific tile types (Portfolio Holdings, Trading Activity, etc.) for targeted data views.</p>
           </div>
-        ) : assetId && assetSymbol ? (
-          <OutdatedStageView assetId={assetId} assetSymbol={assetSymbol} />
-        ) : null
+        )
 
       default:
         return <div className="p-4 text-gray-500">Unknown tile type: {tile.tile_type}</div>
     }
   }
 
-  // If it's the special outdated_stage_view, render it without wrapping Card
-  if (tile.tile_type === 'outdated_stage_view') {
-    return <div className={className}>{renderTileContent()}</div>
-  }
 
   return (
     <Card className={`p-4 ${className}`}>
@@ -119,6 +114,29 @@ function getTileIcon(tileType: string) {
 
 // Individual tile components
 function LastReviewTile({ assetId, configuration, isPreview }: { assetId?: string; configuration: any; isPreview?: boolean }) {
+  // Query for last research review
+  const { data: lastReview } = useQuery({
+    queryKey: ['asset-last-review', assetId],
+    queryFn: async () => {
+      if (!assetId) return null
+
+      const { data, error } = await supabase
+        .from('asset_field_history')
+        .select('*')
+        .eq('asset_id', assetId)
+        .order('changed_at', { ascending: false })
+        .limit(1)
+
+      if (error) throw error
+      return data?.[0] || null
+    },
+    enabled: !!assetId && !isPreview
+  })
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString()
+  }
+
   if (isPreview) {
     return (
       <div className="text-sm text-gray-600">
@@ -131,16 +149,74 @@ function LastReviewTile({ assetId, configuration, isPreview }: { assetId?: strin
     )
   }
 
-  // This would use the same logic as in OutdatedStageView
+  if (lastReview) {
+    return (
+      <div className="text-sm text-gray-600">
+        <p>Last updated: <span className="font-medium">{formatDate(lastReview.changed_at)}</span></p>
+        <p>Field: <span className="font-medium">{lastReview.field_name}</span></p>
+        {lastReview.old_value && lastReview.new_value && (
+          <p className="text-xs text-gray-500 mt-1">Changed from "{lastReview.old_value}" to "{lastReview.new_value}"</p>
+        )}
+      </div>
+    )
+  }
+
   return (
-    <div className="text-sm text-gray-600">
-      <p>Last updated: <span className="font-medium">No data available</span></p>
-      <p className="text-xs text-gray-500 mt-1">Connect your research tracking to see updates</p>
-    </div>
+    <div className="text-sm text-gray-500">No research history found</div>
   )
 }
 
 function PortfolioHoldingsTile({ assetId, configuration, isPreview }: { assetId?: string; configuration: any; isPreview?: boolean }) {
+  // Query for portfolio holdings
+  const { data: holdings, isLoading: holdingsLoading } = useQuery({
+    queryKey: ['asset-portfolio-holdings', assetId],
+    queryFn: async () => {
+      if (!assetId) return []
+
+      const { data, error } = await supabase
+        .from('portfolio_holdings')
+        .select(`
+          *,
+          portfolios:portfolio_id (
+            name
+          )
+        `)
+        .eq('asset_id', assetId)
+        .order('date', { ascending: false })
+
+      if (error) throw error
+
+      // Process data to calculate weights and active weights
+      const processedHoldings = data?.map(holding => ({
+        portfolio_id: holding.portfolio_id,
+        portfolio_name: holding.portfolios?.name || 'Unknown Portfolio',
+        shares: Number(holding.shares || 0),
+        price: Number(holding.price || 0),
+        cost: Number(holding.cost || 0),
+        weight: 0, // Would need total portfolio value to calculate
+        benchmark_weight: 0, // Would need benchmark data
+        active_weight: 0, // Calculated as weight - benchmark_weight
+        last_updated: holding.updated_at
+      })) || []
+
+      return processedHoldings
+    },
+    enabled: !!assetId && !isPreview
+  })
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value)
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString()
+  }
+
   if (isPreview) {
     return (
       <div className="text-sm">
@@ -166,15 +242,124 @@ function PortfolioHoldingsTile({ assetId, configuration, isPreview }: { assetId?
     )
   }
 
+  if (holdingsLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+      </div>
+    )
+  }
+
+  if (holdings && holdings.length > 0) {
+    return (
+      <div className="space-y-3">
+        {holdings.map((holding, index) => (
+          <div key={`${holding.portfolio_id}-${index}`} className="border border-gray-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-gray-900">{holding.portfolio_name}</span>
+              <Badge variant="secondary" size="sm">
+                {holding.shares.toLocaleString()} shares
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-gray-500">Market Value</span>
+                <p className="font-medium">{formatCurrency(holding.shares * holding.price)}</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Avg Cost</span>
+                <p className="font-medium">{formatCurrency(holding.cost / holding.shares || 0)}</p>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-gray-500">
+              Last updated: {formatDate(holding.last_updated)}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
-    <div className="text-sm text-gray-600">
-      <p>Portfolio holdings data will be displayed here</p>
-      <p className="text-xs text-gray-500 mt-1">Configure your portfolio connections in settings</p>
-    </div>
+    <div className="text-sm text-gray-500">No portfolio holdings found</div>
   )
 }
 
 function TradingActivityTile({ assetId, configuration, isPreview }: { assetId?: string; configuration: any; isPreview?: boolean }) {
+  // Query for portfolio trading data
+  const { data: portfolioTrades, isLoading: tradesLoading } = useQuery({
+    queryKey: ['asset-portfolio-trades', assetId],
+    queryFn: async () => {
+      if (!assetId) return []
+
+      const { data, error } = await supabase
+        .from('portfolio_trades')
+        .select(`
+          *,
+          portfolios:portfolio_id (
+            name
+          )
+        `)
+        .eq('asset_id', assetId)
+        .order('trade_date', { ascending: false })
+
+      if (error) throw error
+
+      // Group trades by portfolio and calculate summary stats
+      const tradesByPortfolio: Record<string, any> = {}
+
+      data?.forEach(trade => {
+        const portfolioId = trade.portfolio_id
+        const portfolioName = trade.portfolios?.name || 'Unknown Portfolio'
+
+        if (!tradesByPortfolio[portfolioId]) {
+          tradesByPortfolio[portfolioId] = {
+            portfolio_id: portfolioId,
+            portfolio_name: portfolioName,
+            total_trades: 0,
+            shares_traded: 0,
+            weight_change: 0,
+            last_trade_date: trade.trade_date,
+            last_trade_type: trade.trade_type,
+            last_trade_price: Number(trade.price)
+          }
+        }
+
+        const summary = tradesByPortfolio[portfolioId]
+        summary.total_trades += 1
+        summary.shares_traded += Number(trade.shares)
+        summary.weight_change += Number(trade.weight_change || 0)
+
+        // Update if this is a more recent trade
+        if (trade.trade_date > summary.last_trade_date) {
+          summary.last_trade_date = trade.trade_date
+          summary.last_trade_type = trade.trade_type
+          summary.last_trade_price = Number(trade.price)
+        }
+      })
+
+      return Object.values(tradesByPortfolio)
+    },
+    enabled: !!assetId && !isPreview
+  })
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value)
+  }
+
+  const formatPercentage = (value: number) => {
+    return `${(value * 100).toFixed(2)}%`
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString()
+  }
+
   if (isPreview) {
     return (
       <div className="text-sm">
@@ -200,11 +385,62 @@ function TradingActivityTile({ assetId, configuration, isPreview }: { assetId?: 
     )
   }
 
+  if (tradesLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+      </div>
+    )
+  }
+
+  if (portfolioTrades && portfolioTrades.length > 0) {
+    return (
+      <div className="space-y-3">
+        {portfolioTrades.map((trade) => (
+          <div key={trade.portfolio_id} className="border border-gray-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-gray-900">{trade.portfolio_name}</span>
+              <div className="flex items-center space-x-2">
+                <Badge
+                  variant={trade.last_trade_type === 'buy' ? 'success' : 'warning'}
+                  size="sm"
+                >
+                  Last: {trade.last_trade_type.toUpperCase()}
+                </Badge>
+                <span className="text-xs text-gray-500">{formatDate(trade.last_trade_date)}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-gray-500">Total Trades</span>
+                <p className="font-medium">{trade.total_trades}</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Shares Traded</span>
+                <p className="font-medium">{trade.shares_traded.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Weight Change</span>
+                <p className={`font-medium ${
+                  trade.weight_change > 0 ? 'text-green-600' :
+                  trade.weight_change < 0 ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {trade.weight_change > 0 ? '+' : ''}{formatPercentage(trade.weight_change)}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Last Price</span>
+                <p className="font-medium">{formatCurrency(trade.last_trade_price)}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
-    <div className="text-sm text-gray-600">
-      <p>Trading activity data will be displayed here</p>
-      <p className="text-xs text-gray-500 mt-1">Connect your trading platforms to see activity</p>
-    </div>
+    <div className="text-sm text-gray-500">No trading activity recorded</div>
   )
 }
 

@@ -47,7 +47,7 @@ export function DashboardPage() {
         console.error('❌ Failed to fetch assets:', error)
         throw error
       }
-      
+
       console.log('✅ Assets fetched:', data?.length || 0, 'records')
       return data
     },
@@ -316,11 +316,24 @@ export function DashboardPage() {
   }
 
   const handleSearchResult = (result: any) => {
+    console.log(`🎯 DashboardPage: handleSearchResult called with:`, {
+      resultId: result.id,
+      resultType: result.type,
+      hasData: !!result.data,
+      dataWorkflowId: result.data?.workflow_id
+    })
+
     // Check if a tab with this ID already exists
     const existingTab = tabs.find(tab => tab.id === result.id)
     if (existingTab) {
-      // If tab exists, just activate it
-      setTabs(tabs.map(tab => ({ ...tab, isActive: tab.id === result.id })))
+      console.log(`🔄 DashboardPage: Existing tab found, updating data and activating`)
+      // If tab exists, update its data and activate it
+      setTabs(tabs.map(tab => ({
+        ...tab,
+        isActive: tab.id === result.id,
+        // Update the data if this is the matching tab
+        ...(tab.id === result.id && result.data ? { data: result.data } : {})
+      })))
       setActiveTabId(result.id)
       return
     }
@@ -478,7 +491,7 @@ export function DashboardPage() {
           className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
           onClick={() => handleSearchResult({
             id: 'idea-generator',
-            title: 'Idea Generator',
+            title: 'Ideas',
             type: 'idea-generator',
             data: null
           })}
@@ -796,9 +809,6 @@ export function DashboardPage() {
                         <h3 className="font-semibold text-gray-900">{asset.symbol}</h3>
                         <Badge variant={getPriorityColor(asset.priority)} size="sm">
                           {asset.priority}
-                        </Badge>
-                        <Badge variant={getStageColor(asset.process_stage)} size="sm">
-                          {asset.process_stage}
                         </Badge>
                       </div>
                       <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>

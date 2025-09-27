@@ -177,12 +177,12 @@ export function SmartStageManager({
   return (
     <div className={`relative ${className}`}>
       <div className="flex items-center space-x-2">
-        {/* Initiate Research Button for Outdated Stage - Small Square */}
+        {/* Advance Button for Outdated Stage - Small Square */
         {currentStage === 'outdated' && (
           <button
             onClick={() => onStageChange('prioritized')}
             className="w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm flex items-center justify-center"
-            title="Initiate Research"
+            title="Advance Stage"
           >
             <Play className="w-4 h-4" />
           </button>

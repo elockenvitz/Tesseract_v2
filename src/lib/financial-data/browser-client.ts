@@ -34,11 +34,12 @@ export interface NewsItem {
 export class BrowserFinancialService {
   private alphaVantageKey: string | null = null
   private cache: Map<string, { data: Quote; timestamp: number }> = new Map()
-  private readonly CACHE_TTL = 30 * 1000 // 30 seconds for faster updates
+  private readonly CACHE_TTL = 5 * 60 * 1000 // 5 minutes to reduce API calls
   private lastApiCall = 0
-  private readonly API_CALL_DELAY = 250 // 250ms between API calls for faster loading
+  private readonly API_CALL_DELAY = 1000 // 1 second between API calls to respect rate limits
   private dailyCallCount = 0
   private lastResetDate = new Date().getDate()
+  private rateLimitHit = false
 
   constructor() {
     // Get API key from environment
@@ -115,9 +116,9 @@ export class BrowserFinancialService {
         return cached.data
       }
 
-      // No real data available from any source
-      console.log(`No real data available for ${upperSymbol} from any API provider`)
-      return null
+      // As last resort, provide a placeholder quote so UI doesn't break
+      console.log(`No real data available for ${upperSymbol} from any API provider, providing placeholder`)
+      return this.createPlaceholderQuote(upperSymbol)
     } catch (error) {
       console.warn('Failed to fetch quote for', symbol, error)
 
@@ -125,8 +126,8 @@ export class BrowserFinancialService {
       const cached = this.cache.get(symbol.toUpperCase())
       if (cached) return cached.data
 
-      // No data available - return null so UI can handle appropriately
-      return null
+      // As fallback, provide a placeholder quote so UI doesn't break
+      return this.createPlaceholderQuote(symbol.toUpperCase())
     }
   }
 
@@ -155,9 +156,10 @@ export class BrowserFinancialService {
         this.lastResetDate = today
       }
 
-      // Check daily limit (Alpha Vantage free tier: 500 calls/day)
-      if (this.dailyCallCount >= 450) { // Stay safely under limit
-        console.warn(`Daily API limit reached (${this.dailyCallCount} calls). Using cache/mock data.`)
+      // Check daily limit (Alpha Vantage free tier: 25 calls/day for demo key)
+      if (this.dailyCallCount >= 20 || this.rateLimitHit) { // Stay safely under limit
+        console.warn(`Daily API limit reached (${this.dailyCallCount} calls) or rate limit hit. Using fallback providers.`)
+        this.rateLimitHit = true
         return null
       }
 
@@ -194,6 +196,7 @@ export class BrowserFinancialService {
       // Check for Information message (rate limit)
       if (data['Information']) {
         console.warn('Alpha Vantage rate limit hit:', data['Information'])
+        this.rateLimitHit = true
         return null
       }
 
@@ -229,11 +232,11 @@ export class BrowserFinancialService {
 
   private async fetchFromYahooFinance(symbol: string): Promise<Quote | null> {
     try {
-      // Use different CORS proxy services as fallbacks
+      // Use different CORS proxy services as fallbacks (most reliable first)
       const corsProxies = [
-        'https://cors-anywhere.herokuapp.com/',
         'https://api.allorigins.win/raw?url=',
-        'https://corsproxy.io/?'
+        'https://cors.sh/',
+        'https://thingproxy.freeboard.io/fetch/'
       ]
 
       const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
@@ -323,11 +326,14 @@ export class BrowserFinancialService {
 
   private async fetchFromFinnhub(symbol: string): Promise<Quote | null> {
     try {
+      // Use demo token or from environment
+      const finnhubToken = import.meta.env.VITE_FINNHUB_API_KEY || 'demo'
+
       // Try to get both quote and volume data from Finnhub
       const [quoteResponse, volumeResponse] = await Promise.all([
-        fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=demo`),
+        fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubToken}`),
         // Try to get volume from candle data (last trading day)
-        fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&count=1&token=demo`)
+        fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&count=1&token=${finnhubToken}`)
       ])
 
       if (!quoteResponse.ok) {
@@ -410,6 +416,24 @@ export class BrowserFinancialService {
     }
   }
 
+
+  private createPlaceholderQuote(symbol: string): Quote {
+    // Create a basic placeholder quote that won't break the UI
+    return {
+      symbol: symbol,
+      price: 0,
+      change: 0,
+      changePercent: 0,
+      open: 0,
+      high: 0,
+      low: 0,
+      previousClose: 0,
+      volume: 0,
+      timestamp: new Date().toISOString(),
+      dayHigh: 0,
+      dayLow: 0
+    }
+  }
 
   private createMockNews(symbols?: string[], limit: number = 5): NewsItem[] {
     const mockHeadlines = [

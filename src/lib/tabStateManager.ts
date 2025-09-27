@@ -6,9 +6,11 @@ export interface MainTabState {
   tabs: any[]
   activeTabId: string
   tabStates: Record<string, TabState>
+  version?: number
 }
 
 const TAB_STATE_KEY = 'tesseract_tab_states'
+const CURRENT_VERSION = 2 // Increment this to clear old cached data
 
 export class TabStateManager {
   // Save the main tab state (tabs array and active tab)
@@ -24,7 +26,8 @@ export class TabStateManager {
           isBlank: tab.isBlank
         })),
         activeTabId,
-        tabStates
+        tabStates,
+        version: CURRENT_VERSION
       }
       sessionStorage.setItem(TAB_STATE_KEY, JSON.stringify(state))
     } catch (error) {
@@ -39,6 +42,13 @@ export class TabStateManager {
       if (!saved) return null
 
       const state = JSON.parse(saved) as MainTabState
+
+      // Check version and clear old cached data
+      if (!state.version || state.version < CURRENT_VERSION) {
+        console.log('TabStateManager: Clearing old cached tab state due to version mismatch')
+        sessionStorage.removeItem(TAB_STATE_KEY)
+        return null
+      }
 
       // Validate the structure
       if (!state.tabs || !Array.isArray(state.tabs) || !state.activeTabId) {

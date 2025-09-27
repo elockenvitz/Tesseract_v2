@@ -77,6 +77,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const { data: assetLists, isLoading } = useQuery({
     queryKey: ['asset-lists'],
     queryFn: async () => {
+      if (!user?.id) return []
+
       let query = supabase
         .from('asset_lists')
         .select(`
@@ -88,6 +90,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
             collaborator_user:users!asset_list_collaborations_user_id_fkey(email, first_name, last_name)
           )
         `)
+        .eq('created_by', user.id)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
       
