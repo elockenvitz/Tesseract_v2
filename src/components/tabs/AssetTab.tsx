@@ -33,7 +33,8 @@ interface AssetTabProps {
 
 export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   const { user } = useAuth()
-  const [priority, setPriority] = useState(asset.priority || 'none')
+  const [assetPriority, setAssetPriority] = useState(asset.priority || 'none')
+  const [workflowPriorityState, setWorkflowPriorityState] = useState('none')
 
   // Timeline stages mapping for backward compatibility
   const stageMapping = {
@@ -85,12 +86,43 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [showAssetPriorityDropdown, setShowAssetPriorityDropdown] = useState(false)
+  const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
   const queryClient = useQueryClient()
 
   // Refs for EditableSectionWithHistory components
   const thesisRef = useRef<EditableSectionWithHistoryRef>(null)
   const whereDifferentRef = useRef<EditableSectionWithHistoryRef>(null)
   const risksRef = useRef<EditableSectionWithHistoryRef>(null)
+
+
+  // Fetch workflow-specific priority
+  const { data: workflowPriority } = useQuery({
+    queryKey: ['asset-workflow-priority', asset.id, asset.workflow_id],
+    queryFn: async () => {
+      if (!asset.workflow_id) return null
+
+      const { data, error } = await supabase
+        .from('asset_workflow_priorities')
+        .select('priority')
+        .eq('asset_id', asset.id)
+        .eq('workflow_id', asset.workflow_id)
+        .maybeSingle()
+
+      if (error && error.code !== 'PGRST116') throw error
+      return data?.priority || null
+    },
+    enabled: !!asset.workflow_id
+  })
+
+  // Update workflow priority state when workflow priority is loaded
+  useEffect(() => {
+    setWorkflowPriorityState(workflowPriority || 'none')
+  }, [workflowPriority])
+
+  // Update asset priority when asset changes
+  useEffect(() => {
+    setAssetPriority(asset.priority || 'none')
+  }, [asset.priority])
 
   // Update local state when switching to a different asset
   useEffect(() => {
@@ -103,24 +135,10 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         assetPriority: asset.priority,
         fullAsset: asset
       })
-      console.log(`🎯 AssetTab: Setting priority to:`, asset.priority || 'none')
-      setPriority(asset.priority || 'none')
       setStage(mapToTimelineStage(asset.process_stage))
       setHasLocalChanges(false) // Reset local changes flag when loading new asset
     }
   }, [asset.id])
-
-  // Sync priority changes from external sources (but not stage to prevent reversion)
-  useEffect(() => {
-    if (!hasLocalChanges) {
-      console.log(`🔄 AssetTab: Syncing priority from external source for ${asset.symbol}:`, {
-        newPriority: asset.priority || 'none',
-        currentPriority: priority,
-        hasLocalChanges
-      })
-      setPriority(asset.priority || 'none')
-    }
-  }, [asset.priority, hasLocalChanges])
 
   // Mark as initialized once asset is loaded (state is already initialized in useState)
   useEffect(() => {
@@ -412,11 +430,43 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
     }
   }
 
-  const handlePriorityChange = (newPriority: string) => {
-    setPriority(newPriority)
+  const handleAssetPriorityChange = (newPriority: string) => {
+    setAssetPriority(newPriority)
     setHasLocalChanges(true)
     updateAssetMutation.mutate({ priority: newPriority })
   }
+
+  const handleWorkflowPriorityChange = async (newPriority: string) => {
+    if (!asset.workflow_id) return
+
+    setWorkflowPriorityState(newPriority)
+    setHasLocalChanges(true)
+
+    try {
+      const { error } = await supabase
+        .from('asset_workflow_priorities')
+        .upsert({
+          asset_id: asset.id,
+          workflow_id: asset.workflow_id,
+          priority: newPriority,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'asset_id,workflow_id'
+        })
+
+      if (error) throw error
+
+      // Invalidate relevant queries
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-priority', asset.id, asset.workflow_id] })
+
+      setHasLocalChanges(false)
+    } catch (error) {
+      console.error('Error updating workflow priority:', error)
+      // Revert on error
+      setWorkflowPriorityState(workflowPriority || 'none')
+    }
+  }
+
 
   const handleStageChange = (newStage: string) => {
     const prevStage = stage
@@ -752,19 +802,19 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
               <button
                 onClick={() => setShowAssetPriorityDropdown(!showAssetPriorityDropdown)}
                 className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 hover:opacity-90 transition-opacity ${
-                  priority === 'critical' ? 'bg-red-600 text-white' :
-                  priority === 'high' ? 'bg-orange-500 text-white' :
-                  priority === 'medium' ? 'bg-blue-500 text-white' :
-                  priority === 'low' ? 'bg-green-500 text-white' :
+                  assetPriority === 'critical' ? 'bg-red-600 text-white' :
+                  assetPriority === 'high' ? 'bg-orange-500 text-white' :
+                  assetPriority === 'medium' ? 'bg-blue-500 text-white' :
+                  assetPriority === 'low' ? 'bg-green-500 text-white' :
                   'bg-gray-400 text-white'
                 }`}
               >
-                {priority === 'critical' && <AlertTriangle className="w-3 h-3" />}
-                {priority === 'high' && <Zap className="w-3 h-3" />}
-                {priority === 'medium' && <Target className="w-3 h-3" />}
-                {priority === 'low' && <Clock className="w-3 h-3" />}
-                {!priority || priority === 'none' && <Clock className="w-3 h-3" />}
-                <span>{priority === 'critical' ? 'Critical' : priority === 'high' ? 'High' : priority === 'medium' ? 'Medium' : priority === 'low' ? 'Low' : 'None'}</span>
+                {assetPriority === 'critical' && <AlertTriangle className="w-3 h-3" />}
+                {assetPriority === 'high' && <Zap className="w-3 h-3" />}
+                {assetPriority === 'medium' && <Target className="w-3 h-3" />}
+                {assetPriority === 'low' && <Clock className="w-3 h-3" />}
+                {!assetPriority || assetPriority === 'none' && <Clock className="w-3 h-3" />}
+                <span>Asset: {assetPriority === 'critical' ? 'Critical' : assetPriority === 'high' ? 'High' : assetPriority === 'medium' ? 'Medium' : assetPriority === 'low' ? 'Low' : 'None'}</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
 
@@ -778,11 +828,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                     <div className="p-2">
                       <button
                         onClick={() => {
-                          handlePriorityChange('critical')
+                          handleAssetPriorityChange('critical')
                           setShowAssetPriorityDropdown(false)
                         }}
                         className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-red-600 text-white flex items-center space-x-1 mb-1 ${
-                          priority === 'critical' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                          assetPriority === 'critical' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
                         }`}
                       >
                         <AlertTriangle className="w-3 h-3" />
@@ -790,11 +840,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                       </button>
                       <button
                         onClick={() => {
-                          handlePriorityChange('high')
+                          handleAssetPriorityChange('high')
                           setShowAssetPriorityDropdown(false)
                         }}
                         className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-orange-500 text-white flex items-center space-x-1 mb-1 ${
-                          priority === 'high' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                          assetPriority === 'high' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
                         }`}
                       >
                         <Zap className="w-3 h-3" />
@@ -802,11 +852,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                       </button>
                       <button
                         onClick={() => {
-                          handlePriorityChange('medium')
+                          handleAssetPriorityChange('medium')
                           setShowAssetPriorityDropdown(false)
                         }}
                         className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 text-white flex items-center space-x-1 mb-1 ${
-                          priority === 'medium' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                          assetPriority === 'medium' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
                         }`}
                       >
                         <Target className="w-3 h-3" />
@@ -814,11 +864,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                       </button>
                       <button
                         onClick={() => {
-                          handlePriorityChange('low')
+                          handleAssetPriorityChange('low')
                           setShowAssetPriorityDropdown(false)
                         }}
                         className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-green-500 text-white flex items-center space-x-1 mb-1 ${
-                          priority === 'low' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                          assetPriority === 'low' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
                         }`}
                       >
                         <Clock className="w-3 h-3" />
@@ -826,11 +876,11 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                       </button>
                       <button
                         onClick={() => {
-                          handlePriorityChange('none')
+                          handleAssetPriorityChange('none')
                           setShowAssetPriorityDropdown(false)
                         }}
                         className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-gray-400 text-white flex items-center space-x-1 ${
-                          (!priority || priority === 'none') ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                          (!assetPriority || assetPriority === 'none') ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
                         }`}
                       >
                         <Clock className="w-3 h-3" />
@@ -842,6 +892,8 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
               )}
             </div>
           </div>
+
+
 
           <AssetWorkflowSelector
             assetId={asset.id}
@@ -1247,6 +1299,8 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                   viewingStageId={viewingStageId}
                   onViewingStageChange={setViewingStageId}
                   workflowId={effectiveWorkflowId}
+                  currentPriority={workflowPriorityState}
+                  onPriorityChange={handleWorkflowPriorityChange}
                 />
               )}
             </div>

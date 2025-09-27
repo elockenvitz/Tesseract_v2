@@ -235,7 +235,7 @@ export function InvestmentTimeline({
         throw error
       }
 
-      return data?.priority || 'medium' // default to medium if no priority set
+      return data?.priority || 'none' // default to none if no priority set
     },
     enabled: !!assetId && !!workflowId
   })
@@ -1048,25 +1048,32 @@ export function InvestmentTimeline({
           {/* Workflow Priority on the left */}
           {assetId && workflowId && (
             <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">Workflow Priority:</span>
               <div className="relative">
                 {(() => {
                   const priorityConfig = {
                     'critical': { color: 'bg-red-600 text-white', icon: AlertTriangle, label: 'Critical' },
                     'high': { color: 'bg-orange-500 text-white', icon: Zap, label: 'High' },
                     'medium': { color: 'bg-blue-500 text-white', icon: Target, label: 'Medium' },
-                    'low': { color: 'bg-green-500 text-white', icon: Clock, label: 'Low' }
+                    'low': { color: 'bg-green-500 text-white', icon: Clock, label: 'Low' },
+                    'none': { color: 'bg-gray-400 text-white', icon: Clock, label: 'None' }
                   }
-                  const current = priorityConfig[effectivePriority as keyof typeof priorityConfig] || priorityConfig['medium']
+                  const current = priorityConfig[effectivePriority as keyof typeof priorityConfig] || priorityConfig['none']
 
                   return (
                     <>
                       <button
                         onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
-                        className={`px-2 py-1 rounded-lg text-xs font-medium ${current.color} flex items-center space-x-1 hover:opacity-90 transition-opacity`}
+                        className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 hover:opacity-90 transition-opacity ${
+                          effectivePriority === 'critical' ? 'bg-red-600 text-white' :
+                          effectivePriority === 'high' ? 'bg-orange-500 text-white' :
+                          effectivePriority === 'medium' ? 'bg-blue-500 text-white' :
+                          effectivePriority === 'low' ? 'bg-green-500 text-white' :
+                          effectivePriority === 'none' ? 'bg-gray-400 text-white' :
+                          'bg-gray-400 text-white'
+                        }`}
                       >
                         <current.icon className="w-3 h-3" />
-                        <span>{current.label}</span>
+                        <span>Workflow: {current.label}</span>
                         <ChevronDown className="w-3 h-3" />
                       </button>
 
@@ -1078,23 +1085,66 @@ export function InvestmentTimeline({
                           />
                           <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
                             <div className="p-2">
-                              {Object.entries(priorityConfig).map(([value, config]) => (
-                                <button
-                                  key={value}
-                                  onClick={() => {
-                                    handleWorkflowPriorityChange(value)
-                                    setShowPriorityDropdown(false)
-                                  }}
-                                  className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                                    value === effectivePriority
-                                      ? config.color + ' ring-2 ring-offset-1 ring-blue-300'
-                                      : config.color + ' opacity-70 hover:opacity-100'
-                                  } flex items-center space-x-1 mb-1 last:mb-0`}
-                                >
-                                  <config.icon className="w-3 h-3" />
-                                  <span>{config.label}</span>
-                                </button>
-                              ))}
+                              <button
+                                onClick={() => {
+                                  handleWorkflowPriorityChange('critical')
+                                  setShowPriorityDropdown(false)
+                                }}
+                                className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-red-600 text-white flex items-center space-x-1 mb-1 ${
+                                  effectivePriority === 'critical' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <AlertTriangle className="w-3 h-3" />
+                                <span>Critical</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleWorkflowPriorityChange('high')
+                                  setShowPriorityDropdown(false)
+                                }}
+                                className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-orange-500 text-white flex items-center space-x-1 mb-1 ${
+                                  effectivePriority === 'high' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <Zap className="w-3 h-3" />
+                                <span>High</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleWorkflowPriorityChange('medium')
+                                  setShowPriorityDropdown(false)
+                                }}
+                                className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 text-white flex items-center space-x-1 mb-1 ${
+                                  effectivePriority === 'medium' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <Target className="w-3 h-3" />
+                                <span>Medium</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleWorkflowPriorityChange('low')
+                                  setShowPriorityDropdown(false)
+                                }}
+                                className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-green-500 text-white flex items-center space-x-1 mb-1 ${
+                                  effectivePriority === 'low' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <Clock className="w-3 h-3" />
+                                <span>Low</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleWorkflowPriorityChange('none')
+                                  setShowPriorityDropdown(false)
+                                }}
+                                className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-gray-400 text-white flex items-center space-x-1 ${
+                                  effectivePriority === 'none' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <Clock className="w-3 h-3" />
+                                <span>None</span>
+                              </button>
                             </div>
                           </div>
                         </>
@@ -1112,10 +1162,10 @@ export function InvestmentTimeline({
         <div className="hidden md:block">
           <div className="relative">
             {/* Progress Line */}
-            <div className="absolute top-8 left-0 right-0 h-1 bg-gray-200 rounded-full">
+            <div className="absolute top-8 h-1 bg-gray-200 rounded-full" style={{ left: '32px', right: '32px' }}>
               <div
                 className="h-full bg-gradient-to-r from-gray-600 via-red-600 via-orange-600 via-blue-500 via-yellow-500 via-green-400 via-green-700 to-teal-500 transition-all duration-500 rounded-full"
-                style={{ width: `${(currentIndex / timelineStages.length) * 100}%` }}
+                style={{ width: `${Math.min(currentIndex / Math.max(timelineStages.length - 1, 1), 1) * 100}%` }}
               />
             </div>
 

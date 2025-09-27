@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock } from 'lucide-react'
 import { financialDataService } from '../lib/financial-data/browser-client'
@@ -430,17 +430,21 @@ export function DashboardPage() {
     // Focus search functionality would be implemented here
   }
 
+  // Memoize active tab to prevent unnecessary recalculations
+  const activeTab = useMemo(() =>
+    tabs.find(tab => tab.id === activeTabId),
+    [tabs, activeTabId]
+  )
+
   const renderTabContent = () => {
-    const activeTab = tabs.find(tab => tab.id === activeTabId)
-    
     if (!activeTab) {
       return renderDashboardContent()
     }
-    
+
     if (activeTab.isBlank) {
       return <BlankTab onSearchResult={handleSearchResult} />
     }
-    
+
     if (activeTab.type === 'dashboard') {
       return renderDashboardContent()
     }

@@ -277,7 +277,7 @@ export function WorkflowSelector({
 
         {/* Play/Stop controls for current workflow */}
         {effectiveWorkflowId && assetId && onWorkflowStart && onWorkflowStop && (
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-2">
             {isCurrentWorkflowStarted ? (
               <button
                 onClick={() => {
@@ -289,10 +289,11 @@ export function WorkflowSelector({
                     })
                   }
                 }}
-                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                title="Stop workflow"
+                className="flex items-center space-x-1 px-2 py-1 bg-red-600 text-white hover:bg-red-700 rounded-md transition-colors shadow-sm border border-red-700"
+                title="Stop this workflow"
               >
                 <Square className="w-4 h-4" />
+                <span className="text-xs font-medium">Stop</span>
               </button>
             ) : (
               <button
@@ -309,10 +310,11 @@ export function WorkflowSelector({
                     console.log(`❌ WorkflowSelector: No effectiveWorkflowId available`)
                   }
                 }}
-                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                title="Start workflow"
+                className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white hover:bg-green-700 rounded-md transition-colors shadow-sm border border-green-700"
+                title="Start this workflow"
               >
                 <Play className="w-4 h-4" />
+                <span className="text-xs font-medium">Start</span>
               </button>
             )}
           </div>

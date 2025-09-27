@@ -12,9 +12,9 @@ import { TesseractLoader } from './components/ui/TesseractLoader'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0,
+      staleTime: 5 * 60 * 1000, // 5 minutes
       retry: 1,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false, // Disable constant refetching on window focus
       refetchOnMount: true,
     },
   },

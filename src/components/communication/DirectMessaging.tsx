@@ -72,21 +72,34 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const { user } = useAuth()
 
   // Fetch all conversations for the current user
-  const { data: conversations, isLoading: conversationsLoading } = useQuery({
+  const { data: conversations, isLoading: conversationsLoading, error: conversationsError } = useQuery({
     queryKey: ['conversations'],
     queryFn: async () => {
       if (!user?.id) return []
 
+      // First get conversation IDs where user is a participant
+      const { data: userConversations, error: participantError } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', user.id)
+
+      if (participantError) throw participantError
+      if (!userConversations || userConversations.length === 0) return []
+
+      const conversationIds = userConversations.map(p => p.conversation_id)
+
+      // Now get full conversation data with all participants
       const { data, error } = await supabase
         .from('conversations')
         .select(`
           *,
-          conversation_participants!inner(
+          conversation_participants(
             user_id,
             is_admin,
             user:users(id, email, first_name, last_name)
           )
         `)
+        .in('id', conversationIds)
         .order('last_message_at', { ascending: false })
 
       if (error) throw error
@@ -113,7 +126,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       return conversationsWithMessages as Conversation[]
     },
     enabled: isOpen && !!user?.id,
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: false, // Disable automatic refresh
+    staleTime: 1000 * 60 * 5, // Consider data fresh for 5 minutes
+    gcTime: 1000 * 60 * 10, // Keep in cache for 10 minutes
   })
 
   // Fetch messages for selected conversation
@@ -390,7 +405,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
         {/* Conversations List */}
         <div className="flex-1 overflow-y-auto">
-          {conversationsLoading ? (
+          {conversationsError ? (
+            <div className="p-4 text-center text-red-600">
+              <p>Error loading conversations:</p>
+              <p className="text-sm">{conversationsError.message}</p>
+            </div>
+          ) : conversationsLoading ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="animate-pulse">

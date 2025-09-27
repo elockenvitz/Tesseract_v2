@@ -181,10 +181,11 @@ export function SmartStageManager({
         {currentStage === 'outdated' && (
           <button
             onClick={() => onStageChange('prioritized')}
-            className="w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm flex items-center justify-center"
-            title="Advance Stage"
+            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm border border-blue-700"
+            title="Advance to next stage"
           >
             <Play className="w-4 h-4" />
+            <span className="text-sm font-medium">Advance</span>
           </button>
         )}
 
