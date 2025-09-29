@@ -89,17 +89,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   const [filterByPriority, setFilterByPriority] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>(loadedState?.filterByPriority || 'all')
   const [filterByStage, setFilterByStage] = useState<string>(loadedState?.filterByStage || 'all')
 
-  console.log('IdeaGeneratorPage: Loaded state:', loadedState)
-  console.log('IdeaGeneratorPage: Current activeView:', activeView)
-  console.log('IdeaGeneratorPage: Initialized prioritizer state:', {
-    prioritizerView,
-    sortBy,
-    sortOrder,
-    filterByStatus,
-    filterByPriority,
-    filterByStage,
-    selectedWorkflow
-  })
 
   // Extended feed content for discovery with reasons
   const allFeedContent: FeedContent[] = [
@@ -450,7 +439,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   const { data: ideaData, isLoading, refetch } = useQuery({
     queryKey: ['idea-generator-data'],
     queryFn: async () => {
-      console.log('🔍 Fetching data for idea generator...')
 
       const [
         assetsResult,
@@ -494,7 +482,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         ...(notesResult[3].data || []).map(note => ({ ...note, source_type: 'custom', source_name: note.custom_notebooks?.name }))
       ]
 
-      console.log('✅ Idea generator data fetched')
       return {
         assets: assetsResult.data || [],
         notes: allNotes,
@@ -510,13 +497,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   // Generate AI insights after ideaData is available
   const aiInsights = ideaData ? generateAIInsights() : []
 
-  // Debug logging
-  console.log('🔍 Feed Debug:', {
-    ideaData: !!ideaData,
-    aiInsightsLength: aiInsights.length,
-    currentFeedIndex,
-    isLoading
-  })
 
   // Shuffle function - regenerate tiles with different random selection
   const handleShuffle = () => {
@@ -550,7 +530,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       const workflowAssets: Record<string, WorkflowAsset[]> = {}
 
       for (const workflow of workflows || []) {
-        console.log(`🔍 Fetching assets for workflow: ${workflow.name} (${workflow.id})`)
 
         // First get the workflow stages to calculate progress and get display names
         const { data: workflowStages, error: stagesError } = await supabase
@@ -560,7 +539,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           .order('sort_order')
 
         if (stagesError) {
-          console.error(`❌ Error fetching stages for workflow ${workflow.name}:`, stagesError)
           continue
         }
 
@@ -584,15 +562,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           .order('asset_id')
           .order('updated_at', { ascending: false })
 
-        console.log(`🔍 Raw data from DB for ${workflow.name}:`, {
-          workflowId: workflow.id,
-          totalRecords: progressAssets?.length || 0,
-          aaplRecords: progressAssets?.filter(a => a.assets?.symbol === 'AAPL').length || 0,
-          allSymbols: progressAssets?.map(a => a.assets?.symbol) || []
-        })
-
         if (progressError) {
-          console.error(`❌ Error fetching progress for workflow ${workflow.name}:`, progressError)
           continue
         }
 
@@ -607,20 +577,11 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
             .eq('workflow_id', workflow.id)
             .in('asset_id', assetIds)
 
-          if (prioritiesError) {
-            console.error(`❌ Error fetching priorities for workflow ${workflow.name}:`, prioritiesError)
-          } else {
+          if (!prioritiesError) {
             workflowPriorities = priorities || []
           }
         }
 
-        // Debug: Log original assets before deduplication
-        console.log(`🔍 Before deduplication for ${workflow.name}:`, progressAssets?.map(a => ({
-          id: a.id,
-          asset_id: a.asset_id,
-          symbol: a.assets.symbol,
-          updated_at: a.updated_at
-        })))
 
         // Deduplicate assets - keep the most recent entry for each asset
         const deduplicatedAssets = progressAssets ?
@@ -631,25 +592,12 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               const shouldReplace = !currentEntry || new Date(asset.updated_at) > new Date(currentEntry.updated_at)
 
               if (shouldReplace) {
-                if (currentEntry && asset.assets.symbol === 'AAPL') {
-                  console.log(`🔍 AAPL deduplication in ${workflow.name}: replacing`, {
-                    old: { id: currentEntry.id, updated_at: currentEntry.updated_at },
-                    new: { id: asset.id, updated_at: asset.updated_at }
-                  })
-                }
                 acc[assetId] = asset
               }
               return acc
             }, {} as Record<string, any>)
           ) : []
 
-        // Debug: Log after deduplication
-        console.log(`🔍 After deduplication for ${workflow.name}:`, deduplicatedAssets.map(a => ({
-          id: a.id,
-          asset_id: a.asset_id,
-          symbol: a.assets.symbol,
-          updated_at: a.updated_at
-        })))
 
         const assets = deduplicatedAssets
 
@@ -683,13 +631,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         }
       }
 
-      console.log(`🎯 Final prioritizer data:`, {
-        workflowCount: workflows?.length || 0,
-        workflowAssets: Object.keys(workflowAssets).reduce((acc, key) => {
-          acc[key] = workflowAssets[key].length
-          return acc
-        }, {} as Record<string, number>)
-      })
 
       return { workflows: workflows || [], workflowAssets }
     },
@@ -715,7 +656,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       filterByStage
     }
 
-    console.log('IdeaGeneratorPage: Saving state:', stateToSave)
     TabStateManager.saveTabState('idea-generator', stateToSave)
   }, [activeView, currentFeedIndex, selectedWorkflow, tiles, prioritizerView, sortBy, sortOrder, filterByStatus, filterByPriority, filterByStage])
 
@@ -746,14 +686,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
   // Generate idea tiles only on initial load if no saved tiles exist
   useEffect(() => {
-    console.log('🔍 Tiles Effect:', {
-      hasIdeaData: !!ideaData,
-      tilesLength: tiles.length,
-      activeView,
-      shouldGenerate: ideaData && tiles.length === 0
-    })
     if (ideaData && tiles.length === 0) {
-      console.log('🔍 Generating tiles...')
       generateIdeaTiles()
     }
   }, [ideaData])
@@ -770,13 +703,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   }, [activeView, refetchWorkflowData])
 
   const generateIdeaTiles = () => {
-    console.log('🔍 generateIdeaTiles called:', {
-      hasIdeaData: !!ideaData,
-      ideaDataKeys: ideaData ? Object.keys(ideaData) : null
-    })
-
     if (!ideaData) {
-      console.log('❌ No ideaData, returning early')
       return
     }
 
@@ -931,11 +858,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     const shuffledTiles = shuffleArray([...allPossibleTiles])
     const finalTiles = shuffledTiles.slice(0, 9)
 
-    console.log('🔍 generateIdeaTiles result:', {
-      allPossibleTilesLength: allPossibleTiles.length,
-      finalTilesLength: finalTiles.length,
-      finalTilesTitles: finalTiles.map(t => t.title)
-    })
 
     setTiles(finalTiles)
   }
@@ -957,23 +879,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   )
 
   const renderDiscoveryView = () => {
-    console.log('🔍 Discovery View Debug:', {
-      isLoading,
-      tilesLength: tiles.length,
-      ideaData: !!ideaData,
-      isShuffling,
-      activeView,
-      ideaDataDetails: ideaData ? {
-        assets: ideaData.assets?.length || 0,
-        notes: ideaData.notes?.length || 0,
-        priceTargets: ideaData.priceTargets?.length || 0,
-        themes: ideaData.themes?.length || 0,
-        portfolios: ideaData.portfolios?.length || 0
-      } : null
-    })
-
-    console.log('🔍 About to render Discovery view JSX...')
-
     try {
       return (
         <div className="space-y-6">
@@ -1061,12 +966,11 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       </div>
     )
     } catch (error) {
-      console.error('❌ Error in renderDiscoveryView:', error)
       return (
         <div className="space-y-6">
           <div className="text-center py-12">
             <h2 className="text-lg font-semibold text-red-600 mb-2">Discovery View Error</h2>
-            <p className="text-gray-600">Something went wrong. Check the console for details.</p>
+            <p className="text-gray-600">Something went wrong. Please try refreshing.</p>
           </div>
         </div>
       )
@@ -1407,42 +1311,12 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                     })
                   })
 
-                  // Debug: Check for AAPL instances across workflows (this is expected and desired)
-                  const aaplAssets = allAssets.filter(a => a.symbol === 'AAPL')
-                  if (aaplAssets.length > 1) {
-                    console.log('🔍 AAPL instances across workflows (expected):', aaplAssets.map(a => ({
-                      id: a.id,
-                      symbol: a.symbol,
-                      workflow_id: a.workflow_id,
-                      workflow_name: a.workflow_name,
-                      stage: a.stage,
-                      is_started: a.is_started
-                    })))
-                  }
 
                   return allAssets
                 } else {
                   const workflowAssets = workflowData?.workflowAssets[selectedWorkflow] || []
                   const selectedWorkflowName = workflowData?.workflows.find(w => w.id === selectedWorkflow)?.name || 'Unknown'
 
-                  console.log(`🔍 Individual workflow view for ${selectedWorkflowName}:`, {
-                    workflowId: selectedWorkflow,
-                    totalAssets: workflowAssets.length,
-                    allSymbols: workflowAssets.map(a => a.symbol),
-                    aaplCount: workflowAssets.filter(a => a.symbol === 'AAPL').length
-                  })
-
-                  // Debug: Check for AAPL duplicates in selected workflow
-                  const aaplAssets = workflowAssets.filter(a => a.symbol === 'AAPL')
-                  if (aaplAssets.length > 1) {
-                    console.log(`🔍 ❌ AAPL duplicates found in ${selectedWorkflowName}:`, aaplAssets.map(a => ({
-                      id: a.id,
-                      symbol: a.symbol,
-                      stage: a.stage,
-                      is_started: a.is_started,
-                      last_updated: a.last_updated
-                    })))
-                  }
 
                   return workflowAssets
                 }
@@ -1472,13 +1346,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                   )
                 }
 
-                console.log(`🔍 IdeaGeneratorPage: renderAssetItem for ${asset.symbol}:`, {
-                  assetId: asset.id,
-                  selectedWorkflow,
-                  foundWorkflow: workflow ? { id: workflow.id, name: workflow.name } : null,
-                  allWorkflows: workflowData?.workflows.map(w => ({ id: w.id, name: w.name })),
-                  usedSelectedWorkflow: selectedWorkflow && workflowData?.workflowAssets[selectedWorkflow]?.some(a => a.id === asset.id)
-                })
 
                 return (
                   <div
@@ -1490,12 +1357,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                         workflow: workflow,
                         workflow_id: workflow?.id
                       }
-                      console.log(`🎯 IdeaGeneratorPage: Clicking on asset ${asset.symbol} with workflow context:`, {
-                        assetSymbol: asset.symbol,
-                        workflowName: workflow?.name,
-                        workflowId: workflow?.id,
-                        fullAssetData: assetData
-                      })
                       onItemSelect?.({
                         id: asset.id,
                         title: asset.symbol,
@@ -1568,18 +1429,6 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                 const inProgressAssets = filteredAndSortedAssets.filter(asset => asset.is_started)
                 const notStartedAssets = filteredAndSortedAssets.filter(asset => !asset.is_started)
 
-                // Debug: Log AAPL and ZOOM specifically
-                const debugAssets = filteredAndSortedAssets.filter(asset =>
-                  asset.symbol === 'AAPL' || asset.symbol === 'ZOOM'
-                )
-                if (debugAssets.length > 0) {
-                  console.log('🔍 AAPL/ZOOM Debug:', debugAssets.map(asset => ({
-                    symbol: asset.symbol,
-                    is_started: asset.is_started,
-                    stage: asset.stage,
-                    progress_percentage: asset.progress_percentage
-                  })))
-                }
 
                 return (
                   <div className="space-y-4">
