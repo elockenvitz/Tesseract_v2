@@ -247,11 +247,24 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
   }
 
   const handleNewTabClick = () => {
-    onNewTab()
-    // Focus search after a brief delay to ensure the tab is created
-    setTimeout(() => {
-      onFocusSearch?.()
-    }, 100)
+    // Check if there's already a blank tab open
+    const existingBlankTab = tabs.find(tab => tab.isBlank)
+
+    if (existingBlankTab) {
+      // Navigate to the existing blank tab instead of creating a new one
+      onTabChange(existingBlankTab.id)
+      // Focus search after a brief delay
+      setTimeout(() => {
+        onFocusSearch?.()
+      }, 100)
+    } else {
+      // No blank tab exists, create a new one
+      onNewTab()
+      // Focus search after a brief delay to ensure the tab is created
+      setTimeout(() => {
+        onFocusSearch?.()
+      }, 100)
+    }
   }
 
   return (
@@ -292,7 +305,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
               onDragEnd={handleDragEnd}
               className={clsx(
                 'flex items-center space-x-2 px-4 py-3 border-b-2 cursor-pointer transition-all duration-200 group flex-shrink-0',
-                'min-w-max', // Prevent tabs from shrinking
+                'min-w-[120px] max-w-[200px]', // Set reasonable min and max width
                 tab.isActive
                   ? 'border-primary-500 bg-primary-50 text-primary-700'
                   : 'border-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900',
@@ -306,7 +319,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
               }}
             >
               <span className="text-gray-500">{getTabIcon(tab.type)}</span>
-              <span className="text-sm font-medium whitespace-nowrap">
+              <span className="text-sm font-medium truncate min-w-0 max-w-[120px]" title={tab.isBlank ? 'New Tab' : tab.title}>
                 {tab.isBlank ? 'New Tab' : tab.title}
               </span>
               {(tab.type !== 'dashboard' || tab.isBlank) && (
@@ -339,7 +352,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
         <button
           onClick={handleNewTabClick}
           className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors ml-2 flex-shrink-0"
-          title="New tab"
+          title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
         >
           <Plus className="h-4 w-4" />
         </button>

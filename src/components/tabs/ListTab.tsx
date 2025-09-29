@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Play, Settings, Eye, EyeOff } from 'lucide-react'
+import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Settings, Eye, EyeOff, Edit3, X, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { useAuth } from '../../hooks/useAuth'
@@ -25,6 +25,7 @@ interface ListItem {
   added_at: string
   added_by: string | null
   notes: string | null
+  list_category?: string | null
   assets: {
     id: string
     symbol: string
@@ -119,21 +120,60 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     assetSymbol: ''
   })
   const [showItemMenu, setShowItemMenu] = useState<string | null>(null)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [contextMenuItem, setContextMenuItem] = useState<string | null>(null)
+  const [columnContextMenu, setColumnContextMenu] = useState<{ position: { x: number; y: number }; columnId: string } | null>(null)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [draggedOverItem, setDraggedOverItem] = useState<string | null>(null)
   const [draggedOverStage, setDraggedOverStage] = useState<string | null>(null)
   const [dragPosition, setDragPosition] = useState<'above' | 'below' | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [showShareDialog, setShowShareDialog] = useState(false)
+  const [showAddAssetDialog, setShowAddAssetDialog] = useState(false)
+  const [assetSearchQuery, setAssetSearchQuery] = useState('')
+  const [selectedAssets, setSelectedAssets] = useState<string[]>([])
   const [showColumnSettings, setShowColumnSettings] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState({
-    symbol: true,
-    price: true,
-    priority: true,
-    sector: true,
-    notes: true,
-    added_date: false // Hidden by default since we removed it
-  })
+  // Symbol column is fixed, dynamic columns start after it
+  const [dynamicColumns, setDynamicColumns] = useState([
+    { id: 'company_name', field: 'assets.company_name', label: 'Company', width: 200, type: 'text' },
+    { id: 'price', field: 'assets.current_price', label: 'Price', width: 120, type: 'currency' },
+    { id: 'priority', field: 'assets.priority', label: 'Priority', width: 120, type: 'priority' },
+    { id: 'sector', field: 'assets.sector', label: 'Sector', width: 150, type: 'text' },
+  ])
+
+  // Fixed symbol column
+  const symbolColumn = { id: 'symbol', field: 'assets.symbol', label: 'Symbol', width: 140, type: 'text' }
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null)
+  const [editingHeader, setEditingHeader] = useState<string | null>(null)
+  const [headerInputValue, setHeaderInputValue] = useState('')
+  const [fieldSearchResults, setFieldSearchResults] = useState<typeof availableFields>([])
+  const [showFieldDropdown, setShowFieldDropdown] = useState(false)
+  const [showCategorySettings, setShowCategorySettings] = useState(false)
+  const [customCategories, setCustomCategories] = useState([
+    { id: 'watching', label: 'Watching', color: 'bg-blue-500', icon: Eye },
+    { id: 'researching', label: 'Researching', color: 'bg-yellow-500', icon: Search },
+    { id: 'ready', label: 'Ready to Buy', color: 'bg-green-500', icon: CheckCircle },
+    { id: 'holding', label: 'Holding', color: 'bg-purple-500', icon: Star }
+  ])
+  const [newCategoryLabel, setNewCategoryLabel] = useState('')
+  const [editingCategory, setEditingCategory] = useState<string | null>(null)
+  const [editingLabel, setEditingLabel] = useState('')
+
+  // Available fields for dynamic columns
+  const availableFields = [
+    { id: 'assets.symbol', label: 'Symbol', type: 'text' },
+    { id: 'assets.company_name', label: 'Company Name', type: 'text' },
+    { id: 'assets.current_price', label: 'Current Price', type: 'currency' },
+    { id: 'assets.priority', label: 'Priority', type: 'priority' },
+    { id: 'assets.sector', label: 'Sector', type: 'text' },
+    { id: 'assets.process_stage', label: 'Process Stage', type: 'stage' },
+    { id: 'notes', label: 'Notes', type: 'text' },
+    { id: 'added_at', label: 'Date Added', type: 'date' },
+    { id: 'added_by_user.email', label: 'Added By Email', type: 'text' },
+    { id: 'added_by_user.first_name', label: 'Added By First Name', type: 'text' },
+    { id: 'added_by_user.last_name', label: 'Added By Last Name', type: 'text' },
+  ]
+
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -150,10 +190,59 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         `)
         .eq('list_id', list.id)
         .order('added_at', { ascending: false })
-      
+
       if (error) throw error
       return data as ListItem[]
     }
+  })
+
+  // Fetch active workflows for assets in the list
+  const { data: activeWorkflows } = useQuery({
+    queryKey: ['list-active-workflows', listItems?.map(item => item.assets?.id).filter(Boolean)],
+    queryFn: async () => {
+      if (!listItems || listItems.length === 0) return {}
+
+      const assetIds = listItems
+        .map(item => item.assets?.id)
+        .filter(Boolean) as string[]
+
+      if (assetIds.length === 0) return {}
+
+      const { data, error } = await supabase
+        .from('asset_workflow_progress')
+        .select(`
+          asset_id,
+          stage,
+          status,
+          updated_at,
+          workflows (
+            id,
+            name,
+            color
+          )
+        `)
+        .in('asset_id', assetIds)
+        .eq('status', 'active')
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        console.error('Failed to fetch active workflows:', error)
+        return {}
+      }
+
+      // Group workflows by asset_id
+      const workflowsByAsset: Record<string, any[]> = {}
+      data?.forEach(item => {
+        if (!workflowsByAsset[item.asset_id]) {
+          workflowsByAsset[item.asset_id] = []
+        }
+        workflowsByAsset[item.asset_id].push(item)
+      })
+
+      return workflowsByAsset
+    },
+    staleTime: 30000,
+    refetchOnWindowFocus: false
   })
 
   // Fetch financial data for all assets in the list
@@ -217,6 +306,21 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     }
   })
 
+  // Fetch all assets for adding to list
+  const { data: allAssets, isLoading: allAssetsLoading } = useQuery({
+    queryKey: ['all-assets-for-adding'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector')
+        .order('symbol', { ascending: true })
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: showAddAssetDialog // Only fetch when dialog is open
+  })
+
   // Check if list is favorited by current user
   const { data: isFavorited, refetch: refetchFavorite } = useQuery({
     queryKey: ['list-favorite', list.id, user?.id],
@@ -259,6 +363,33 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     onSuccess: () => {
       refetchFavorite()
       queryClient.invalidateQueries({ queryKey: ['user-favorite-lists'] })
+    }
+  })
+
+  // Add assets to list mutation
+  const addAssetsToListMutation = useMutation({
+    mutationFn: async (assetIds: string[]) => {
+      if (!user) throw new Error('User not authenticated')
+
+      const itemsToInsert = assetIds.map(assetId => ({
+        list_id: list.id,
+        asset_id: assetId,
+        added_by: user.id,
+        added_at: new Date().toISOString()
+      }))
+
+      const { error } = await supabase
+        .from('asset_list_items')
+        .insert(itemsToInsert)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
+      setShowAddAssetDialog(false)
+      setSelectedAssets([])
+      setAssetSearchQuery('')
     }
   })
 
@@ -366,39 +497,24 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     }
   })
 
-  // Update asset stage mutation (for kanban view)
-  const updateAssetStageMutation = useMutation({
-    mutationFn: async ({ assetId, newStage }: { assetId: string; newStage: string }) => {
+  // Update list item category mutation (for kanban view)
+  const updateItemCategoryMutation = useMutation({
+    mutationFn: async ({ itemId, newCategory }: { itemId: string; newCategory: string }) => {
       const { error } = await supabase
-        .from('assets')
-        .update({ process_stage: newStage, updated_at: new Date().toISOString() })
-        .eq('id', assetId)
+        .from('asset_list_items')
+        .update({
+          list_category: newCategory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', itemId)
 
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['all-assets'] })
     }
   })
 
-  // Advance stage mutation (moves from outdated to prioritized)
-  const initiateResearchMutation = useMutation({
-    mutationFn: async (assetId: string) => {
-      const { error } = await supabase
-        .from('assets')
-        .update({ process_stage: 'prioritized', updated_at: new Date().toISOString() })
-        .eq('id', assetId)
-
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['all-assets'] })
-    }
-  })
 
   // Reorder list items mutation
   const reorderItemsMutation = useMutation({
@@ -466,13 +582,13 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     setDragPosition(mouseY < midY ? 'above' : 'below')
   }
 
-  const handleDragEnter = (e: React.DragEvent, itemId?: string, stage?: string) => {
+  const handleDragEnter = (e: React.DragEvent, itemId?: string, category?: string) => {
     e.preventDefault()
     if (itemId && draggedItem && draggedItem !== itemId) {
       setDraggedOverItem(itemId)
     }
-    if (stage && draggedItem) {
-      setDraggedOverStage(stage)
+    if (category && draggedItem) {
+      setDraggedOverStage(category)
     }
   }
 
@@ -489,32 +605,32 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     }
   }
 
-  const handleDrop = (e: React.DragEvent, targetItemId?: string, targetStage?: string) => {
+  const handleDrop = (e: React.DragEvent, targetItemId?: string, targetCategory?: string) => {
     e.preventDefault()
-    
+
     if (!draggedItem) return
-    
-    if (targetStage && viewMode === 'kanban') {
-      // Handle stage change in kanban view
+
+    if (targetCategory && viewMode === 'kanban') {
+      // Handle category change in kanban view
       const draggedItemData = filteredItems.find(item => item.id === draggedItem)
-      if (draggedItemData?.assets && draggedItemData.assets.process_stage !== targetStage) {
-        updateAssetStageMutation.mutate({
-          assetId: draggedItemData.assets.id,
-          newStage: targetStage
+      if (draggedItemData && (draggedItemData.list_category || 'uncategorized') !== targetCategory) {
+        updateItemCategoryMutation.mutate({
+          itemId: draggedItemData.id,
+          newCategory: targetCategory
         })
       }
     } else if (targetItemId && targetItemId !== draggedItem) {
       // Handle reordering
       const fromIndex = filteredItems.findIndex(item => item.id === draggedItem)
       const toIndex = filteredItems.findIndex(item => item.id === targetItemId)
-      
+
       if (fromIndex !== -1 && toIndex !== -1) {
         // Adjust target index based on drop position
         const finalToIndex = dragPosition === 'below' ? toIndex + 1 : toIndex
         reorderItemsMutation.mutate({ fromIndex, toIndex })
       }
     }
-    
+
     setDraggedItem(null)
     setDraggedOverItem(null)
     setDraggedOverStage(null)
@@ -587,12 +703,48 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   const getUserDisplayName = (user: any) => {
     if (!user) return 'Unknown User'
-    
+
     if (user.first_name && user.last_name) {
       return `${user.first_name} ${user.last_name}`
     }
-    
+
     return user.email?.split('@')[0] || 'Unknown User'
+  }
+
+  // Filter assets for adding (exclude already added assets)
+  const availableAssets = useMemo(() => {
+    if (!allAssets || !listItems) return []
+
+    const existingAssetIds = new Set(listItems.map(item => item.asset_id))
+    let filtered = allAssets.filter(asset => !existingAssetIds.has(asset.id))
+
+    // Apply search filter
+    if (assetSearchQuery.trim()) {
+      const searchLower = assetSearchQuery.toLowerCase()
+      filtered = filtered.filter(asset =>
+        asset.symbol.toLowerCase().includes(searchLower) ||
+        asset.company_name.toLowerCase().includes(searchLower) ||
+        (asset.sector && asset.sector.toLowerCase().includes(searchLower))
+      )
+    }
+
+    return filtered
+  }, [allAssets, listItems, assetSearchQuery])
+
+  // Handle asset selection for adding
+  const toggleAssetSelection = (assetId: string) => {
+    setSelectedAssets(prev =>
+      prev.includes(assetId)
+        ? prev.filter(id => id !== assetId)
+        : [...prev, assetId]
+    )
+  }
+
+  // Add selected assets to list
+  const handleAddSelectedAssets = () => {
+    if (selectedAssets.length > 0) {
+      addAssetsToListMutation.mutate(selectedAssets)
+    }
   }
 
   const clearFilters = () => {
@@ -603,20 +755,246 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     setSortOrder('desc')
   }
 
-  const toggleColumn = (columnKey: keyof typeof visibleColumns) => {
-    setVisibleColumns(prev => ({
-      ...prev,
-      [columnKey]: !prev[columnKey]
-    }))
+  // Column management functions
+  const addColumn = (fieldId: string) => {
+    const field = availableFields.find(f => f.id === fieldId)
+    if (field && !dynamicColumns.find(col => col.field === fieldId) && fieldId !== 'assets.symbol') {
+      const newColumn = {
+        id: fieldId.replace(/\./g, '_'),
+        field: fieldId,
+        label: field.label,
+        width: 150,
+        type: field.type
+      }
+      setDynamicColumns([...dynamicColumns, newColumn])
+    }
   }
 
-  // Close column settings dropdown when clicking outside
+  const removeColumn = (columnId: string) => {
+    setDynamicColumns(columns => columns.filter(col => col.id !== columnId))
+  }
+
+  const updateColumnWidth = (columnId: string, newWidth: number) => {
+    if (columnId === 'symbol') {
+      // Handle symbol column width if needed
+      return
+    }
+    setDynamicColumns(columns =>
+      columns.map(col =>
+        col.id === columnId ? { ...col, width: Math.max(50, newWidth) } : col
+      )
+    )
+  }
+
+  const updateColumnLabel = (columnId: string, newLabel: string) => {
+    setDynamicColumns(columns =>
+      columns.map(col =>
+        col.id === columnId ? { ...col, label: newLabel } : col
+      )
+    )
+  }
+
+  const updateColumnField = (columnId: string, newFieldId: string) => {
+    const field = availableFields.find(f => f.id === newFieldId)
+    if (field && newFieldId !== 'assets.symbol') {
+      setDynamicColumns(columns =>
+        columns.map(col =>
+          col.id === columnId ? {
+            ...col,
+            field: newFieldId,
+            type: field.type,
+            label: field.label
+          } : col
+        )
+      )
+    }
+  }
+
+  // Handle column resize
+  const handleColumnResize = (columnId: string, startX: number, startWidth: number) => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - startX
+      const newWidth = startWidth + diff
+      updateColumnWidth(columnId, newWidth)
+    }
+
+    const handleMouseUp = () => {
+      setResizingColumn(null)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
+  // Handle field search with real-time filtering
+  const handleFieldSearch = (query: string) => {
+    setHeaderInputValue(query)
+
+    if (query.trim() === '') {
+      // Show all fields when empty
+      setFieldSearchResults(availableFields)
+    } else {
+      // Filter fields based on query
+      const filtered = availableFields.filter(field =>
+        field.label.toLowerCase().includes(query.toLowerCase()) ||
+        field.id.toLowerCase().includes(query.toLowerCase())
+      )
+      setFieldSearchResults(filtered)
+    }
+
+    setShowFieldDropdown(true)
+  }
+
+  // Select field from dropdown
+  const selectField = (columnId: string, field: typeof availableFields[0]) => {
+    updateColumnField(columnId, field.id)
+    setEditingHeader(null)
+    setHeaderInputValue('')
+    setShowFieldDropdown(false)
+    setFieldSearchResults([])
+  }
+
+  // Handle right-click context menu for rows
+  const handleRowRightClick = (e: React.MouseEvent, itemId: string) => {
+    e.preventDefault()
+    setContextMenuPosition({ x: e.clientX, y: e.clientY })
+    setContextMenuItem(itemId)
+    setColumnContextMenu(null) // Close column menu
+  }
+
+  // Handle right-click context menu for column headers
+  const handleColumnRightClick = (e: React.MouseEvent, columnId: string) => {
+    console.log('🖱️ Right-click detected on column:', columnId)
+    e.preventDefault()
+    setColumnContextMenu({
+      position: { x: e.clientX, y: e.clientY },
+      columnId
+    })
+    setContextMenuPosition(null) // Close row menu
+    console.log('🎯 Column context menu state set:', { position: { x: e.clientX, y: e.clientY }, columnId })
+  }
+
+  // Close context menus
+  const closeContextMenu = () => {
+    setContextMenuPosition(null)
+    setContextMenuItem(null)
+    setColumnContextMenu(null)
+  }
+
+  // Start editing header
+  const startEditingHeader = (columnId: string, currentLabel: string) => {
+    console.log('✏️ startEditingHeader called with:', columnId, currentLabel)
+    setEditingHeader(columnId)
+    setHeaderInputValue('')  // Start with empty search
+    setFieldSearchResults(availableFields)  // Show all fields initially
+    setShowFieldDropdown(true)
+    console.log('✏️ Edit header state updated')
+  }
+
+  // Cancel editing
+  const cancelEditingHeader = () => {
+    setEditingHeader(null)
+    setHeaderInputValue('')
+    setShowFieldDropdown(false)
+    setFieldSearchResults([])
+  }
+
+  // Get value from item based on field path
+  const getFieldValue = (item: ListItem, fieldPath: string) => {
+    const parts = fieldPath.split('.')
+    let value: any = item
+
+    for (const part of parts) {
+      value = value?.[part]
+      if (value === undefined || value === null) break
+    }
+
+    return value
+  }
+
+  // Render cell content based on type
+  const renderCellContent = (item: ListItem, column: any) => {
+    const value = getFieldValue(item, column.field)
+
+    switch (column.type) {
+      case 'currency':
+        if (column.field === 'assets.current_price') {
+          const quote = financialData?.[item.assets?.symbol || '']
+          if (quote) {
+            const isPositive = quote.change >= 0
+            const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
+            const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
+            return (
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  ${quote.price.toFixed(2)}
+                </p>
+                <div className={`flex items-center ${changeColor} text-xs`}>
+                  <ChangeIcon className="h-3 w-3 mr-0.5" />
+                  {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                </div>
+              </div>
+            )
+          }
+        }
+        return value ? `$${value}` : '—'
+
+      case 'priority':
+        return value ? <PriorityBadge priority={value} /> : '—'
+
+      case 'stage':
+        if (!value) return '—'
+        const stageConfig = STAGE_CONFIGS.find(config => config.id === value)
+        if (stageConfig) {
+          const StageIcon = stageConfig.icon
+          return (
+            <div className="flex items-center space-x-1">
+              <StageIcon className={`h-3 w-3 ${stageConfig.textColor}`} />
+              <span className={`text-xs ${stageConfig.textColor}`}>{stageConfig.label}</span>
+            </div>
+          )
+        }
+        return value
+
+      case 'date':
+        return value ? formatDistanceToNow(new Date(value), { addSuffix: true }) : '—'
+
+      default:
+        return value || '—'
+    }
+  }
+
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
       if (showColumnSettings) {
-        const target = event.target as HTMLElement
         if (!target.closest('.column-settings-dropdown') && !target.closest('button')) {
           setShowColumnSettings(false)
+        }
+      }
+
+      if (showCategorySettings) {
+        if (!target.closest('.category-settings-dropdown') && !target.closest('button')) {
+          setShowCategorySettings(false)
+        }
+      }
+
+      if (showFieldDropdown && editingHeader) {
+        // Only close if clicking outside the dropdown and input area
+        const isInsideDropdown = target.closest('.absolute') || target.closest('input')
+        if (!isInsideDropdown) {
+          cancelEditingHeader()
+        }
+      }
+
+      if (contextMenuPosition || columnContextMenu) {
+        // Only close if clicking outside the context menu
+        if (!target.closest('.fixed.bg-white.border')) {
+          closeContextMenu()
         }
       }
     }
@@ -625,7 +1003,35 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showColumnSettings])
+  }, [showColumnSettings, showCategorySettings, showFieldDropdown, editingHeader, contextMenuPosition, columnContextMenu])
+
+  // Category management functions
+  const addCategory = () => {
+    if (newCategoryLabel.trim()) {
+      const newCategory = {
+        id: newCategoryLabel.toLowerCase().replace(/\s+/g, '_'),
+        label: newCategoryLabel.trim(),
+        color: 'bg-gray-500',
+        icon: Target
+      }
+      setCustomCategories([...customCategories, newCategory])
+      setNewCategoryLabel('')
+    }
+  }
+
+  const updateCategory = (categoryId: string, newLabel: string) => {
+    setCustomCategories(categories =>
+      categories.map(cat =>
+        cat.id === categoryId ? { ...cat, label: newLabel } : cat
+      )
+    )
+    setEditingCategory(null)
+    setEditingLabel('')
+  }
+
+  const deleteCategory = (categoryId: string) => {
+    setCustomCategories(categories => categories.filter(cat => cat.id !== categoryId))
+  }
 
   const activeFiltersCount = [
     searchQuery,
@@ -672,25 +1078,40 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               )}
             </div>
           </div>
-          {/* Advance Button for Outdated Assets */}
-          {item.assets?.process_stage === 'outdated' ? (
-            <div className="mt-3 pt-3 border-t border-gray-200">
-              <Button
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (item.assets) {
-                    initiateResearchMutation.mutate(item.assets.id)
-                  }
-                }}
-                disabled={initiateResearchMutation.isPending}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Play className="h-3 w-3 mr-1" />
-                {initiateResearchMutation.isPending ? 'Advancing...' : 'Advance Stage'}
-              </Button>
-            </div>
-          ) : null}
+          {/* Active Workflows */}
+          {(() => {
+            const assetWorkflows = activeWorkflows?.[item.assets?.id || ''] || []
+
+            if (assetWorkflows.length === 0) return null
+
+            return (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="text-xs font-medium text-gray-500 mb-2">Active Workflows</div>
+                <div className="space-y-1">
+                  {assetWorkflows.slice(0, 2).map((workflow, index) => (
+                    <div
+                      key={`${workflow.workflows.id}-${index}`}
+                      className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className={`w-2 h-2 rounded-full`}
+                          style={{ backgroundColor: workflow.workflows.color || '#3b82f6' }}
+                        />
+                        <span className="font-medium truncate">{workflow.workflows.name}</span>
+                      </div>
+                      <span className="text-gray-500 capitalize">{workflow.stage}</span>
+                    </div>
+                  ))}
+                  {assetWorkflows.length > 2 && (
+                    <div className="text-xs text-gray-500 text-center">
+                      +{assetWorkflows.length - 2} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </Card>
       </div>
@@ -707,13 +1128,14 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
       onDrop={(e) => handleDrop(e, item.id)}
       onDragEnd={handleDragEnd}
       className={clsx(
-        "pl-2 pr-6 py-4 transition-all duration-200 group relative",
+        "pl-2 pr-4 py-4 transition-all duration-200 group relative",
         !isDragging && "hover:bg-gray-50 cursor-move",
         draggedItem === item.id && 'opacity-30 scale-95 z-10',
         draggedOverItem === item.id && dragPosition === 'above' && 'border-t-4 border-primary-500',
         draggedOverItem === item.id && dragPosition === 'below' && 'border-b-4 border-primary-500',
         draggedOverItem === item.id && 'bg-primary-25'
       )}
+      onContextMenu={(e) => handleRowRightClick(e, item.id)}
       style={{
         transform: draggedItem === item.id ? 'rotate(1deg)' : 'none',
         boxShadow: draggedItem === item.id ? '0 8px 25px rgba(0, 0, 0, 0.15)' : 'none'
@@ -741,163 +1163,77 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
 
         <div className="flex-1">
-          <div className="flex items-center justify-between gap-3">
-            {/* Asset Info with Drag Handle */}
-            <div className="flex-1 min-w-0">
-              <div 
+          <div className="flex items-center gap-2">
+            {/* Symbol column - matches header */}
+            <div className="flex-shrink-0" style={{ width: `${symbolColumn.width}px` }}>
+              <div
                 className="cursor-pointer"
                 onClick={() => item.assets && handleAssetClick(item.assets)}
               >
-                <div className="min-w-0 flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="font-semibold text-gray-900">
-                          {item.assets?.symbol || 'Unknown'}
-                        </h4>
-                      </div>
-                      <p className="text-sm text-gray-600 truncate">
-                        {item.assets?.company_name || 'Unknown Company'}
-                      </p>
-                      {visibleColumns.sector && item.assets?.sector && (
-                        <p className="text-xs text-gray-500">{item.assets.sector}</p>
-                      )}
-                      {visibleColumns.notes && item.notes && (
-                        <p className="text-xs text-gray-600 mt-1 italic">
-                          "{item.notes}"
-                        </p>
-                      )}
-                </div>
+                <h4 className="font-semibold text-gray-900">
+                  {item.assets?.symbol || 'Unknown'}
+                </h4>
+                <p className="text-sm text-gray-600 truncate">
+                  {item.assets?.company_name || 'Unknown Company'}
+                </p>
+                {item.assets?.sector && (
+                  <p className="text-xs text-gray-500">{item.assets.sector}</p>
+                )}
               </div>
             </div>
 
-            {/* Price */}
-            {visibleColumns.price && (
-              <div className="w-20 flex-shrink-0">
-                {(() => {
-                  const quote = financialData?.[item.assets?.symbol || '']
-
-                  // Show loading state
-                  if (financialDataLoading) {
-                    return (
-                      <div className="animate-pulse">
-                        <div className="h-4 bg-gray-200 rounded w-16"></div>
-                      </div>
-                    )
-                  }
-
-                  // Show real-time data if available
-                  if (quote) {
-                    const isPositive = quote.change >= 0
-                    const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
-                    const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
-
-                    return (
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          ${quote.price.toFixed(2)}
-                        </p>
-                        <div className={`flex items-center ${changeColor} text-xs`}>
-                          <ChangeIcon className="h-3 w-3 mr-0.5" />
-                          {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
-                        </div>
-                      </div>
-                    )
-                  }
-
-                  // Fall back to saved price or show dash
-                  if (item.assets?.current_price) {
-                    return (
-                      <span className="text-sm text-gray-900">
-                        ${item.assets.current_price}
-                      </span>
-                    )
-                  }
-
-                  return <span className="text-sm text-gray-400">—</span>
-                })()}
-              </div>
-            )}
-
-            {/* Priority */}
-            {visibleColumns.priority && (
-              <div className="w-20 flex-shrink-0">
-                {item.assets?.priority && (
-                  <PriorityBadge priority={item.assets.priority} />
-                )}
-              </div>
-            )}
-
-            {/* Added Date */}
-            {visibleColumns.added_date && (
-              <div className="w-32 flex-shrink-0">
-                <div className="flex items-center text-sm text-gray-500">
-                  <Calendar className="h-3 w-3 mr-1" />
-                  {formatDistanceToNow(new Date(item.added_at), { addSuffix: true })}
-                </div>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="w-16 flex-shrink-0 flex justify-end">
-              <div className="relative">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowItemMenu(showItemMenu === item.id ? null : item.id)
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </button>
-                
-                {showItemMenu === item.id && (
-                  <div className="absolute right-0 top-10 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleRemoveFromList(item.id, item.assets?.symbol || 'Unknown')
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Remove from List
-                    </button>
+            {/* Dynamic columns */}
+            {dynamicColumns.map(column => (
+              <div
+                key={column.id}
+                className="flex-shrink-0"
+                style={{ width: `${column.width}px` }}
+              >
+                {financialDataLoading && column.type === 'currency' ? (
+                  <div className="animate-pulse">
+                    <div className="h-4 bg-gray-200 rounded w-16"></div>
+                  </div>
+                ) : (
+                  <div className="text-sm">
+                    {renderCellContent(item, column)}
                   </div>
                 )}
               </div>
-            </div>
+            ))}
+
+            {/* No actions column - will use right-click */}
           </div>
         </div>
       </div>
     </div>
   )
 
-  const renderKanbanColumn = (stage: string, items: ListItem[], stageConfig: any) => {
-    const StageIcon = stageConfig.icon
+  const renderKanbanColumn = (categoryId: string, items: ListItem[], categoryConfig: any) => {
+    const CategoryIcon = categoryConfig.icon
 
     return (
       <div
-        key={stage}
+        key={categoryId}
         className="flex-1 min-w-[300px]"
         onDragOver={handleDragOver}
-        onDragEnter={(e) => handleDragEnter(e, undefined, stage)}
+        onDragEnter={(e) => handleDragEnter(e, undefined, categoryId)}
         onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, undefined, stage)}
+        onDrop={(e) => handleDrop(e, undefined, categoryId)}
       >
         <div className={clsx(
           "bg-gray-50 rounded-lg p-4 min-h-[200px] transition-colors",
-          draggedOverStage === stage && 'bg-primary-50 border-2 border-primary-300 border-dashed'
+          draggedOverStage === categoryId && 'bg-primary-50 border-2 border-primary-300 border-dashed'
         )}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
-              <div className={`w-6 h-6 rounded-full ${stageConfig.color} flex items-center justify-center`}>
-                <StageIcon className="w-3 h-3 text-white" />
+              <div className={`w-6 h-6 rounded-full ${categoryConfig.color} flex items-center justify-center`}>
+                <CategoryIcon className="w-3 h-3 text-white" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">{stageConfig.label}</h3>
-                <p className="text-xs text-gray-500">{stageConfig.description}</p>
+                <h3 className="font-semibold text-gray-900">{categoryConfig.label}</h3>
               </div>
             </div>
-            <Badge variant={getStageColor(stage)} size="sm">
+            <Badge variant="primary" size="sm">
               {items.length}
             </Badge>
           </div>
@@ -954,6 +1290,14 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
         
         <div className="flex items-center space-x-3">
+          <Button
+            onClick={() => setShowAddAssetDialog(true)}
+            variant="primary"
+            size="sm"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Asset
+          </Button>
           {list.created_by === user?.id && (
             <Button
               onClick={() => setShowShareDialog(true)}
@@ -1049,45 +1393,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               </div>
             </div>
 
-            {/* Column Settings */}
-            <div className="relative">
-              <button
-                onClick={() => setShowColumnSettings(!showColumnSettings)}
-                className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg transition-colors"
-              >
-                <Settings className="h-4 w-4" />
-                <span>Columns</span>
-              </button>
-
-              {showColumnSettings && (
-                <div className="absolute right-0 top-12 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 min-w-[200px] column-settings-dropdown">
-                  <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                    Show Columns
-                  </div>
-                  {Object.entries({
-                    symbol: 'Asset Symbol',
-                    price: 'Price',
-                    priority: 'Priority',
-                    sector: 'Sector',
-                    notes: 'Notes',
-                    added_date: 'Added Date'
-                  }).map(([key, label]) => (
-                    <button
-                      key={key}
-                      onClick={() => toggleColumn(key as keyof typeof visibleColumns)}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between transition-colors"
-                    >
-                      <span>{label}</span>
-                      {visibleColumns[key as keyof typeof visibleColumns] ? (
-                        <Eye className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <EyeOff className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
 
             {activeFiltersCount > 0 && (
               <button
@@ -1097,6 +1402,109 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 Clear all filters
               </button>
             )}
+
+            {/* View Settings - Available in all views */}
+            <div className="relative">
+              <button
+                onClick={() => setShowColumnSettings(!showColumnSettings)}
+                className="flex items-center space-x-1 text-gray-600 hover:text-gray-900 transition-colors p-1 rounded hover:bg-gray-50"
+                title="View settings"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+
+              {/* Settings Dropdown */}
+              {showColumnSettings && (
+                <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl py-2 z-[10002] min-w-[280px] column-settings-dropdown">
+                  {viewMode === 'table' && (
+                    <div className="px-4 py-2 border-b border-gray-200">
+                      <h4 className="font-medium text-gray-900 mb-3">Table Settings</h4>
+                      <p className="text-sm text-gray-600 mb-2">Click headers to sort, right-click to edit/remove columns</p>
+                      <div className="space-y-2">
+                        {availableFields.filter(field => field.id !== 'assets.symbol' && !dynamicColumns.find(col => col.field === field.id)).map(field => (
+                          <button
+                            key={field.id}
+                            onClick={() => {
+                              addColumn(field.id)
+                              setShowColumnSettings(false)
+                            }}
+                            className="flex items-center justify-between w-full px-2 py-1 text-sm hover:bg-gray-50 rounded transition-colors"
+                          >
+                            <span>{field.label}</span>
+                            <Plus className="h-3 w-3 text-gray-400" />
+                          </button>
+                        ))}
+                        {availableFields.filter(field => field.id !== 'assets.symbol' && !dynamicColumns.find(col => col.field === field.id)).length === 0 && (
+                          <p className="text-xs text-gray-500">All available columns are already added</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {viewMode === 'kanban' && (
+                    <div className="px-4 py-2">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-medium text-gray-900">Category Settings</h4>
+                        <button
+                          onClick={() => setShowCategorySettings(!showCategorySettings)}
+                          className="text-sm text-primary-600 hover:text-primary-700 transition-colors"
+                        >
+                          {showCategorySettings ? 'Close' : 'Manage'}
+                        </button>
+                      </div>
+                      <p className="text-sm text-gray-600">Manage categories for organizing your assets</p>
+                    </div>
+                  )}
+
+                  {viewMode === 'cards' && (
+                    <div className="px-4 py-2">
+                      <h4 className="font-medium text-gray-900 mb-2">Card Settings</h4>
+                      <p className="text-sm text-gray-600">Card view display options</p>
+                    </div>
+                  )}
+
+                  {/* View Mode Switcher */}
+                  <div className="px-4 py-2 border-t border-gray-200 mt-2">
+                    <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Switch View</h5>
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => {
+                          setViewMode('table')
+                          setShowColumnSettings(false)
+                        }}
+                        className={`flex items-center w-full px-2 py-1 text-sm rounded transition-colors ${
+                          viewMode === 'table' ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>Table View</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setViewMode('cards')
+                          setShowColumnSettings(false)
+                        }}
+                        className={`flex items-center w-full px-2 py-1 text-sm rounded transition-colors ${
+                          viewMode === 'cards' ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>Cards View</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setViewMode('kanban')
+                          setShowColumnSettings(false)
+                        }}
+                        className={`flex items-center w-full px-2 py-1 text-sm rounded transition-colors ${
+                          viewMode === 'kanban' ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>Kanban View</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Filter Controls */}
@@ -1138,6 +1546,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                   { value: 'priority', label: 'Priority' }
                 ]}
               />
+
             </div>
           )}
         </div>
@@ -1167,64 +1576,178 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
       ) : filteredItems.length > 0 ? (
         <>
           {viewMode === 'table' && (
-            <Card padding="none">
-              <div className="divide-y divide-gray-200">
-                {/* Table Header */}
-                <div className="pl-2 pr-6 py-3 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex-shrink-0 w-6">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <Card padding="none" className="overflow-visible relative">
+              {/* Field Dropdown - Positioned below header */}
+              {editingHeader && (
+                <div
+                  className="absolute bg-white border border-gray-300 rounded-lg shadow-xl max-h-80 overflow-hidden min-w-[360px]"
+                  style={{
+                    zIndex: 10000,
+                    top: '60px',
+                    left: '50%',
+                    transform: 'translateX(-50%)'
+                  }}
+                >
+                  {/* Header */}
+                  <div className="px-3 py-2 text-sm font-medium text-gray-700 border-b border-gray-200 bg-gray-50">
+                    Change Column Field
+                  </div>
+
+                  {/* Search Input */}
+                  <div className="p-3 border-b border-gray-200">
+                    <input
+                      type="text"
+                      value={headerInputValue}
+                      onChange={(e) => handleFieldSearch(e.target.value)}
+                      placeholder="Search fields..."
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Results */}
+                  <div className="max-h-60 overflow-y-auto">
+                    {fieldSearchResults.length > 0 ? (
+                      fieldSearchResults.map((field, index) => (
+                        <button
+                          key={field.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            selectField(editingHeader!, field)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-primary-50 flex items-center justify-between border-b border-gray-100 last:border-b-0 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900 truncate">{field.label}</div>
+                            <div className="text-gray-500 text-xs truncate">{field.id}</div>
+                          </div>
+                          <div className="text-xs text-primary-600 capitalize bg-primary-100 px-2 py-0.5 rounded ml-2">{field.type}</div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                        {headerInputValue.trim() ? `No fields found for "${headerInputValue}"` : 'Type to search available fields'}
                       </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-3 py-2 text-xs text-gray-500 border-t border-gray-200 bg-gray-50">
+                    Press Escape to cancel
+                  </div>
+                </div>
+              )}
+              <div className="divide-y divide-gray-200 overflow-visible">
+                {/* Table Header - Spreadsheet Style */}
+                <div className="pl-2 pr-6 py-3 bg-gray-50 border-b border-gray-200 overflow-visible relative">
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider min-w-max">
+                    <div className="flex-shrink-0 w-6"></div>
+
+                    {/* Symbol column - Fixed */}
+                    <div
+                      className="flex-shrink-0 relative group"
+                      style={{ width: `${symbolColumn.width}px` }}
+                      onContextMenu={(e) => {
+                        if (editingHeader !== 'symbol') {
+                          handleColumnRightClick(e, 'symbol')
+                        }
+                      }}
+                    >
+                      <button
+                        onClick={() => handleSort('symbol')}
+                        className="flex items-center space-x-1 hover:text-gray-700 transition-colors w-full h-full py-2"
+                        title="Sort by Symbol (right-click anywhere on header for options)"
+                      >
+                        <span>{symbolColumn.label}</span>
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <button
-                            onClick={() => handleSort('symbol')}
-                            className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                          >
-                            <span>Asset</span>
-                            <ArrowUpDown className="h-3 w-3" />
-                          </button>
+
+                    {/* Dynamic columns with resize handles */}
+                    {dynamicColumns.map((column, index) => (
+                      <div
+                        key={column.id}
+                        className="flex-shrink-0 relative group"
+                        style={{ width: `${column.width}px` }}
+                        onContextMenu={(e) => {
+                          if (editingHeader !== column.id) {
+                            handleColumnRightClick(e, column.id)
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between h-full">
+                          {editingHeader === column.id ? (
+                            <div className="relative w-full">
+                              <input
+                                type="text"
+                                value={headerInputValue}
+                                onChange={(e) => handleFieldSearch(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    cancelEditingHeader()
+                                  } else if (e.key === 'Enter' && fieldSearchResults.length > 0) {
+                                    selectField(column.id, fieldSearchResults[0])
+                                  }
+                                }}
+                                className="w-full px-2 py-1 text-xs border border-primary-500 rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                placeholder="Type to search fields..."
+                                autoFocus
+                              />
+
+                              {/* Field dropdown removed - using global dropdown */}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleSort(column.field.replace('assets.', ''))}
+                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors truncate w-full h-full py-2"
+                              title={`Sort by ${column.label} (right-click anywhere on header for options)`}
+                            >
+                              <span className="truncate">{column.label}</span>
+                              <ArrowUpDown className="h-3 w-3 flex-shrink-0" />
+                            </button>
+                          )}
                         </div>
-                        {visibleColumns.price && (
-                          <div className="w-20 flex-shrink-0">
-                            <button
-                              onClick={() => handleSort('current_price')}
-                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                            >
-                              <span>Price</span>
-                              <ArrowUpDown className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )}
-                        {visibleColumns.priority && (
-                          <div className="w-20 flex-shrink-0">
-                            <button
-                              onClick={() => handleSort('priority')}
-                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                            >
-                              <span>Priority</span>
-                              <ArrowUpDown className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )}
-                        {visibleColumns.added_date && (
-                          <div className="w-32 flex-shrink-0">
-                            <button
-                              onClick={() => handleSort('added_at')}
-                              className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                            >
-                              <span>Added</span>
-                              <ArrowUpDown className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )}
-                        <div className="w-16 flex-shrink-0 flex justify-end">
-                          <span>Actions</span>
-                        </div>
+
+                        {/* Resize handle */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            setResizingColumn(column.id)
+                            handleColumnResize(column.id, e.clientX, column.width)
+                          }}
+                        />
                       </div>
+                    ))}
+
+                    {/* Add column button */}
+                    <div className="flex-shrink-0 relative">
+                      <button
+                        onClick={() => {
+                          // Create a new empty column that user can immediately edit
+                          const newColumnId = `col_${Date.now()}`
+                          const emptyColumn = {
+                            id: newColumnId,
+                            field: 'notes', // Default field
+                            label: 'New Column',
+                            width: 150,
+                            type: 'text'
+                          }
+                          setDynamicColumns([...dynamicColumns, emptyColumn])
+                          // Immediately start editing the new column
+                          setTimeout(() => {
+                            startEditingHeader(newColumnId, 'New Column')
+                          }, 100)
+                        }}
+                        className="flex items-center space-x-1 text-primary-600 hover:text-primary-700 transition-colors px-2 py-1 rounded hover:bg-primary-50"
+                        title="Add new column"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>Add Column</span>
+                      </button>
                     </div>
+
                   </div>
                 </div>
 
@@ -1247,11 +1770,118 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           )}
 
           {viewMode === 'kanban' && (
-            <div className="flex space-x-6 overflow-x-auto pb-4 min-h-[400px]">
-              {STAGE_CONFIGS.map(stageConfig => {
-                const stageItems = filteredItems.filter(item => item.assets?.process_stage === stageConfig.id)
-                return renderKanbanColumn(stageConfig.id, stageItems, stageConfig)
-              })}
+            <div className="space-y-4">
+              {/* Category Management - Header without duplicate settings button */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">Categories</h3>
+              </div>
+
+              {showCategorySettings && (
+                <Card className="category-settings-dropdown">
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-gray-900">Manage Categories</h4>
+
+                    {/* Add new category */}
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        placeholder="New category name"
+                        value={newCategoryLabel}
+                        onChange={(e) => setNewCategoryLabel(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addCategory()}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                      <Button size="sm" onClick={addCategory}>
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Existing categories */}
+                    <div className="space-y-2">
+                      {customCategories.map(category => (
+                        <div key={category.id} className="flex items-center justify-between p-2 border border-gray-200 rounded-lg">
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-4 h-4 rounded-full ${category.color}`}></div>
+                            {editingCategory === category.id ? (
+                              <input
+                                type="text"
+                                value={editingLabel}
+                                onChange={(e) => setEditingLabel(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') updateCategory(category.id, editingLabel)
+                                }}
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="text-sm font-medium">{category.label}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            {editingCategory === category.id ? (
+                              <>
+                                <button
+                                  onClick={() => updateCategory(category.id, editingLabel)}
+                                  className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                >
+                                  <Check className="h-3 w-3" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingCategory(null)
+                                    setEditingLabel('')
+                                  }}
+                                  className="p-1 text-gray-400 hover:bg-gray-50 rounded"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingCategory(category.id)
+                                    setEditingLabel(category.label)
+                                  }}
+                                  className="p-1 text-gray-400 hover:bg-gray-50 rounded"
+                                >
+                                  <Edit3 className="h-3 w-3" />
+                                </button>
+                                <button
+                                  onClick={() => deleteCategory(category.id)}
+                                  className="p-1 text-red-400 hover:bg-red-50 rounded"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Kanban Columns */}
+              <div className="flex space-x-6 overflow-x-auto pb-4 min-h-[400px]">
+                {/* Uncategorized column */}
+                {(() => {
+                  const uncategorizedItems = filteredItems.filter(item => !item.list_category)
+                  return renderKanbanColumn('uncategorized', uncategorizedItems, {
+                    id: 'uncategorized',
+                    label: 'Uncategorized',
+                    color: 'bg-gray-400',
+                    icon: Target
+                  })
+                })()}
+
+                {/* Custom category columns */}
+                {customCategories.map(categoryConfig => {
+                  const categoryItems = filteredItems.filter(item => item.list_category === categoryConfig.id)
+                  return renderKanbanColumn(categoryConfig.id, categoryItems, categoryConfig)
+                })}
+              </div>
             </div>
           )}
         </>
@@ -1293,6 +1923,226 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         onClose={() => setShowShareDialog(false)}
         list={list}
       />
+
+      {/* Add Asset Dialog */}
+      {showAddAssetDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Add Assets to "{list.name}"</h2>
+              <button
+                onClick={() => {
+                  setShowAddAssetDialog(false)
+                  setSelectedAssets([])
+                  setAssetSearchQuery('')
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="p-6 border-b border-gray-200">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search assets by symbol, company name, or sector..."
+                  value={assetSearchQuery}
+                  onChange={(e) => setAssetSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              {selectedAssets.length > 0 && (
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-sm text-gray-600">
+                    {selectedAssets.length} asset{selectedAssets.length !== 1 ? 's' : ''} selected
+                  </p>
+                  <button
+                    onClick={() => setSelectedAssets([])}
+                    className="text-sm text-primary-600 hover:text-primary-700 transition-colors"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Asset List */}
+            <div className="flex-1 overflow-y-auto">
+              {allAssetsLoading ? (
+                <div className="p-6">
+                  <div className="space-y-4">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="animate-pulse">
+                        <div className="flex items-center space-x-4 p-4">
+                          <div className="w-4 h-4 bg-gray-200 rounded"></div>
+                          <div className="flex-1 space-y-2">
+                            <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : availableAssets.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {availableAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className={clsx(
+                        'flex items-center p-4 hover:bg-gray-50 transition-colors cursor-pointer',
+                        selectedAssets.includes(asset.id) && 'bg-primary-50'
+                      )}
+                      onClick={() => toggleAssetSelection(asset.id)}
+                    >
+                      <div className="flex items-center space-x-4 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedAssets.includes(asset.id)}
+                          onChange={() => toggleAssetSelection(asset.id)}
+                          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <p className="text-sm font-semibold text-gray-900">{asset.symbol}</p>
+                          </div>
+                          <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>
+                          {asset.sector && (
+                            <p className="text-xs text-gray-500">{asset.sector}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-12 text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Search className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    {assetSearchQuery ? 'No assets found' : 'No available assets'}
+                  </h3>
+                  <p className="text-gray-500">
+                    {assetSearchQuery
+                      ? 'Try adjusting your search terms'
+                      : 'All assets are already in this list or no assets exist yet'
+                    }
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-6 border-t border-gray-200">
+              <div className="text-sm text-gray-600">
+                {availableAssets.length} asset{availableAssets.length !== 1 ? 's' : ''} available
+              </div>
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowAddAssetDialog(false)
+                    setSelectedAssets([])
+                    setAssetSearchQuery('')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddSelectedAssets}
+                  disabled={selectedAssets.length === 0 || addAssetsToListMutation.isPending}
+                >
+                  {addAssetsToListMutation.isPending ? 'Adding...' : `Add ${selectedAssets.length} Asset${selectedAssets.length !== 1 ? 's' : ''}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Column Context Menu */}
+      {columnContextMenu && (
+        <div>
+          {console.log('🎯 Rendering column context menu:', columnContextMenu)}
+          <div
+            className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[10001] min-w-[160px]"
+            style={{
+              top: columnContextMenu.position.y,
+              left: columnContextMenu.position.x
+            }}
+            onMouseDown={(e) => {
+              console.log('🖱️ Mouse down on context menu container')
+              e.stopPropagation()
+            }}
+          >
+          {columnContextMenu.columnId !== 'symbol' && (
+            <button
+              onClick={() => {
+                console.log('🔍 Edit Field clicked for column:', columnContextMenu.columnId)
+                const column = dynamicColumns.find(col => col.id === columnContextMenu.columnId)
+                console.log('📋 Found column:', column)
+                if (column) {
+                  console.log('✏️ Calling startEditingHeader')
+                  startEditingHeader(columnContextMenu.columnId, column.label)
+                }
+                setColumnContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
+            >
+              <Edit3 className="h-4 w-4 mr-2" />
+              Edit Field
+            </button>
+          )}
+          {columnContextMenu.columnId === 'symbol' && (
+            <div className="px-3 py-2 text-sm text-gray-500 italic">
+              Symbol column cannot be changed
+            </div>
+          )}
+          {columnContextMenu.columnId !== 'symbol' && (
+            <button
+              onClick={() => {
+                removeColumn(columnContextMenu.columnId)
+                setColumnContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center transition-colors"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Remove Column
+            </button>
+          )}
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenuPosition && contextMenuItem && (
+        <div
+          className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
+          style={{
+            top: contextMenuPosition.y,
+            left: contextMenuPosition.x
+          }}
+        >
+          <button
+            onClick={() => {
+              const item = filteredItems.find(i => i.id === contextMenuItem)
+              if (item) {
+                handleRemoveFromList(item.id, item.assets?.symbol || 'Unknown')
+              }
+              closeContextMenu()
+            }}
+            className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center transition-colors"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Remove from List
+          </button>
+        </div>
+      )}
     </div>
   )
 }

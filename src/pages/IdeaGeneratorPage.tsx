@@ -584,6 +584,13 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           .order('asset_id')
           .order('updated_at', { ascending: false })
 
+        console.log(`🔍 Raw data from DB for ${workflow.name}:`, {
+          workflowId: workflow.id,
+          totalRecords: progressAssets?.length || 0,
+          aaplRecords: progressAssets?.filter(a => a.assets?.symbol === 'AAPL').length || 0,
+          allSymbols: progressAssets?.map(a => a.assets?.symbol) || []
+        })
+
         if (progressError) {
           console.error(`❌ Error fetching progress for workflow ${workflow.name}:`, progressError)
           continue
@@ -620,7 +627,16 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           Object.values(
             progressAssets.reduce((acc, asset) => {
               const assetId = asset.assets.id
-              if (!acc[assetId] || new Date(asset.updated_at) > new Date(acc[assetId].updated_at)) {
+              const currentEntry = acc[assetId]
+              const shouldReplace = !currentEntry || new Date(asset.updated_at) > new Date(currentEntry.updated_at)
+
+              if (shouldReplace) {
+                if (currentEntry && asset.assets.symbol === 'AAPL') {
+                  console.log(`🔍 AAPL deduplication in ${workflow.name}: replacing`, {
+                    old: { id: currentEntry.id, updated_at: currentEntry.updated_at },
+                    new: { id: asset.id, updated_at: asset.updated_at }
+                  })
+                }
                 acc[assetId] = asset
               }
               return acc
@@ -730,7 +746,14 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
   // Generate idea tiles only on initial load if no saved tiles exist
   useEffect(() => {
+    console.log('🔍 Tiles Effect:', {
+      hasIdeaData: !!ideaData,
+      tilesLength: tiles.length,
+      activeView,
+      shouldGenerate: ideaData && tiles.length === 0
+    })
     if (ideaData && tiles.length === 0) {
+      console.log('🔍 Generating tiles...')
       generateIdeaTiles()
     }
   }, [ideaData])
@@ -747,7 +770,15 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   }, [activeView, refetchWorkflowData])
 
   const generateIdeaTiles = () => {
-    if (!ideaData) return
+    console.log('🔍 generateIdeaTiles called:', {
+      hasIdeaData: !!ideaData,
+      ideaDataKeys: ideaData ? Object.keys(ideaData) : null
+    })
+
+    if (!ideaData) {
+      console.log('❌ No ideaData, returning early')
+      return
+    }
 
     const allPossibleTiles: IdeaTile[] = []
 
@@ -898,7 +929,15 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
     // Shuffle and take up to 9 tiles
     const shuffledTiles = shuffleArray([...allPossibleTiles])
-    setTiles(shuffledTiles.slice(0, 9))
+    const finalTiles = shuffledTiles.slice(0, 9)
+
+    console.log('🔍 generateIdeaTiles result:', {
+      allPossibleTilesLength: allPossibleTiles.length,
+      finalTilesLength: finalTiles.length,
+      finalTilesTitles: finalTiles.map(t => t.title)
+    })
+
+    setTiles(finalTiles)
   }
 
 
@@ -917,16 +956,35 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     </button>
   )
 
-  const renderDiscoveryView = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Discovery</h2>
-          <p className="text-sm text-gray-600">
-            Personalized insights and collaborative content that needs your attention
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
+  const renderDiscoveryView = () => {
+    console.log('🔍 Discovery View Debug:', {
+      isLoading,
+      tilesLength: tiles.length,
+      ideaData: !!ideaData,
+      isShuffling,
+      activeView,
+      ideaDataDetails: ideaData ? {
+        assets: ideaData.assets?.length || 0,
+        notes: ideaData.notes?.length || 0,
+        priceTargets: ideaData.priceTargets?.length || 0,
+        themes: ideaData.themes?.length || 0,
+        portfolios: ideaData.portfolios?.length || 0
+      } : null
+    })
+
+    console.log('🔍 About to render Discovery view JSX...')
+
+    try {
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Discovery</h2>
+              <p className="text-sm text-gray-600">
+                Personalized insights and collaborative content that needs your attention
+              </p>
+            </div>
+          <div className="flex items-center space-x-3">
           <div className="text-xs text-gray-500">
             Last updated: {formatDistanceToNow(lastRefresh, { addSuffix: true })}
           </div>
@@ -1000,8 +1058,20 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
           ))}
         </div>
       )}
-    </div>
-  )
+      </div>
+    )
+    } catch (error) {
+      console.error('❌ Error in renderDiscoveryView:', error)
+      return (
+        <div className="space-y-6">
+          <div className="text-center py-12">
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Discovery View Error</h2>
+            <p className="text-gray-600">Something went wrong. Check the console for details.</p>
+          </div>
+        </div>
+      )
+    }
+  }
 
   // Filtering and sorting logic for prioritizer
   const filterAndSortAssets = (assets: WorkflowAsset[]) => {
@@ -1322,31 +1392,55 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               // Get all assets from selected workflow or all workflows
               const getAllAssets = () => {
                 if (selectedWorkflow === null) {
-                  // Combine all assets from all workflows
-                  const allAssets = Object.values(workflowData?.workflowAssets || {}).flat()
+                  // Combine all assets from all workflows - keep all instances to show workflow participation
+                  const allAssets: (WorkflowAsset & { workflow_id: string, workflow_name: string })[] = []
 
-                  // Debug: Check for AAPL duplicates across all workflows
+                  // Add workflow context to each asset
+                  Object.entries(workflowData?.workflowAssets || {}).forEach(([workflowId, assets]) => {
+                    const workflow = workflowData?.workflows.find(w => w.id === workflowId)
+                    assets.forEach(asset => {
+                      allAssets.push({
+                        ...asset,
+                        workflow_id: workflowId,
+                        workflow_name: workflow?.name || 'Unknown Workflow'
+                      })
+                    })
+                  })
+
+                  // Debug: Check for AAPL instances across workflows (this is expected and desired)
                   const aaplAssets = allAssets.filter(a => a.symbol === 'AAPL')
                   if (aaplAssets.length > 1) {
-                    console.log('🔍 AAPL duplicates found across workflows:', aaplAssets.map(a => ({
+                    console.log('🔍 AAPL instances across workflows (expected):', aaplAssets.map(a => ({
                       id: a.id,
                       symbol: a.symbol,
                       workflow_id: a.workflow_id,
-                      workflowName: workflowData?.workflows.find(w => w.id === a.workflow_id)?.name
+                      workflow_name: a.workflow_name,
+                      stage: a.stage,
+                      is_started: a.is_started
                     })))
                   }
 
                   return allAssets
                 } else {
                   const workflowAssets = workflowData?.workflowAssets[selectedWorkflow] || []
+                  const selectedWorkflowName = workflowData?.workflows.find(w => w.id === selectedWorkflow)?.name || 'Unknown'
+
+                  console.log(`🔍 Individual workflow view for ${selectedWorkflowName}:`, {
+                    workflowId: selectedWorkflow,
+                    totalAssets: workflowAssets.length,
+                    allSymbols: workflowAssets.map(a => a.symbol),
+                    aaplCount: workflowAssets.filter(a => a.symbol === 'AAPL').length
+                  })
 
                   // Debug: Check for AAPL duplicates in selected workflow
                   const aaplAssets = workflowAssets.filter(a => a.symbol === 'AAPL')
                   if (aaplAssets.length > 1) {
-                    console.log('🔍 AAPL duplicates found in selected workflow:', aaplAssets.map(a => ({
+                    console.log(`🔍 ❌ AAPL duplicates found in ${selectedWorkflowName}:`, aaplAssets.map(a => ({
                       id: a.id,
                       symbol: a.symbol,
-                      workflow_id: a.workflow_id
+                      stage: a.stage,
+                      is_started: a.is_started,
+                      last_updated: a.last_updated
                     })))
                   }
 
@@ -1358,14 +1452,21 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               const filteredAndSortedAssets = filterAndSortAssets(allAssets)
 
               // Function to render asset item
-              const renderAssetItem = (asset: WorkflowAsset, showWorkflow: boolean = false) => {
-                // If we have a selected workflow, prioritize that workflow for the asset context
+              const renderAssetItem = (asset: WorkflowAsset & { workflow_id?: string, workflow_name?: string }, showWorkflow: boolean = false, key?: string) => {
+                // Find the appropriate workflow for this asset
                 let workflow
-                if (selectedWorkflow && workflowData?.workflowAssets[selectedWorkflow]?.some(a => a.id === asset.id)) {
-                  // Asset exists in the selected workflow, use that workflow
+                if (selectedWorkflow) {
+                  // When in a specific workflow view, use that workflow
                   workflow = workflowData?.workflows.find(w => w.id === selectedWorkflow)
+                } else if (asset.workflow_id) {
+                  // When showing all workflows, use the workflow context attached to the asset
+                  workflow = {
+                    id: asset.workflow_id,
+                    name: asset.workflow_name || 'Unknown Workflow',
+                    color: workflowData?.workflows.find(w => w.id === asset.workflow_id)?.color || '#6B7280'
+                  }
                 } else {
-                  // Fallback to finding any workflow that contains this asset
+                  // Fallback: find any workflow that contains this asset
                   workflow = workflowData?.workflows.find(w =>
                     workflowData.workflowAssets[w.id]?.some(a => a.id === asset.id)
                   )
@@ -1381,7 +1482,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
                 return (
                   <div
-                    key={asset.id}
+                    key={key || `${asset.id}-${asset.workflow_id || 'default'}`}
                     className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
                     onClick={() => {
                       const assetData = {
@@ -1457,7 +1558,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                         <Badge variant="outline" size="sm">{filteredAndSortedAssets.length} assets</Badge>
                       </div>
                       <div className="space-y-2">
-                        {filteredAndSortedAssets.map((asset) => renderAssetItem(asset, selectedWorkflow === null))}
+                        {filteredAndSortedAssets.map((asset, index) => renderAssetItem(asset, selectedWorkflow === null, `${asset.symbol}-${asset.workflow_id || index}`))}
                       </div>
                     </div>
                   </Card>
@@ -1490,7 +1591,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                           <Badge variant="outline" size="sm">{inProgressAssets.length} assets</Badge>
                         </div>
                         <div className="space-y-2">
-                          {inProgressAssets.map((asset) => renderAssetItem(asset, selectedWorkflow === null))}
+                          {inProgressAssets.map((asset, index) => renderAssetItem(asset, selectedWorkflow === null, `in-progress-${asset.symbol}-${asset.workflow_id || index}`))}
                         </div>
                         {inProgressAssets.length === 0 && (
                           <div className="text-center py-8 text-gray-500">
@@ -1508,7 +1609,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                           <Badge variant="outline" size="sm">{notStartedAssets.length} assets</Badge>
                         </div>
                         <div className="space-y-2">
-                          {notStartedAssets.map((asset) => renderAssetItem(asset, selectedWorkflow === null))}
+                          {notStartedAssets.map((asset, index) => renderAssetItem(asset, selectedWorkflow === null, `not-started-${asset.symbol}-${asset.workflow_id || index}`))}
                         </div>
                         {notStartedAssets.length === 0 && (
                           <div className="text-center py-8 text-gray-500">
@@ -1538,7 +1639,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                             <Badge variant="outline" size="sm">{stageAssets.length} assets</Badge>
                           </div>
                           <div className="space-y-2">
-                            {stageAssets.map((asset) => renderAssetItem(asset, selectedWorkflow === null))}
+                            {stageAssets.map((asset, index) => renderAssetItem(asset, selectedWorkflow === null, `stage-${stage}-${asset.symbol}-${asset.workflow_id || index}`))}
                           </div>
                         </div>
                       </Card>
@@ -1582,7 +1683,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                               </Badge>
                             </div>
                             <div className="space-y-2">
-                              {priorityAssets.map((asset) => renderAssetItem(asset, selectedWorkflow === null))}
+                              {priorityAssets.map((asset, index) => renderAssetItem(asset, selectedWorkflow === null, `priority-${priority}-${asset.symbol}-${asset.workflow_id || index}`))}
                             </div>
                           </div>
                         </Card>
@@ -1601,7 +1702,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                       <Badge variant="outline" size="sm">{filteredAndSortedAssets.length} assets</Badge>
                     </div>
                     <div className="space-y-2">
-                      {filteredAndSortedAssets.map((asset) => renderAssetItem(asset, selectedWorkflow === null))}
+                      {filteredAndSortedAssets.map((asset, index) => renderAssetItem(asset, selectedWorkflow === null, `fallback-${asset.symbol}-${asset.workflow_id || index}`))}
                     </div>
                   </div>
                 </Card>

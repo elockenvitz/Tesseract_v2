@@ -374,7 +374,12 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
       <div className="flex items-start justify-between">
         <div className="flex items-start space-x-8 flex-1">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">{portfolio.name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+              {portfolio.name}
+              {portfolio.portfolio_id && (
+                <span className="font-normal text-gray-600"> - {portfolio.portfolio_id}</span>
+              )}
+            </h1>
             {portfolio.description && (
               <p className="text-lg text-gray-600 mb-1">{portfolio.description}</p>
             )}
