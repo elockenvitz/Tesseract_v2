@@ -557,7 +557,7 @@ export function InvestmentTimeline({
     setStageChecklists(initialChecklists)
   }, [assetId, savedChecklistItems, checklistAttachments, timelineStages, workflowChecklistTemplates])
 
-  // Automatically select the current stage when component loads or stage changes
+  // Automatically select the current stage when component loads (but only if no stage is selected)
   React.useEffect(() => {
     if (effectiveCurrentStage && !showStageDetails) {
       setShowStageDetails(effectiveCurrentStage)
@@ -565,17 +565,20 @@ export function InvestmentTimeline({
     }
   }, [effectiveCurrentStage, showStageDetails, onStageClick])
 
-  // Ensure the current stage is always shown when workflow starts
+  // Only force current stage when workflow first starts (not on every render)
+  const [hasInitialized, setHasInitialized] = React.useState(false)
   React.useEffect(() => {
-    if (isWorkflowStarted && effectiveCurrentStage && showStageDetails !== effectiveCurrentStage) {
+    if (isWorkflowStarted && effectiveCurrentStage && !hasInitialized) {
       setShowStageDetails(effectiveCurrentStage)
       onStageClick(effectiveCurrentStage)
+      setHasInitialized(true)
     }
-  }, [isWorkflowStarted, effectiveCurrentStage, showStageDetails, onStageClick])
+  }, [isWorkflowStarted, effectiveCurrentStage, hasInitialized, onStageClick])
 
-  // Handle external viewing stage requests
+  // Handle external viewing stage requests (only when explicitly set from outside)
   React.useEffect(() => {
     if (viewingStageId && viewingStageId !== showStageDetails) {
+      console.log(`🔄 External request to view stage: ${viewingStageId}`)
       setShowStageDetails(viewingStageId)
       onStageClick(viewingStageId)
       // Clear the viewing stage ID after setting it to allow normal clicking
@@ -623,9 +626,14 @@ export function InvestmentTimeline({
   }
 
   const handleStageClick = (stage: TimelineStage, index: number) => {
-    // Allow viewing all stages, but editing is controlled separately
+    // Allow viewing all stages regardless of workflow state
+    console.log(`🎯 User clicked stage: ${stage.label} (${stage.id})`)
     onStageClick(stage.id)
     setShowStageDetails(stage.id)
+    // Clear the viewing stage override to allow manual selection
+    if (onViewingStageChange) {
+      onViewingStageChange(null)
+    }
   }
 
   const isCurrentStageCompleted = () => {
@@ -1173,7 +1181,6 @@ export function InvestmentTimeline({
             <div className="relative flex justify-between">
               {timelineStages.map((stage, index) => {
                 const status = getStageStatus(index)
-                const isClickable = true // Allow viewing all stages
                 const isOutdated = stage.id === 'outdated' || effectiveCurrentStage === 'outdated'
                 const isFirstActiveStage = index === 1 && (effectiveCurrentStage === 'outdated' || timelineStages[0]?.id === 'outdated')
 
@@ -1188,6 +1195,7 @@ export function InvestmentTimeline({
                         } hover:scale-110 cursor-pointer ${
                           showStageDetails === stage.id ? 'ring-4 ring-blue-200' : ''
                         }`}
+                        title={`Click to view ${stage.label} stage tasks and details`}
                       >
                         <div className="flex items-center justify-center h-full">
                           {status === 'completed' ? (
@@ -1277,7 +1285,6 @@ export function InvestmentTimeline({
           <div className="space-y-3">
             {timelineStages.map((stage, index) => {
               const status = getStageStatus(index)
-              const isClickable = true // Allow viewing all stages
 
               return (
                 <button
@@ -1289,7 +1296,10 @@ export function InvestmentTimeline({
                       : status === 'completed'
                       ? 'border-green-500 bg-green-50'
                       : 'border-gray-200 bg-gray-50'
-                  } hover:shadow-md`}
+                  } hover:shadow-md cursor-pointer ${
+                    showStageDetails === stage.id ? 'ring-2 ring-blue-200' : ''
+                  }`}
+                  title={`Click to view ${stage.label} stage tasks and details`}
                 >
                   <div className={`relative w-8 h-8 rounded-full ${getStageColor(status, index)} flex items-center justify-center mr-3`}>
                     {status === 'completed' ? (

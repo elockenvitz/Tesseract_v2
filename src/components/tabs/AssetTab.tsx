@@ -604,6 +604,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
         queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
         queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id, workflowId] })
         queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
         console.log(`🔄 Cache invalidated for workflow status updates`)
       }
@@ -637,6 +638,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
         queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
         queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id, workflowId] })
         queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
         console.log(`🔄 Cache invalidated for workflow stop updates`)
       }
