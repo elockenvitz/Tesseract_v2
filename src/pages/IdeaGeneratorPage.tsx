@@ -31,7 +31,7 @@ interface IdeaTile {
   urgency?: 'urgent' | 'normal' | 'low'
   data: any
   color: string
-  icon: React.ReactNode
+  iconType: string
   actionText: string
   reason?: string
 }
@@ -722,7 +722,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'urgent',
         data: asset,
         color: 'bg-red-50 border-red-200',
-        icon: <AlertTriangle className="w-5 h-5 text-red-600" />,
+        iconType: 'alert-triangle',
         actionText: 'Review Now',
         reason: 'High priority asset that needs your immediate attention'
       })
@@ -743,7 +743,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'normal',
         data: asset,
         color: 'bg-blue-50 border-blue-200',
-        icon: <TrendingUp className="w-5 h-5 text-blue-600" />,
+        iconType: 'trending-up',
         actionText: 'Check Updates',
         reason: 'Asset was recently updated and may need your review'
       })
@@ -762,7 +762,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'normal',
         data: note,
         color: 'bg-blue-50 border-blue-200',
-        icon: <FileText className="w-5 h-5 text-blue-600" />,
+        iconType: 'file-text',
         actionText: 'Read More',
         reason: 'Recent research note that might contain valuable insights'
       })
@@ -784,7 +784,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'urgent',
         data: target,
         color: 'bg-yellow-50 border-yellow-200',
-        icon: <Target className="w-5 h-5 text-yellow-600" />,
+        iconType: 'target',
         actionText: 'Update Target',
         reason: 'Price target deadline has passed and needs your review'
       })
@@ -809,7 +809,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'normal',
         data: target,
         color: 'bg-orange-50 border-orange-200',
-        icon: <Clock className="w-5 h-5 text-orange-600" />,
+        iconType: 'clock',
         actionText: 'Review Progress',
         reason: 'Price target deadline is approaching within a week'
       })
@@ -827,7 +827,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'normal',
         data: theme,
         color: 'bg-purple-50 border-purple-200',
-        icon: <Tag className="w-5 h-5 text-purple-600" />,
+        iconType: 'tag',
         actionText: 'Explore Theme',
         reason: 'Investment theme that may have new opportunities'
       })
@@ -848,7 +848,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         urgency: 'normal',
         data: portfolio,
         color: 'bg-green-50 border-green-200',
-        icon: <Briefcase className="w-5 h-5 text-green-600" />,
+        iconType: 'briefcase',
         actionText: 'Add Holdings',
         reason: 'Portfolio needs more holdings for better diversification'
       })
@@ -862,6 +862,19 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     setTiles(finalTiles)
   }
 
+
+  const getIconForType = (iconType: string, className: string = 'w-5 h-5') => {
+    switch (iconType) {
+      case 'alert-triangle': return <AlertTriangle className={className} />
+      case 'trending-up': return <TrendingUp className={className} />
+      case 'file-text': return <FileText className={className} />
+      case 'target': return <Target className={className} />
+      case 'clock': return <Clock className={className} />
+      case 'tag': return <Tag className={className} />
+      case 'briefcase': return <Briefcase className={className} />
+      default: return <Lightbulb className={className} />
+    }
+  }
 
   const renderTabButton = (view: ViewType, icon: React.ReactNode, label: string) => (
     <button
@@ -927,7 +940,13 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               onClick={() => onItemSelect?.(tile.data)}
             >
               <div className="flex items-start space-x-3 mb-4">
-                {tile.icon}
+                {getIconForType(tile.iconType, tile.color.includes('red') ? 'w-5 h-5 text-red-600' :
+                  tile.color.includes('blue') ? 'w-5 h-5 text-blue-600' :
+                  tile.color.includes('yellow') ? 'w-5 h-5 text-yellow-600' :
+                  tile.color.includes('orange') ? 'w-5 h-5 text-orange-600' :
+                  tile.color.includes('purple') ? 'w-5 h-5 text-purple-600' :
+                  tile.color.includes('green') ? 'w-5 h-5 text-green-600' :
+                  'w-5 h-5 text-gray-600')}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{tile.title}</h3>
                   {tile.subtitle && (

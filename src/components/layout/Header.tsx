@@ -173,7 +173,7 @@ export function Header({
   }
 
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo and Search */}
@@ -181,7 +181,7 @@ export function Header({
             <div className="flex items-center space-x-3">
               <TesseractLogo size={32} />
               <div>
-                <h1 className="text-lg font-bold text-gray-900">Tesseract</h1>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white">Tesseract</h1>
               </div>
             </div>
 
@@ -293,9 +293,9 @@ export function Header({
 
               {/* User Menu Dropdown */}
               {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
                   {/* User Info */}
-                  <div className="px-4 py-3 border-b border-gray-200">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex items-center space-x-3">
                       <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center">
                         <span className="text-white font-semibold">
@@ -303,10 +303,10 @@ export function Header({
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                           {getDisplayName()}
                         </p>
-                        <p className="text-xs text-gray-500 truncate">
+                        <p className="text-xs text-gray-500 dark:text-gray-300 truncate">
                           {userDetails?.email || user?.email}
                         </p>
                       </div>
@@ -318,7 +318,7 @@ export function Header({
                         setShowUserMenu(false)
                         setShowProfile(true)
                       }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors"
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
                     >
                       <User className="h-4 w-4 mr-3 text-gray-400" />
                       View Profile
@@ -329,7 +329,7 @@ export function Header({
                         setShowUserMenu(false)
                         onShowCoverageManager?.()
                       }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors"
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
                     >
                       <Users className="h-4 w-4 mr-3 text-gray-400" />
                       Coverage Management
@@ -340,7 +340,7 @@ export function Header({
                         setShowUserMenu(false)
                         setShowSettings(true)
                       }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors"
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
                     >
                       <Settings className="h-4 w-4 mr-3 text-gray-400" />
                       Account Settings
@@ -348,7 +348,7 @@ export function Header({
                   </div>
                   </div>
                   {/* Sign Out */}
-                  <div className="border-t border-gray-200 py-2">
+                  <div className="border-t border-gray-200 dark:border-gray-700 py-2">
                     <button
                       onClick={handleSignOut}
                       className="w-full px-4 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center transition-colors"
@@ -372,7 +372,7 @@ export function Header({
             onClick={() => setShowProfile(false)}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all p-8">
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all p-8">
               <ProfilePage onClose={() => setShowProfile(false)} />
             </div>
           </div>
@@ -387,7 +387,7 @@ export function Header({
             onClick={() => setShowSettings(false)}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all p-8">
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all p-8">
               <SettingsPage onClose={() => setShowSettings(false)} />
             </div>
           </div>

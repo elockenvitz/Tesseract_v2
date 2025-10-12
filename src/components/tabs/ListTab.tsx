@@ -26,6 +26,7 @@ interface ListItem {
   added_by: string | null
   notes: string | null
   list_category?: string | null
+  sort_order?: number | null
   assets: {
     id: string
     symbol: string
@@ -102,14 +103,92 @@ const STAGE_CONFIGS = [
   }
 ]
 
+// Helper function to render trading view cell values
+const renderTradingCellValue = (item: any, column: any, quote: any, changeColor: string) => {
+  switch (column.id) {
+    case 'current_price':
+      return quote ? (
+        <div className="font-bold text-gray-900">
+          ${quote.price.toFixed(2)}
+        </div>
+      ) : (
+        <div className="text-gray-400">
+          ${item.assets?.current_price?.toFixed(2) || '--'}
+        </div>
+      )
+
+    case 'day_change':
+      return quote ? (
+        <div className={`px-2 py-1 rounded font-semibold ${changeColor}`}>
+          {quote.change >= 0 ? '▲' : '▼'} {Math.abs(quote.change).toFixed(2)}
+        </div>
+      ) : (
+        <span className="text-gray-400">--</span>
+      )
+
+    case 'day_change_percent':
+      return quote ? (
+        <div className={`px-2 py-1 rounded font-bold ${changeColor}`}>
+          {quote.changePercent >= 0 ? '+' : ''}{quote.changePercent.toFixed(1)}%
+        </div>
+      ) : (
+        <span className="text-gray-400">--%</span>
+      )
+
+    case 'volume':
+      return quote?.volume ? (
+        <span>
+          {quote.volume > 1000000
+            ? `${(quote.volume / 1000000).toFixed(1)}M`
+            : quote.volume > 1000
+            ? `${(quote.volume / 1000).toFixed(0)}K`
+            : quote.volume.toLocaleString()
+          }
+        </span>
+      ) : (
+        <span className="text-gray-400">--</span>
+      )
+
+    case 'market_cap':
+      return quote?.marketCap ? (
+        <span>
+          {quote.marketCap > 1000000000
+            ? `$${(quote.marketCap / 1000000000).toFixed(1)}B`
+            : quote.marketCap > 1000000
+            ? `$${(quote.marketCap / 1000000).toFixed(0)}M`
+            : `$${(quote.marketCap / 1000).toFixed(0)}K`
+          }
+        </span>
+      ) : (
+        <span className="text-gray-400">--</span>
+      )
+
+    case 'priority':
+      return item.assets?.priority ? (
+        <PriorityBadge priority={item.assets.priority} size="sm" />
+      ) : null
+
+    case 'pe_ratio':
+      return quote?.pe ? (
+        <span>{quote.pe.toFixed(1)}</span>
+      ) : (
+        <span className="text-gray-400">--</span>
+      )
+
+    default:
+      // Fallback to basic field display
+      return item.assets?.[column.field] || '--'
+  }
+}
+
 export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [sectorFilter, setSectorFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('added_at')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [sortBy, setSortBy] = useState('sort_order')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [showFilters, setShowFilters] = useState(false)
-  const [viewMode, setViewMode] = useState<'table' | 'grid' | 'kanban'>('table')
+  const [viewMode, setViewMode] = useState<'table' | 'grid' | 'kanban' | 'trading'>('table')
   const [showRemoveConfirm, setShowRemoveConfirm] = useState<{
     isOpen: boolean
     itemId: string | null
@@ -122,7 +201,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [showItemMenu, setShowItemMenu] = useState<string | null>(null)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [contextMenuItem, setContextMenuItem] = useState<string | null>(null)
-  const [columnContextMenu, setColumnContextMenu] = useState<{ position: { x: number; y: number }; columnId: string } | null>(null)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [draggedOverItem, setDraggedOverItem] = useState<string | null>(null)
   const [draggedOverStage, setDraggedOverStage] = useState<string | null>(null)
@@ -133,6 +211,20 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [assetSearchQuery, setAssetSearchQuery] = useState('')
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
   const [showColumnSettings, setShowColumnSettings] = useState(false)
+
+  // Column management state
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null)
+  const [resizeStartX, setResizeStartX] = useState(0)
+  const [resizeStartWidth, setResizeStartWidth] = useState(0)
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
+  const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
+  const [companyColumnWidth, setCompanyColumnWidth] = useState(150)
+  const [columnContextMenu, setColumnContextMenu] = useState<{
+    columnId: string;
+    x: number;
+    y: number;
+    isFixedColumn?: boolean
+  } | null>(null)
   // Symbol column is fixed, dynamic columns start after it
   const [dynamicColumns, setDynamicColumns] = useState([
     { id: 'company_name', field: 'assets.company_name', label: 'Company', width: 200, type: 'text' },
@@ -143,12 +235,67 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // Fixed symbol column
   const symbolColumn = { id: 'symbol', field: 'assets.symbol', label: 'Symbol', width: 140, type: 'text' }
-  const [resizingColumn, setResizingColumn] = useState<string | null>(null)
   const [editingHeader, setEditingHeader] = useState<string | null>(null)
   const [headerInputValue, setHeaderInputValue] = useState('')
   const [fieldSearchResults, setFieldSearchResults] = useState<typeof availableFields>([])
   const [showFieldDropdown, setShowFieldDropdown] = useState(false)
   const [showCategorySettings, setShowCategorySettings] = useState(false)
+
+  // Trading view columns
+  const [tradingColumns, setTradingColumns] = useState([
+    {
+      id: 'current_price',
+      label: 'Price',
+      field: 'current_price',
+      sortKey: 'current_price',
+      align: 'left' as const,
+      width: 100,
+      sortable: true
+    },
+    {
+      id: 'day_change',
+      label: 'Day Chg',
+      field: 'day_change',
+      align: 'left' as const,
+      width: 80,
+      sortable: false
+    },
+    {
+      id: 'day_change_percent',
+      label: 'Day %',
+      field: 'day_change_percent',
+      align: 'left' as const,
+      width: 80,
+      sortable: false
+    },
+    {
+      id: 'volume',
+      label: 'Volume',
+      field: 'volume',
+      align: 'left' as const,
+      width: 100,
+      sortable: false
+    },
+    {
+      id: 'market_cap',
+      label: 'Mkt Cap',
+      field: 'market_cap',
+      align: 'left' as const,
+      width: 100,
+      sortable: false
+    },
+    {
+      id: 'priority',
+      label: 'Priority',
+      field: 'priority',
+      align: 'center' as const,
+      width: 80,
+      sortable: false
+    }
+  ])
+
+  // Use trading columns for trading view, regular columns for table view
+  const visibleColumns = viewMode === 'trading' ? tradingColumns : dynamicColumns
   const [customCategories, setCustomCategories] = useState([
     { id: 'watching', label: 'Watching', color: 'bg-blue-500', icon: Eye },
     { id: 'researching', label: 'Researching', color: 'bg-yellow-500', icon: Search },
@@ -189,7 +336,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           added_by_user:users!added_by(email, first_name, last_name)
         `)
         .eq('list_id', list.id)
-        .order('added_at', { ascending: false })
+        .order('sort_order', { ascending: true })
 
       if (error) throw error
       return data as ListItem[]
@@ -375,7 +522,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         list_id: list.id,
         asset_id: assetId,
         added_by: user.id,
-        added_at: new Date().toISOString()
+        added_at: new Date().toISOString(),
+        sort_order: (index + 1 + (listItems?.length || 0)) * 10
       }))
 
       const { error } = await supabase
@@ -400,6 +548,126 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     return uniqueSectors.sort()
   }, [listItems])
 
+  // AI-powered natural language filtering
+  const parseNaturalLanguageFilter = (query: string, item: any) => {
+    if (!query.trim()) return true
+
+    const lowerQuery = query.toLowerCase()
+    const asset = item.assets
+    if (!asset) return false
+
+    let hasSpecificFilter = false
+
+    // Debug logging
+    if (query === 'high priority') {
+      console.log('Filtering for high priority:', {
+        query,
+        symbol: asset.symbol,
+        priority: asset.priority,
+        sector: asset.sector
+      })
+    }
+
+    // Price filters
+    if (lowerQuery.includes('under $') || lowerQuery.includes('below $') || lowerQuery.includes('< $')) {
+      hasSpecificFilter = true
+      const priceMatch = lowerQuery.match(/(?:under|below|<)\s*\$?(\d+(?:\.\d+)?)/i)
+      if (priceMatch) {
+        const targetPrice = parseFloat(priceMatch[1])
+        const currentPrice = financialData?.[asset.symbol]?.price || asset.current_price || 0
+        if (currentPrice > targetPrice) return false
+      }
+    }
+
+    if (lowerQuery.includes('over $') || lowerQuery.includes('above $') || lowerQuery.includes('> $')) {
+      hasSpecificFilter = true
+      const priceMatch = lowerQuery.match(/(?:over|above|>)\s*\$?(\d+(?:\.\d+)?)/i)
+      if (priceMatch) {
+        const targetPrice = parseFloat(priceMatch[1])
+        const currentPrice = financialData?.[asset.symbol]?.price || asset.current_price || 0
+        if (currentPrice < targetPrice) return false
+      }
+    }
+
+    // Priority filters - more flexible patterns
+    if (lowerQuery.includes('high priority') || lowerQuery.includes('high prio') || lowerQuery === 'high') {
+      hasSpecificFilter = true
+      if (asset.priority !== 'high') return false
+    }
+    if (lowerQuery.includes('medium priority') || lowerQuery.includes('medium prio') || lowerQuery === 'medium') {
+      hasSpecificFilter = true
+      if (asset.priority !== 'medium') return false
+    }
+    if (lowerQuery.includes('low priority') || lowerQuery.includes('low prio') || lowerQuery === 'low') {
+      hasSpecificFilter = true
+      if (asset.priority !== 'low') return false
+    }
+    if (lowerQuery.includes('no priority') || lowerQuery.includes('priority not set') || lowerQuery.includes('missing priority') || lowerQuery.includes('unset')) {
+      hasSpecificFilter = true
+      if (asset.priority && asset.priority !== 'none') return false
+    }
+
+    // Sector filters
+    const sectorKeywords = {
+      'tech': ['technology', 'software', 'tech', 'it', 'computer', 'tech stocks', 'software companies'],
+      'biotech': ['biotech', 'biotechnology', 'pharmaceutical', 'pharma', 'healthcare', 'biotech companies', 'pharma companies'],
+      'finance': ['finance', 'financial', 'bank', 'insurance', 'financial services', 'banking'],
+      'energy': ['energy', 'oil', 'gas', 'renewable', 'energy stocks', 'oil companies'],
+      'retail': ['retail', 'consumer', 'shopping', 'retail stocks', 'consumer goods'],
+      'automotive': ['automotive', 'auto', 'car', 'vehicle', 'auto companies'],
+      'real estate': ['real estate', 'reits', 'property', 'real estate stocks'],
+      'healthcare': ['healthcare', 'medical', 'health', 'healthcare stocks']
+    }
+
+    let hasSectorFilter = false
+    for (const [sector, keywords] of Object.entries(sectorKeywords)) {
+      if (keywords.some(keyword => lowerQuery.includes(keyword))) {
+        hasSpecificFilter = true
+        hasSectorFilter = true
+        if (!asset.sector?.toLowerCase().includes(sector) &&
+            !keywords.some(keyword => asset.sector?.toLowerCase().includes(keyword))) {
+          return false
+        }
+        break // Only match the first sector found
+      }
+    }
+
+    // Date filters
+    const now = new Date()
+    if (lowerQuery.includes('this week') || lowerQuery.includes('added this week')) {
+      hasSpecificFilter = true
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const addedDate = new Date(item.added_at)
+      if (addedDate < weekAgo) return false
+    }
+
+    if (lowerQuery.includes('this month') || lowerQuery.includes('added this month')) {
+      hasSpecificFilter = true
+      const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+      const addedDate = new Date(item.added_at)
+      if (addedDate < monthAgo) return false
+    }
+
+    if (lowerQuery.includes('today') || lowerQuery.includes('added today')) {
+      hasSpecificFilter = true
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const addedDate = new Date(item.added_at)
+      if (addedDate < today) return false
+    }
+
+    // If we had specific filters and passed them all, return true
+    if (hasSpecificFilter) return true
+
+    // Basic text search (fallback for non-specific queries)
+    const basicMatch =
+      asset.symbol.toLowerCase().includes(lowerQuery) ||
+      asset.company_name.toLowerCase().includes(lowerQuery) ||
+      (asset.sector && asset.sector.toLowerCase().includes(lowerQuery)) ||
+      (item.notes && item.notes.toLowerCase().includes(lowerQuery))
+
+    return basicMatch
+  }
+
   // Filter and sort items
   const filteredItems = useMemo(() => {
     if (!listItems) return []
@@ -407,20 +675,14 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     let filtered = listItems.filter(item => {
       if (!item.assets) return false
 
-      // Search filter
-      const matchesSearch = !searchQuery ||
-        item.assets.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.assets.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.notes && item.notes.toLowerCase().includes(searchQuery.toLowerCase()))
+      // AI Natural Language Filter
+      const matchesAIFilter = parseNaturalLanguageFilter(searchQuery, item)
 
-      // Priority filter
+      // Legacy filters (for backwards compatibility)
       const matchesPriority = priorityFilter === 'all' || item.assets.priority === priorityFilter
-
-
-      // Sector filter
       const matchesSector = sectorFilter === 'all' || item.assets.sector === sectorFilter
 
-      return matchesSearch && matchesPriority && matchesSector
+      return matchesAIFilter && matchesPriority && matchesSector
     })
 
     // Sort items
@@ -462,9 +724,13 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           bValue = stageOrder[b.assets?.process_stage as keyof typeof stageOrder] || 0
           break
         case 'added_at':
-        default:
           aValue = new Date(a.added_at || 0).getTime()
           bValue = new Date(b.added_at || 0).getTime()
+          break
+        case 'sort_order':
+        default:
+          aValue = a.sort_order || 0
+          bValue = b.sort_order || 0
           break
       }
 
@@ -518,21 +784,69 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // Reorder list items mutation
   const reorderItemsMutation = useMutation({
-    mutationFn: async ({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }) => {
-      // For now, we'll just update the added_at timestamp to change order
-      // In a real app, you might want to add a sort_order field
-      const item = filteredItems[fromIndex]
-      if (!item) return
-      
-      const { error } = await supabase
+    mutationFn: async ({ draggedItemId, targetItemId, position }: {
+      draggedItemId: string;
+      targetItemId: string;
+      position: 'above' | 'below'
+    }) => {
+      // Get all items in the list ordered by sort_order
+      const { data: allItems, error: fetchError } = await supabase
         .from('asset_list_items')
-        .update({ added_at: new Date().toISOString() })
-        .eq('id', item.id)
-      
-      if (error) throw error
+        .select('id, sort_order')
+        .eq('list_id', list.id)
+        .order('sort_order', { ascending: true })
+
+      if (fetchError) throw fetchError
+      if (!allItems) return
+
+      // Find the dragged and target items
+      const draggedItem = allItems.find(item => item.id === draggedItemId)
+      const targetItem = allItems.find(item => item.id === targetItemId)
+
+      if (!draggedItem || !targetItem) return
+
+      // Calculate new sort orders
+      const updates: { id: string; sort_order: number }[] = []
+
+      // Remove dragged item from the array for reordering
+      const itemsWithoutDragged = allItems.filter(item => item.id !== draggedItemId)
+
+      // Find target index in the filtered array
+      const targetIndex = itemsWithoutDragged.findIndex(item => item.id === targetItemId)
+
+      // Calculate the insertion point
+      const insertIndex = position === 'above' ? targetIndex : targetIndex + 1
+
+      // Insert the dragged item at the new position
+      const reorderedItems = [
+        ...itemsWithoutDragged.slice(0, insertIndex),
+        draggedItem,
+        ...itemsWithoutDragged.slice(insertIndex)
+      ]
+
+      // Assign new sort orders
+      reorderedItems.forEach((item, index) => {
+        const newSortOrder = (index + 1) * 10 // Use increments of 10 for easier future insertions
+        if (item.sort_order !== newSortOrder) {
+          updates.push({ id: item.id, sort_order: newSortOrder })
+        }
+      })
+
+      // Apply updates in batch
+      if (updates.length > 0) {
+        for (const update of updates) {
+          const { error } = await supabase
+            .from('asset_list_items')
+            .update({ sort_order: update.sort_order })
+            .eq('id', update.id)
+
+          if (error) throw error
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
     }
   })
 
@@ -619,16 +933,13 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           newCategory: targetCategory
         })
       }
-    } else if (targetItemId && targetItemId !== draggedItem) {
+    } else if (targetItemId && targetItemId !== draggedItem && dragPosition) {
       // Handle reordering
-      const fromIndex = filteredItems.findIndex(item => item.id === draggedItem)
-      const toIndex = filteredItems.findIndex(item => item.id === targetItemId)
-
-      if (fromIndex !== -1 && toIndex !== -1) {
-        // Adjust target index based on drop position
-        const finalToIndex = dragPosition === 'below' ? toIndex + 1 : toIndex
-        reorderItemsMutation.mutate({ fromIndex, toIndex })
-      }
+      reorderItemsMutation.mutate({
+        draggedItemId: draggedItem,
+        targetItemId: targetItemId,
+        position: dragPosition
+      })
     }
 
     setDraggedItem(null)
@@ -647,6 +958,158 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     setIsDragging(false)
     setDraggedOverStage(null)
   }
+
+  // Column resizing functions
+  const handleColumnResizeStart = (columnId: string, startX: number, startWidth: number) => {
+    setResizingColumn(columnId)
+    setResizeStartX(startX)
+    setResizeStartWidth(startWidth)
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault()
+
+      const deltaX = e.clientX - startX
+      const newWidth = Math.max(50, startWidth + deltaX) // Minimum width of 50px
+
+      if (columnId === 'company') {
+        setCompanyColumnWidth(newWidth)
+      } else {
+        setTradingColumns(prev => prev.map(col =>
+          col.id === columnId ? { ...col, width: newWidth } : col
+        ))
+      }
+    }
+
+    const handleMouseUp = (e: MouseEvent) => {
+      e.preventDefault()
+      setResizingColumn(null)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = 'default'
+      document.body.style.userSelect = 'auto'
+    }
+
+    // Prevent text selection while resizing
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
+  // Column drag and drop functions
+  const handleColumnDragStart = (e: React.DragEvent, columnId: string) => {
+    // Don't allow dragging of ticker or company columns
+    if (columnId === 'ticker' || columnId === 'company') {
+      e.preventDefault()
+      return
+    }
+
+    setDraggedColumn(columnId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleColumnDragOver = (e: React.DragEvent, targetColumnId: string) => {
+    e.preventDefault()
+    if (!draggedColumn || draggedColumn === targetColumnId) return
+
+    // Don't allow dropping before ticker or company columns
+    if (targetColumnId === 'ticker' || targetColumnId === 'company') return
+
+    setDraggedOverColumn(targetColumnId)
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleColumnDrop = (e: React.DragEvent, targetColumnId: string) => {
+    e.preventDefault()
+    if (!draggedColumn || draggedColumn === targetColumnId) return
+
+    // Don't allow dropping before ticker or company columns
+    if (targetColumnId === 'ticker' || targetColumnId === 'company') return
+
+    const draggedIndex = tradingColumns.findIndex(col => col.id === draggedColumn)
+    const targetIndex = tradingColumns.findIndex(col => col.id === targetColumnId)
+
+    if (draggedIndex === -1 || targetIndex === -1) return
+
+    const newColumns = [...tradingColumns]
+    const [draggedCol] = newColumns.splice(draggedIndex, 1)
+    newColumns.splice(targetIndex, 0, draggedCol)
+
+    setTradingColumns(newColumns)
+    setDraggedColumn(null)
+    setDraggedOverColumn(null)
+  }
+
+  const handleColumnDragEnd = () => {
+    setDraggedColumn(null)
+    setDraggedOverColumn(null)
+  }
+
+  // Right-click context menu for columns
+  const handleColumnRightClick = (e: React.MouseEvent, columnId: string, isFixedColumn: boolean = false) => {
+    try {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Validate inputs
+      if (!columnId) {
+        console.warn('handleColumnRightClick: columnId is required')
+        return
+      }
+
+      // Close any existing context menus first
+      setColumnContextMenu(null)
+
+      // Set new context menu position with bounds checking
+      const x = Math.min(e.clientX, window.innerWidth - 200) // Ensure menu doesn't go off-screen
+      const y = Math.min(e.clientY, window.innerHeight - 300)
+
+      setColumnContextMenu({
+        columnId,
+        x,
+        y,
+        isFixedColumn: Boolean(isFixedColumn)
+      })
+    } catch (error) {
+      console.error('Error in handleColumnRightClick:', error)
+      // Ensure context menu is closed on error
+      setColumnContextMenu(null)
+    }
+  }
+
+  // Close context menu
+  const closeColumnContextMenu = () => {
+    setColumnContextMenu(null)
+    setEditingHeader(null)
+  }
+
+  // Handle column edit from context menu
+  const handleEditColumn = (columnId: string) => {
+    setEditingHeader(columnId)
+    setHeaderInputValue('')
+    closeColumnContextMenu()
+  }
+
+  // Handle column deletion from context menu
+  const handleDeleteColumn = (columnId: string) => {
+    setTradingColumns(prev => prev.filter(col => col.id !== columnId))
+    closeColumnContextMenu()
+  }
+
+  // Click outside to close context menu
+  React.useEffect(() => {
+    const handleClickOutside = () => {
+      if (columnContextMenu) {
+        closeColumnContextMenu()
+      }
+    }
+
+    if (columnContextMenu) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [columnContextMenu])
 
 
   const getStageColor = (stage: string | null) => {
@@ -751,8 +1214,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     setSearchQuery('')
     setPriorityFilter('all')
     setSectorFilter('all')
-    setSortBy('added_at')
-    setSortOrder('desc')
+    setSortBy('sort_order')
+    setSortOrder('asc')
   }
 
   // Column management functions
@@ -849,7 +1312,22 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // Select field from dropdown
   const selectField = (columnId: string, field: typeof availableFields[0]) => {
-    updateColumnField(columnId, field.id)
+    if (viewMode === 'trading') {
+      setTradingColumns(tradingColumns.map(col =>
+        col.id === columnId
+          ? {
+              ...col,
+              field: field.field,
+              label: field.label,
+              align: 'left' as const,
+              sortable: field.type === 'number' || field.type === 'text',
+              sortKey: field.field.replace('assets.', '')
+            }
+          : col
+      ))
+    } else {
+      updateColumnField(columnId, field.id)
+    }
     setEditingHeader(null)
     setHeaderInputValue('')
     setShowFieldDropdown(false)
@@ -862,18 +1340,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     setContextMenuPosition({ x: e.clientX, y: e.clientY })
     setContextMenuItem(itemId)
     setColumnContextMenu(null) // Close column menu
-  }
-
-  // Handle right-click context menu for column headers
-  const handleColumnRightClick = (e: React.MouseEvent, columnId: string) => {
-    console.log('🖱️ Right-click detected on column:', columnId)
-    e.preventDefault()
-    setColumnContextMenu({
-      position: { x: e.clientX, y: e.clientY },
-      columnId
-    })
-    setContextMenuPosition(null) // Close row menu
-    console.log('🎯 Column context menu state set:', { position: { x: e.clientX, y: e.clientY }, columnId })
   }
 
   // Close context menus
@@ -1274,22 +1740,9 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               <p className="text-lg text-gray-600 mb-1">{list.description}</p>
             )}
           </div>
-          
-          <div className="text-left">
-            <div className="mb-1">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Assets</p>
-              <p className="text-xl font-bold text-gray-900">{listItems?.length || 0}</p>
-            </div>
-            {collaborators && collaborators.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Collaborators</p>
-                <p className="text-sm text-gray-700">{collaborators.length}</p>
-              </div>
-            )}
-          </div>
         </div>
         
-        <div className="flex items-center space-x-3">
+        <div className="flex items-start space-x-3">
           <Button
             onClick={() => setShowAddAssetDialog(true)}
             variant="primary"
@@ -1305,14 +1758,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               size="sm"
             >
               <Share2 className="h-4 w-4 mr-2" />
-              Share
+              Share{collaborators && collaborators.length > 0 && ` (${collaborators.length})`}
             </Button>
-          )}
-          {collaborators && collaborators.length > 0 && (
-            <Badge variant="primary" size="sm">
-              <Users className="h-3 w-3 mr-1" />
-              {collaborators.length} Shared
-            </Badge>
           )}
         </div>
       </div>
@@ -1322,34 +1769,25 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         <div className="space-y-4">
           {/* Search Bar and Controls - Same Line */}
           <div className="flex items-center space-x-4">
+            {/* AI-Powered Search */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search assets in this list..."
+                placeholder="Search or filter with AI: 'AAPL', 'high priority tech stocks', 'under $50', 'added this week'..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
-            </div>
-            
-            {/* Filter Toggle */}
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors whitespace-nowrap"
-            >
-              <Filter className="h-4 w-4" />
-              <span>Filters</span>
-              {activeFiltersCount > 0 && (
-                <Badge variant="primary" size="sm">
-                  {activeFiltersCount}
-                </Badge>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               )}
-              <ChevronDown className={clsx(
-                "h-4 w-4 transition-transform duration-200",
-                showFilters && 'rotate-180'
-              )} />
-            </button>
+            </div>
             
             {/* View Mode Toggle */}
             <div className="flex items-center space-x-2">
@@ -1382,26 +1820,30 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                   onClick={() => setViewMode('kanban')}
                   className={clsx(
                     'px-2 py-1 text-xs font-medium rounded transition-colors',
-                    viewMode === 'kanban' 
-                      ? 'bg-white text-gray-900 shadow-sm' 
+                    viewMode === 'kanban'
+                      ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   )}
                 >
                   <BarChart3 className="h-3 w-3 mr-1" />
                   Kanban
                 </button>
+                <button
+                  onClick={() => setViewMode('trading')}
+                  className={clsx(
+                    'px-2 py-1 text-xs font-medium rounded transition-colors',
+                    viewMode === 'trading'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  )}
+                >
+                  <TrendingUp className="h-3 w-3 mr-1" />
+                  Trading
+                </button>
               </div>
             </div>
 
 
-            {activeFiltersCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-sm text-primary-600 hover:text-primary-700 transition-colors whitespace-nowrap"
-              >
-                Clear all filters
-              </button>
-            )}
 
             {/* View Settings - Available in all views */}
             <div className="relative">
@@ -1463,6 +1905,13 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                     </div>
                   )}
 
+                  {viewMode === 'trading' && (
+                    <div className="px-4 py-2">
+                      <h4 className="font-medium text-gray-900 mb-2">Trading Settings</h4>
+                      <p className="text-sm text-gray-600">Ultra-compact view optimized for real-time financial data and maximum asset density</p>
+                    </div>
+                  )}
+
                   {/* View Mode Switcher */}
                   <div className="px-4 py-2 border-t border-gray-200 mt-2">
                     <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Switch View</h5>
@@ -1500,6 +1949,17 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                       >
                         <span>Kanban View</span>
                       </button>
+                      <button
+                        onClick={() => {
+                          setViewMode('trading')
+                          setShowColumnSettings(false)
+                        }}
+                        className={`flex items-center w-full px-2 py-1 text-sm rounded transition-colors ${
+                          viewMode === 'trading' ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>Trading View</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1507,48 +1967,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             </div>
           </div>
 
-          {/* Filter Controls */}
-          {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
-              <Select
-                label="Priority"
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Priorities' },
-                  { value: 'none', label: 'No Priority Set' },
-                  { value: 'high', label: 'High Priority' },
-                  { value: 'medium', label: 'Medium Priority' },
-                  { value: 'low', label: 'Low Priority' }
-                ]}
-              />
-
-
-              <Select
-                label="Sector"
-                value={sectorFilter}
-                onChange={(e) => setSectorFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Sectors' },
-                  ...sectors.map(sector => ({ value: sector, label: sector }))
-                ]}
-              />
-
-              <Select
-                label="Sort by"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                options={[
-                  { value: 'added_at', label: 'Date Added' },
-                  { value: 'symbol', label: 'Symbol' },
-                  { value: 'company_name', label: 'Company Name' },
-                  { value: 'current_price', label: 'Price' },
-                  { value: 'priority', label: 'Priority' }
-                ]}
-              />
-
-            </div>
-          )}
         </div>
       </Card>
 
@@ -1884,6 +2302,358 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               </div>
             </div>
           )}
+
+          {viewMode === 'trading' && (
+            <Card padding="none" className="overflow-x-auto">
+              <table className="min-w-full">
+                {/* Trading Table Header */}
+                <thead className="bg-gray-900 text-white">
+                  <tr>
+                    {/* Fixed Ticker Column */}
+                    <th
+                      className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider relative"
+                      style={{ width: '80px', minWidth: '80px' }}
+                    >
+                      <button
+                        onClick={() => handleSort('symbol')}
+                        className="flex items-center space-x-1 hover:text-gray-300 transition-colors"
+                      >
+                        <span>Ticker</span>
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
+                    </th>
+
+                    {/* Fixed Company Column */}
+                    <th
+                      className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider relative"
+                      style={{ width: `${companyColumnWidth}px`, minWidth: `${companyColumnWidth}px` }}
+                      onContextMenu={(e) => handleColumnRightClick(e, 'company', true)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => handleSort('company_name')}
+                          className="flex items-center space-x-1 hover:text-gray-300 transition-colors"
+                        >
+                          <span>Company</span>
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+
+                        {/* Resize handle */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 opacity-0 hover:opacity-100 transition-opacity"
+                          onMouseDown={(e) => handleColumnResizeStart('company', e.clientX, companyColumnWidth)}
+                        />
+                      </div>
+                    </th>
+
+                    {/* Dynamic Trading Columns */}
+                    {visibleColumns.map((column, index) => (
+                      <th
+                        key={column.id}
+                        className={clsx(
+                          'px-2 py-2 text-xs font-medium uppercase tracking-wider relative select-none',
+                          column.align === 'right' ? 'text-right' :
+                          column.align === 'center' ? 'text-center' : 'text-left',
+                          draggedOverColumn === column.id && 'bg-blue-600'
+                        )}
+                        style={{ width: `${column.width}px`, minWidth: `${column.width}px` }}
+                        draggable
+                        onDragStart={(e) => handleColumnDragStart(e, column.id)}
+                        onDragOver={(e) => handleColumnDragOver(e, column.id)}
+                        onDrop={(e) => handleColumnDrop(e, column.id)}
+                        onDragEnd={handleColumnDragEnd}
+                        onContextMenu={(e) => handleColumnRightClick(e, column.id, false)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className={clsx(
+                            'flex items-center space-x-1',
+                            column.align === 'right' && 'justify-end',
+                            column.align === 'center' && 'justify-center'
+                          )}>
+                            {column.sortable && (
+                              <button
+                                onClick={() => handleSort(column.sortKey!)}
+                                className="flex items-center space-x-1 hover:text-gray-300 transition-colors"
+                              >
+                                <span>{column.label}</span>
+                                <ArrowUpDown className="h-3 w-3" />
+                              </button>
+                            )}
+                            {!column.sortable && (
+                              <span>{column.label}</span>
+                            )}
+                          </div>
+
+                          {/* Resize handle */}
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 opacity-0 hover:opacity-100 transition-opacity"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              handleColumnResizeStart(column.id, e.clientX, column.width)
+                            }}
+                          />
+                        </div>
+                      </th>
+                    ))}
+
+                    {/* Add Column Button */}
+                    <th className="px-2 py-2 w-8">
+                      <button
+                        onClick={() => {
+                          const newColumnId = `col_${Date.now()}`
+                          const newColumn = {
+                            id: newColumnId,
+                            label: 'New Column',
+                            field: 'notes',
+                            align: 'left' as const,
+                            width: 100,
+                            sortable: false
+                          }
+                          setTradingColumns([...tradingColumns, newColumn])
+                          setEditingHeader(newColumnId)
+                          setHeaderInputValue('')
+                        }}
+                        className="text-gray-400 hover:text-white transition-colors p-1 hover:bg-gray-700 rounded"
+                        title="Add column"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+
+                {/* Trading Table Body */}
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {filteredItems.map((item, index) => {
+                    const quote = financialData?.[item.assets?.symbol || '']
+                    const isPositive = quote ? quote.change >= 0 : null
+                    const changeColor = isPositive === null ? 'text-gray-500' :
+                                       isPositive ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'
+                    const rowBg = isPositive === null ? '' :
+                                 isPositive ? 'hover:bg-green-25' : 'hover:bg-red-25'
+
+                    return (
+                      <tr
+                        key={item.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item.id)}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, item.id)}
+                        className={`${rowBg} hover:bg-gray-50 transition-colors text-xs border-l-2 ${
+                          isPositive === null ? 'border-l-gray-200' :
+                          isPositive ? 'border-l-green-400' : 'border-l-red-400'
+                        }`}
+                      >
+                        {/* Ticker Symbol - Fixed width */}
+                        <td
+                          className="px-2 py-2"
+                          style={{ width: '80px', minWidth: '80px' }}
+                        >
+                          <div className="flex items-center">
+                            <GripVertical className="h-3 w-3 text-gray-400 mr-1 cursor-grab" />
+                            <div className="font-bold text-gray-900 text-sm truncate">
+                              {item.assets?.symbol || 'N/A'}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Company Name - Fixed width */}
+                        <td
+                          className="px-2 py-2"
+                          style={{ width: `${companyColumnWidth}px`, minWidth: `${companyColumnWidth}px` }}
+                        >
+                          <div className="text-xs text-gray-700 truncate" title={item.assets?.company_name || 'Unknown Company'}>
+                            {item.assets?.company_name || 'Unknown Company'}
+                          </div>
+                        </td>
+
+                        {/* Dynamic Columns - Variable width */}
+                        {visibleColumns.map((column) => (
+                          <td
+                            key={column.id}
+                            className={clsx(
+                              'px-2 py-2 text-xs',
+                              column.align === 'right' ? 'text-right' :
+                              column.align === 'center' ? 'text-center' : 'text-left'
+                            )}
+                            style={{ width: `${column.width}px`, minWidth: `${column.width}px` }}
+                          >
+                            <div className="truncate">
+                              {renderTradingCellValue(item, column, quote, changeColor)}
+                            </div>
+                          </td>
+                        ))}
+
+                        {/* Empty cell for add column button alignment */}
+                        <td className="px-2 py-2 w-8"></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+
+              {/* Field Dropdown for Trading View - Positioned below header */}
+              {editingHeader && viewMode === 'trading' && (
+                <div
+                  className="absolute bg-white border border-gray-300 rounded-lg shadow-xl max-h-80 overflow-hidden min-w-[360px]"
+                  style={{
+                    zIndex: 10000,
+                    top: '60px',
+                    left: '50%',
+                    transform: 'translateX(-50%)'
+                  }}
+                >
+                  {/* Header */}
+                  <div className="px-3 py-2 text-sm font-medium text-gray-700 border-b border-gray-200 bg-gray-50">
+                    Change Column Field
+                  </div>
+
+                  {/* Search Input */}
+                  <div className="p-3 border-b border-gray-200">
+                    <input
+                      type="text"
+                      value={headerInputValue}
+                      onChange={(e) => handleFieldSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          cancelEditingHeader()
+                        } else if (e.key === 'Enter' && fieldSearchResults.length > 0) {
+                          selectField(editingHeader, fieldSearchResults[0])
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="Search for a field to display..."
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Field Results */}
+                  <div className="max-h-48 overflow-y-auto">
+                    {fieldSearchResults.map((field) => (
+                      <button
+                        key={field.id}
+                        onClick={() => selectField(editingHeader, field)}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{field.label}</div>
+                            <div className="text-xs text-gray-500">{field.category}</div>
+                          </div>
+                          <div className="text-xs text-gray-400">{field.type}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Close Button */}
+                  <div className="px-3 py-2 bg-gray-50 border-t border-gray-200">
+                    <button
+                      onClick={cancelEditingHeader}
+                      className="text-sm text-gray-600 hover:text-gray-800"
+                    >
+                      Press ESC to close
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Trading Summary Footer */}
+              <div className="bg-gray-900 text-white px-4 py-2 text-xs border-t">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-4">
+                    <span>{filteredItems.length} assets</span>
+                    <span>•</span>
+                    <span className="flex items-center">
+                      <span className="text-green-400 mr-1">▲</span>
+                      {filteredItems.filter(item => {
+                        const quote = financialData?.[item.assets?.symbol || '']
+                        return quote && quote.change > 0
+                      }).length} up
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center">
+                      <span className="text-red-400 mr-1">▼</span>
+                      {filteredItems.filter(item => {
+                        const quote = financialData?.[item.assets?.symbol || '']
+                        return quote && quote.change < 0
+                      }).length} down
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span>{financialDataLoading ? 'Updating...' : 'Live Data'}</span>
+                    <span className={`inline-block w-2 h-2 rounded-full ${
+                      financialDataLoading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400 animate-pulse'
+                    }`}></span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Column Context Menu */}
+          {columnContextMenu && (
+            <>
+              {/* Click-outside overlay */}
+              <div
+                className="fixed inset-0 z-[10002]"
+                onClick={() => setColumnContextMenu(null)}
+              />
+              <div
+                className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-2 z-[10003] min-w-[160px]"
+                style={{
+                  left: columnContextMenu.x,
+                  top: columnContextMenu.y,
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseLeave={() => setColumnContextMenu(null)}
+              >
+                {!columnContextMenu.isFixedColumn ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        try {
+                          const column = tradingColumns.find(col => col.id === columnContextMenu.columnId)
+                          if (column) {
+                            setHeaderInputValue(column.label)
+                            setEditingHeader(columnContextMenu.columnId)
+                            setShowFieldDropdown(true)
+                            setFieldSearchResults(availableFields)
+                          }
+                          setColumnContextMenu(null)
+                        } catch (error) {
+                          console.error('Error in Edit Column:', error)
+                          setColumnContextMenu(null)
+                        }
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      Edit Column
+                    </button>
+                    <button
+                      onClick={() => {
+                        try {
+                          setTradingColumns(tradingColumns.filter(col => col.id !== columnContextMenu.columnId))
+                          setColumnContextMenu(null)
+                        } catch (error) {
+                          console.error('Error in Remove Column:', error)
+                          setColumnContextMenu(null)
+                        }
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      Remove Column
+                    </button>
+                  </>
+                ) : (
+                  <div className="px-4 py-2 text-sm text-gray-500">
+                    Fixed column cannot be edited
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </>
       ) : (
         <Card>
@@ -2065,59 +2835,6 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
       )}
 
-      {/* Column Context Menu */}
-      {columnContextMenu && (
-        <div>
-          {console.log('🎯 Rendering column context menu:', columnContextMenu)}
-          <div
-            className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[10001] min-w-[160px]"
-            style={{
-              top: columnContextMenu.position.y,
-              left: columnContextMenu.position.x
-            }}
-            onMouseDown={(e) => {
-              console.log('🖱️ Mouse down on context menu container')
-              e.stopPropagation()
-            }}
-          >
-          {columnContextMenu.columnId !== 'symbol' && (
-            <button
-              onClick={() => {
-                console.log('🔍 Edit Field clicked for column:', columnContextMenu.columnId)
-                const column = dynamicColumns.find(col => col.id === columnContextMenu.columnId)
-                console.log('📋 Found column:', column)
-                if (column) {
-                  console.log('✏️ Calling startEditingHeader')
-                  startEditingHeader(columnContextMenu.columnId, column.label)
-                }
-                setColumnContextMenu(null)
-              }}
-              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center transition-colors"
-            >
-              <Edit3 className="h-4 w-4 mr-2" />
-              Edit Field
-            </button>
-          )}
-          {columnContextMenu.columnId === 'symbol' && (
-            <div className="px-3 py-2 text-sm text-gray-500 italic">
-              Symbol column cannot be changed
-            </div>
-          )}
-          {columnContextMenu.columnId !== 'symbol' && (
-            <button
-              onClick={() => {
-                removeColumn(columnContextMenu.columnId)
-                setColumnContextMenu(null)
-              }}
-              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center transition-colors"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Remove Column
-            </button>
-          )}
-          </div>
-        </div>
-      )}
 
       {/* Context Menu */}
       {contextMenuPosition && contextMenuItem && (

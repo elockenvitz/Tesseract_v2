@@ -19,7 +19,7 @@ export function Card({ children, className, padding = 'md', onClick }: CardProps
   return (
     <div
       className={clsx(
-        'bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200',
+        'bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow duration-200',
         paddingClasses[padding],
         className
       )}
