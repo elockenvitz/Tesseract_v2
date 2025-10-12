@@ -16,7 +16,7 @@ interface MessagingSectionProps {
   citedContent?: string
   fieldName?: string
   onCite?: (content: string, fieldName?: string) => void
-  onContextChange?: (contextType: string, contextId: string, contextTitle: string) => void
+  onContextChange?: (contextType: string, contextId: string, contextTitle: string, contextData?: any) => void
   onShowCoverageManager?: () => void
   onBack?: () => void
 }
@@ -56,12 +56,179 @@ export function MessagingSection({
   const [filterBy, setFilterBy] = useState<'all' | 'pinned' | 'replies'>('all')
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
 
+  // Fetch recent conversations (when no context is selected)
+  const { data: recentConversations = [] } = useQuery({
+    queryKey: ['recent-conversations', user?.id],
+    queryFn: async () => {
+      console.log('🔍 Starting recentConversations query, user:', user?.id)
+      if (!user?.id) {
+        console.log('❌ No user ID, returning empty array')
+        return []
+      }
+
+      // Get distinct contexts with recent messages
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          context_type,
+          context_id,
+          created_at,
+          content,
+          is_read,
+          user_id
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (error) {
+        console.error('❌ Error fetching messages:', error)
+        throw error
+      }
+
+      console.log('📨 Fetched messages count:', data?.length || 0)
+
+      // Group by context and get the most recent message for each
+      const contextMap = new Map()
+      data?.forEach(msg => {
+        const key = `${msg.context_type}:${msg.context_id}`
+        if (!contextMap.has(key)) {
+          contextMap.set(key, {
+            context_type: msg.context_type,
+            context_id: msg.context_id,
+            last_message: msg.content,
+            last_message_at: msg.created_at,
+            has_unread: !msg.is_read && msg.user_id !== user.id // Only unread if from another user
+          })
+        } else if (!msg.is_read && msg.user_id !== user.id) {
+          // Update unread status only for messages from other users
+          const existing = contextMap.get(key)
+          existing.has_unread = true
+        }
+      })
+
+      const conversations = Array.from(contextMap.values()).slice(0, 20)
+      console.log('📊 Grouped conversations count:', conversations.length)
+
+      // Fetch names for each context
+      const conversationsWithNames = await Promise.all(
+        conversations.map(async (conv) => {
+          console.log('🔎 Fetching name for:', conv.context_type, conv.context_id)
+          let contextName = conv.context_type
+          let contextData: any = { id: conv.context_id }
+
+          try {
+            if (conv.context_type === 'asset') {
+              const { data: asset, error } = await supabase
+                .from('assets')
+                .select('symbol, company_name')
+                .eq('id', conv.context_id)
+                .maybeSingle()
+
+              if (error) console.error('Error fetching asset:', error)
+              contextName = asset ? `${asset.symbol} - ${asset.company_name}` : 'Unknown Asset'
+              if (asset) {
+                contextData = { id: conv.context_id, symbol: asset.symbol, company_name: asset.company_name }
+              }
+            } else if (conv.context_type === 'theme') {
+              const { data: theme, error } = await supabase
+                .from('themes')
+                .select('name')
+                .eq('id', conv.context_id)
+                .maybeSingle()
+
+              if (error) console.error('Error fetching theme:', error)
+              contextName = theme?.name || 'Unknown Theme'
+              if (theme) {
+                contextData = { id: conv.context_id, name: theme.name }
+              }
+            } else if (conv.context_type === 'portfolio') {
+              const { data: portfolio, error } = await supabase
+                .from('portfolios')
+                .select('name')
+                .eq('id', conv.context_id)
+                .maybeSingle()
+
+              if (error) console.error('Error fetching portfolio:', error)
+              contextName = portfolio?.name || 'Unknown Portfolio'
+              if (portfolio) {
+                contextData = { id: conv.context_id, name: portfolio.name }
+              }
+            } else if (conv.context_type === 'note') {
+              // Try to find note in different note tables
+              let noteTitle = null
+
+              // Try asset_notes
+              const { data: assetNote } = await supabase
+                .from('asset_notes')
+                .select('title')
+                .eq('id', conv.context_id)
+                .maybeSingle()
+
+              if (assetNote) {
+                noteTitle = assetNote.title
+              } else {
+                // Try theme_notes
+                const { data: themeNote } = await supabase
+                  .from('theme_notes')
+                  .select('title')
+                  .eq('id', conv.context_id)
+                  .maybeSingle()
+
+                if (themeNote) {
+                  noteTitle = themeNote.title
+                } else {
+                  // Try portfolio_notes
+                  const { data: portfolioNote } = await supabase
+                    .from('portfolio_notes')
+                    .select('title')
+                    .eq('id', conv.context_id)
+                    .maybeSingle()
+
+                  if (portfolioNote) {
+                    noteTitle = portfolioNote.title
+                  } else {
+                    // Try custom_notebook_notes
+                    const { data: customNote } = await supabase
+                      .from('custom_notebook_notes')
+                      .select('title')
+                      .eq('id', conv.context_id)
+                      .maybeSingle()
+
+                    if (customNote) {
+                      noteTitle = customNote.title
+                    }
+                  }
+                }
+              }
+
+              contextName = noteTitle || 'Note Discussion'
+            }
+          } catch (err) {
+            console.error('Error fetching context name:', err)
+          }
+
+          console.log('✅ Conversation context:', conv.context_type, conv.context_id, '->', contextName, 'data:', contextData)
+
+          return {
+            ...conv,
+            context_name: contextName,
+            context_data: contextData
+          }
+        })
+      )
+
+      console.log('🎉 Final conversations with names:', conversationsWithNames.length, conversationsWithNames)
+      return conversationsWithNames
+    },
+    enabled: !contextType && !contextId && !!user?.id
+  })
+
   // Fetch messages
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ['messages', contextType, contextId],
     queryFn: async () => {
       if (!contextType || !contextId) return []
-      
+
       const { data, error } = await supabase
         .from('messages')
         .select(`
@@ -71,7 +238,7 @@ export function MessagingSection({
         .eq('context_type', contextType)
         .eq('context_id', contextId)
         .order('created_at', { ascending: true })
-      
+
       if (error) throw error
       return data
     },
@@ -140,20 +307,36 @@ export function MessagingSection({
     mutationFn: async (messageIds: string[]) => {
       if (messageIds.length === 0) return
 
-      const { error } = await supabase
+      console.log('💾 Attempting to mark messages as read:', messageIds)
+      console.log('💾 Current user ID:', user?.id)
+
+      const { data, error, status, statusText } = await supabase
         .from('messages')
         .update({
           is_read: true,
           read_at: new Date().toISOString()
         })
         .in('id', messageIds)
-        .eq('is_read', false)
+        .select()
 
-      if (error) throw error
+      console.log('📊 Update response - status:', status, 'statusText:', statusText, 'data:', data, 'error:', error)
+
+      if (error) {
+        console.error('❌ Error marking messages as read:', error)
+        throw error
+      }
+
+      console.log('✅ Successfully marked messages as read:', data?.length || 0, 'messages updated', 'data:', data)
     },
     onSuccess: () => {
+      console.log('🔄 Invalidating queries after marking messages as read')
       queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
       queryClient.invalidateQueries({ queryKey: ['unread-messages-count'] })
+      queryClient.invalidateQueries({ queryKey: ['recent-conversations', user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['unread-context-messages', user?.id] })
+    },
+    onError: (error) => {
+      console.error('❌ Mark as read mutation failed:', error)
     }
   })
 
@@ -217,15 +400,72 @@ export function MessagingSection({
       message => !message.is_read && message.user_id !== user.id
     )
 
+    console.log('📖 Checking for unread messages in context:', contextType, contextId, '- found:', unreadMessages.length, 'total:', messages.length)
+    if (unreadMessages.length > 0) {
+      console.log('📬 Unread message IDs:', unreadMessages.map(m => ({ id: m.id, content: m.content.substring(0, 50), user_id: m.user_id, is_read: m.is_read })))
+      console.log('📬 Current user can update these? Check RLS policies if 0 messages updated')
+    }
+
     if (unreadMessages.length > 0) {
       // Use a timeout to mark as read after a brief delay to ensure user has seen them
       const timer = setTimeout(() => {
+        console.log('✅ Marking', unreadMessages.length, 'messages as read')
         markMessagesAsReadMutation.mutate(unreadMessages.map(m => m.id))
       }, 1000)
 
       return () => clearTimeout(timer)
     }
   }, [messages, user?.id])
+
+  console.log('📍 MessagingSection render - contextType:', contextType, 'contextId:', contextId)
+
+  // Show conversation list if no context is selected
+  if (!contextType && !contextId) {
+    console.log('🎨 Rendering conversation list view, conversations:', recentConversations.length, recentConversations)
+    return (
+      <div className="flex flex-col h-full">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Conversations</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {recentConversations.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <MessageCircle className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <p>No recent conversations</p>
+            </div>
+          ) : (
+            <div className="p-2">
+              {recentConversations.map((conv: any) => (
+                <div
+                  key={`${conv.context_type}:${conv.context_id}`}
+                  onClick={() => {
+                    console.log('🖱️ Conversation clicked:', conv.context_type, conv.context_id, conv.context_name, 'data:', conv.context_data)
+                    if (onContextChange) {
+                      onContextChange(conv.context_type, conv.context_id, conv.context_name, conv.context_data)
+                    }
+                  }}
+                  className="p-4 rounded-lg cursor-pointer hover:bg-gray-50 mb-2 border border-gray-200"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                      <h4 className="font-semibold text-gray-900 truncate">{conv.context_name}</h4>
+                      {conv.has_unread && (
+                        <span className="w-2 h-2 rounded-full bg-error-500 flex-shrink-0"></span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                      {formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: true })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 truncate">{conv.last_message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -235,7 +475,10 @@ export function MessagingSection({
         {contextType && contextId && onBack && (
           <div className="flex items-center space-x-3 mb-3">
             <button
-              onClick={onBack}
+              onClick={() => {
+                console.log('🔙 Back button clicked')
+                onBack()
+              }}
               className="text-gray-400 hover:text-gray-600 transition-colors"
               title="Back to conversations"
             >

@@ -43,8 +43,9 @@ export function Layout({
     openCommPane
   } = useCommunication()
   
-  const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai'>('messages')
+  const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages'>('messages')
   const [showCoverageManager, setShowCoverageManager] = useState(false)
+  const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
   const { hasUnreadNotifications } = useNotifications()
 
   const handleShowCoverageManager = useCallback(() => {
@@ -60,6 +61,8 @@ export function Layout({
 
   const handleShowMessages = () => {
     setCommPaneView('messages')
+    // Reset to tab-based context when opening messages view
+    setCommPaneContext(null)
     if (!isCommPaneOpen) {
       toggleCommPane()
     }
@@ -130,25 +133,50 @@ export function Layout({
     return { contextType: undefined, contextId: undefined, contextTitle: undefined }
   }
 
-  const { contextType, contextId, contextTitle } = getCommContext()
+  // Use override context if set, otherwise fall back to tab-based context
+  const tabContext = getCommContext()
+  const hasOverride = commPaneContext !== null
+  const { contextType, contextId, contextTitle } = hasOverride
+    ? commPaneContext
+    : tabContext
 
-  const handleContextChange = useCallback((contextType: string, contextId: string, contextTitle: string) => {
+  console.log('🎯 Context resolution - hasOverride:', hasOverride, 'commPaneContext:', commPaneContext, 'tabContext:', tabContext, 'final:', { contextType, contextId, contextTitle })
+
+  const handleContextChange = useCallback((contextType: string, contextId: string, contextTitle: string, contextData?: any) => {
+    console.log('🔄 handleContextChange called with:', { contextType, contextId, contextTitle, contextData })
+    // If context is being cleared (back to conversation list), clear the override
+    if (!contextType || !contextId) {
+      console.log('✅ Context cleared, showing conversation list')
+      setCommPaneContext({ contextType: undefined, contextId: undefined, contextTitle: undefined })
+      return
+    }
+
+    console.log('🔧 Setting override context')
+    // Set the override context
+    setCommPaneContext({ contextType, contextId, contextTitle })
+
     // Find if there's already a tab for this context
-    const existingTab = tabs.find(tab => 
+    const existingTab = tabs.find(tab =>
       tab.data?.id === contextId && tab.type === contextType
     )
-    
+
     if (existingTab) {
       // Switch to existing tab
       onTabChange(existingTab.id)
     } else {
       // Create new tab for this context
       if (onSearchResult) {
+        // For assets, use just the symbol as the title, not the full "SYMBOL - Company Name"
+        let tabTitle = contextTitle
+        if (contextType === 'asset' && contextData?.symbol) {
+          tabTitle = contextData.symbol
+        }
+
         onSearchResult({
           id: contextId,
-          title: contextTitle,
+          title: tabTitle,
           type: contextType,
-          data: { id: contextId, [contextType === 'asset' ? 'symbol' : 'name']: contextTitle }
+          data: contextData || { id: contextId, [contextType === 'asset' ? 'symbol' : 'name']: contextTitle }
         })
       }
     }

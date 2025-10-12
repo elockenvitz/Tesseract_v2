@@ -19,13 +19,16 @@ export function useNotifications() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('is_read', false)
-        .eq('dismissed', false)
 
-      if (error) throw error
+      if (error) {
+        console.error('Error fetching notification count:', error)
+        return 0
+      }
       return count || 0
     },
     enabled: !!user?.id,
-    refetchInterval: 5000, // Check every 5 seconds
+    refetchInterval: 30000, // Check every 30 seconds (reduced frequency)
+    retry: false, // Don't retry on error
   })
 
   // Update hasUnreadNotifications when count changes

@@ -19,7 +19,7 @@ interface CommunicationPaneProps {
   citedContent?: string
   fieldName?: string
   onCite?: (content: string, fieldName?: string) => void
-  onContextChange?: (contextType: string, contextId: string, contextTitle: string) => void
+  onContextChange?: (contextType: string, contextId: string, contextTitle: string, contextData?: any) => void
   onShowCoverageManager?: () => void
 }
 
@@ -41,9 +41,13 @@ export function CommunicationPane({
 }: CommunicationPaneProps) {
 
   const handleBackToConversations = () => {
+    console.log('🏠 handleBackToConversations called')
     // Clear the current context to go back to conversation selection
     if (onContextChange) {
+      console.log('📞 Calling onContextChange with empty strings')
       onContextChange('', '', '')
+    } else {
+      console.log('⚠️ onContextChange is not defined')
     }
   }
   const getViewTitle = () => {

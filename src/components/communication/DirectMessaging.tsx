@@ -104,7 +104,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       if (error) throw error
 
-      // Get last message for each conversation
+      // Get last message and unread count for each conversation
       const conversationsWithMessages = await Promise.all(
         (data || []).map(async (conv) => {
           const { data: lastMessage } = await supabase
@@ -115,10 +115,43 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
             .limit(1)
             .maybeSingle()
 
+          // Get participant's last_read_at - fetch fresh to avoid stale data
+          const { data: participantData } = await supabase
+            .from('conversation_participants')
+            .select('last_read_at')
+            .eq('conversation_id', conv.id)
+            .eq('user_id', user.id)
+            .single()
+
+          const lastReadAt = participantData?.last_read_at
+
+          // Count unread messages (messages created after last_read_at)
+          let unreadCount = 0
+          if (lastReadAt) {
+            const { count } = await supabase
+              .from('conversation_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('conversation_id', conv.id)
+              .neq('user_id', user.id) // Don't count own messages
+              .gt('created_at', lastReadAt)
+
+            unreadCount = count || 0
+          } else {
+            // If never read, count all messages from others
+            const { count } = await supabase
+              .from('conversation_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('conversation_id', conv.id)
+              .neq('user_id', user.id)
+
+            unreadCount = count || 0
+          }
+
           return {
             ...conv,
             last_message: lastMessage,
-            participants: conv.conversation_participants
+            participants: conv.conversation_participants,
+            unread_count: unreadCount
           }
         })
       )
@@ -126,9 +159,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       return conversationsWithMessages as Conversation[]
     },
     enabled: isOpen && !!user?.id,
-    refetchInterval: false, // Disable automatic refresh
-    staleTime: 1000 * 60 * 5, // Consider data fresh for 5 minutes
-    gcTime: 1000 * 60 * 10, // Keep in cache for 10 minutes
+    refetchInterval: 5000, // Check for new messages every 5 seconds
+    staleTime: 0, // Always refetch to get accurate unread counts
   })
 
   // Fetch messages for selected conversation
@@ -182,14 +214,25 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
     const markAsRead = async () => {
       try {
-        await supabase
-          .from('conversation_participants')
-          .update({ last_read_at: new Date().toISOString() })
-          .eq('conversation_id', selectedConversationId)
-          .eq('user_id', user.id)
+        console.log('Marking conversation as read:', selectedConversationId, 'for user:', user.id)
 
-        // Invalidate the unread messages query to update the red dot
-        queryClient.invalidateQueries({ queryKey: ['unread-messages', user.id] })
+        // Use RPC function to bypass RLS recursion issue
+        const { error } = await supabase.rpc('mark_conversation_read', {
+          p_conversation_id: selectedConversationId,
+          p_user_id: user.id
+        })
+
+        if (error) {
+          console.error('Error updating last_read_at:', error)
+        } else {
+          console.log('Successfully marked as read')
+        }
+
+        // Invalidate and refetch the unread direct messages query to update the red dot immediately
+        await queryClient.invalidateQueries({ queryKey: ['unread-direct-messages', user.id] })
+        await queryClient.refetchQueries({ queryKey: ['unread-direct-messages', user.id] })
+        // Also invalidate conversations to update unread counts
+        queryClient.invalidateQueries({ queryKey: ['conversations'] })
       } catch (error) {
         console.error('Error marking conversation as read:', error)
       }
@@ -353,11 +396,13 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     if (conversation.is_group) {
       return `${conversation.participants?.length || 0} members`
     }
-    
-    if (conversation.last_message) {
-      return conversation.last_message.content.substring(0, 50) + '...'
+
+    if (conversation.last_message && conversation.last_message.content) {
+      const preview = conversation.last_message.content.trim()
+      if (preview.length === 0) return 'No messages yet'
+      return preview.length > 50 ? preview.substring(0, 50) + '...' : preview
     }
-    
+
     return 'No messages yet'
   }
 
@@ -450,10 +495,10 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                             </span>
                           </div>
                         )}
-                        {conversation.unread_count && conversation.unread_count > 0 && (
+                        {(conversation.unread_count ?? 0) > 0 && (
                           <div className="absolute -top-1 -right-1 w-5 h-5 bg-error-500 rounded-full flex items-center justify-center">
                             <span className="text-white text-xs font-bold">
-                              {conversation.unread_count > 9 ? '9+' : conversation.unread_count}
+                              {conversation.unread_count! > 9 ? '9+' : conversation.unread_count}
                             </span>
                           </div>
                         )}

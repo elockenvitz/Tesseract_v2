@@ -67,13 +67,56 @@ export function Header({
     enabled: !!user?.id
   })
 
-  // Check for unread messages (both context messages and direct messages)
+  // Check for unread direct messages (conversation_messages table only)
   const { data: hasUnreadDirectMessages } = useQuery({
-    queryKey: ['unread-messages', user?.id],
+    queryKey: ['unread-direct-messages', user?.id],
     queryFn: async () => {
       if (!user?.id) return false
 
-      // Check context-based messages (messages table)
+      // Check direct messages by getting user's conversations
+      const { data: userConversations, error: convError } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id, last_read_at')
+        .eq('user_id', user.id)
+
+      if (convError) {
+        console.error('Error fetching user conversations for notification:', convError)
+        return false
+      }
+
+      if (!userConversations || userConversations.length === 0) {
+        return false
+      }
+
+      // Check each conversation for unread messages
+      for (const conv of userConversations) {
+        const { count } = await supabase
+          .from('conversation_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('conversation_id', conv.conversation_id)
+          .neq('user_id', user.id)
+          .gt('created_at', conv.last_read_at || '1970-01-01')
+
+        if (count && count > 0) {
+          console.log('Header: Found unread direct messages in conversation', conv.conversation_id, 'count:', count)
+          return true
+        }
+      }
+
+      console.log('Header: No unread direct messages')
+      return false
+    },
+    enabled: !!user?.id,
+    refetchInterval: 30000, // Check every 30 seconds
+    staleTime: 0 // Always consider data stale to refetch on invalidation
+  })
+
+  // Check for unread context messages (messages table only)
+  const { data: hasUnreadContextMessages } = useQuery({
+    queryKey: ['unread-context-messages', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return false
+
       const { data: contextMessages, error: contextError } = await supabase
         .from('messages')
         .select('id')
@@ -81,32 +124,18 @@ export function Header({
         .eq('is_read', false)
         .limit(1)
 
-      if (contextError) throw contextError
+      if (contextError) {
+        console.error('Error fetching context messages:', contextError)
+        return false
+      }
 
-      // Check direct messages (conversation_messages)
-      const { data: directMessages, error: directError } = await supabase
-        .from('conversation_messages')
-        .select(`
-          id,
-          created_at,
-          conversation_id,
-          conversation_participants!inner(last_read_at)
-        `)
-        .neq('user_id', user.id)
-        .eq('conversation_participants.user_id', user.id)
-
-      if (directError) throw directError
-
-      // Check if there are any direct messages created after the user's last_read_at
-      const hasUnreadDirect = directMessages?.some(msg =>
-        !msg.conversation_participants?.[0]?.last_read_at ||
-        new Date(msg.created_at) > new Date(msg.conversation_participants[0].last_read_at)
-      ) || false
-
-      return (contextMessages && contextMessages.length > 0) || hasUnreadDirect
+      const hasUnread = contextMessages && contextMessages.length > 0
+      console.log('Header: Context messages unread:', hasUnread)
+      return hasUnread
     },
     enabled: !!user?.id,
-    refetchInterval: 30000 // Check every 30 seconds
+    refetchInterval: 30000,
+    staleTime: 0
   })
 
   // Close dropdowns when clicking outside
@@ -244,8 +273,8 @@ export function Header({
               title="Toggle communication panel"
             >
               <MessageCircle className="h-5 w-5" />
-              {hasUnreadMessages && (
-                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-primary-500"></span>
+              {hasUnreadContextMessages && (
+                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-error-500"></span>
               )}
             </button>
             
