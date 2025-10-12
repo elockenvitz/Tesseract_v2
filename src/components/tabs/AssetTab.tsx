@@ -25,6 +25,7 @@ import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { NoteEditor } from '../notes/NoteEditorUnified'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
+import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 
 interface AssetTabProps {
   asset: any
@@ -61,13 +62,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   }
 
   const [stage, setStage] = useState(mapToTimelineStage(asset.process_stage))
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage'>(() => {
-    // Initialize with saved state if available
-    const savedState = TabStateManager.loadTabState(asset.id)
-    const initialTab = savedState?.activeTab || 'thesis'
-    console.log(`AssetTab ${asset.id}: Initializing with activeTab:`, initialTab, 'Full saved state:', savedState)
-    return initialTab
-  })
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage'>('thesis')
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [showNoteEditor, setShowNoteEditor] = useState(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -83,6 +78,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.viewingStageId || null
   })
+  const [showHoldingsHistory, setShowHoldingsHistory] = useState(false)
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
@@ -137,6 +133,15 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         fullAsset: asset
       })
       setStage(mapToTimelineStage(asset.process_stage))
+
+      // Restore saved tab state if available, otherwise start on thesis tab
+      const savedState = TabStateManager.loadTabState(asset.id)
+      if (savedState?.activeTab) {
+        setActiveTab(savedState.activeTab)
+      } else {
+        setActiveTab('thesis')
+      }
+
       setHasLocalChanges(false) // Reset local changes flag when loading new asset
     }
   }, [asset.id])
@@ -279,6 +284,27 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
     enabled: !!portfolioHoldings && portfolioHoldings.length > 0,
   })
 
+  // Portfolio trade history
+  const { data: portfolioTradeHistory } = useQuery({
+    queryKey: ['portfolio-trade-history', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_trades')
+        .select(`
+          *,
+          portfolios (
+            id,
+            name
+          )
+        `)
+        .eq('asset_id', asset.id)
+        .order('trade_date', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+    enabled: showHoldingsHistory,
+  })
+
   // Current stock price for P&L calculations
   const { data: currentQuote } = useQuery({
     queryKey: ['stock-quote', asset.symbol],
@@ -376,10 +402,35 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
     },
   })
 
-  // Autosave mutation
+  // Function to recalculate and update asset completeness
+  const updateAssetCompleteness = async () => {
+    const completeness = calculateAssetCompleteness({
+      thesis: asset.thesis,
+      where_different: asset.where_different,
+      risks_to_thesis: asset.risks_to_thesis,
+      priceTargets: priceTargets || []
+    })
+
+    // Only update if completeness has changed
+    if (completeness !== asset.completeness) {
+      await supabase
+        .from('assets')
+        .update({ completeness, updated_at: new Date().toISOString() })
+        .eq('id', asset.id)
+
+      // Update local asset object
+      asset.completeness = completeness
+    }
+  }
+
+  // Autosave mutation with completeness update
   const handleSectionSave = (fieldName: string) => {
     return async (content: string) => {
       await updateAssetMutation.mutateAsync({ [fieldName]: content })
+      // Recalculate completeness after saving thesis-related fields
+      if (['thesis', 'where_different', 'risks_to_thesis'].includes(fieldName)) {
+        await updateAssetCompleteness()
+      }
     }
   }
 
@@ -388,10 +439,12 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
       const { error } = await supabase.from('price_targets').update(updates).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['price-targets', asset.id] })
       queryClient.invalidateQueries({ queryKey: ['price-target-history'] })
       queryClient.invalidateQueries({ queryKey: ['case-history'] })
+      // Recalculate completeness after updating price target
+      await updateAssetCompleteness()
     },
   })
 
@@ -402,10 +455,12 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         .insert([{ ...priceTarget, asset_id: asset.id, created_by: user?.id }])
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['price-targets', asset.id] })
       queryClient.invalidateQueries({ queryKey: ['price-target-history'] })
       queryClient.invalidateQueries({ queryKey: ['case-history'] })
+      // Recalculate completeness after creating price target
+      await updateAssetCompleteness()
     },
   })
 
@@ -536,9 +591,10 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         setViewingStageId(effectiveCurrentStage)
       }, 100) // Small delay to ensure the workflow data is updated
 
+      // Only update workflow_id, don't try to update process_stage since stage_key values
+      // may not match the process_stage enum values
       updateAssetMutation.mutate({
-        workflow_id: workflowId,
-        process_stage: effectiveCurrentStage
+        workflow_id: workflowId
       })
 
       // Invalidate the effective workflow query to update the UI immediately
@@ -603,8 +659,9 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
         queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
         queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
-        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
-        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id, workflowId] })
+        // Invalidate ALL workflow status queries for this asset, not just this specific workflow
+        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id] })
+        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id] })
         queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
         console.log(`🔄 Cache invalidated for workflow status updates`)
       }
@@ -637,8 +694,9 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
         queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
         queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
-        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
-        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id, workflowId] })
+        // Invalidate ALL workflow status queries for this asset, not just this specific workflow
+        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id] })
+        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id] })
         queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
         console.log(`🔄 Cache invalidated for workflow stop updates`)
       }
@@ -1040,10 +1098,24 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
               </div>
 
               {/* Portfolio Holdings Section */}
-              {portfolioHoldings && portfolioHoldings.length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Portfolio Holdings</h3>
-                  <div className="overflow-x-auto">
+              <div className="bg-white border border-gray-200 rounded-lg relative overflow-hidden">
+                {/* Front side - Current Holdings */}
+                <div className={`transition-transform duration-500 ease-in-out ${showHoldingsHistory ? 'transform -translate-x-full' : 'transform translate-x-0'}`}>
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900">Portfolio Holdings</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowHoldingsHistory(true)}
+                        className="flex items-center gap-2"
+                      >
+                        <Clock className="h-4 w-4" />
+                        History
+                      </Button>
+                    </div>
+                    {portfolioHoldings && portfolioHoldings.length > 0 ? (
+                      <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
@@ -1117,9 +1189,97 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                         })}
                       </tbody>
                     </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500">Not held in any portfolio</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+
+                {/* Back side - Trade History */}
+                  <div className={`absolute inset-0 transition-transform duration-500 ease-in-out ${showHoldingsHistory ? 'transform translate-x-0' : 'transform translate-x-full'}`}>
+                    <div className="h-full flex flex-col">
+                      <div className="flex items-center justify-between p-6 pb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Trade History</h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowHoldingsHistory(false)}
+                          className="flex items-center gap-2"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          Back
+                        </Button>
+                      </div>
+                      <div className="flex-1 overflow-x-auto px-6 pb-6">
+                        {portfolioTradeHistory && portfolioTradeHistory.length > 0 ? (
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Value</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight Change</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {portfolioTradeHistory.map((trade: any) => {
+                                const isBuy = trade.trade_type === 'buy'
+                                const weightChange = trade.weight_change || 0
+
+                                return (
+                                  <tr key={trade.id} className="hover:bg-gray-50">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      {new Date(trade.trade_date).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="text-sm font-medium text-gray-900">
+                                        {trade.portfolios?.name || 'Unknown Portfolio'}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <Badge variant={isBuy ? 'success' : 'error'}>
+                                        {trade.trade_type.toUpperCase()}
+                                      </Badge>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      {isBuy ? '+' : '-'}{Math.abs(trade.shares).toLocaleString()}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      ${parseFloat(trade.price).toFixed(2)}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      ${parseFloat(trade.total_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                      <div className="flex flex-col">
+                                        <span className={`font-medium ${weightChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {weightChange >= 0 ? '+' : ''}{(weightChange * 100).toFixed(2)}%
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          {trade.weight_before ? `${(trade.weight_before * 100).toFixed(2)}% → ${(trade.weight_after * 100).toFixed(2)}%` : ''}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="text-center py-8 text-gray-500">
+                            No trade history available
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+              </div>
             </div>
           )}
 

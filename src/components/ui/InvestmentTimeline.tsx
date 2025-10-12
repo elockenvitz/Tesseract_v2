@@ -8,6 +8,7 @@ import { Card } from './Card'
 import { StageDeadlineManager } from './StageDeadlineManager'
 import { ContentTile } from './ContentTile'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 
 interface ChecklistItem {
   id: string
@@ -152,6 +153,7 @@ export function InvestmentTimeline({
   currentPriority = 'none',
   onPriorityChange
 }: InvestmentTimelineProps) {
+  const { user } = useAuth()
   const [showStageDetails, setShowStageDetails] = useState<string | null>(null)
   const [stageChecklists, setStageChecklists] = useState<Record<string, ChecklistItem[]>>({})
   const [commentingItem, setCommentingItem] = useState<{stageId: string, itemId: string} | null>(null)
@@ -348,7 +350,9 @@ export function InvestmentTimeline({
             current_stage_key: stageKey,
             is_started: true,
             is_completed: false,
-            started_at: new Date().toISOString()
+            started_at: new Date().toISOString(),
+            started_by: user?.id,
+            updated_by: user?.id
           }, {
             onConflict: 'asset_id,workflow_id'
           })
@@ -368,7 +372,9 @@ export function InvestmentTimeline({
             current_stage_key: null,
             is_started: false,
             is_completed: true,
-            completed_at: new Date().toISOString()
+            completed_at: new Date().toISOString(),
+            completed_by: user?.id,
+            updated_by: user?.id
           }, {
             onConflict: 'asset_id,workflow_id'
           })
@@ -706,7 +712,8 @@ export function InvestmentTimeline({
               workflow_id: workflowId,
               current_stage_key: nextStage.id,
               is_started: true,
-              updated_at: new Date().toISOString()
+              updated_at: new Date().toISOString(),
+              updated_by: user?.id
             }, {
               onConflict: 'asset_id,workflow_id'
             })
@@ -740,7 +747,8 @@ export function InvestmentTimeline({
             workflow_id: workflowId,
             current_stage_key: prevStage.id,
             is_started: true,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id
           }, {
             onConflict: 'asset_id,workflow_id'
           })

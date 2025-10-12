@@ -43,6 +43,13 @@ interface AssetList {
 export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetId }: AssetListManagerProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
+
+  // Reset to list view when opening modal
+  useEffect(() => {
+    if (isOpen) {
+      setShowCreateForm(false)
+    }
+  }, [isOpen])
   const [newListName, setNewListName] = useState('')
   const [newListDescription, setNewListDescription] = useState('')
   const [newListColor, setNewListColor] = useState('#3b82f6')
@@ -335,97 +342,97 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           </div>
 
           <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-120px)]">
-            {/* Search and Create */}
-            <div className="flex items-center space-x-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search lists..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              {!selectedAssetId && (
-                <Button onClick={() => setShowCreateForm(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  New List
-                </Button>
-              )}
-            </div>
-
             {/* Create List Form */}
-            {showCreateForm && (
-              <Card>
-                <h4 className="text-sm font-semibold text-gray-900 mb-4">Create New List</h4>
-                <div className="space-y-4">
-                  <Input
-                    label="List Name"
-                    value={newListName}
-                    onChange={(e) => setNewListName(e.target.value)}
-                    placeholder="Enter list name..."
-                  />
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description (optional)
-                    </label>
-                    <textarea
-                      value={newListDescription}
-                      onChange={(e) => setNewListDescription(e.target.value)}
-                      placeholder="Describe the purpose of this list..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      rows={3}
+            {showCreateForm ? (
+              <div>
+                <Card>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-4">Create New List</h4>
+                  <div className="space-y-4">
+                    <Input
+                      label="List Name"
+                      value={newListName}
+                      onChange={(e) => setNewListName(e.target.value)}
+                      placeholder="Enter list name..."
                     />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Color
-                    </label>
-                    <div className="flex space-x-2">
-                      {colorOptions.map((color) => (
-                        <button
-                          key={color.value}
-                          onClick={() => setNewListColor(color.value)}
-                          className={clsx(
-                            'w-8 h-8 rounded-full border-2 transition-all',
-                            newListColor === color.value
-                              ? 'border-gray-900 scale-110'
-                              : 'border-gray-300 hover:scale-105'
-                          )}
-                          style={{ backgroundColor: color.value }}
-                          title={color.label}
-                        />
-                      ))}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Description (optional)
+                      </label>
+                      <textarea
+                        value={newListDescription}
+                        onChange={(e) => setNewListDescription(e.target.value)}
+                        placeholder="Describe the purpose of this list..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Color
+                      </label>
+                      <div className="flex space-x-2">
+                        {colorOptions.map((color) => (
+                          <button
+                            key={color.value}
+                            onClick={() => setNewListColor(color.value)}
+                            className={clsx(
+                              'w-8 h-8 rounded-full border-2 transition-all',
+                              newListColor === color.value
+                                ? 'border-gray-900 scale-110'
+                                : 'border-gray-300 hover:scale-105'
+                            )}
+                            style={{ backgroundColor: color.value }}
+                            title={color.label}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex space-x-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowCreateForm(false)
+                          setNewListName('')
+                          setNewListDescription('')
+                          setNewListColor('#3b82f6')
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleCreateList}
+                        disabled={!newListName.trim() || createListMutation.isPending}
+                        className="flex-1"
+                      >
+                        Create List
+                      </Button>
                     </div>
                   </div>
-                  
-                  <div className="flex space-x-3">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowCreateForm(false)
-                        setNewListName('')
-                        setNewListDescription('')
-                        setNewListColor('#3b82f6')
-                      }}
-                      className="flex-1"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleCreateList}
-                      disabled={!newListName.trim() || createListMutation.isPending}
-                      className="flex-1"
-                    >
-                      Create List
-                    </Button>
+                </Card>
+              </div>
+            ) : (
+              <>
+                {/* Search and Create */}
+                <div className="flex items-center space-x-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search lists..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
                   </div>
+                  <Button onClick={() => setShowCreateForm(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    New List
+                  </Button>
                 </div>
-              </Card>
-            )}
 
             {/* Lists Grid */}
             {isLoading ? (
@@ -446,8 +453,160 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                 ))}
               </div>
             ) : filteredLists.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredLists.map((list) => (
+              <>
+                {/* Available Lists Section */}
+                {selectedAssetId && filteredLists.filter(list => !list.isAdded).length > 0 && (
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-gray-700">Available Lists</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredLists.filter(list => !list.isAdded).map((list) => (
+                        <div
+                          key={list.id}
+                          onClick={() => {
+                            console.log('🖱️ CLICK DETECTED on list:', list.id, list.name)
+                            if (selectedAssetId) {
+                              console.log('🖱️ List card clicked for adding asset:', list.id)
+                              handleAddToList(list.id)
+                            } else if (onListSelect) {
+                              console.log('🖱️ List card clicked for navigation:', list.id)
+                              onListSelect({
+                                id: list.id,
+                                title: list.name,
+                                type: 'list',
+                                data: list
+                              })
+                            }
+                          }}
+                          className="cursor-pointer transition-all duration-200 relative group hover:shadow-lg hover:scale-105"
+                        >
+                          <Card>
+                            <div className="space-y-4">
+                              {/* Header with list name and color */}
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start space-x-3 flex-1 min-w-0">
+                                  <div
+                                    className="w-4 h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0 mt-1"
+                                    style={{ backgroundColor: list.color || '#3b82f6' }}
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                      <h4 className="font-semibold text-gray-900 truncate text-base">
+                                        {list.name}
+                                      </h4>
+                                      {list.is_default && (
+                                        <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                    {list.description && (
+                                      <p className="text-sm text-gray-600 truncate" title={list.description}>
+                                        {list.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Metadata section */}
+                              <div className="pt-3 border-t border-gray-100">
+                                <div className="flex items-center justify-between text-xs text-gray-500">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="font-medium">{list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}</span>
+                                    {list.collaborators && list.collaborators.length > 0 && (
+                                      <div className="flex items-center space-x-1">
+                                        <Users className="h-3 w-3" />
+                                        <span>{list.collaborators.length}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="text-gray-400">
+                                    {formatDistanceToNow(new Date(list.updated_at || list.created_at || ''), { addSuffix: true })}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {addedToLists.has(list.id) && (
+                              <div className={clsx(
+                                "absolute inset-0 rounded-xl transition-all duration-200 flex items-center justify-center bg-success-500 bg-opacity-20"
+                              )}>
+                                <Badge variant="success" size="sm">
+                                  Added!
+                                </Badge>
+                              </div>
+                            )}
+                          </Card>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Already Added Section */}
+                {selectedAssetId && filteredLists.filter(list => list.isAdded).length > 0 && (
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-gray-700">Already in These Lists</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredLists.filter(list => list.isAdded).map((list) => (
+                        <div
+                          key={list.id}
+                          className="relative group opacity-60"
+                        >
+                          <Card>
+                            <div className="space-y-4">
+                              {/* Header with list name and color */}
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start space-x-3 flex-1 min-w-0">
+                                  <div
+                                    className="w-4 h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0 mt-1"
+                                    style={{ backgroundColor: list.color || '#3b82f6' }}
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                      <h4 className="font-semibold text-gray-900 truncate text-base">
+                                        {list.name}
+                                      </h4>
+                                      {list.is_default && (
+                                        <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                    {list.description && (
+                                      <p className="text-sm text-gray-600 truncate" title={list.description}>
+                                        {list.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Metadata section */}
+                              <div className="pt-3 border-t border-gray-100">
+                                <div className="flex items-center justify-between text-xs text-gray-500">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="font-medium">{list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}</span>
+                                    {list.collaborators && list.collaborators.length > 0 && (
+                                      <div className="flex items-center space-x-1">
+                                        <Users className="h-3 w-3" />
+                                        <span>{list.collaborators.length}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="text-gray-400">
+                                    {formatDistanceToNow(new Date(list.updated_at || list.created_at || ''), { addSuffix: true })}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* All Lists (when not adding asset) */}
+                {!selectedAssetId && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredLists.map((list) => (
                   <div
                     key={list.id}
                     onClick={() => {
@@ -473,122 +632,110 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                     )}
                   >
                     <Card>
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center space-x-3 flex-1 min-w-0">
-                        <div 
-                          className="w-4 h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0"
-                          style={{ backgroundColor: list.color || '#3b82f6' }}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center space-x-2">
-                            <h4 className="font-semibold text-gray-900 truncate">
-                              {list.name}
-                            </h4>
-                            {list.is_default && (
-                              <Star className="h-3 w-3 text-yellow-500 flex-shrink-0" />
+                    <div className="space-y-4">
+                      {/* Header with list name and color */}
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3 flex-1 min-w-0">
+                          <div
+                            className="w-4 h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0 mt-1"
+                            style={{ backgroundColor: list.color || '#3b82f6' }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <h4 className="font-semibold text-gray-900 truncate text-base">
+                                {list.name}
+                              </h4>
+                              {list.is_default && (
+                                <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                              )}
+                            </div>
+                            {list.description && (
+                              <p className="text-sm text-gray-600 line-clamp-2">
+                                {list.description}
+                              </p>
                             )}
                           </div>
-                          {list.description && (
-                            <p className="text-sm text-gray-600 line-clamp-2 mt-1">
-                              {list.description}
-                            </p>
-                          )}
                         </div>
-                      </div>
-                      
-                      {!selectedAssetId && (
-                        <div className="relative" ref={menuRef}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setShowListMenu(showListMenu === list.id ? null : list.id)
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                          
-                          {showListMenu === list.id && (
-                            <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[140px]">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setEditingListId(list.id)
-                                  setShowListMenu(null)
-                                }}
-                                className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center"
-                              >
-                                <Edit3 className="h-4 w-4 mr-2" />
-                                Edit List
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  // Share functionality would go here
-                                  setShowListMenu(null)
-                                }}
-                                className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center"
-                              >
-                                <Share2 className="h-4 w-4 mr-2" />
-                                Share List
-                              </button>
-                              {!list.is_default && (
+
+                        {!selectedAssetId && (
+                          <div className="relative" ref={menuRef}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setShowListMenu(showListMenu === list.id ? null : list.id)
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+
+                            {showListMenu === list.id && (
+                              <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[140px]">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleDeleteList(list.id, list.name)
+                                    setEditingListId(list.id)
+                                    setShowListMenu(null)
                                   }}
-                                  className="w-full px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center border-t border-gray-100"
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center"
                                 >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete List
+                                  <Edit3 className="h-4 w-4 mr-2" />
+                                  Edit List
                                 </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-sm text-gray-500">
-                      <div className="flex items-center space-x-4">
-                        <span>{list.item_count} assets</span>
-                        {list.collaborators && list.collaborators.length > 0 && (
-                          <div className="flex items-center">
-                            <Users className="h-4 w-4 mr-1" />
-                            <span>{list.collaborators.length} collaborator{list.collaborators.length !== 1 ? 's' : ''}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    // Share functionality would go here
+                                    setShowListMenu(null)
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center"
+                                >
+                                  <Share2 className="h-4 w-4 mr-2" />
+                                  Share List
+                                </button>
+                                {!list.is_default && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteList(list.id, list.name)
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center border-t border-gray-100"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete List
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                      <span>
-                        {formatDistanceToNow(new Date(list.updated_at || list.created_at || ''), { addSuffix: true })}
-                      </span>
+
+                      {/* Metadata section */}
+                      <div className="pt-3 border-t border-gray-100">
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <div className="flex items-center space-x-3">
+                            <span className="font-medium">{list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}</span>
+                            {list.collaborators && list.collaborators.length > 0 && (
+                              <div className="flex items-center space-x-1">
+                                <Users className="h-3 w-3" />
+                                <span>{list.collaborators.length}</span>
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-gray-400">
+                            {formatDistanceToNow(new Date(list.updated_at || list.created_at || ''), { addSuffix: true })}
+                          </span>
+                        </div>
+                      </div>
+
                     </div>
-                    
-                    {/* Success feedback for adding to list */}
-                    {selectedAssetId && (list.isAdded || addedToLists.has(list.id)) && (
-                      <div className="flex items-center justify-center py-2">
-                        <Badge variant="success" size="sm">
-                          {list.isAdded ? 'Already in List' : 'Added to List'}
-                        </Badge>
-                      </div>
-                    )}
-                    
-                    {selectedAssetId && (
-                      <div className={clsx(
-                        "absolute inset-0 rounded-xl transition-all duration-200 flex items-center justify-center",
-                        list.isAdded 
-                          ? "bg-gray-500 bg-opacity-20"
-                          : addedToLists.has(list.id)
-                          ? "bg-success-500 bg-opacity-20"
-                          : "bg-primary-500 bg-opacity-0 hover:bg-opacity-10"
-                      )}>
-                      </div>
-                    )}
                     </Card>
                   </div>
-                ))}
-              </div>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -604,6 +751,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                   }
                 </p>
               </div>
+            )}
+              </>
             )}
           </div>
 

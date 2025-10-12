@@ -184,7 +184,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError } = useQuery({
-    queryKey: ['workflows-full', filterBy, sortBy],
+    queryKey: ['workflows-full', filterBy, sortBy, workflowStages],
     // Remove dependency - run immediately for faster loading
     queryFn: async () => {
       console.log('Fetching workflows...', { filterBy, sortBy })
@@ -349,6 +349,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
     }
   }, [workflows, tabId, selectedWorkflow])
+
+  // Update selectedWorkflow when workflows data changes (to pick up updated stages)
+  useEffect(() => {
+    if (selectedWorkflow && workflows) {
+      const updatedWorkflow = workflows.find(w => w.id === selectedWorkflow.id)
+      if (updatedWorkflow) {
+        setSelectedWorkflow(updatedWorkflow)
+      }
+    }
+  }, [workflows])
 
   // Filter workflows by search term
   const filteredWorkflows = workflows?.filter(workflow =>

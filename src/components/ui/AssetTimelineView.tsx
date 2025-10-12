@@ -69,6 +69,24 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
       // Get workflow info and stages if workflowId is provided
       let workflowStages: string[] = []
       let workflowName = ''
+
+      // Also get the asset's primary workflow stages for filtering process_stage changes
+      let assetWorkflowStages: string[] = []
+      const { data: assetData } = await supabase
+        .from('assets')
+        .select('workflow_id')
+        .eq('id', assetId)
+        .single()
+
+      if (assetData?.workflow_id) {
+        const { data: assetStages } = await supabase
+          .from('workflow_stages')
+          .select('stage_key')
+          .eq('workflow_id', assetData.workflow_id)
+
+        assetWorkflowStages = assetStages?.map(s => s.stage_key) || []
+      }
+
       if (workflowId) {
         const { data: workflow } = await supabase
           .from('workflows')
@@ -95,31 +113,47 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
             is_started,
             started_at,
             completed_at,
-            current_stage_key
+            current_stage_key,
+            started_by_user:started_by (
+              email,
+              first_name,
+              last_name
+            ),
+            completed_by_user:completed_by (
+              email,
+              first_name,
+              last_name
+            )
           `)
           .eq('asset_id', assetId)
           .eq('workflow_id', workflowId)
 
         progressHistory?.forEach((record: any) => {
           if (record.started_at) {
+            const startUser = record.started_by_user
+            const startUserName = startUser ? `${startUser.first_name || ''} ${startUser.last_name || ''}`.trim() : null
+
             events.push({
               id: `workflow-start-${record.created_at}`,
               created_at: record.started_at,
               event_type: 'stage_change',
               description: `Started workflow progress`,
-              user_email: undefined,
-              user_name: undefined
+              user_email: startUser?.email,
+              user_name: startUserName || startUser?.email
             })
           }
 
           if (record.completed_at) {
+            const completeUser = record.completed_by_user
+            const completeUserName = completeUser ? `${completeUser.first_name || ''} ${completeUser.last_name || ''}`.trim() : null
+
             events.push({
               id: `workflow-complete-${record.updated_at}`,
               created_at: record.completed_at,
               event_type: 'stage_change',
               description: `Completed workflow`,
-              user_email: undefined,
-              user_name: undefined
+              user_email: completeUser?.email,
+              user_name: completeUserName || completeUser?.email
             })
           }
         })
@@ -152,9 +186,14 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
           eventType = 'stage_change'
           description = `Stage changed from ${record.old_value} to ${record.new_value}`
 
-          // If we have a specific workflow, only include stage changes relevant to this workflow
-          if (workflowId && !workflowStages.includes(record.new_value) && !workflowStages.includes(record.old_value)) {
-            return // Skip this event if neither old nor new stage belongs to current workflow
+          // For process_stage changes, check against the asset's primary workflow stages
+          // Only filter if we have asset workflow stages and the change is not relevant
+          if (assetWorkflowStages.length > 0 && workflowId) {
+            // If viewing a specific workflow that's different from asset's primary workflow,
+            // only show process_stage changes if they're in the asset's primary workflow
+            if (!assetWorkflowStages.includes(record.new_value) && !assetWorkflowStages.includes(record.old_value)) {
+              return // Skip this event if neither old nor new stage belongs to asset's primary workflow
+            }
           }
         } else if (record.field_name === 'priority') {
           eventType = 'priority_change'

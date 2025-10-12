@@ -62,6 +62,7 @@ interface WorkflowAsset {
   due_date?: string
   progress_percentage: number
   is_started: boolean
+  completeness: number
 }
 
 type ViewType = 'discovery' | 'prioritizer' | 'feed'
@@ -83,7 +84,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
   const [prioritizerView, setPrioritizerView] = useState<'all' | 'in-progress' | 'by-stage' | 'by-priority'>(loadedState?.prioritizerView || 'all')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showSortDropdown, setShowSortDropdown] = useState(false)
-  const [sortBy, setSortBy] = useState<'priority' | 'stage' | 'updated' | 'symbol' | 'progress'>(loadedState?.sortBy || 'updated')
+  const [sortBy, setSortBy] = useState<'priority' | 'stage' | 'updated' | 'symbol' | 'progress' | 'completeness'>(loadedState?.sortBy || 'updated')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(loadedState?.sortOrder || 'desc')
   const [filterByStatus, setFilterByStatus] = useState<'all' | 'in-progress' | 'not-started'>(loadedState?.filterByStatus || 'all')
   const [filterByPriority, setFilterByPriority] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>(loadedState?.filterByPriority || 'all')
@@ -549,15 +550,16 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         })
         const totalStages = workflowStages?.length || 1
 
-        // Get ALL workflow progress assets (both started and not started)
+        // Get only ACTIVE workflow progress assets (is_started = true and not completed)
         // Use DISTINCT ON to prevent duplicate assets from multiple progress entries
         const { data: progressAssets, error: progressError } = await supabase
           .from('asset_workflow_progress')
           .select(`
             *,
-            assets(id, symbol, company_name, priority)
+            assets(id, symbol, company_name, priority, completeness)
           `)
           .eq('workflow_id', workflow.id)
+          .eq('is_started', true)
           .eq('is_completed', false)
           .order('asset_id')
           .order('updated_at', { ascending: false })
@@ -625,7 +627,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               priority: workflowPriority?.priority || asset.assets.priority || 'medium',
               last_updated: asset.updated_at,
               progress_percentage: progressPercentage,
-              is_started: asset.is_started
+              is_started: asset.is_started,
+              completeness: asset.assets.completeness || 0
             }
           })
         }
@@ -1039,6 +1042,9 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         case 'progress':
           comparison = b.progress_percentage - a.progress_percentage
           break
+        case 'completeness':
+          comparison = b.completeness - a.completeness
+          break
       }
 
       return sortOrder === 'desc' ? comparison : -comparison
@@ -1227,6 +1233,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                       <option value="stage">Stage</option>
                       <option value="symbol">Symbol</option>
                       <option value="progress">Progress</option>
+                      <option value="completeness">Completeness</option>
                     </select>
                   </div>
 
@@ -1413,6 +1420,15 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                           </div>
                           <div className="text-xs text-gray-500">
                             Stage: {asset.stage}
+                          </div>
+                          <div className={`text-xs font-medium ${
+                            asset.completeness >= 90 ? 'text-green-600' :
+                            asset.completeness >= 70 ? 'text-blue-600' :
+                            asset.completeness >= 40 ? 'text-yellow-600' :
+                            asset.completeness >= 10 ? 'text-orange-600' :
+                            'text-gray-400'
+                          }`}>
+                            Completeness: {asset.completeness}%
                           </div>
                           <div className="text-xs text-gray-500">
                             Updated {formatDistanceToNow(new Date(asset.last_updated), { addSuffix: true })}
