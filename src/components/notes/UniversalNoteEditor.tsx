@@ -302,6 +302,7 @@ export function UniversalNoteEditor({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
+      queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
       setIsSaving(false)
     },
     onError: () => setIsSaving(false)
@@ -342,6 +343,7 @@ export function UniversalNoteEditor({
     },
     onSuccess: (newNote) => {
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
+      queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
       onNoteSelect(newNote.id)
       // Immediately set editing state for the new note to avoid delay
       setEditingContent(newNote.content || '')
@@ -731,9 +733,6 @@ export function UniversalNoteEditor({
           ) : (
             <div className="p-4 text-center text-gray-500">
               <p className="text-sm">No notes found</p>
-              <Button size="sm" className="mt-2" onClick={handleCreateNote}>
-                Create first note
-              </Button>
             </div>
           )}
         </div>
@@ -1150,10 +1149,6 @@ export function UniversalNoteEditor({
             <div className="text-center">
               <h3 className="text-lg font-medium text-gray-900 mb-2">Select a note to edit</h3>
               <p className="text-sm">Choose a note from the sidebar or create a new one</p>
-              <Button size="sm" className="mt-4" onClick={handleCreateNote}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create First Note
-              </Button>
             </div>
           </div>
         )}

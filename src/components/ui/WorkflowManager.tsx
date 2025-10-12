@@ -22,6 +22,9 @@ interface Workflow {
   is_public: boolean
   created_by: string
   cadence_days: number
+  cadence_timeframe?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
+  kickoff_cadence?: 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
+  kickoff_custom_date?: string
 }
 
 interface WorkflowStage {
@@ -274,6 +277,7 @@ export function WorkflowManager({
   const updateWorkflowMutation = useMutation({
     mutationFn: async (workflowData: { workflow: Partial<Workflow>, stages: WorkflowStage[] }) => {
       console.log('Updating workflow:', workflowData)
+      console.log('Workflow cadence_days being saved:', workflowData.workflow.cadence_days)
 
       // Update workflow
       const { error: workflowError } = await supabase
@@ -403,7 +407,9 @@ export function WorkflowManager({
       color: '#3b82f6',
       is_default: false,
       is_public: false,
-      cadence_days: 365
+      cadence_days: 365,
+      cadence_timeframe: 'annually',
+      kickoff_cadence: 'immediate'
     })
     setEditingStages([
       {
@@ -893,18 +899,66 @@ export function WorkflowManager({
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Cadence (Days)
+                        Cadence Timeframe
                       </label>
-                      <input
-                        type="number"
-                        min="30"
-                        max="1095"
-                        value={editingWorkflow.cadence_days || 365}
-                        onChange={(e) => setEditingWorkflow({ ...editingWorkflow, cadence_days: parseInt(e.target.value) || 365 })}
+                      <select
+                        value={editingWorkflow.cadence_timeframe || 'annually'}
+                        onChange={(e) => {
+                          const timeframe = e.target.value as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
+                          const daysMap = {
+                            'daily': 1,
+                            'weekly': 7,
+                            'monthly': 30,
+                            'quarterly': 90,
+                            'semi-annually': 180,
+                            'annually': 365
+                          }
+                          setEditingWorkflow({
+                            ...editingWorkflow,
+                            cadence_timeframe: timeframe,
+                            cadence_days: daysMap[timeframe]
+                          })
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="How often to restart workflow"
-                      />
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="semi-annually">Semi-Annually</option>
+                        <option value="annually">Annually</option>
+                      </select>
                     </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Kickoff Cadence
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">When should this workflow start for each asset?</p>
+                    <select
+                      value={editingWorkflow.kickoff_cadence || 'immediate'}
+                      onChange={(e) => setEditingWorkflow({
+                        ...editingWorkflow,
+                        kickoff_cadence: e.target.value as 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="immediate">Immediate (when asset is added)</option>
+                      <option value="month-start">Start of Month</option>
+                      <option value="quarter-start">Start of Quarter</option>
+                      <option value="year-start">Start of Year</option>
+                      <option value="custom-date">Custom Date</option>
+                    </select>
+
+                    {editingWorkflow.kickoff_cadence === 'custom-date' && (
+                      <input
+                        type="date"
+                        value={editingWorkflow.kickoff_custom_date || ''}
+                        onChange={(e) => setEditingWorkflow({ ...editingWorkflow, kickoff_custom_date: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mt-2"
+                      />
+                    )}
                   </div>
 
                   <div className="mb-6">

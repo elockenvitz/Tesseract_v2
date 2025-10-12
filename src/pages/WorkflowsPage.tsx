@@ -20,6 +20,9 @@ interface WorkflowWithStats {
   created_at: string
   updated_at: string
   cadence_days: number
+  cadence_timeframe?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
+  kickoff_cadence?: 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
+  kickoff_custom_date?: string
   usage_count: number
   active_assets: number
   completed_assets: number
@@ -27,6 +30,7 @@ interface WorkflowWithStats {
   is_favorited?: boolean
   stages?: WorkflowStage[]
   user_permission?: 'read' | 'write' | 'admin' | 'owner'
+  usage_stats?: any[]
 }
 
 interface WorkflowStage {
@@ -260,10 +264,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         throw error
       }
 
-      // Get usage statistics
+      // Get usage statistics with detailed progress info
       const { data: usageStats } = await supabase
         .from('asset_workflow_progress')
-        .select('workflow_id, is_started, completed_at')
+        .select('workflow_id, is_started, completed_at, current_stage_key, started_at, asset_id')
 
       // Get user's favorited workflows
       const { data: userFavorites } = await supabase
@@ -297,13 +301,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         return {
           ...workflow,
+          cadence_days: workflow.cadence_days || 365, // Default to yearly if not set
           usage_count: totalUsage,
           active_assets: activeAssets,
           completed_assets: completedAssets,
           creator_name: creatorName,
           is_favorited: favoritedWorkflowIds.has(workflow.id),
           stages: workflowStagesData,
-          user_permission: userPermission
+          user_permission: userPermission,
+          usage_stats: workflowUsage // Include detailed usage stats for progress calculation
         }
       })
 
@@ -2273,7 +2279,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               {activeView === 'cadence' && (
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Automation Rules</h3>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Cadence & Automation</h3>
+                      <p className="text-sm text-gray-500 mt-1">Configure workflow timing and automated rules</p>
+                    </div>
                     {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                       <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
                         <Plus className="w-4 h-4 mr-2" />
@@ -2281,6 +2290,67 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       </Button>
                     )}
                   </div>
+
+                  {/* Cadence Settings Card */}
+                  <Card className="border-l-4 border-l-blue-500">
+                    <div className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="w-4 h-4 text-blue-600" />
+                          <h4 className="text-sm font-semibold text-gray-900">Workflow Cadence</h4>
+                        </div>
+                        <select
+                          value={selectedWorkflow.cadence_timeframe || 'annually'}
+                          onChange={async (e) => {
+                            const timeframe = e.target.value as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
+                            const daysMap = {
+                              'daily': 1,
+                              'weekly': 7,
+                              'monthly': 30,
+                              'quarterly': 90,
+                              'semi-annually': 180,
+                              'annually': 365
+                            }
+
+                            console.log('Updating workflow cadence to:', timeframe, 'for workflow:', selectedWorkflow.id)
+
+                            const { data, error } = await supabase
+                              .from('workflows')
+                              .update({
+                                cadence_timeframe: timeframe,
+                                cadence_days: daysMap[timeframe]
+                              })
+                              .eq('id', selectedWorkflow.id)
+                              .select()
+
+                            if (error) {
+                              console.error('Error updating workflow cadence:', error)
+                              console.error('Error details:', JSON.stringify(error, null, 2))
+                              alert(`Failed to update workflow cadence: ${error.message || error.code || 'Unknown error'}`)
+                            } else {
+                              console.log('Successfully updated workflow:', data)
+                              queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+                              // Also update the local state
+                              setSelectedWorkflow({
+                                ...selectedWorkflow,
+                                cadence_timeframe: timeframe,
+                                cadence_days: daysMap[timeframe]
+                              })
+                            }
+                          }}
+                          disabled={selectedWorkflow.user_permission === 'read'}
+                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="semi-annually">Semi-Annually</option>
+                          <option value="annually">Annually</option>
+                        </select>
+                      </div>
+                    </div>
+                  </Card>
 
                   <div className="space-y-4">
                     {(() => {
@@ -2492,7 +2562,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <BarChart3 className="w-6 h-6 text-indigo-500 mr-3" />
                           <div>
                             <h3 className="text-xl font-semibold text-gray-900">Workflow Cadence Map</h3>
-                            <p className="text-sm text-gray-500">Visual timeline of all workflow cycles and their frequency</p>
+                            <p className="text-sm text-gray-500">Track the cycle and progress of each workflow</p>
                           </div>
                         </div>
                         <Button size="sm" variant="outline" onClick={handleCreateWorkflow}>
@@ -2503,175 +2573,174 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </div>
 
                     <div className="p-6">
+                      {console.log('Cadence Map - filteredWorkflows:', filteredWorkflows)}
+                      {console.log('First workflow:', filteredWorkflows[0])}
+                      {console.log('First workflow cadence_days:', filteredWorkflows[0]?.cadence_days)}
+                      {filteredWorkflows.forEach(w => console.log(`Workflow "${w.name}" cadence_days:`, w.cadence_days, 'raw:', workflows?.find(wf => wf.id === w.id)?.cadence_days))}
                       {filteredWorkflows.length > 0 ? (
-                        <div className="space-y-8">
-                          {/* Timeline Scale */}
-                          <div className="relative">
-                            <div className="flex items-center text-xs text-gray-500 mb-4">
-                              <span className="w-16">Daily</span>
-                              <span className="flex-1 text-center">Weekly</span>
-                              <span className="flex-1 text-center">Monthly</span>
-                              <span className="flex-1 text-center">Quarterly</span>
-                              <span className="flex-1 text-center">Yearly</span>
-                              <span className="w-16 text-right">Multi-Year</span>
-                            </div>
+                        <div className="space-y-6">
+                          {/* Workflows grouped by cadence */}
+                          {(() => {
+                            console.log('Grouping workflows by cadence...')
+                            // Group workflows by cadence category based on cadence_timeframe if available
+                            const groups = {
+                              'Daily': filteredWorkflows.filter(w => w.cadence_timeframe === 'daily' || (!w.cadence_timeframe && w.cadence_days <= 1)),
+                              'Weekly': filteredWorkflows.filter(w => w.cadence_timeframe === 'weekly' || (!w.cadence_timeframe && w.cadence_days > 1 && w.cadence_days <= 7)),
+                              'Monthly': filteredWorkflows.filter(w => w.cadence_timeframe === 'monthly' || (!w.cadence_timeframe && w.cadence_days > 7 && w.cadence_days <= 30)),
+                              'Quarterly': filteredWorkflows.filter(w => w.cadence_timeframe === 'quarterly' || (!w.cadence_timeframe && w.cadence_days > 30 && w.cadence_days <= 90)),
+                              'Semi-Annually': filteredWorkflows.filter(w => w.cadence_timeframe === 'semi-annually' || (!w.cadence_timeframe && w.cadence_days > 90 && w.cadence_days <= 180)),
+                              'Annually': filteredWorkflows.filter(w => w.cadence_timeframe === 'annually' || (!w.cadence_timeframe && w.cadence_days > 180 && w.cadence_days <= 365))
+                            }
 
-                            {/* Timeline Bar */}
-                            <div className="relative h-2 bg-gradient-to-r from-blue-100 via-green-100 via-yellow-100 via-orange-100 to-purple-100 rounded-full mb-8">
-                              <div className="absolute inset-0 bg-gradient-to-r from-blue-200 via-green-200 via-yellow-200 via-orange-200 to-purple-200 rounded-full opacity-50"></div>
-                              {/* Scale markers */}
-                              <div className="absolute top-3 left-0 w-px h-4 bg-gray-300"></div>
-                              <div className="absolute top-3 left-1/5 w-px h-4 bg-gray-300"></div>
-                              <div className="absolute top-3 left-2/5 w-px h-4 bg-gray-300"></div>
-                              <div className="absolute top-3 left-3/5 w-px h-4 bg-gray-300"></div>
-                              <div className="absolute top-3 left-4/5 w-px h-4 bg-gray-300"></div>
-                              <div className="absolute top-3 right-0 w-px h-4 bg-gray-300"></div>
-                            </div>
-                          </div>
+                            return Object.entries(groups).map(([category, workflows]) => {
+                              if (workflows.length === 0) return null
 
-                          {/* Workflow Visualization */}
-                          <div className="space-y-6">
-                            {filteredWorkflows
-                              .sort((a, b) => a.cadence_days - b.cadence_days)
-                              .map((workflow, index) => {
-                                // Calculate position on timeline (logarithmic scale for better distribution)
-                                const maxDays = Math.max(...filteredWorkflows.map(w => w.cadence_days), 730)
-                                const position = Math.min(95, (Math.log(workflow.cadence_days + 1) / Math.log(maxDays + 1)) * 95)
+                              // Determine category color
+                              let categoryColor = ''
+                              if (category === 'Daily') categoryColor = 'bg-purple-500'
+                              else if (category === 'Weekly') categoryColor = 'bg-blue-500'
+                              else if (category === 'Monthly') categoryColor = 'bg-green-500'
+                              else if (category === 'Quarterly') categoryColor = 'bg-yellow-500'
+                              else if (category === 'Semi-Annually') categoryColor = 'bg-orange-500'
+                              else categoryColor = 'bg-red-500'
 
-                                // Determine cadence category and color
-                                let cadenceCategory = ''
-                                let categoryColor = ''
-                                if (workflow.cadence_days <= 7) {
-                                  cadenceCategory = 'Daily/Weekly'
-                                  categoryColor = 'bg-blue-500'
-                                } else if (workflow.cadence_days <= 90) {
-                                  cadenceCategory = 'Monthly'
-                                  categoryColor = 'bg-green-500'
-                                } else if (workflow.cadence_days <= 365) {
-                                  cadenceCategory = 'Quarterly'
-                                  categoryColor = 'bg-yellow-500'
-                                } else if (workflow.cadence_days <= 730) {
-                                  cadenceCategory = 'Yearly'
-                                  categoryColor = 'bg-orange-500'
-                                } else {
-                                  cadenceCategory = 'Multi-Year'
-                                  categoryColor = 'bg-purple-500'
-                                }
+                              return (
+                                <div key={category} className="space-y-3">
+                                  {/* Category Header */}
+                                  <div className="flex items-center space-x-2 mb-4">
+                                    <div className={`w-3 h-3 rounded-full ${categoryColor}`}></div>
+                                    <h4 className="text-sm font-semibold text-gray-700">{category}</h4>
+                                    <span className="text-xs text-gray-500">({workflows.length} workflow{workflows.length !== 1 ? 's' : ''})</span>
+                                  </div>
 
-                                return (
-                                  <div key={workflow.id} className="relative group">
-                                    {/* Timeline Line */}
-                                    <div className="relative h-16 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200">
-                                      {/* Background pattern to show cadence */}
-                                      <div className="absolute inset-0 opacity-20 rounded-lg" style={{
-                                        background: `linear-gradient(90deg, ${workflow.color} 0%, ${workflow.color}40 100%)`
-                                      }}></div>
+                                  {/* Workflows in this category */}
+                                  {workflows.map(workflow => {
+                                    // Calculate aggregate progress across all active assets
+                                    const activeAssets = workflow.usage_stats?.filter(stat => stat.is_started && !stat.completed_at) || []
 
-                                      {/* Workflow indicator positioned on timeline */}
+                                    let totalProgress = 0
+                                    let oldestStartDate: Date | null = null
+
+                                    if (activeAssets.length > 0) {
+                                      // Calculate stage progress for each active asset
+                                      activeAssets.forEach(asset => {
+                                        const totalStages = workflow.stages.length || 1
+                                        const currentStageIndex = workflow.stages.findIndex(s => s.stage_key === asset.current_stage_key)
+                                        const stageProgress = currentStageIndex >= 0 ? (currentStageIndex / totalStages) * 100 : 0
+                                        totalProgress += stageProgress
+
+                                        // Track oldest start date for cycle calculation
+                                        if (asset.started_at) {
+                                          const startDate = new Date(asset.started_at)
+                                          if (!oldestStartDate || startDate < oldestStartDate) {
+                                            oldestStartDate = startDate
+                                          }
+                                        }
+                                      })
+
+                                      // Average progress across all active assets
+                                      totalProgress = totalProgress / activeAssets.length
+                                    }
+
+                                    // Calculate days elapsed in current cycle
+                                    let daysElapsed = 0
+                                    if (oldestStartDate) {
+                                      const now = new Date()
+                                      daysElapsed = Math.floor((now.getTime() - oldestStartDate.getTime()) / (1000 * 60 * 60 * 24))
+                                      // Cap at cadence_days
+                                      daysElapsed = Math.min(daysElapsed, workflow.cadence_days)
+                                    }
+
+                                    const progressPercentage = Math.round(totalProgress)
+                                    const daysRemaining = workflow.cadence_days - daysElapsed
+
+                                    return (
                                       <div
-                                        className="absolute top-2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer"
-                                        style={{ left: `${position}%` }}
+                                        key={workflow.id}
+                                        className="bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-sm transition-all duration-200 cursor-pointer"
                                         onClick={() => handleSelectWorkflow(workflow)}
                                       >
-                                        {/* Workflow dot */}
-                                        <div className="relative">
-                                          <div
-                                            className="w-6 h-6 rounded-full border-4 border-white shadow-lg transform group-hover:scale-110 transition-transform duration-200"
-                                            style={{ backgroundColor: workflow.color }}
-                                          />
-                                          {workflow.is_default && (
-                                            <Star className="absolute -top-1 -right-1 w-3 h-3 text-yellow-500 fill-current" />
-                                          )}
-                                        </div>
-
-                                        {/* Workflow info */}
-                                        <div className="mt-2 text-center min-w-max">
-                                          <div className="flex items-center space-x-1 justify-center mb-1">
-                                            <p className="text-sm font-semibold text-gray-900">{workflow.name}</p>
-                                          </div>
-                                          <div className="flex items-center space-x-2 text-xs text-gray-600">
-                                            <Badge variant="secondary" size="sm">{cadenceCategory}</Badge>
-                                            <span>•</span>
-                                            <span>{workflow.cadence_days}d cycle</span>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      {/* Activity indicators */}
-                                      <div className="absolute bottom-2 right-4 flex items-center space-x-4 text-xs text-gray-500">
-                                        <div className="flex items-center space-x-1">
-                                          <Activity className="w-3 h-3 text-green-500" />
-                                          <span>{workflow.active_assets} active</span>
-                                        </div>
-                                        <div className="flex items-center space-x-1">
-                                          <Target className="w-3 h-3 text-blue-500" />
-                                          <span>{workflow.usage_count} total</span>
-                                        </div>
-                                        <div className="flex items-center space-x-1">
-                                          <CheckSquare className="w-3 h-3 text-gray-500" />
-                                          <span>{workflow.completed_assets} done</span>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Workflow stages preview */}
-                                    {workflow.stages && workflow.stages.length > 0 && (
-                                      <div className="mt-2 flex items-center space-x-2 pl-4">
-                                        <div className="text-xs text-gray-500">Stages:</div>
-                                        <div className="flex items-center space-x-1">
-                                          {workflow.stages.slice(0, 5).map((stage, stageIndex) => (
+                                        {/* Workflow Header */}
+                                        <div className="flex items-center justify-between mb-3">
+                                          <div className="flex items-center space-x-3">
                                             <div
-                                              key={stage.id}
-                                              className="w-2 h-2 rounded-full opacity-60"
-                                              style={{ backgroundColor: stage.stage_color }}
-                                              title={stage.stage_label}
+                                              className="w-3 h-3 rounded-full flex-shrink-0"
+                                              style={{ backgroundColor: workflow.color }}
                                             />
-                                          ))}
-                                          {workflow.stages.length > 5 && (
-                                            <span className="text-xs text-gray-400">+{workflow.stages.length - 5}</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                          </div>
+                                            <div>
+                                              <div className="flex items-center space-x-2">
+                                                <h5 className="text-sm font-semibold text-gray-900">{workflow.name}</h5>
+                                                {workflow.is_default && (
+                                                  <Star className="w-3 h-3 text-yellow-500 fill-current" />
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
 
-                          {/* Legend */}
-                          <div className="pt-6 border-t border-gray-200">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <h4 className="text-sm font-medium text-gray-700 mb-2">Timeline Categories</h4>
-                                <div className="flex items-center space-x-6 text-xs">
-                                  <div className="flex items-center space-x-1">
-                                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                    <span>Daily/Weekly (≤7d)</span>
-                                  </div>
-                                  <div className="flex items-center space-x-1">
-                                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                                    <span>Monthly (≤90d)</span>
-                                  </div>
-                                  <div className="flex items-center space-x-1">
-                                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                                    <span>Quarterly (≤365d)</span>
-                                  </div>
-                                  <div className="flex items-center space-x-1">
-                                    <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-                                    <span>Yearly (≤730d)</span>
-                                  </div>
-                                  <div className="flex items-center space-x-1">
-                                    <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                                    <span>Multi-Year (&gt;730d)</span>
-                                  </div>
+                                          {/* Activity Stats */}
+                                          <div className="flex items-center space-x-4 text-xs text-gray-500">
+                                            <div className="flex items-center space-x-1">
+                                              <Activity className="w-3 h-3 text-green-500" />
+                                              <span>{workflow.active_assets}</span>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                              <Target className="w-3 h-3 text-blue-500" />
+                                              <span>{workflow.usage_count}</span>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                              <CheckSquare className="w-3 h-3 text-gray-500" />
+                                              <span>{workflow.completed_assets}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Cycle Progress Bar */}
+                                        <div className="space-y-2">
+                                          <div className="flex items-center justify-between text-xs text-gray-600">
+                                            <span>Cycle Progress</span>
+                                          </div>
+                                          <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
+                                            <div
+                                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                                              style={{
+                                                width: `${progressPercentage}%`,
+                                                backgroundColor: workflow.color
+                                              }}
+                                            />
+                                          </div>
+                                          <div className="flex items-center justify-between text-xs text-gray-500">
+                                            <span>Start</span>
+                                            <span className="text-gray-600 font-medium">{Math.round(progressPercentage)}% complete</span>
+                                            <span>Reset</span>
+                                          </div>
+                                        </div>
+
+                                        {/* Stages Preview */}
+                                        {workflow.stages && workflow.stages.length > 0 && (
+                                          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center space-x-2">
+                                            <span className="text-xs text-gray-500">Stages:</span>
+                                            <div className="flex items-center space-x-1">
+                                              {workflow.stages.slice(0, 6).map((stage) => (
+                                                <div
+                                                  key={stage.id}
+                                                  className="w-2 h-2 rounded-full"
+                                                  style={{ backgroundColor: stage.stage_color }}
+                                                  title={stage.stage_label}
+                                                />
+                                              ))}
+                                              {workflow.stages.length > 6 && (
+                                                <span className="text-xs text-gray-400">+{workflow.stages.length - 6}</span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
                                 </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-medium text-gray-700">Total Workflows: {filteredWorkflows.length}</p>
-                                <p className="text-xs text-gray-500">Click any workflow to view details</p>
-                              </div>
-                            </div>
-                          </div>
+                              )
+                            })
+                          })()}
                         </div>
                       ) : (
                         <div className="text-center py-12">

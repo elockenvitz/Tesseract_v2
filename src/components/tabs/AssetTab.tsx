@@ -92,6 +92,22 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   const risksRef = useRef<EditableSectionWithHistoryRef>(null)
 
 
+  // Fetch full asset data if sector is missing
+  const { data: fullAsset } = useQuery({
+    queryKey: ['asset-full-data', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('sector')
+        .eq('id', asset.id)
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    enabled: !asset.sector && !!asset.id
+  })
+
   // Fetch workflow-specific priority
   const { data: workflowPriority } = useQuery({
     queryKey: ['asset-workflow-priority', asset.id, asset.workflow_id],
@@ -805,6 +821,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
     setShowNoteEditor(false)
     setSelectedNoteId(null)
     queryClient.invalidateQueries({ queryKey: ['asset-notes', asset.id] })
+    queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
   }
 
   const priorityOptions = [
@@ -817,37 +834,26 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
   return (
     <div className="space-y-6">
       {/* Asset Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-start space-x-10 flex-1">
-          {/* Company Info and Price in same section */}
-          <div className="flex items-start space-x-6">
-            <div className="flex flex-col">
-              <div className="flex items-baseline space-x-4 mb-1">
-                <h1 className="text-2xl font-bold text-gray-900">{asset.symbol}</h1>
-              </div>
-              <p className="text-lg text-gray-600">{asset.company_name}</p>
-              {asset.sector && <p className="text-sm text-gray-500">{asset.sector}</p>}
-            </div>
-
-            {/* Live Financial Data */}
-            <div className="flex-shrink-0">
-              <StockQuote symbol={asset.symbol} compact={true} className="min-w-0" />
-            </div>
-          </div>
-
-          {/* Coverage */}
-          <div className="flex-shrink-0">
+      <div className="space-y-4">
+        {/* Single Row - All Summary Info and Controls */}
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <h1 className="text-3xl font-bold text-gray-900">{asset.symbol}</h1>
+            <span className="text-gray-300">|</span>
+            <p className="text-xl text-gray-700">{asset.company_name}</p>
+            <span className="text-gray-300">|</span>
+            <StockQuote symbol={asset.symbol} compact={true} className="min-w-0" />
+            <span className="text-gray-300">|</span>
             <CoverageDisplay assetId={asset.id} coverage={coverage || []} />
+            {(asset.sector || fullAsset?.sector) && (
+              <>
+                <span className="text-gray-300">|</span>
+                <p className="text-sm text-gray-500">{asset.sector || fullAsset?.sector}</p>
+              </>
+            )}
           </div>
 
-          {/* Add to List Button */}
-          <div className="flex-shrink-0">
-            <AddToListButton assetId={asset.id} assetSymbol={asset.symbol} variant="outline" size="sm" />
-          </div>
-        </div>
-
-        {/* Status Badges */}
-        <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-3">
           {/* Asset Priority Badge */}
           <div className="relative">
             <div className="flex items-center space-x-2">
@@ -945,8 +951,10 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
             </div>
           </div>
 
+          {/* Add to List Button */}
+          <AddToListButton assetId={asset.id} assetSymbol={asset.symbol} variant="outline" size="sm" />
 
-
+          {/* Workflow Selector */}
           <AssetWorkflowSelector
             assetId={asset.id}
             currentWorkflowId={effectiveWorkflowId}
@@ -954,6 +962,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
             onWorkflowStart={handleWorkflowStart}
             onWorkflowStop={handleWorkflowStop}
           />
+          </div>
         </div>
       </div>
 
@@ -1381,11 +1390,7 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                 <div className="text-center py-12">
                   <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No related notes</h3>
-                  <p className="text-gray-500 mb-4">Create notes to document your research and thoughts about {asset.symbol}.</p>
-                  <Button size="sm" onClick={handleCreateNote}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add First Note
-                  </Button>
+                  <p className="text-gray-500">Create notes to document your research and thoughts about {asset.symbol}.</p>
                 </div>
               )}
             </div>
