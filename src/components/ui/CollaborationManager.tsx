@@ -155,8 +155,27 @@ export function CollaborationManager({
           permission,
           invited_by: user?.id
         })
-      
+
       if (error) throw error
+
+      // Create notification for the invited user
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          type: 'note_shared',
+          title: 'Note Shared With You',
+          message: `${user?.first_name || user?.email?.split('@')[0] || 'Someone'} shared the note "${noteTitle}" with you`,
+          context_type: 'note',
+          context_id: noteId,
+          context_data: {
+            note_title: noteTitle,
+            note_id: noteId,
+            note_type: noteType,
+            shared_by: user?.id,
+            permission
+          }
+        })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['note-collaborations', noteId, noteType] })

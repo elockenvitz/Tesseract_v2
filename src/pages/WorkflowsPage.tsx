@@ -72,6 +72,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false)
   const [showAddRuleModal, setShowAddRuleModal] = useState(false)
   const [editingRule, setEditingRule] = useState<string | null>(null)
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
+  const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null)
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false)
   const [editingWorkflowData, setEditingWorkflowData] = useState({
     name: '',
@@ -485,12 +487,38 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (workflowError) throw workflowError
     },
-    onSuccess: () => {
+    onSuccess: (_, deletedWorkflowId) => {
+      // Find the next workflow to select
+      if (workflows && workflows.length > 1) {
+        const deletedIndex = workflows.findIndex(w => w.id === deletedWorkflowId)
+        let nextWorkflow: WorkflowWithStats | null = null
+
+        // Try to select the next workflow in the list
+        if (deletedIndex < workflows.length - 1) {
+          nextWorkflow = workflows[deletedIndex + 1]
+        } else if (deletedIndex > 0) {
+          // If deleted was the last one, select the previous one
+          nextWorkflow = workflows[deletedIndex - 1]
+        }
+
+        if (nextWorkflow) {
+          setSelectedWorkflow(nextWorkflow)
+        } else {
+          setSelectedWorkflow(null)
+        }
+      } else {
+        setSelectedWorkflow(null)
+      }
+
       queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      setShowDeleteConfirmModal(false)
+      setWorkflowToDelete(null)
     },
     onError: (error) => {
       console.error('Error deleting workflow:', error)
       alert('Failed to delete workflow. Please try again.')
+      setShowDeleteConfirmModal(false)
+      setWorkflowToDelete(null)
     }
   })
 
@@ -841,11 +869,33 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       if (error) throw error
       return data
     },
-    onSuccess: (createdWorkflow) => {
-      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    onSuccess: async (createdWorkflow) => {
+      console.log('✅ Workflow created:', createdWorkflow)
+      // Invalidate and refetch workflows list - use the correct query key
+      await queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      await queryClient.refetchQueries({ queryKey: ['workflows-full'] })
+
       setShowInlineWorkflowCreator(false)
-      // Optionally select the newly created workflow
-      setSelectedWorkflow(createdWorkflow)
+
+      // Select the newly created workflow - need to wait for the workflows to be refetched
+      // Use a small delay to ensure the query has updated
+      setTimeout(() => {
+        // Get the query data with the correct key pattern
+        const queryCache = queryClient.getQueryCache()
+        const queries = queryCache.findAll({ queryKey: ['workflows-full'] })
+
+        if (queries.length > 0) {
+          const workflows = queries[0].state.data as WorkflowWithStats[] | undefined
+          const newWorkflow = workflows?.find(w => w.id === createdWorkflow.id)
+          if (newWorkflow) {
+            console.log('📍 Selecting newly created workflow:', newWorkflow)
+            setSelectedWorkflow(newWorkflow)
+          } else {
+            console.log('⚠️ Could not find newly created workflow in list')
+          }
+        }
+      }, 200)
+
       // Reset form
       setNewWorkflowData({
         name: '',
@@ -2267,6 +2317,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <BarChart3 className="w-4 h-4 mr-2" />
                               Usage Analytics
                             </Button>
+                            <Button
+                              variant="outline"
+                              className="justify-start text-error-600 hover:bg-error-50 hover:border-error-300"
+                              onClick={() => {
+                                setWorkflowToDelete(selectedWorkflow.id)
+                                setShowDeleteConfirmModal(true)
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Workflow
+                            </Button>
                           </div>
                         </div>
                       </Card>
@@ -2988,6 +3049,47 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             updateRuleMutation.mutate({ ruleId: editingRule, updates })
           }}
         />
+      )}
+
+      {/* Delete Workflow Confirmation Modal */}
+      {showDeleteConfirmModal && workflowToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Delete Workflow</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete <span className="font-semibold">{workflows?.find(w => w.id === workflowToDelete)?.name}</span>?
+                All workflow data, stages, and automation rules will be permanently removed.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteConfirmModal(false)
+                    setWorkflowToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => deleteWorkflowMutation.mutate(workflowToDelete)}
+                  disabled={deleteWorkflowMutation.isPending}
+                >
+                  {deleteWorkflowMutation.isPending ? 'Deleting...' : 'Yes, Delete'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

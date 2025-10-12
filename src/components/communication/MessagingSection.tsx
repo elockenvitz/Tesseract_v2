@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Send, Users, Settings, Quote, X, ChevronDown, Search, Filter, Calendar, User, Pin, Reply, MoreVertical, ArrowLeft } from 'lucide-react'
+import { MessageCircle, Send, Users, Settings, Quote, X, ChevronDown, Search, Filter, Calendar, User, Pin, Reply, MoreVertical, ArrowLeft, Eye } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { Card } from '../ui/Card'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { clsx } from 'clsx'
 
 interface MessagingSectionProps {
@@ -19,6 +19,8 @@ interface MessagingSectionProps {
   onContextChange?: (contextType: string, contextId: string, contextTitle: string, contextData?: any) => void
   onShowCoverageManager?: () => void
   onBack?: () => void
+  onFocusMode?: (enable: boolean) => void
+  isFocusMode?: boolean
 }
 
 interface Message {
@@ -44,17 +46,22 @@ export function MessagingSection({
   onCite,
   onContextChange,
   onShowCoverageManager,
-  onBack
+  onBack,
+  onFocusMode,
+  isFocusMode = false
 }: MessagingSectionProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  
+
   const [messageContent, setMessageContent] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [filterBy, setFilterBy] = useState<'all' | 'pinned' | 'replies'>('all')
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
+  const [mentionQuery, setMentionQuery] = useState<{ type: 'asset' | 'user' | null, query: string, position: number }>({ type: null, query: '', position: 0 })
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
 
   // Fetch recent conversations (when no context is selected)
   const { data: recentConversations = [] } = useQuery({
@@ -120,26 +127,26 @@ export function MessagingSection({
             if (conv.context_type === 'asset') {
               const { data: asset, error } = await supabase
                 .from('assets')
-                .select('symbol, company_name')
+                .select('*')
                 .eq('id', conv.context_id)
                 .maybeSingle()
 
               if (error) console.error('Error fetching asset:', error)
               contextName = asset ? `${asset.symbol} - ${asset.company_name}` : 'Unknown Asset'
               if (asset) {
-                contextData = { id: conv.context_id, symbol: asset.symbol, company_name: asset.company_name }
+                contextData = asset
               }
             } else if (conv.context_type === 'theme') {
               const { data: theme, error } = await supabase
                 .from('themes')
-                .select('name')
+                .select('*')
                 .eq('id', conv.context_id)
                 .maybeSingle()
 
               if (error) console.error('Error fetching theme:', error)
               contextName = theme?.name || 'Unknown Theme'
               if (theme) {
-                contextData = { id: conv.context_id, name: theme.name }
+                contextData = theme
               }
             } else if (conv.context_type === 'portfolio') {
               const { data: portfolio, error } = await supabase
@@ -223,6 +230,89 @@ export function MessagingSection({
     enabled: !contextType && !contextId && !!user?.id
   })
 
+  // Fetch mention suggestions for assets/themes/notes
+  const { data: mentionSuggestions = [] } = useQuery({
+    queryKey: ['mention-suggestions', mentionQuery.type, mentionQuery.query],
+    queryFn: async () => {
+      if (!mentionQuery.type || !mentionQuery.query) return []
+
+      const query = mentionQuery.query.toLowerCase()
+
+      if (mentionQuery.type === 'asset') {
+        // Search assets, themes, and notes
+        const results: any[] = []
+
+        // Search assets
+        const { data: assets } = await supabase
+          .from('assets')
+          .select('id, symbol, company_name')
+          .or(`symbol.ilike.%${query}%,company_name.ilike.%${query}%`)
+          .limit(5)
+
+        if (assets) {
+          results.push(...assets.map(a => ({
+            id: a.id,
+            type: 'asset',
+            label: `${a.symbol} - ${a.company_name}`,
+            symbol: a.symbol
+          })))
+        }
+
+        // Search themes
+        const { data: themes } = await supabase
+          .from('themes')
+          .select('id, name')
+          .ilike('name', `%${query}%`)
+          .limit(5)
+
+        if (themes) {
+          results.push(...themes.map(t => ({
+            id: t.id,
+            type: 'theme',
+            label: t.name
+          })))
+        }
+
+        // Search notes (from all note tables)
+        const { data: assetNotes } = await supabase
+          .from('asset_notes')
+          .select('id, title')
+          .ilike('title', `%${query}%`)
+          .limit(3)
+
+        if (assetNotes) {
+          results.push(...assetNotes.map(n => ({
+            id: n.id,
+            type: 'note',
+            label: n.title
+          })))
+        }
+
+        return results
+      } else if (mentionQuery.type === 'user') {
+        // Search users
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, email, first_name, last_name')
+          .or(`email.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
+          .limit(5)
+
+        if (users) {
+          return users.map(u => ({
+            id: u.id,
+            type: 'user',
+            label: u.first_name && u.last_name
+              ? `${u.first_name} ${u.last_name}`
+              : u.email
+          }))
+        }
+      }
+
+      return []
+    },
+    enabled: showMentionDropdown && !!mentionQuery.type && mentionQuery.query.length > 0
+  })
+
   // Fetch messages
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ['messages', contextType, contextId],
@@ -276,8 +366,92 @@ export function MessagingSection({
           ...data,
           user_id: user?.id
         }])
-      
+
       if (error) throw error
+
+      // Check for @ mentions in the message content
+      const mentionRegex = /@\[([^\]]+)\]\(user:([a-f0-9-]+)\)/g
+      const mentions = []
+      let match
+      while ((match = mentionRegex.exec(data.content)) !== null) {
+        mentions.push({
+          displayName: match[1],
+          userId: match[2]
+        })
+      }
+
+      // Process mentioned users
+      if (mentions.length > 0) {
+        const uniqueMentions = mentions.filter((mention, index, self) =>
+          mention.userId !== user?.id && // Don't notify yourself
+          index === self.findIndex(m => m.userId === mention.userId) // Remove duplicates
+        )
+
+        // Create notifications for each mentioned user
+        const notifications = uniqueMentions.map(mention => ({
+          user_id: mention.userId,
+          type: 'mention',
+          title: 'You were mentioned',
+          message: `${user?.first_name || user?.email?.split('@')[0] || 'Someone'} mentioned you in ${contextTitle || 'a discussion'}`,
+          context_type: data.context_type,
+          context_id: data.context_id,
+          context_data: {
+            message_content: data.content.substring(0, 200), // First 200 chars
+            mentioned_by: user?.id,
+            context_title: contextTitle
+          }
+        }))
+
+        if (notifications.length > 0) {
+          await supabase.from('notifications').insert(notifications)
+        }
+
+        // Auto-grant read access to mentioned users for the context
+        if (data.context_type === 'theme') {
+          // Check which users don't already have access
+          const { data: existingCollabs } = await supabase
+            .from('theme_collaborations')
+            .select('user_id')
+            .eq('theme_id', data.context_id)
+            .in('user_id', uniqueMentions.map(m => m.userId))
+
+          const existingUserIds = new Set(existingCollabs?.map(c => c.user_id) || [])
+          const newCollaborators = uniqueMentions
+            .filter(m => !existingUserIds.has(m.userId))
+            .map(m => ({
+              theme_id: data.context_id,
+              user_id: m.userId,
+              permission: 'read' as const,
+              invited_by: user?.id
+            }))
+
+          if (newCollaborators.length > 0) {
+            await supabase.from('theme_collaborations').insert(newCollaborators)
+          }
+        } else if (data.context_type === 'note') {
+          // Check which users don't already have access
+          const { data: existingCollabs } = await supabase
+            .from('note_collaborations')
+            .select('user_id')
+            .eq('note_id', data.context_id)
+            .in('user_id', uniqueMentions.map(m => m.userId))
+
+          const existingUserIds = new Set(existingCollabs?.map(c => c.user_id) || [])
+          const newCollaborators = uniqueMentions
+            .filter(m => !existingUserIds.has(m.userId))
+            .map(m => ({
+              note_id: data.context_id,
+              note_type: 'custom', // Default note type for mentions
+              user_id: m.userId,
+              permission: 'read' as const,
+              invited_by: user?.id
+            }))
+
+          if (newCollaborators.length > 0) {
+            await supabase.from('note_collaborations').insert(newCollaborators)
+          }
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
@@ -353,7 +527,90 @@ export function MessagingSection({
     })
   }
 
+  const handleMessageContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    const cursorPosition = e.target.selectionStart
+
+    setMessageContent(value)
+
+    // Check if user is typing a mention
+    const textBeforeCursor = value.substring(0, cursorPosition)
+    const lastHashPos = textBeforeCursor.lastIndexOf('#')
+    const lastAtPos = textBeforeCursor.lastIndexOf('@')
+    const lastSpacePos = Math.max(textBeforeCursor.lastIndexOf(' '), textBeforeCursor.lastIndexOf('\n'))
+
+    // Check for # mentions (assets/themes/notes)
+    if (lastHashPos > lastSpacePos && lastHashPos !== -1) {
+      const query = textBeforeCursor.substring(lastHashPos + 1)
+      // Only show dropdown if query doesn't contain spaces (still typing the mention)
+      if (!query.includes(' ') && !query.includes('\n')) {
+        setMentionQuery({ type: 'asset', query, position: lastHashPos })
+        setShowMentionDropdown(true)
+        return
+      }
+    }
+
+    // Check for @ mentions (users)
+    if (lastAtPos > lastSpacePos && lastAtPos !== -1) {
+      const query = textBeforeCursor.substring(lastAtPos + 1)
+      if (!query.includes(' ') && !query.includes('\n')) {
+        setMentionQuery({ type: 'user', query, position: lastAtPos })
+        setShowMentionDropdown(true)
+        return
+      }
+    }
+
+    // Hide dropdown if no active mention
+    setShowMentionDropdown(false)
+    setMentionQuery({ type: null, query: '', position: 0 })
+  }
+
+  const handleSelectMention = (suggestion: any) => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const beforeMention = messageContent.substring(0, mentionQuery.position)
+    const afterMention = messageContent.substring(textarea.selectionStart)
+
+    // Create the mention text
+    let mentionText = ''
+    if (mentionQuery.type === 'asset') {
+      mentionText = suggestion.type === 'asset'
+        ? `#${suggestion.symbol}`
+        : `#${suggestion.label.replace(/\s+/g, '-')}`
+    } else if (mentionQuery.type === 'user') {
+      mentionText = `@${suggestion.label.replace(/\s+/g, '-')}`
+    }
+
+    const newContent = beforeMention + mentionText + ' ' + afterMention
+    setMessageContent(newContent)
+    setShowMentionDropdown(false)
+    setMentionQuery({ type: null, query: '', position: 0 })
+
+    // Focus back on textarea
+    setTimeout(() => {
+      textarea.focus()
+      const newCursorPos = beforeMention.length + mentionText.length + 1
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle mention dropdown navigation
+    if (showMentionDropdown && mentionSuggestions.length > 0) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowMentionDropdown(false)
+        setMentionQuery({ type: null, query: '', position: 0 })
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        handleSelectMention(mentionSuggestions[0])
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -384,6 +641,19 @@ export function MessagingSection({
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
   }
 
+  const formatMessageTime = (createdAt: string) => {
+    const messageDate = new Date(createdAt)
+    const now = new Date()
+    const minutesAgo = differenceInMinutes(now, messageDate)
+
+    if (minutesAgo <= 9) {
+      return formatDistanceToNow(messageDate, { addSuffix: true })
+    } else {
+      // Show date and time for messages older than 9 minutes
+      return format(messageDate, 'MMM d, yyyy h:mm a')
+    }
+  }
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -391,6 +661,13 @@ export function MessagingSection({
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Auto-focus textarea when cited content is added
+  useEffect(() => {
+    if (citedContent) {
+      textareaRef.current?.focus()
+    }
+  }, [citedContent])
 
   // Mark unread messages as read when viewing this conversation
   useEffect(() => {
@@ -471,51 +748,68 @@ export function MessagingSection({
     <div className="flex flex-col h-full">
       {/* Context Header */}
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-        {/* Header with Back Button */}
-        {contextType && contextId && onBack && (
-          <div className="flex items-center space-x-3 mb-3">
+        {/* Header with Back Button, Search, Filter, and Focus Button */}
+        {contextType && contextId && (
+          <div className="flex items-center space-x-2 mb-3">
+            {onBack && (
+              <button
+                onClick={() => {
+                  console.log('🔙 Back button clicked')
+                  onBack()
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                title="Back to conversations"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search messages..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+
+            {/* Filter */}
+            <select
+              value={filterBy}
+              onChange={(e) => setFilterBy(e.target.value as any)}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 flex-shrink-0"
+            >
+              <option value="all">All</option>
+              <option value="pinned">Pinned</option>
+              <option value="replies">Replies</option>
+            </select>
+
+            {/* Focus Button */}
             <button
               onClick={() => {
-                console.log('🔙 Back button clicked')
-                onBack()
+                if (onFocusMode) {
+                  onFocusMode(true)
+                }
               }}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-              title="Back to conversations"
+              className={clsx(
+                "p-2 rounded-lg transition-colors flex-shrink-0",
+                isFocusMode
+                  ? "bg-primary-600 text-white hover:bg-primary-700"
+                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+              )}
+              title="Focus mode - Select component to cite"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <Eye className="h-5 w-5" />
             </button>
-            <h3 className="text-lg font-semibold text-gray-900">
-              {contextTitle || 'Discussion'}
-            </h3>
           </div>
         )}
 
-        {/* Search and Filter */}
-        <div className="flex items-center space-x-2 mb-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search messages..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-          <select
-            value={filterBy}
-            onChange={(e) => setFilterBy(e.target.value as any)}
-            className="px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-          >
-            <option value="all">All</option>
-            <option value="pinned">Pinned</option>
-            <option value="replies">Replies</option>
-          </select>
-        </div>
-
         {/* Citation Display */}
         {citedContent && (
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-3">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-1">
@@ -556,72 +850,152 @@ export function MessagingSection({
               ))}
             </div>
           ) : filteredMessages.length > 0 ? (
-            <div className="p-4 space-y-4">
-              {filteredMessages.map((message) => (
-                <div key={message.id} className="flex items-start space-x-3 group">
-                  <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary-600 text-xs font-semibold">
-                      {getUserInitials(message.user)}
-                    </span>
-                  </div>
+            <div className="p-4 space-y-0.5">
+              {filteredMessages.map((message, index) => {
+                const prevMessage = index > 0 ? filteredMessages[index - 1] : null
+                const isSameUser = prevMessage && prevMessage.user_id === message.user_id
+                const showUserInfo = !isSameUser
+                const isSelected = selectedMessageId === message.id
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-xs font-medium text-gray-900">
-                        {getUserDisplayName(message.user)}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                      </span>
-                      {message.is_pinned && (
-                        <Pin className="h-3 w-3 text-warning-500" />
-                      )}
-                      {message.field_name && (
-                        <Badge variant="primary" size="sm">
-                          {message.field_name}
-                        </Badge>
-                      )}
-                    </div>
+                return (
+                  <div key={message.id} className="group">
+                    {showUserInfo ? (
+                      <div
+                        className="flex items-start space-x-3 mt-3 first:mt-0 cursor-pointer"
+                        onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
+                      >
+                        <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-primary-600 text-xs font-semibold">
+                            {getUserInitials(message.user)}
+                          </span>
+                        </div>
 
-                    {/* Reply indicator */}
-                    {message.reply_to && (
-                      <div className="text-xs text-gray-500 mb-1 flex items-center">
-                        <Reply className="h-3 w-3 mr-1" />
-                        Replying to message
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="text-xs font-medium text-gray-900">
+                              {getUserDisplayName(message.user)}
+                            </span>
+                            {message.is_pinned && (
+                              <Pin className="h-3 w-3 text-warning-500" />
+                            )}
+                            {message.field_name && (
+                              <Badge variant="primary" size="sm">
+                                {message.field_name}
+                              </Badge>
+                            )}
+                          </div>
+
+                          {/* Reply indicator */}
+                          {message.reply_to && (
+                            <div className="text-xs text-gray-500 mb-1 flex items-center">
+                              <Reply className="h-3 w-3 mr-1" />
+                              Replying to message
+                            </div>
+                          )}
+
+                          {/* Cited content */}
+                          {message.cited_content && (
+                            <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
+                              <p className="text-xs text-gray-600 italic">
+                                {message.cited_content.substring(0, 100)}...
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+
+                          {/* Message Actions */}
+                          {isSelected && (
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span className="text-xs text-gray-500">
+                                {formatMessageTime(message.created_at)}
+                              </span>
+                              <span className="text-gray-300">•</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleReply(message.id)
+                                }}
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                              >
+                                Reply
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleTogglePin(message.id, message.is_pinned)
+                                }}
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                              >
+                                {message.is_pinned ? 'Unpin' : 'Pin'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex items-start hover:bg-gray-50 -mx-2 px-2 py-0.5 rounded cursor-pointer"
+                        onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
+                      >
+                        <div className="w-6 h-6 flex-shrink-0 mr-3"></div>
+                        <div className="flex-1 min-w-0">
+                          {/* Reply indicator */}
+                          {message.reply_to && (
+                            <div className="text-xs text-gray-500 mb-1 flex items-center">
+                              <Reply className="h-3 w-3 mr-1" />
+                              Replying to message
+                            </div>
+                          )}
+
+                          {/* Cited content */}
+                          {message.cited_content && (
+                            <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
+                              <p className="text-xs text-gray-600 italic">
+                                {message.cited_content.substring(0, 100)}...
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+
+                          {/* Message Actions */}
+                          {isSelected && (
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span className="text-xs text-gray-500">
+                                {formatMessageTime(message.created_at)}
+                              </span>
+                              <span className="text-gray-300">•</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleReply(message.id)
+                                }}
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                              >
+                                Reply
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleTogglePin(message.id, message.is_pinned)
+                                }}
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                              >
+                                {message.is_pinned ? 'Unpin' : 'Pin'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
-
-                    {/* Cited content */}
-                    {message.cited_content && (
-                      <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
-                        <p className="text-xs text-gray-600 italic">
-                          {message.cited_content.substring(0, 100)}...
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {message.content}
-                    </div>
-
-                    {/* Message Actions */}
-                    <div className="flex items-center space-x-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handleReply(message.id)}
-                        className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
-                      >
-                        Reply
-                      </button>
-                      <button
-                        onClick={() => handleTogglePin(message.id, message.is_pinned)}
-                        className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
-                      >
-                        {message.is_pinned ? 'Unpin' : 'Pin'}
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <div ref={messagesEndRef} className="h-4" />
             </div>
           ) : (
@@ -635,7 +1009,7 @@ export function MessagingSection({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 relative">
         {/* Reply indicator */}
         {replyToMessage && replyToMessageData && (
           <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -659,15 +1033,33 @@ export function MessagingSection({
           </div>
         )}
 
+        {/* Mention Dropdown */}
+        {showMentionDropdown && mentionSuggestions.length > 0 && (
+          <div className="absolute bottom-full left-4 right-4 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
+            {mentionSuggestions.map((suggestion, index) => (
+              <button
+                key={`${suggestion.type}-${suggestion.id}`}
+                onClick={() => handleSelectMention(suggestion)}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2 border-b border-gray-100 last:border-b-0"
+              >
+                <span className="text-xs font-medium text-gray-500 uppercase w-12">
+                  {suggestion.type}
+                </span>
+                <span className="text-gray-900">{suggestion.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex space-x-2">
           <textarea
             ref={textareaRef}
             value={messageContent}
-            onChange={(e) => setMessageContent(e.target.value)}
+            onChange={handleMessageContentChange}
             onKeyDown={handleKeyDown}
             placeholder={
-              contextType && contextId 
-                ? `Message about ${contextTitle}...`
+              contextType && contextId
+                ? `Message about ${contextTitle}... (Use # for assets/themes/notes, @ for users)`
                 : "Select a context to start messaging..."
             }
             className="flex-1 p-3 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -683,14 +1075,14 @@ export function MessagingSection({
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        
+
         {!contextType || !contextId ? (
           <p className="text-xs text-gray-500 mt-2">
             Open an asset, portfolio, or theme tab to start a discussion
           </p>
         ) : (
           <p className="text-xs text-gray-500 mt-2">
-            Press Enter to send, Shift+Enter for new line
+            Press Enter to send, Shift+Enter for new line • Use # for mentions, @ for users
           </p>
         )}
       </div>

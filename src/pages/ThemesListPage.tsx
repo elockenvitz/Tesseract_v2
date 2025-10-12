@@ -29,6 +29,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
   const [newThemeDescription, setNewThemeDescription] = useState('')
   const [newThemeType, setNewThemeType] = useState('general')
   const [newThemeColor, setNewThemeColor] = useState('#3b82f6')
+  const [newThemeIsPublic, setNewThemeIsPublic] = useState(false)
   const [similarThemes, setSimilarThemes] = useState<any[]>([])
   const [searchingSimilar, setSearchingSimilar] = useState(false)
   
@@ -47,48 +48,84 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
     { value: '#6b7280', label: 'Gray' }
   ]
 
-  // Fetch all themes
+  // Fetch themes user has access to (owned or collaborated)
   const { data: themes, isLoading } = useQuery({
-    queryKey: ['all-themes'],
+    queryKey: ['all-themes', user?.id],
     queryFn: async () => {
-      console.log('🔍 Fetching all themes from database...')
+      if (!user?.id) return []
+
+      console.log('🔍 Fetching accessible themes from database for user:', user.id)
       try {
-        const { data, error } = await supabase
+        // Get themes where user is owner or has collaboration access
+        const { data: ownedThemes, error: ownedError } = await supabase
           .from('themes')
           .select(`
             *,
             theme_notes(id, title, updated_at)
           `)
-          .order('created_at', { ascending: false })
-        
-        if (error) {
-          console.error('❌ Supabase error fetching themes:', error)
-          console.error('❌ Error details:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          })
-          
-          // Check if it's an RLS policy issue
-          if (error.code === 'PGRST116' || error.message?.includes('policy')) {
-            throw new Error('Access denied: Please check that Row Level Security policies are configured for the themes table')
-          }
-          
-          throw error
+          .eq('created_by', user.id)
+
+        console.log('📊 Owned themes:', ownedThemes?.length || 0, ownedThemes)
+        if (ownedError) {
+          console.error('❌ Error fetching owned themes:', ownedError)
+          throw ownedError
         }
-        
-        console.log('✅ Themes fetched:', data?.length || 0, 'records')
-        console.log('📋 Themes data:', data)
-        return data || []
+
+        // Get themes where user is a collaborator
+        const { data: collaborations, error: collabError } = await supabase
+          .from('theme_collaborations')
+          .select('theme_id')
+          .eq('user_id', user.id)
+
+        if (collabError) throw collabError
+
+        const collaboratedThemeIds = collaborations?.map(c => c.theme_id) || []
+
+        let collaboratedThemes: any[] = []
+        if (collaboratedThemeIds.length > 0) {
+          const { data, error: collabThemesError } = await supabase
+            .from('themes')
+            .select(`
+              *,
+              theme_notes(id, title, updated_at)
+            `)
+            .in('id', collaboratedThemeIds)
+
+          if (collabThemesError) throw collabThemesError
+          collaboratedThemes = data || []
+        }
+
+        // Get public themes
+        const { data: publicThemes, error: publicError } = await supabase
+          .from('themes')
+          .select(`
+            *,
+            theme_notes(id, title, updated_at)
+          `)
+          .eq('is_public', true)
+          .neq('created_by', user.id) // Exclude owned themes already included
+
+        if (publicError) throw publicError
+
+        // Combine and deduplicate
+        const allThemes = [...(ownedThemes || []), ...collaboratedThemes, ...(publicThemes || [])]
+        const uniqueThemes = Array.from(new Map(allThemes.map(t => [t.id, t])).values())
+
+        console.log('✅ Themes summary:')
+        console.log('  - Owned:', ownedThemes?.length || 0)
+        console.log('  - Collaborated:', collaboratedThemes.length)
+        console.log('  - Public:', publicThemes?.length || 0)
+        console.log('  - Total unique:', uniqueThemes.length)
+        console.log('  - Final themes:', uniqueThemes)
+        return uniqueThemes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       } catch (fetchError) {
         console.error('❌ Network or fetch error:', fetchError)
-        
+
         // Check if it's a network connectivity issue
         if (fetchError instanceof TypeError && fetchError.message === 'Failed to fetch') {
           throw new Error('Network error: Unable to connect to the database. Please check your internet connection and try again.')
         }
-        
+
         throw fetchError
       }
     },
@@ -208,6 +245,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       description: string
       theme_type: string
       color: string
+      is_public: boolean
     }) => {
       const { data, error } = await supabase
         .from('themes')
@@ -216,6 +254,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
           description: themeData.description,
           theme_type: themeData.theme_type,
           color: themeData.color,
+          is_public: themeData.is_public,
           created_by: user?.id
         }])
         .select()
@@ -231,6 +270,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       setNewThemeDescription('')
       setNewThemeType('general')
       setNewThemeColor('#3b82f6')
+      setNewThemeIsPublic(false)
       setSimilarThemes([])
       
       // Navigate to the new theme if onThemeSelect is provided
@@ -255,7 +295,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       name: newThemeName.trim(),
       description: newThemeDescription.trim(),
       theme_type: newThemeType,
-      color: newThemeColor
+      color: newThemeColor,
+      is_public: newThemeIsPublic
     })
   }
 
@@ -265,6 +306,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
     setNewThemeDescription('')
     setNewThemeType('general')
     setNewThemeColor('#3b82f6')
+    setNewThemeIsPublic(false)
     setSimilarThemes([])
     
     if (onThemeSelect) {
@@ -696,6 +738,30 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     ))}
                   </div>
                 </div>
+
+                {/* Public/Private Settings */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    Visibility
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={newThemeIsPublic}
+                      onChange={(e) => setNewThemeIsPublic(e.target.checked)}
+                      className="mr-2 rounded"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Make public (visible to all users)
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {newThemeIsPublic
+                      ? 'This theme will be visible to everyone. You can share write access with specific users after creation.'
+                      : 'This theme will be private. You can share it with specific users after creation.'
+                    }
+                  </p>
+                </div>
               </div>
               {/* Footer */}
               <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0">
@@ -707,6 +773,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     setNewThemeDescription('')
                     setNewThemeType('general')
                     setNewThemeColor('#3b82f6')
+                    setNewThemeIsPublic(false)
                     setSimilarThemes([])
                   }}
                 >

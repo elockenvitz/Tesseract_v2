@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { clsx } from 'clsx'
 
 interface DirectMessagingProps {
@@ -66,6 +66,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const [groupName, setGroupName] = useState('')
   const [groupDescription, setGroupDescription] = useState('')
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const queryClient = useQueryClient()
@@ -261,6 +262,71 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
         .from('conversations')
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId)
+
+      // Check for @ mentions in the message content
+      const mentionRegex = /@\[([^\]]+)\]\(user:([a-f0-9-]+)\)/g
+      const mentions = []
+      let match
+      while ((match = mentionRegex.exec(content)) !== null) {
+        mentions.push({
+          displayName: match[1],
+          userId: match[2]
+        })
+      }
+
+      // Process mentioned users
+      if (mentions.length > 0) {
+        const currentConversation = conversations?.find(c => c.id === conversationId)
+        const conversationName = currentConversation?.name ||
+                                currentConversation?.participants
+                                  .filter(p => p.user_id !== user?.id)
+                                  .map(p => p.user?.first_name || p.user?.email?.split('@')[0])
+                                  .join(', ') || 'a conversation'
+
+        const uniqueMentions = mentions.filter((mention, index, self) =>
+          mention.userId !== user?.id && // Don't notify yourself
+          index === self.findIndex(m => m.userId === mention.userId) // Remove duplicates
+        )
+
+        // Create notifications for each mentioned user
+        const notifications = uniqueMentions.map(mention => ({
+          user_id: mention.userId,
+          type: 'mention',
+          title: 'You were mentioned',
+          message: `${user?.first_name || user?.email?.split('@')[0] || 'Someone'} mentioned you in ${conversationName}`,
+          context_type: 'conversation',
+          context_id: conversationId,
+          context_data: {
+            message_content: content.substring(0, 200), // First 200 chars
+            mentioned_by: user?.id,
+            conversation_name: conversationName
+          }
+        }))
+
+        if (notifications.length > 0) {
+          await supabase.from('notifications').insert(notifications)
+        }
+
+        // Auto-add mentioned users to conversation if not already participants
+        const { data: existingParticipants } = await supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .in('user_id', uniqueMentions.map(m => m.userId))
+
+        const existingUserIds = new Set(existingParticipants?.map(p => p.user_id) || [])
+        const newParticipants = uniqueMentions
+          .filter(m => !existingUserIds.has(m.userId))
+          .map(m => ({
+            conversation_id: conversationId,
+            user_id: m.userId,
+            is_admin: false
+          }))
+
+        if (newParticipants.length > 0) {
+          await supabase.from('conversation_participants').insert(newParticipants)
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversation-messages', selectedConversationId] })
@@ -363,23 +429,35 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   const getUserInitials = (user: any) => {
     if (!user) return 'UU'
-    
+
     if (user.first_name && user.last_name) {
       return (user.first_name[0] + user.last_name[0]).toUpperCase()
     }
-    
+
     if (user.email) {
       const email = user.email
       const parts = email.split('@')[0].split('.')
       if (parts.length >= 2) {
         return (parts[0][0] + parts[1][0]).toUpperCase()
       }
-      
+
       const name = email.split('@')[0]
       return name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase()
     }
-    
+
     return 'UU'
+  }
+
+  const formatMessageTime = (createdAt: string) => {
+    const messageDate = new Date(createdAt)
+    const now = new Date()
+    const minutesAgo = differenceInMinutes(now, messageDate)
+
+    if (minutesAgo <= 9) {
+      return formatDistanceToNow(messageDate, { addSuffix: true })
+    } else {
+      return format(messageDate, 'MMM d, yyyy h:mm a')
+    }
   }
 
   const getConversationTitle = (conversation: Conversation) => {
@@ -761,34 +839,73 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               ))}
             </div>
           ) : messages && messages.length > 0 ? (
-            <div className="space-y-4 p-4">
-              {messages.map((message) => (
-                <div key={message.id} className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary-600 text-sm font-semibold">
-                      {getUserInitials(message.user)}
-                    </span>
-                  </div>
+            <div className="p-4 space-y-0.5">
+              {messages.map((message, index) => {
+                const prevMessage = index > 0 ? messages[index - 1] : null
+                const isSameUser = prevMessage && prevMessage.user_id === message.user_id
+                const showUserInfo = !isSameUser
+                const isSelected = selectedMessageId === message.id
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-sm font-medium text-gray-900">
-                        {getUserDisplayName(message.user)}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                      </span>
-                      {message.is_edited && (
-                        <span className="text-xs text-gray-400">(edited)</span>
-                      )}
-                    </div>
+                return (
+                  <div key={message.id} className="group">
+                    {showUserInfo ? (
+                      <div
+                        className="flex items-start space-x-3 mt-3 first:mt-0 cursor-pointer"
+                        onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
+                      >
+                        <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-primary-600 text-xs font-semibold">
+                            {getUserInitials(message.user)}
+                          </span>
+                        </div>
 
-                    <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {message.content}
-                    </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="text-xs font-medium text-gray-900">
+                              {getUserDisplayName(message.user)}
+                            </span>
+                            {message.is_edited && (
+                              <span className="text-xs text-gray-400">(edited)</span>
+                            )}
+                          </div>
+
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+
+                          {isSelected && (
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span className="text-xs text-gray-500">
+                                {formatMessageTime(message.created_at)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex items-start hover:bg-gray-50 -mx-2 px-2 py-0.5 rounded cursor-pointer"
+                        onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
+                      >
+                        <div className="w-6 h-6 flex-shrink-0 mr-3"></div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+
+                          {isSelected && (
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span className="text-xs text-gray-500">
+                                {formatMessageTime(message.created_at)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <div ref={messagesEndRef} className="h-4" />
             </div>
           ) : (

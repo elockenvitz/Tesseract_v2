@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap } from 'lucide-react'
+import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
@@ -31,12 +32,20 @@ interface AssetTabProps {
   asset: any
   onCite?: (content: string, fieldName?: string) => void
   onNavigate?: (tab: { id: string, title: string, type: string, data?: any }) => void
+  isFocusMode?: boolean
 }
 
-export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
+export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
   const { user } = useAuth()
   const [assetPriority, setAssetPriority] = useState(asset.priority || 'none')
   const [workflowPriorityState, setWorkflowPriorityState] = useState('none')
+
+  // Handle component citation in focus mode
+  const handleComponentClick = useCallback((content: string, fieldName: string) => {
+    if (isFocusMode && onCite) {
+      onCite(content, fieldName)
+    }
+  }, [isFocusMode, onCite])
 
   // Timeline stages mapping for backward compatibility
   const stageMapping = {
@@ -1051,7 +1060,13 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
         <div className="p-6">
           {activeTab === 'thesis' && (
             <div className="space-y-6">
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div
+                className={clsx(
+                  "bg-white border border-gray-200 rounded-lg p-6",
+                  isFocusMode && "citable-component"
+                )}
+                onClick={() => handleComponentClick(asset.thesis || '', 'Investment Thesis')}
+              >
                 <EditableSectionWithHistory
                   ref={thesisRef}
                   title="Investment Thesis"
@@ -1062,11 +1077,16 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                   onEditEnd={handleEditEnd}
                   assetId={asset.id}
                   fieldName="thesis"
-                  onCite={onCite}
                 />
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <div
+                className={clsx(
+                  "bg-blue-50 border border-blue-200 rounded-lg p-6",
+                  isFocusMode && "citable-component"
+                )}
+                onClick={() => handleComponentClick(asset.where_different || '', 'Where We are Different')}
+              >
                 <EditableSectionWithHistory
                   ref={whereDifferentRef}
                   title="Where We are Different"
@@ -1077,11 +1097,16 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                   onEditEnd={handleEditEnd}
                   assetId={asset.id}
                   fieldName="where_different"
-                  onCite={onCite}
                 />
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-6">
+              <div
+                className={clsx(
+                  "bg-amber-50 border border-amber-200 rounded-lg p-6",
+                  isFocusMode && "citable-component"
+                )}
+                onClick={() => handleComponentClick(asset.risks_to_thesis || '', 'Risks to Thesis')}
+              >
                 <EditableSectionWithHistory
                   ref={risksRef}
                   title="Risks to Thesis"
@@ -1092,7 +1117,6 @@ export function AssetTab({ asset, onCite, onNavigate }: AssetTabProps) {
                   onEditEnd={handleEditEnd}
                   assetId={asset.id}
                   fieldName="risks_to_thesis"
-                  onCite={onCite}
                 />
               </div>
             </div>

@@ -1,6 +1,7 @@
 import React from 'react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { clsx } from 'clsx'
+import { Eye, X } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
@@ -32,21 +33,31 @@ export function Layout({
   onSearchResult,
   onFocusSearch
 }: LayoutProps) {
-  const { 
-    isCommPaneOpen, 
+  const {
+    isCommPaneOpen,
     isCommPaneFullscreen,
-    currentCitation, 
-    toggleCommPane, 
+    currentCitation,
+    toggleCommPane,
     toggleCommPaneFullscreen,
-    cite, 
+    cite: originalCite,
     clearCitation,
     openCommPane
   } = useCommunication()
-  
+
   const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages'>('messages')
   const [showCoverageManager, setShowCoverageManager] = useState(false)
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
+  const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
+
+  // Wrap cite function to exit focus mode after citing
+  const cite = useCallback((content: string, fieldName?: string) => {
+    originalCite(content, fieldName)
+    // Exit focus mode after citing a component
+    if (isFocusMode) {
+      setIsFocusMode(false)
+    }
+  }, [originalCite, isFocusMode])
 
   const handleShowCoverageManager = useCallback(() => {
     setShowCoverageManager(true)
@@ -89,6 +100,42 @@ export function Layout({
     }
   }
 
+  const handleFocusMode = useCallback((enable: boolean) => {
+    setIsFocusMode(enable)
+    console.log('🔍 Focus mode:', enable ? 'enabled' : 'disabled')
+
+    // When enabling focus mode, switch context to current tab and open comm pane
+    if (enable) {
+      // Get the current tab's context
+      const tabContext = getCommContext()
+
+      // If current tab has a valid context, switch to it
+      if (tabContext.contextType && tabContext.contextId) {
+        console.log('🎯 Switching to current tab context:', tabContext)
+        // Clear any override context to use the current tab's context
+        setCommPaneContext(null)
+        // Switch to messages view
+        setCommPaneView('messages')
+        // Open the comm pane if it's not already open
+        if (!isCommPaneOpen) {
+          toggleCommPane()
+        }
+      }
+    }
+  }, [isCommPaneOpen, toggleCommPane])
+
+  // ESC key listener to exit focus mode
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isFocusMode) {
+        handleFocusMode(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscKey)
+    return () => document.removeEventListener('keydown', handleEscKey)
+  }, [isFocusMode, handleFocusMode])
+
   // Determine communication context from active tab
   const getCommContext = () => {
     if (!activeTabId) return { contextType: undefined, contextId: undefined, contextTitle: undefined }
@@ -98,10 +145,15 @@ export function Layout({
     
     // Extract context from tab type and data
     if (activeTab.type === 'asset' && activeTab.data?.id) {
+      // Use full format: "SYMBOL - Company Name" to match recent conversations
+      const symbol = activeTab.data.symbol || activeTab.title
+      const companyName = activeTab.data.company_name
+      const contextTitle = companyName ? `${symbol} - ${companyName}` : symbol
+
       return {
         contextType: 'asset' as const,
         contextId: activeTab.data.id,
-        contextTitle: activeTab.data.symbol || activeTab.title
+        contextTitle
       }
     }
     
@@ -210,9 +262,22 @@ export function Layout({
       <main className="flex-1">
         <div className={clsx(
           "px-4 sm:px-6 lg:px-8 py-6 relative transition-all duration-300",
-          isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0"
+          isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
+          isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
         )}>
-          {React.cloneElement(children as React.ReactElement, { onCite: cite })}
+          {isFocusMode && (
+            <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-primary-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center space-x-3">
+              <Eye className="h-5 w-5" />
+              <span className="font-medium">Focus Mode: Click any component to cite it • Press ESC to exit</span>
+              <button
+                onClick={() => handleFocusMode(false)}
+                className="ml-2 hover:bg-primary-700 rounded-full p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          {React.cloneElement(children as React.ReactElement, { onCite: cite, isFocusMode })}
         </div>
       </main>
       
@@ -231,6 +296,8 @@ export function Layout({
         onCite={cite}
         onContextChange={handleContextChange}
         onShowCoverageManager={handleShowCoverageManager}
+        onFocusMode={handleFocusMode}
+        isFocusMode={isFocusMode}
       />
       
       <CoverageManager

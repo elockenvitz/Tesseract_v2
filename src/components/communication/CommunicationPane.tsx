@@ -21,6 +21,8 @@ interface CommunicationPaneProps {
   onCite?: (content: string, fieldName?: string) => void
   onContextChange?: (contextType: string, contextId: string, contextTitle: string, contextData?: any) => void
   onShowCoverageManager?: () => void
+  onFocusMode?: (enable: boolean) => void
+  isFocusMode?: boolean
 }
 
 export function CommunicationPane({
@@ -37,7 +39,9 @@ export function CommunicationPane({
   fieldName,
   onCite,
   onContextChange,
-  onShowCoverageManager
+  onShowCoverageManager,
+  onFocusMode,
+  isFocusMode = false
 }: CommunicationPaneProps) {
 
   const handleBackToConversations = () => {
@@ -57,7 +61,7 @@ export function CommunicationPane({
       case 'direct-messages':
         return 'Direct Messages'
       case 'messages':
-        return contextTitle ? `Discussion: ${contextTitle}` : 'Discussion'
+        return contextTitle || 'Discussion'
       case 'notifications':
         return 'Notifications'
       case 'profile':
@@ -118,6 +122,8 @@ export function CommunicationPane({
             onContextChange={onContextChange}
             onShowCoverageManager={onShowCoverageManager}
             onBack={handleBackToConversations}
+            onFocusMode={onFocusMode}
+            isFocusMode={isFocusMode}
           />
         )
       case 'notifications':

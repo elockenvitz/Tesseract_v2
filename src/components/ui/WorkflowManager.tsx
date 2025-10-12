@@ -1344,7 +1344,19 @@ export function WorkflowManager({
                 </div>
 
                 <div>
-                  <h5 className="font-medium text-gray-900 mb-3">Stages</h5>
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="font-medium text-gray-900">Stages</h5>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const workflow = workflows?.find(w => w.id === selectedWorkflow)
+                        if (workflow) handleEditWorkflow(workflow)
+                      }}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Stage
+                    </Button>
+                  </div>
                   <div className="space-y-3">
                     {workflowStages.map((stage, index) => (
                       <div key={stage.id} className="flex items-center space-x-4 p-3 border border-gray-200 rounded-lg">

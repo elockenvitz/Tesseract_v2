@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft } from 'lucide-react'
+import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, UserPlus, UserMinus, X, Search, Trash2 } from 'lucide-react'
+import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -14,9 +15,11 @@ import { formatDistanceToNow } from 'date-fns'
 
 interface ThemeTabProps {
   theme: any
+  isFocusMode?: boolean
+  onCite?: (content: string, fieldName?: string) => void
 }
 
-export function ThemeTab({ theme }: ThemeTabProps) {
+export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) {
   const { user } = useAuth()
   const [themeType, setThemeType] = useState(theme.theme_type || 'general')
   const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'related-assets' | 'notes'>('thesis')
@@ -25,7 +28,26 @@ export function ThemeTab({ theme }: ThemeTabProps) {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showAddAssetModal, setShowAddAssetModal] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [invitePermission, setInvitePermission] = useState<'read' | 'write'>('read')
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean
+    collaborationId: string | null
+    userEmail: string
+  }>({
+    isOpen: false,
+    collaborationId: null,
+    userEmail: ''
+  })
   const queryClient = useQueryClient()
+
+  // Handle component citation in focus mode
+  const handleComponentClick = useCallback((content: string, fieldName: string) => {
+    if (isFocusMode && onCite) {
+      onCite(content, fieldName)
+    }
+  }, [isFocusMode, onCite])
 
   // Refs for each editable section
   const thesisRef = useRef<EditableSectionRef>(null)
@@ -72,6 +94,86 @@ export function ThemeTab({ theme }: ThemeTabProps) {
     },
   })
 
+  // Fetch owner details
+  const { data: ownerDetails } = useQuery({
+    queryKey: ['theme-owner', theme.created_by],
+    queryFn: async () => {
+      if (!theme.created_by) return null
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .eq('id', theme.created_by)
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    enabled: showShareModal && !!theme.created_by
+  })
+
+  // Fetch existing collaborations
+  const { data: collaborations, isLoading: collaborationsLoading } = useQuery({
+    queryKey: ['theme-collaborations', theme.id],
+    queryFn: async () => {
+      // First get collaborations
+      const { data: collaborationsData, error: collaborationsError } = await supabase
+        .from('theme_collaborations')
+        .select('*')
+        .eq('theme_id', theme.id)
+        .order('created_at', { ascending: false })
+
+      if (collaborationsError) throw collaborationsError
+      if (!collaborationsData || collaborationsData.length === 0) return []
+
+      // Get unique user IDs
+      const userIds = [...new Set(collaborationsData.map((c: any) => c.user_id))]
+
+      // Fetch user details separately
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .in('id', userIds)
+
+      if (usersError) throw usersError
+
+      // Combine the data
+      const usersMap = new Map(usersData?.map(u => [u.id, u]) || [])
+
+      return collaborationsData.map((collaboration: any) => ({
+        ...collaboration,
+        user: usersMap.get(collaboration.user_id)
+      }))
+    },
+    enabled: showShareModal
+  })
+
+  // Search for users to invite
+  const { data: searchResults } = useQuery({
+    queryKey: ['user-search', searchQuery],
+    queryFn: async () => {
+      if (!searchQuery.trim() || searchQuery.length < 2) return []
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .or(`email.ilike.%${searchQuery.toLowerCase()}%,first_name.ilike.%${searchQuery.toLowerCase()}%,last_name.ilike.%${searchQuery.toLowerCase()}%`)
+        .neq('id', user?.id) // Exclude current user
+        .limit(10)
+
+      if (error) throw error
+
+      // Filter out users who are already collaborators or the owner
+      const existingUserIds = new Set(collaborations?.map((c: any) => c.user_id) || [])
+      existingUserIds.add(theme.created_by) // Exclude the owner
+
+      const filteredResults = data?.filter(u => !existingUserIds.has(u.id)) || []
+
+      return filteredResults
+    },
+    enabled: showShareModal && searchQuery.length >= 2
+  })
+
   // ---------- Mutation (safer: maybeSingle + diagnostics) ----------
   const updateThemeMutation = useMutation({
     mutationFn: async (updates: any) => {
@@ -100,6 +202,73 @@ export function ThemeTab({ theme }: ThemeTabProps) {
     }
   })
 
+  // ---------- Collaboration Mutations ----------
+  const inviteUserMutation = useMutation({
+    mutationFn: async ({ userId, permission }: { userId: string; permission: 'read' | 'write' }) => {
+      const { error } = await supabase
+        .from('theme_collaborations')
+        .insert({
+          theme_id: theme.id,
+          user_id: userId,
+          permission,
+          invited_by: user?.id
+        })
+
+      if (error) throw error
+
+      // Create notification for the invited user
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          type: 'theme_shared',
+          title: 'Theme Shared With You',
+          message: `${user?.first_name || user?.email?.split('@')[0] || 'Someone'} shared the theme "${theme.name}" with you`,
+          context_type: 'theme',
+          context_id: theme.id,
+          context_data: {
+            theme_name: theme.name,
+            theme_id: theme.id,
+            shared_by: user?.id,
+            permission
+          }
+        })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['theme-collaborations', theme.id] })
+      setSearchQuery('')
+    }
+  })
+
+  const updatePermissionMutation = useMutation({
+    mutationFn: async ({ collaborationId, permission }: { collaborationId: string; permission: 'read' | 'write' }) => {
+      const { error } = await supabase
+        .from('theme_collaborations')
+        .update({ permission })
+        .eq('id', collaborationId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['theme-collaborations', theme.id] })
+    }
+  })
+
+  const removeCollaborationMutation = useMutation({
+    mutationFn: async (collaborationId: string) => {
+      const { error } = await supabase
+        .from('theme_collaborations')
+        .delete()
+        .eq('id', collaborationId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['theme-collaborations', theme.id] })
+      setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })
+    }
+  })
+
   // ---------- Helpers ----------
   const getThemeTypeColor = (type: string | null) => {
     switch (type) {
@@ -108,6 +277,46 @@ export function ThemeTab({ theme }: ThemeTabProps) {
       case 'strategy': return 'warning'
       case 'macro': return 'error'
       case 'general': return 'default'
+      default: return 'default'
+    }
+  }
+
+  const handleInviteUser = (userId: string) => {
+    inviteUserMutation.mutate({ userId, permission: invitePermission })
+  }
+
+  const handleUpdatePermission = (collaborationId: string, permission: 'read' | 'write') => {
+    updatePermissionMutation.mutate({ collaborationId, permission })
+  }
+
+  const handleRemoveCollaboration = (collaborationId: string, userEmail: string) => {
+    setDeleteConfirm({
+      isOpen: true,
+      collaborationId,
+      userEmail
+    })
+  }
+
+  const confirmRemoveCollaboration = () => {
+    if (deleteConfirm.collaborationId) {
+      removeCollaborationMutation.mutate(deleteConfirm.collaborationId)
+    }
+  }
+
+  const getUserDisplayName = (user: any) => {
+    if (!user) return 'Unknown User'
+
+    if (user.first_name && user.last_name) {
+      return `${user.first_name} ${user.last_name}`
+    }
+
+    return user.email?.split('@')[0] || 'Unknown User'
+  }
+
+  const getPermissionColor = (permission: string) => {
+    switch (permission) {
+      case 'write': return 'warning'
+      case 'read': return 'success'
       default: return 'default'
     }
   }
@@ -203,6 +412,14 @@ export function ThemeTab({ theme }: ThemeTabProps) {
                 style={{ backgroundColor: theme.color || '#3b82f6' }}
               />
               <h1 className="text-2xl font-bold text-gray-900">{theme.name}</h1>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowShareModal(true)}
+              >
+                <Share2 className="h-4 w-4 mr-1" />
+                Share
+              </Button>
             </div>
             {theme.description && (
               <p className="text-lg text-gray-600 mb-1">{theme.description}</p>
@@ -212,22 +429,16 @@ export function ThemeTab({ theme }: ThemeTabProps) {
           {/* Right side: Stats */}
           <div className="text-left">
             {notes && notes.length > 0 && (
-              <div className="mb-1">
+              <div>
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</p>
                 <p className="text-xl font-bold text-gray-900">{notes.length}</p>
               </div>
             )}
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</p>
-              <p className="text-sm text-gray-700">
-                {formatDistanceToNow(new Date(theme.created_at || 0), { addSuffix: true })}
-              </p>
-            </div>
           </div>
         </div>
 
-        {/* Status Badges */}
-        <div className="flex items-center space-x-3">
+        {/* Status Badge */}
+        <div>
           <BadgeSelect
             value={themeType}
             onChange={handleThemeTypeChange}
@@ -325,7 +536,13 @@ export function ThemeTab({ theme }: ThemeTabProps) {
         <div className="p-6">
           {activeTab === 'thesis' && (
             <div className="space-y-6">
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div
+                className={clsx(
+                  "bg-white border border-gray-200 rounded-lg p-6",
+                  isFocusMode && "citable-component"
+                )}
+                onClick={() => handleComponentClick(theme.description || '', 'Theme Description')}
+              >
                 <EditableSection
                   ref={thesisRef}
                   title="Theme Description"
@@ -338,7 +555,13 @@ export function ThemeTab({ theme }: ThemeTabProps) {
                 />
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <div
+                className={clsx(
+                  "bg-blue-50 border border-blue-200 rounded-lg p-6",
+                  isFocusMode && "citable-component"
+                )}
+                onClick={() => handleComponentClick(theme.where_different || '', 'Where We are Different')}
+              >
                 <EditableSection
                   ref={whereDifferentRef}
                   title="Where We are Different"
@@ -351,7 +574,13 @@ export function ThemeTab({ theme }: ThemeTabProps) {
                 />
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-6">
+              <div
+                className={clsx(
+                  "bg-amber-50 border border-amber-200 rounded-lg p-6",
+                  isFocusMode && "citable-component"
+                )}
+                onClick={() => handleComponentClick(theme.risks_to_thesis || '', 'Risks to Theme')}
+              >
                 <EditableSection
                   ref={risksRef}
                   title="Risks to Theme"
@@ -545,6 +774,262 @@ export function ThemeTab({ theme }: ThemeTabProps) {
         themeId={theme.id}
         themeName={theme.name}
       />
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={() => setShowShareModal(false)}
+          />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all">
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Manage Collaborators</h3>
+                  <p className="text-sm text-gray-600 mt-1">Share "{theme.name}" with other users</p>
+                </div>
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Public/Private Toggle */}
+                <Card>
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={theme.is_public || false}
+                        onChange={(e) => {
+                          updateThemeMutation.mutate({ is_public: e.target.checked })
+                        }}
+                        className="mr-2 rounded"
+                      />
+                      <span className="text-sm text-gray-700 font-medium">
+                        Make public (visible to all users)
+                      </span>
+                    </label>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {theme.is_public
+                        ? 'This theme is visible to everyone.'
+                        : 'This theme is private. Share with specific users below.'
+                      }
+                    </p>
+                  </div>
+                </Card>
+
+                {/* Theme Owner */}
+                {ownerDetails && (
+                  <Card>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-4">Theme Owner</h4>
+                    <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                        <Users className="h-4 w-4 text-primary-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {getUserDisplayName(ownerDetails)}
+                        </p>
+                        <p className="text-xs text-gray-500">{ownerDetails.email}</p>
+                      </div>
+                      <Badge variant="primary" size="sm" className="ml-auto">Owner</Badge>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Invite New User */}
+                {!theme.is_public && (
+                  <Card>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-4">Invite New Collaborator</h4>
+
+                    <div className="space-y-4">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by email or name..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                      </div>
+                      {searchQuery.length >= 2 && (
+                        <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                          {searchResults && searchResults.length > 0 ? (
+                            searchResults.map((searchUser: any) => (
+                              <div
+                                key={searchUser.id}
+                                className="flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                              >
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {searchUser.first_name && searchUser.last_name
+                                      ? `${searchUser.first_name} ${searchUser.last_name}`
+                                      : getUserDisplayName(searchUser)
+                                    }
+                                  </p>
+                                  <p className="text-xs text-gray-500">{searchUser.email}</p>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <select
+                                    value={invitePermission}
+                                    onChange={(e) => setInvitePermission(e.target.value as 'read' | 'write')}
+                                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                  >
+                                    <option value="read">Read Only</option>
+                                    <option value="write">Read & Write</option>
+                                  </select>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleInviteUser(searchUser.id)}
+                                    disabled={inviteUserMutation.isPending}
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Invite
+                                  </Button>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="flex items-center justify-center py-8 text-center text-gray-500 text-sm">
+                              No users found matching "{searchQuery}"
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                )}
+
+                {/* Current Collaborators */}
+                {!theme.is_public && (
+                  <Card>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-semibold text-gray-900">Current Collaborators</h4>
+                      {collaborations && (
+                        <Badge variant="default" size="sm">
+                          {collaborations.filter((c: any) => c.user_id !== theme.created_by).length} collaborator
+                          {collaborations.filter((c: any) => c.user_id !== theme.created_by).length !== 1 ? 's' : ''}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {collaborationsLoading ? (
+                      <div className="space-y-3">
+                        {[...Array(2)].map((_, i) => (
+                          <div key={i} className="animate-pulse flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
+                            <div className="flex-1 space-y-2">
+                              <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+                              <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : collaborations && collaborations.filter((c: any) => c.user_id !== theme.created_by).length > 0 ? (
+                      <div className="space-y-3">
+                        {collaborations.filter((c: any) => c.user_id !== theme.created_by).map((collaboration: any) => (
+                          <div
+                            key={collaboration.id}
+                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                                <Users className="h-4 w-4 text-primary-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {getUserDisplayName(collaboration.user)}
+                                </p>
+                                <p className="text-xs text-gray-500">{collaboration.user?.email}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                              <select
+                                value={collaboration.permission}
+                                onChange={(e) => handleUpdatePermission(collaboration.id, e.target.value as any)}
+                                className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                disabled={updatePermissionMutation.isPending}
+                              >
+                                <option value="read">Read Only</option>
+                                <option value="write">Read & Write</option>
+                              </select>
+
+                              <Badge variant={getPermissionColor(collaboration.permission)} size="sm">
+                                {collaboration.permission}
+                              </Badge>
+
+                              <button
+                                onClick={() => handleRemoveCollaboration(collaboration.id, collaboration.user?.email || 'Unknown')}
+                                className="p-1 text-gray-400 hover:text-error-600 transition-colors"
+                                disabled={removeCollaborationMutation.isPending}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-sm">No collaborators yet</p>
+                        <p className="text-xs">Search for users above to start collaborating</p>
+                      </div>
+                    )}
+                  </Card>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+                <Button variant="outline" onClick={() => setShowShareModal(false)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Collaborator</h3>
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to remove {deleteConfirm.userEmail} from this theme? They will no longer be able to access it.
+              </p>
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={confirmRemoveCollaboration}
+                  className="flex-1"
+                  loading={removeCollaborationMutation.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

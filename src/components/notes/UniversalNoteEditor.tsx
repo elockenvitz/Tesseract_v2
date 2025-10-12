@@ -1174,6 +1174,7 @@ export function UniversalNoteEditor({
         noteTitle={selectedNote?.title || ''}
         isOpen={showCollaborationManager}
         onClose={() => setShowCollaborationManager(false)}
+        noteOwnerId={selectedNote?.created_by || ''}
       />
     </div>
   )

@@ -293,7 +293,7 @@ export function Header({
             >
               <Bell className="h-5 w-5" />
               {hasUnreadNotifications && (
-                <span className="absolute top-1 right-1 flex items-center justify-center h-4 w-4 text-xs font-bold text-white bg-error-500 rounded-full">
+                <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-error-500 rounded-full">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
