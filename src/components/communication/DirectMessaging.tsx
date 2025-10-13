@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft } from 'lucide-react'
+import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft, Pin, Reply } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -47,6 +47,7 @@ interface Message {
   content: string
   reply_to: string | null
   is_edited: boolean
+  is_pinned: boolean
   created_at: string
   updated_at: string
   user: {
@@ -54,6 +55,17 @@ interface Message {
     email: string
     first_name?: string
     last_name?: string
+  }
+  replied_message?: {
+    id: string
+    content: string
+    user_id: string
+    user: {
+      id: string
+      email: string
+      first_name?: string
+      last_name?: string
+    }
   }
 }
 
@@ -67,6 +79,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const [groupDescription, setGroupDescription] = useState('')
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const queryClient = useQueryClient()
@@ -165,12 +178,13 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   })
 
   // Fetch messages for selected conversation
-  const { data: messages, isLoading: messagesLoading } = useQuery({
+  const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
     queryKey: ['conversation-messages', selectedConversationId],
     queryFn: async () => {
       if (!selectedConversationId) return []
 
-      const { data, error } = await supabase
+      // First, fetch all messages
+      const { data: messagesData, error: messagesErr } = await supabase
         .from('conversation_messages')
         .select(`
           *,
@@ -179,8 +193,36 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
         .eq('conversation_id', selectedConversationId)
         .order('created_at', { ascending: true })
 
-      if (error) throw error
-      return data as Message[]
+      if (messagesErr) {
+        console.error('Error fetching messages:', messagesErr)
+        throw messagesErr
+      }
+
+      // For each message with reply_to, fetch the replied message
+      const messagesWithReplies = await Promise.all(
+        (messagesData || []).map(async (message) => {
+          if (message.reply_to) {
+            const { data: repliedMsg } = await supabase
+              .from('conversation_messages')
+              .select(`
+                id,
+                content,
+                user_id,
+                user:users(id, email, first_name, last_name)
+              `)
+              .eq('id', message.reply_to)
+              .maybeSingle()
+
+            return {
+              ...message,
+              replied_message: repliedMsg
+            }
+          }
+          return message
+        })
+      )
+
+      return messagesWithReplies as Message[]
     },
     enabled: !!selectedConversationId,
     refetchInterval: 2000, // Real-time updates
@@ -202,12 +244,25 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     enabled: showNewConversation || showGroupCreation,
   })
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive (but not on initial load)
+  const previousMessagesLengthRef = useRef(0)
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    if (messagesEndRef.current && messages && messages.length > 0) {
+      // Only scroll if messages were added (not on initial load or conversation change)
+      if (previousMessagesLengthRef.current > 0 && messages.length > previousMessagesLengthRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+      } else if (previousMessagesLengthRef.current === 0) {
+        // On initial load, scroll instantly without animation
+        messagesEndRef.current.scrollIntoView({ behavior: 'instant' })
+      }
+      previousMessagesLengthRef.current = messages.length
     }
   }, [messages])
+
+  // Reset message count when conversation changes
+  useEffect(() => {
+    previousMessagesLengthRef.current = 0
+  }, [selectedConversationId])
 
   // Mark conversation as read when viewing messages
   useEffect(() => {
@@ -246,13 +301,14 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ conversationId, content }: { conversationId: string; content: string }) => {
+    mutationFn: async ({ conversationId, content, replyTo }: { conversationId: string; content: string; replyTo?: string | null }) => {
       const { error } = await supabase
         .from('conversation_messages')
         .insert([{
           conversation_id: conversationId,
           user_id: user?.id,
-          content
+          content,
+          reply_to: replyTo || null
         }])
 
       if (error) throw error
@@ -332,6 +388,22 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       queryClient.invalidateQueries({ queryKey: ['conversation-messages', selectedConversationId] })
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
       setMessageContent('')
+      setReplyingTo(null)
+    }
+  })
+
+  // Toggle pin mutation
+  const togglePinMutation = useMutation({
+    mutationFn: async ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
+      const { error } = await supabase
+        .from('conversation_messages')
+        .update({ is_pinned: !isPinned })
+        .eq('id', messageId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation-messages', selectedConversationId] })
     }
   })
 
@@ -399,11 +471,21 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   const handleSendMessage = () => {
     if (!messageContent.trim() || !selectedConversationId) return
-    
+
     sendMessageMutation.mutate({
       conversationId: selectedConversationId,
-      content: messageContent
+      content: messageContent,
+      replyTo: replyingTo?.id
     })
+  }
+
+  const handleReply = (message: Message) => {
+    setReplyingTo(message)
+    textareaRef.current?.focus()
+  }
+
+  const handleTogglePin = (messageId: string, isPinned: boolean) => {
+    togglePinMutation.mutate({ messageId, isPinned })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -824,7 +906,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       {/* Messages - Scrollable area between header and input */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className="h-full overflow-y-auto custom-scrollbar">
-          {messagesLoading ? (
+          {messagesError ? (
+            <div className="p-4 text-center text-red-600">
+              <p>Error loading messages:</p>
+              <p className="text-sm">{messagesError.message}</p>
+            </div>
+          ) : messagesLoading ? (
             <div className="space-y-3 p-4">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="animate-pulse">
@@ -864,10 +951,27 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                             <span className="text-xs font-medium text-gray-900">
                               {getUserDisplayName(message.user)}
                             </span>
+                            {message.is_pinned && (
+                              <Pin className="h-3 w-3 text-warning-500" />
+                            )}
                             {message.is_edited && (
                               <span className="text-xs text-gray-400">(edited)</span>
                             )}
                           </div>
+
+                          {/* Reply indicator */}
+                          {message.replied_message && (
+                            <div className="text-xs text-gray-500 mb-1 flex items-center p-2 bg-gray-50 rounded">
+                              <Reply className="h-3 w-3 mr-1" />
+                              <span className="font-medium mr-1">
+                                {getUserDisplayName(message.replied_message.user)}:
+                              </span>
+                              <span className="truncate">
+                                {message.replied_message.content.substring(0, 50)}
+                                {message.replied_message.content.length > 50 ? '...' : ''}
+                              </span>
+                            </div>
+                          )}
 
                           <div className="text-sm text-gray-700 whitespace-pre-wrap">
                             {message.content}
@@ -878,6 +982,25 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                               <span className="text-xs text-gray-500">
                                 {formatMessageTime(message.created_at)}
                               </span>
+                              <span className="text-gray-300">•</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleReply(message)
+                                }}
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                              >
+                                Reply
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleTogglePin(message.id, message.is_pinned)
+                                }}
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                              >
+                                {message.is_pinned ? 'Unpin' : 'Pin'}
+                              </button>
                             </div>
                           )}
                         </div>
@@ -889,6 +1012,20 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                       >
                         <div className="w-6 h-6 flex-shrink-0 mr-3"></div>
                         <div className="flex-1 min-w-0">
+                          {/* Reply indicator */}
+                          {message.replied_message && (
+                            <div className="text-xs text-gray-500 mb-1 flex items-center p-2 bg-gray-50 rounded">
+                              <Reply className="h-3 w-3 mr-1" />
+                              <span className="font-medium mr-1">
+                                {getUserDisplayName(message.replied_message.user)}:
+                              </span>
+                              <span className="truncate">
+                                {message.replied_message.content.substring(0, 50)}
+                                {message.replied_message.content.length > 50 ? '...' : ''}
+                              </span>
+                            </div>
+                          )}
+
                           <div className="text-sm text-gray-700 whitespace-pre-wrap">
                             {message.content}
                           </div>
@@ -898,6 +1035,25 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                               <span className="text-xs text-gray-500">
                                 {formatMessageTime(message.created_at)}
                               </span>
+                              <span className="text-gray-300">•</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleReply(message)
+                                }}
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                              >
+                                Reply
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleTogglePin(message.id, message.is_pinned)
+                                }}
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                              >
+                                {message.is_pinned ? 'Unpin' : 'Pin'}
+                              </button>
                             </div>
                           )}
                         </div>
@@ -920,6 +1076,29 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       {/* Message Input - Pinned to bottom */}
       <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 z-10 relative">
+        {/* Reply indicator */}
+        {replyingTo && (
+          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Reply className="h-3 w-3 text-blue-600" />
+                <span className="text-xs font-medium text-blue-900">
+                  Replying to {getUserDisplayName(replyingTo.user)}
+                </span>
+              </div>
+              <button
+                onClick={() => setReplyingTo(null)}
+                className="text-blue-600 hover:text-blue-800"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <p className="text-xs text-blue-700 mt-1 line-clamp-2">
+              {replyingTo.content}
+            </p>
+          </div>
+        )}
+
         <div className="flex space-x-2">
           <textarea
             ref={textareaRef}

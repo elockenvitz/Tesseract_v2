@@ -75,6 +75,8 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
 
   const [activeView, setActiveView] = useState<ViewType>(loadedState?.activeView || 'discovery')
   const [tiles, setTiles] = useState<IdeaTile[]>(loadedState?.tiles || [])
+  const [allTiles, setAllTiles] = useState<IdeaTile[]>([]) // Store all generated tiles
+  const [searchQuery, setSearchQuery] = useState<string>('') // Search query for discovery
   const [isShuffling, setIsShuffling] = useState(false)
   const [lastRefresh, setLastRefresh] = useState(new Date())
   const [currentFeedIndex, setCurrentFeedIndex] = useState(loadedState?.currentFeedIndex || 0)
@@ -705,6 +707,35 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     }
   }, [activeView, refetchWorkflowData])
 
+  // Filter tiles based on search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      // No search query - show first 9 tiles
+      setTiles(allTiles.slice(0, 9))
+      return
+    }
+
+    // Filter tiles using natural language search
+    const query = searchQuery.toLowerCase()
+    const filtered = allTiles.filter(tile => {
+      // Search in title, subtitle, content, reason, and type
+      const searchableText = [
+        tile.title,
+        tile.subtitle || '',
+        tile.content,
+        tile.reason || '',
+        tile.type,
+        tile.priority || '',
+        tile.urgency || ''
+      ].join(' ').toLowerCase()
+
+      return searchableText.includes(query)
+    })
+
+    // Show up to 9 matching tiles
+    setTiles(filtered.slice(0, 9))
+  }, [searchQuery, allTiles])
+
   const generateIdeaTiles = () => {
     if (!ideaData) {
       return
@@ -857,11 +888,14 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
       })
     })
 
-    // Shuffle and take up to 9 tiles
+    // Shuffle all tiles
     const shuffledTiles = shuffleArray([...allPossibleTiles])
+
+    // Store all tiles for filtering
+    setAllTiles(shuffledTiles)
+
+    // Show first 9 tiles by default
     const finalTiles = shuffledTiles.slice(0, 9)
-
-
     setTiles(finalTiles)
   }
 
@@ -922,6 +956,33 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search discoveries... (e.g., 'high priority', 'portfolio', 'urgent')"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <Plus className="w-5 h-5 rotate-45" />
+          </button>
+        )}
+      </div>
+
+      {/* Results count */}
+      {searchQuery && (
+        <div className="text-sm text-gray-600">
+          Found {tiles.length} {tiles.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(9)].map((_, i) => (
@@ -929,6 +990,21 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               <div className="h-48 bg-gray-200 rounded-xl"></div>
             </div>
           ))}
+        </div>
+      ) : tiles.length === 0 && searchQuery ? (
+        <div className="text-center py-12">
+          <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No results found</h3>
+          <p className="text-gray-600 mb-4">
+            No discoveries match your search for "{searchQuery}"
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSearchQuery('')}
+          >
+            Clear search
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -940,7 +1016,62 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
                 tile.color,
                 isShuffling && 'animate-pulse'
               )}
-              onClick={() => onItemSelect?.(tile.data)}
+              onClick={() => {
+                // Navigate to the relevant page based on tile type
+                let navigationData
+
+                if (tile.type === 'asset') {
+                  // For assets, navigate to the asset page
+                  navigationData = {
+                    id: tile.data.id,
+                    title: tile.data.symbol,
+                    type: 'asset',
+                    data: tile.data
+                  }
+                } else if (tile.type === 'note') {
+                  // For notes, navigate to the note page
+                  navigationData = {
+                    id: tile.data.id,
+                    title: tile.data.title,
+                    type: 'note',
+                    data: tile.data
+                  }
+                } else if (tile.type === 'price_target') {
+                  // For price targets, navigate to the asset page
+                  navigationData = {
+                    id: tile.data.assets.id,
+                    title: tile.data.assets.symbol,
+                    type: 'asset',
+                    data: tile.data.assets
+                  }
+                } else if (tile.type === 'theme') {
+                  // For themes, navigate to the theme page
+                  navigationData = {
+                    id: tile.data.id,
+                    title: tile.data.name,
+                    type: 'theme',
+                    data: tile.data
+                  }
+                } else if (tile.type === 'portfolio') {
+                  // For portfolios, navigate to the portfolio page
+                  navigationData = {
+                    id: tile.data.id,
+                    title: tile.data.name,
+                    type: 'portfolio',
+                    data: tile.data
+                  }
+                } else {
+                  // Default fallback
+                  navigationData = {
+                    id: tile.data?.id || tile.id,
+                    title: tile.title,
+                    type: tile.type,
+                    data: tile.data
+                  }
+                }
+
+                onItemSelect?.(navigationData)
+              }}
             >
               <div className="flex items-start space-x-3 mb-4">
                 {getIconForType(tile.iconType, tile.color.includes('red') ? 'w-5 h-5 text-red-600' :
@@ -1677,10 +1808,67 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
               }
             }
 
+            const handleFeedContentClick = () => {
+              // Navigate to the relevant page based on insight data
+              if (content.data) {
+                let navigationData
+
+                // Check the type of data attached to the insight
+                if (content.data.symbol) {
+                  // It's an asset
+                  navigationData = {
+                    id: content.data.id,
+                    title: content.data.symbol,
+                    type: 'asset',
+                    data: content.data
+                  }
+                } else if (content.data.title && content.data.content) {
+                  // It's a note
+                  navigationData = {
+                    id: content.data.id,
+                    title: content.data.title,
+                    type: 'note',
+                    data: content.data
+                  }
+                } else if (content.data.target_price) {
+                  // It's a price target - navigate to the asset
+                  navigationData = {
+                    id: content.data.assets.id,
+                    title: content.data.assets.symbol,
+                    type: 'asset',
+                    data: content.data.assets
+                  }
+                } else if (content.data.name && content.data.description) {
+                  // It's a theme
+                  navigationData = {
+                    id: content.data.id,
+                    title: content.data.name,
+                    type: 'theme',
+                    data: content.data
+                  }
+                } else if (content.data.portfolio_holdings !== undefined) {
+                  // It's a portfolio
+                  navigationData = {
+                    id: content.data.id,
+                    title: content.data.name,
+                    type: 'portfolio',
+                    data: content.data
+                  }
+                }
+
+                if (navigationData) {
+                  onItemSelect?.(navigationData)
+                }
+              }
+            }
+
             return (
               <div className="p-8 h-full flex flex-col justify-between">
-                {/* Content */}
-                <div className="space-y-8 flex-1 flex flex-col justify-center">
+                {/* Content - Clickable Area */}
+                <div
+                  className="space-y-8 flex-1 flex flex-col justify-center cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={handleFeedContentClick}
+                >
                   <div className="flex items-center space-x-3">
                     <div className={getTypeColor(content.type)}>
                       {getTypeIcon(content.type)}

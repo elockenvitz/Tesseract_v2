@@ -195,94 +195,25 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <Card>
-        <div className="space-y-4">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by symbol, company name, or sector..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          {/* Filter Toggle */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <Filter className="h-4 w-4" />
-              <span>Filters</span>
-              {activeFiltersCount > 0 && (
-                <Badge variant="primary" size="sm">
-                  {activeFiltersCount}
-                </Badge>
-              )}
-              <ChevronDown className={clsx(
-                'h-4 w-4 transition-transform',
-                showFilters && 'rotate-180'
-              )} />
-            </button>
-
-            {activeFiltersCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-sm text-primary-600 hover:text-primary-700 transition-colors"
-              >
-                Clear all filters
-              </button>
-            )}
-          </div>
-
-          {/* Filter Controls */}
-          {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
-              <Select
-                label="Priority"
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Priorities' },
-                  { value: 'none', label: 'No Priority Set' },
-                  { value: 'high', label: 'High Priority' },
-                  { value: 'medium', label: 'Medium Priority' },
-                  { value: 'low', label: 'Low Priority' }
-                ]}
-              />
-
-
-              <Select
-                label="Sector"
-                value={sectorFilter}
-                onChange={(e) => setSectorFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Sectors' },
-                  ...sectors.map(sector => ({ value: sector, label: sector }))
-                ]}
-              />
-
-              <Select
-                label="Sort by"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                options={[
-                  { value: 'updated_at', label: 'Last Updated' },
-                  { value: 'created_at', label: 'Date Created' },
-                  { value: 'symbol', label: 'Symbol' },
-                  { value: 'company_name', label: 'Company Name' },
-                  { value: 'current_price', label: 'Price' },
-                  { value: 'priority', label: 'Priority' }
-                ]}
-              />
-            </div>
-          )}
-        </div>
-      </Card>
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search assets... (e.g., symbol, company name, sector, priority)"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <Plus className="w-5 h-5 rotate-45" />
+          </button>
+        )}
+      </div>
 
       {/* Assets List */}
       <Card padding="none">

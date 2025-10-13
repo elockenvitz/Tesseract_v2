@@ -7,6 +7,8 @@ import { Button } from './Button'
 import { Card } from './Card'
 import { StageDeadlineManager } from './StageDeadlineManager'
 import { ContentTile } from './ContentTile'
+import { MentionInput } from './MentionInput'
+import { AssignmentSelector } from './AssignmentSelector'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -158,6 +160,10 @@ export function InvestmentTimeline({
   const [stageChecklists, setStageChecklists] = useState<Record<string, ChecklistItem[]>>({})
   const [commentingItem, setCommentingItem] = useState<{stageId: string, itemId: string} | null>(null)
   const [commentText, setCommentText] = useState('')
+  const [commentMentions, setCommentMentions] = useState<string[]>([])
+  const [commentReferences, setCommentReferences] = useState<Array<{type: string, id: string, text: string}>>([])
+  const [assigningItem, setAssigningItem] = useState<{stageId: string, itemId: string} | null>(null)
+  const [showingCommentsFor, setShowingCommentsFor] = useState<{stageId: string, itemId: string} | null>(null)
   const [addingItemToStage, setAddingItemToStage] = useState<string | null>(null)
   const [newItemText, setNewItemText] = useState('')
   const [uploadingFiles, setUploadingFiles] = useState<{[key: string]: boolean}>({})
@@ -264,6 +270,95 @@ export function InvestmentTimeline({
     enabled: !!assetId && !!workflowId
   })
 
+  // Query to load task assignments for all checklist items
+  const { data: taskAssignments } = useQuery({
+    queryKey: ['task-assignments-all', assetId, workflowId],
+    queryFn: async () => {
+      if (!assetId || !workflowId) return []
+
+      // Get all checklist items for this asset/workflow
+      const { data: checklistItems, error: itemsError } = await supabase
+        .from('asset_checklist_items')
+        .select('id, item_id, stage_id')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+
+      if (itemsError) throw itemsError
+      if (!checklistItems || checklistItems.length === 0) return []
+
+      // Get assignments for these items
+      const itemIds = checklistItems.map(item => item.id)
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from('checklist_task_assignments')
+        .select(`
+          *,
+          user:users!checklist_task_assignments_assigned_user_id_fkey(id, email, first_name, last_name)
+        `)
+        .in('checklist_item_id', itemIds)
+
+      if (assignmentsError) throw assignmentsError
+
+      // Map assignments to item_id + stage_id for easy lookup
+      const assignmentMap: Record<string, any[]> = {}
+      assignments?.forEach(assignment => {
+        const item = checklistItems.find(ci => ci.id === assignment.checklist_item_id)
+        if (item) {
+          const key = `${item.stage_id}-${item.item_id}`
+          if (!assignmentMap[key]) assignmentMap[key] = []
+          assignmentMap[key].push(assignment)
+        }
+      })
+
+      return assignmentMap
+    },
+    enabled: !!assetId && !!workflowId
+  })
+
+  // Query to load comments for all checklist items
+  const { data: itemComments } = useQuery({
+    queryKey: ['checklist-item-comments', assetId, workflowId],
+    queryFn: async () => {
+      if (!assetId || !workflowId) return {}
+
+      // Get all checklist items for this asset/workflow
+      const { data: checklistItems, error: itemsError } = await supabase
+        .from('asset_checklist_items')
+        .select('id, item_id, stage_id')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+
+      if (itemsError) throw itemsError
+      if (!checklistItems || checklistItems.length === 0) return {}
+
+      // Get comments for these items
+      const itemIds = checklistItems.map(item => item.id)
+      const { data: comments, error: commentsError } = await supabase
+        .from('checklist_item_comments')
+        .select(`
+          *,
+          user:users!checklist_item_comments_user_id_fkey(id, email, first_name, last_name)
+        `)
+        .in('checklist_item_id', itemIds)
+        .order('created_at', { ascending: true })
+
+      if (commentsError) throw commentsError
+
+      // Map comments to item_id + stage_id for easy lookup
+      const commentsMap: Record<string, any[]> = {}
+      comments?.forEach(comment => {
+        const item = checklistItems.find(ci => ci.id === comment.checklist_item_id)
+        if (item) {
+          const key = `${item.stage_id}-${item.item_id}`
+          if (!commentsMap[key]) commentsMap[key] = []
+          commentsMap[key].push(comment)
+        }
+      })
+
+      return commentsMap
+    },
+    enabled: !!assetId && !!workflowId
+  })
+
   // Use workflow-specific priority if available, otherwise fall back to asset priority
   const effectivePriority = workflowPriority || currentPriority
 
@@ -320,12 +415,22 @@ export function InvestmentTimeline({
     }
 
     console.log('InvestmentTimeline: Converting workflow stages to timeline stages')
-    return workflowStages.map(stage => ({
+    const stages = workflowStages.map(stage => ({
       id: stage.stage_key,
       label: stage.stage_label,
       description: stage.stage_description || '',
       checklist: getDefaultChecklistForStage(stage.stage_key)
     }))
+
+    // Add a "Completed" stage at the end
+    stages.push({
+      id: 'completed',
+      label: 'Completed',
+      description: 'Workflow completed successfully',
+      checklist: []
+    })
+
+    return stages
   }, [workflowId, workflowStages, workflowChecklistTemplates])
 
   // Check if this specific workflow is started for this asset
@@ -616,7 +721,8 @@ export function InvestmentTimeline({
       'bg-yellow-500', // recommend
       'bg-green-400',  // review
       'bg-green-700',  // action
-      'bg-teal-500'    // monitor
+      'bg-teal-500',   // monitor
+      'bg-green-600'   // completed
     ]
 
     return colors[stageIndex] || 'bg-gray-300'
@@ -703,23 +809,51 @@ export function InvestmentTimeline({
         // Advance to next stage
         const nextStage = timelineStages[currentIndex + 1]
 
-        // Update workflow-specific progress
-        if (workflowId && assetId) {
-          await supabase
-            .from('asset_workflow_progress')
-            .upsert({
-              asset_id: assetId,
-              workflow_id: workflowId,
-              current_stage_key: nextStage.id,
-              is_started: true,
-              updated_at: new Date().toISOString(),
-              updated_by: user?.id
-            }, {
-              onConflict: 'asset_id,workflow_id'
-            })
+        // Check if we're moving to the "Completed" stage
+        if (nextStage.id === 'completed') {
+          // Mark workflow as completed
+          if (workflowId && assetId) {
+            await supabase
+              .from('asset_workflow_progress')
+              .upsert({
+                asset_id: assetId,
+                workflow_id: workflowId,
+                current_stage_key: nextStage.id,
+                is_started: false,
+                is_completed: true,
+                completed_at: new Date().toISOString(),
+                completed_by: user?.id,
+                updated_at: new Date().toISOString(),
+                updated_by: user?.id
+              }, {
+                onConflict: 'asset_id,workflow_id'
+              })
 
-          // Refresh workflow progress
-          queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+            // Refresh workflow progress
+            queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+            queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
+            queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
+            queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
+          }
+        } else {
+          // Regular stage progression
+          if (workflowId && assetId) {
+            await supabase
+              .from('asset_workflow_progress')
+              .upsert({
+                asset_id: assetId,
+                workflow_id: workflowId,
+                current_stage_key: nextStage.id,
+                is_started: true,
+                updated_at: new Date().toISOString(),
+                updated_by: user?.id
+              }, {
+                onConflict: 'asset_id,workflow_id'
+              })
+
+            // Refresh workflow progress
+            queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', assetId, workflowId] })
+          }
         }
 
         onStageChange(nextStage.id)
@@ -806,45 +940,100 @@ export function InvestmentTimeline({
 
   const handleAddComment = (stageId: string, itemId: string) => {
     setCommentingItem({ stageId, itemId })
-    const item = stageChecklists[stageId]?.find(item => item.id === itemId)
-    setCommentText(item?.comment || '')
+    setCommentText('')
+    setCommentMentions([])
+    setCommentReferences([])
+    // Also show the comments thread
+    setShowingCommentsFor({ stageId, itemId })
   }
 
-  const handleSaveComment = () => {
-    if (!commentingItem || !assetId) return
+  const handleToggleComments = (stageId: string, itemId: string) => {
+    const key = `${stageId}-${itemId}`
+    const isCurrentlyShowing = showingCommentsFor?.stageId === stageId && showingCommentsFor?.itemId === itemId
 
-    const currentItem = stageChecklists[commentingItem.stageId]?.find(
-      item => item.id === commentingItem.itemId
-    )
-    if (!currentItem) return
+    if (isCurrentlyShowing) {
+      setShowingCommentsFor(null)
+    } else {
+      setShowingCommentsFor({ stageId, itemId })
+    }
+  }
+
+  const handleSaveComment = async () => {
+    if (!commentingItem || !assetId || !user || !workflowId) return
 
     const trimmedComment = commentText.trim()
+    if (!trimmedComment) return
 
-    // Update local state immediately
-    setStageChecklists(prev => ({
-      ...prev,
-      [commentingItem.stageId]: prev[commentingItem.stageId]?.map(item =>
-        item.id === commentingItem.itemId ? { ...item, comment: trimmedComment || undefined } : item
-      ) || []
-    }))
+    // Get checklist item ID from database first
+    const { data: checklistItem } = await supabase
+      .from('asset_checklist_items')
+      .select('id')
+      .eq('asset_id', assetId)
+      .eq('workflow_id', workflowId)
+      .eq('stage_id', commentingItem.stageId)
+      .eq('item_id', commentingItem.itemId)
+      .maybeSingle()
 
-    // Save to database
-    saveChecklistItemMutation.mutate({
-      assetId,
-      stageId: commentingItem.stageId,
-      itemId: commentingItem.itemId,
-      completed: currentItem.completed,
-      comment: trimmedComment || undefined,
-      completedAt: currentItem.completedAt
-    })
+    if (!checklistItem) return
+
+    // Save the comment to the new comments table
+    const { error: commentError } = await supabase
+      .from('checklist_item_comments')
+      .insert({
+        checklist_item_id: checklistItem.id,
+        user_id: user.id,
+        comment_text: trimmedComment
+      })
+
+    if (commentError) {
+      console.error('Error saving comment:', commentError)
+      return
+    }
+
+    // Save mentions to database if any
+    if (commentMentions.length > 0) {
+      for (const [index, mentionedUserId] of commentMentions.entries()) {
+        await supabase
+          .from('checklist_comment_mentions')
+          .insert({
+            checklist_item_id: checklistItem.id,
+            mentioned_user_id: mentionedUserId,
+            mentioned_by: user.id,
+            comment_text: trimmedComment,
+            mention_position: index
+          })
+      }
+    }
+
+    // Save references to database if any
+    if (commentReferences.length > 0) {
+      for (const reference of commentReferences) {
+        await supabase
+          .from('checklist_comment_references')
+          .insert({
+            checklist_item_id: checklistItem.id,
+            reference_type: reference.type,
+            reference_id: reference.id,
+            reference_text: reference.text,
+            created_by: user.id
+          })
+      }
+    }
+
+    // Invalidate queries to refetch comments
+    queryClient.invalidateQueries({ queryKey: ['checklist-item-comments'] })
 
     setCommentingItem(null)
     setCommentText('')
+    setCommentMentions([])
+    setCommentReferences([])
   }
 
   const handleCancelComment = () => {
     setCommentingItem(null)
     setCommentText('')
+    setCommentMentions([])
+    setCommentReferences([])
   }
 
   const handleAddCustomItem = async (stageId: string) => {
@@ -1177,16 +1366,32 @@ export function InvestmentTimeline({
         {/* Desktop Timeline */}
         <div className="hidden md:block">
           <div className="relative">
-            {/* Progress Line */}
-            <div className="absolute top-8 h-1 bg-gray-200 rounded-full" style={{ left: '32px', right: '32px' }}>
-              <div
-                className="h-full bg-gradient-to-r from-gray-600 via-red-600 via-orange-600 via-blue-500 via-yellow-500 via-green-400 via-green-700 to-teal-500 transition-all duration-500 rounded-full"
-                style={{ width: `${Math.min(currentIndex / Math.max(timelineStages.length - 1, 1), 1) * 100}%` }}
-              />
-            </div>
-
             {/* Stage Nodes */}
-            <div className="relative flex justify-between">
+            <div className="relative flex justify-center gap-16 transition-all duration-500">
+              {/* Single continuous progress line - positioned relative to first and last circles */}
+              <div
+                className="absolute top-8 h-1 bg-gray-200 rounded-full transition-all duration-500"
+                style={{
+                  left: `calc(50% - ${(timelineStages.length - 1) * 4}rem)`,
+                  width: `${(timelineStages.length - 1) * 8}rem`,
+                  zIndex: 0
+                }}
+              >
+                <div
+                  className={`h-full transition-all duration-500 rounded-full bg-gradient-to-r ${
+                    currentIndex === timelineStages.length - 1
+                      ? 'from-gray-600 via-blue-500 to-green-600'
+                      : currentIndex > 0
+                      ? 'from-gray-600 to-blue-500'
+                      : 'from-gray-200 to-gray-200'
+                  }`}
+                  style={{
+                    width: `${(currentIndex / (timelineStages.length - 1)) * 100}%`,
+                    minWidth: currentIndex > 0 ? '2px' : '0'
+                  }}
+                />
+              </div>
+
               {timelineStages.map((stage, index) => {
                 const status = getStageStatus(index)
                 const isOutdated = stage.id === 'outdated' || effectiveCurrentStage === 'outdated'
@@ -1194,7 +1399,7 @@ export function InvestmentTimeline({
 
                 return (
                   <React.Fragment key={stage.id}>
-                    <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center relative z-10" style={{ maxWidth: '120px' }}>
                       {/* Stage Circle */}
                       <button
                         onClick={() => handleStageClick(stage, index)}
@@ -1238,8 +1443,8 @@ export function InvestmentTimeline({
                     </button>
 
                     {/* Stage Label */}
-                    <div className="mt-3 text-center">
-                      <div className={`text-sm font-medium ${getTextColor(status)}`}>
+                    <div className="mt-3 text-center w-full">
+                      <div className={`text-sm font-medium ${getTextColor(status)} break-words`}>
                         {stage.label}
                       </div>
                       {status === 'current' && (
@@ -1393,7 +1598,7 @@ export function InvestmentTimeline({
 
       {/* Stage Details Modal/Card */}
       {showStageDetails && (
-        <Card>
+        <Card key={`${workflowId}-${showStageDetails}`} className="transition-all duration-300 animate-in fade-in slide-in-from-top-4">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center space-x-3">
               <div className={`w-10 h-10 rounded-full ${getStageColor(getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)), timelineStages.findIndex(s => s.id === showStageDetails))} flex items-center justify-center`}>
@@ -1413,20 +1618,39 @@ export function InvestmentTimeline({
                 </p>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowStageDetails(null)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              ×
-            </Button>
+
+            {/* Stage Assignment Section - Upper Right */}
+            {showStageDetails && showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId && (
+              <div>
+                <AssignmentSelector
+                  assetId={assetId}
+                  workflowId={workflowId}
+                  stageId={showStageDetails}
+                  type="stage"
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-6">
 
-            {/* Stage Checklist for non-outdated stages */}
-            {showStageDetails && showStageDetails !== 'outdated' && stageChecklists[showStageDetails] && (
+            {/* Completed Stage Message */}
+            {showStageDetails === 'completed' && (
+              <div className="text-center py-8">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-10 h-10 text-green-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  🎉 Workflow Completed!
+                </h3>
+                <p className="text-gray-600">
+                  All stages have been successfully completed for {assetSymbol || 'this asset'}.
+                </p>
+              </div>
+            )}
+
+            {/* Stage Checklist for non-outdated and non-completed stages */}
+            {showStageDetails && showStageDetails !== 'outdated' && showStageDetails !== 'completed' && stageChecklists[showStageDetails] && (
               <div>
                 <div className="mb-4">
                   <div className="flex items-center justify-between">
@@ -1490,25 +1714,64 @@ export function InvestmentTimeline({
                               </span>
 
                               <div className="flex items-center space-x-2">
+                                {/* Show assigned users */}
+                                {(() => {
+                                  const assignments = taskAssignments?.[`${showStageDetails}-${item.id}`] || []
+                                  return assignments.length > 0 && (
+                                    <div className="flex items-center space-x-1">
+                                      {assignments.slice(0, 3).map((assignment, idx) => {
+                                        const userName = assignment.user?.first_name && assignment.user?.last_name
+                                          ? `${assignment.user.first_name} ${assignment.user.last_name}`
+                                          : assignment.user?.email || 'Unknown'
+                                        return (
+                                          <span
+                                            key={idx}
+                                            className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded"
+                                            title={userName}
+                                          >
+                                            {userName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                                          </span>
+                                        )
+                                      })}
+                                      {assignments.length > 3 && (
+                                        <span className="text-xs text-gray-500">+{assignments.length - 3}</span>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+
                                 {item.completedAt && (
                                   <span className="text-xs text-gray-400">
-                                    {new Date(item.completedAt).toLocaleDateString()}
+                                    {new Date(item.completedAt).toLocaleString(undefined, {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                      hour: 'numeric',
+                                      minute: '2-digit'
+                                    })}
                                   </span>
                                 )}
 
-                                {isEditable ? (
-                                  <button
-                                    onClick={() => handleAddComment(showStageDetails, item.id)}
-                                    className={`p-1 rounded hover:bg-gray-100 transition-colors ${
-                                      item.comment ? 'text-blue-600' : 'text-gray-400'
-                                    }`}
-                                    title={item.comment ? 'Edit comment' : 'Add comment'}
-                                  >
-                                    <MessageSquare className="w-4 h-4" />
-                                  </button>
-                                ) : item.comment ? (
-                                  <MessageSquare className="w-4 h-4 text-blue-600" title="Has comment" />
-                                ) : null}
+                                {(() => {
+                                  const comments = itemComments?.[`${showStageDetails}-${item.id}`] || []
+                                  const hasComments = comments.length > 0
+                                  return (
+                                    <button
+                                      onClick={() => handleToggleComments(showStageDetails, item.id)}
+                                      className={`relative p-1 rounded hover:bg-gray-100 transition-colors ${
+                                        hasComments ? 'text-blue-600' : 'text-gray-400'
+                                      }`}
+                                      title={hasComments ? `${comments.length} comment${comments.length > 1 ? 's' : ''}` : 'Add comment'}
+                                    >
+                                      <MessageSquare className="w-4 h-4" />
+                                      {hasComments && (
+                                        <span className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 text-[10px] font-semibold text-white bg-blue-600 rounded-full">
+                                          {comments.length}
+                                        </span>
+                                      )}
+                                    </button>
+                                  )
+                                })()}
 
                                 {isEditable ? (
                                   <label className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-blue-600 cursor-pointer">
@@ -1532,6 +1795,16 @@ export function InvestmentTimeline({
                                   </div>
                                 ) : null}
 
+                                {isEditable && (
+                                  <button
+                                    onClick={() => setAssigningItem({ stageId: showStageDetails, itemId: item.id })}
+                                    className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-blue-600"
+                                    title="Assign task"
+                                  >
+                                    <Users className="w-4 h-4" />
+                                  </button>
+                                )}
+
                                 {uploadingFiles[`${showStageDetails}-${item.id}`] && (
                                   <div className="flex items-center">
                                     <div className="animate-spin w-4 h-4 border border-blue-600 border-t-transparent rounded-full"></div>
@@ -1554,9 +1827,71 @@ export function InvestmentTimeline({
                               </div>
                             </div>
 
-                            {item.comment && !isCommenting && (
-                              <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-gray-600 border-l-2 border-blue-200">
-                                {item.comment}
+                            {/* Comments thread */}
+                            {showingCommentsFor?.stageId === showStageDetails && showingCommentsFor?.itemId === item.id && (
+                              <div className="mt-2 bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-200">
+                                {/* Existing comments */}
+                                {itemComments?.[`${showStageDetails}-${item.id}`]?.map((comment: any) => {
+                                  const userName = comment.user?.first_name && comment.user?.last_name
+                                    ? `${comment.user.first_name} ${comment.user.last_name}`
+                                    : comment.user?.email || 'Unknown'
+
+                                  return (
+                                    <div key={comment.id} className="p-2">
+                                      <div className="flex items-center justify-between mb-1">
+                                        <span className="text-xs font-medium text-gray-900">{userName}</span>
+                                        <span className="text-xs text-gray-500">
+                                          {new Date(comment.created_at).toLocaleString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: 'numeric',
+                                            minute: '2-digit'
+                                          })}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{comment.comment_text}</p>
+                                    </div>
+                                  )
+                                })}
+
+                                {/* Add comment input */}
+                                <div className="p-2">
+                                  <div className="space-y-2">
+                                    <MentionInput
+                                      value={commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id ? commentText : ''}
+                                      onChange={(value, mentions, references) => {
+                                        if (!commentingItem || commentingItem.stageId !== showStageDetails || commentingItem.itemId !== item.id) {
+                                          handleAddComment(showStageDetails, item.id)
+                                        }
+                                        setCommentText(value)
+                                        setCommentMentions(mentions)
+                                        setCommentReferences(references)
+                                      }}
+                                      placeholder="Add a comment..."
+                                      className="text-xs"
+                                      rows={2}
+                                      hideHelper={true}
+                                    />
+                                    {commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id && (
+                                      <div className="flex justify-end space-x-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={handleCancelComment}
+                                        >
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={handleSaveComment}
+                                          disabled={!commentText.trim()}
+                                        >
+                                          Comment
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             )}
 
@@ -1598,33 +1933,18 @@ export function InvestmentTimeline({
                           </div>
                         </div>
 
-                        {isCommenting && (
-                          <div className="mt-2 p-3 bg-gray-50 rounded-lg border">
-                            <textarea
-                              value={commentText}
-                              onChange={(e) => setCommentText(e.target.value)}
-                              placeholder="Add a comment about this checklist item..."
-                              className="w-full p-2 text-sm border border-gray-200 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              rows={3}
-                              autoFocus
-                            />
-                            <div className="flex justify-end space-x-2 mt-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleCancelComment}
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={handleSaveComment}
-                                disabled={saveChecklistItemMutation.isPending}
-                              >
-                                {saveChecklistItemMutation.isPending ? 'Saving...' : 'Save Comment'}
-                              </Button>
-                            </div>
-                          </div>
+
+                        {/* Assignment selector with auto-open modal */}
+                        {assigningItem?.stageId === showStageDetails && assigningItem?.itemId === item.id && (
+                          <AssignmentSelector
+                            checklistItemId={item.id}
+                            type="task"
+                            autoOpenModal={true}
+                            onAssignmentChange={() => {
+                              queryClient.invalidateQueries({ queryKey: ['task-assignments-all'] })
+                            }}
+                            onModalClose={() => setAssigningItem(null)}
+                          />
                         )}
                       </div>
                     )
@@ -1682,8 +2002,8 @@ export function InvestmentTimeline({
               </div>
             )}
 
-            {/* Content Tiles for non-outdated stages */}
-            {showStageDetails && showStageDetails !== 'outdated' && contentTiles && contentTiles.length > 0 && (
+            {/* Content Tiles for non-outdated and non-completed stages */}
+            {showStageDetails && showStageDetails !== 'outdated' && showStageDetails !== 'completed' && contentTiles && contentTiles.length > 0 && (
               <div className="mt-6">
                 <div className="space-y-4">
                   {contentTiles.map((tile) => (
@@ -1748,15 +2068,15 @@ export function InvestmentTimeline({
                     size="sm"
                     onClick={handleAdvanceStage}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                    title="Advance to next stage"
+                    title={timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete workflow' : 'Advance to next stage'}
                   >
-                    Advance Stage →
+                    {timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete Workflow ✓' : 'Advance Stage →'}
                   </Button>
                 )}
 
-                {currentIndex === timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && (
+                {currentIndex === timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && effectiveCurrentStage === 'completed' && (
                   <div className="text-sm text-green-600 font-medium">
-                    🎯 Final stage - Monitor ongoing performance
+                    🎉 Workflow completed!
                   </div>
                 )}
               </div>
