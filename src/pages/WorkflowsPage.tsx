@@ -74,6 +74,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [editingRule, setEditingRule] = useState<string | null>(null)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
   const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null)
+  const [showDeleteStageModal, setShowDeleteStageModal] = useState(false)
+  const [stageToDelete, setStageToDelete] = useState<{ id: string, key: string, label: string } | null>(null)
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false)
   const [editingWorkflowData, setEditingWorkflowData] = useState({
     name: '',
@@ -605,11 +607,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
 
       console.log('Stage created successfully:', data)
-      return data
+      return { data, workflowId }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+    onSuccess: (result) => {
+      // Update the selected workflow optimistically to add the new stage
+      if (selectedWorkflow && result.data[0]) {
+        const newStage = result.data[0] as WorkflowStage
+        setSelectedWorkflow({
+          ...selectedWorkflow,
+          stages: [...(selectedWorkflow.stages || []), newStage]
+        })
+      }
+
+      // Only invalidate the specific workflow query, not all workflows
+      queryClient.invalidateQueries({ queryKey: ['workflow-stages', result.workflowId] })
       setShowAddStage(false)
     },
     onError: (error: any) => {
@@ -1990,9 +2001,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     </Button>
                                     <Button size="xs" variant="outline" title="Delete Stage"
                                       onClick={() => {
-                                        if (confirm(`Are you sure you want to delete the "${stage.stage_label}" stage? This will also delete all its checklist items.`)) {
-                                          deleteStageMutation.mutate({ stageId: stage.id, stageKey: stage.stage_key })
-                                        }
+                                        setStageToDelete({
+                                          id: stage.id,
+                                          key: stage.stage_key,
+                                          label: stage.stage_label
+                                        })
+                                        setShowDeleteStageModal(true)
                                       }}>
                                       <Trash2 className="w-3 h-3" />
                                     </Button>
@@ -3181,6 +3195,53 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   disabled={deleteWorkflowMutation.isPending}
                 >
                   {deleteWorkflowMutation.isPending ? 'Deleting...' : 'Yes, Delete'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Stage Confirmation Modal */}
+      {showDeleteStageModal && stageToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Delete Stage</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to delete the <span className="font-semibold">"{stageToDelete.label}"</span> stage?
+              </p>
+              <p className="text-sm text-gray-600 mb-6">
+                All checklist items and configuration for this stage will be permanently removed.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteStageModal(false)
+                    setStageToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => {
+                    deleteStageMutation.mutate({ stageId: stageToDelete.id, stageKey: stageToDelete.key })
+                    setShowDeleteStageModal(false)
+                    setStageToDelete(null)
+                  }}
+                  disabled={deleteStageMutation.isPending}
+                >
+                  {deleteStageMutation.isPending ? 'Deleting...' : 'Yes, Delete Stage'}
                 </Button>
               </div>
             </div>
