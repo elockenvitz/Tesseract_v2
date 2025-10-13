@@ -576,10 +576,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .eq('id', stageId)
 
       if (error) throw error
+
+      return { stageId, updates }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+    onSuccess: (result) => {
+      // Update the selected workflow optimistically
+      if (selectedWorkflow) {
+        setSelectedWorkflow({
+          ...selectedWorkflow,
+          stages: selectedWorkflow.stages?.map(stage =>
+            stage.id === result.stageId
+              ? { ...stage, ...result.updates }
+              : stage
+          ) || []
+        })
+      }
     },
     onError: (error) => {
       console.error('Error updating stage:', error)
@@ -646,10 +657,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .eq('id', stageId)
 
       if (stageError) throw stageError
+
+      return { stageId }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+    onSuccess: (result) => {
+      // Update the selected workflow optimistically to remove the stage
+      if (selectedWorkflow) {
+        setSelectedWorkflow({
+          ...selectedWorkflow,
+          stages: selectedWorkflow.stages?.filter(s => s.id !== result.stageId) || []
+        })
+      }
+
+      // Only invalidate specific queries
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
     },
     onError: (error) => {
@@ -660,15 +680,34 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const reorderStagesMutation = useMutation({
     mutationFn: async ({ stages }: { stages: { id: string, sort_order: number }[] }) => {
-      const { error } = await supabase
-        .from('workflow_stages')
-        .upsert(stages, { onConflict: 'id' })
+      // Update each stage's sort_order individually
+      const updates = stages.map(stage =>
+        supabase
+          .from('workflow_stages')
+          .update({ sort_order: stage.sort_order })
+          .eq('id', stage.id)
+      )
+
+      const results = await Promise.all(updates)
+      const error = results.find(r => r.error)?.error
 
       if (error) throw error
+
+      return { stages }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+    onSuccess: (result) => {
+      // Update the selected workflow optimistically
+      if (selectedWorkflow) {
+        const updatedStages = selectedWorkflow.stages?.map(stage => {
+          const newOrder = result.stages.find(s => s.id === stage.id)?.sort_order
+          return newOrder !== undefined ? { ...stage, sort_order: newOrder } : stage
+        }).sort((a, b) => a.sort_order - b.sort_order) || []
+
+        setSelectedWorkflow({
+          ...selectedWorkflow,
+          stages: updatedStages
+        })
+      }
     },
     onError: (error) => {
       console.error('Error reordering stages:', error)
