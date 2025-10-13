@@ -587,29 +587,34 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const addStageMutation = useMutation({
     mutationFn: async ({ workflowId, stage }: { workflowId: string, stage: Omit<WorkflowStage, 'id' | 'created_at' | 'updated_at'> }) => {
-      const user = await supabase.auth.getUser()
-      const userId = user.data.user?.id
+      const stageData = {
+        ...stage,
+        workflow_id: workflowId
+      }
 
-      if (!userId) throw new Error('Not authenticated')
+      console.log('Inserting stage:', stageData)
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('workflow_stages')
-        .insert({
-          ...stage,
-          workflow_id: workflowId,
-          created_by: userId
-        })
+        .insert(stageData)
+        .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('Database error:', error)
+        throw error
+      }
+
+      console.log('Stage created successfully:', data)
+      return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
       queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
       setShowAddStage(false)
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Error adding stage:', error)
-      alert('Failed to add stage. Please try again.')
+      alert(`Failed to add stage: ${error.message || 'Please try again'}`)
     }
   })
 
@@ -1889,7 +1894,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
-                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') &&
+                     (selectedWorkflow?.stages || []).length > 0 && (
                       <Button size="sm" onClick={() => setShowAddStage(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Stage
@@ -2176,7 +2182,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         <div className="space-y-4">
                           {/* Workflow Visibility */}
                           <div className="bg-gray-50 rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center justify-between mb-3">
                               <span className="font-medium text-gray-900">Workflow Visibility</span>
                               <div className="space-x-2">
                                 {selectedWorkflow.is_public && (
@@ -2199,6 +2205,53 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 )}
                               </div>
                             </div>
+
+                            {/* Public/Private Toggle for Admins/Owners */}
+                            {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                              <div className="mb-3 pb-3 border-b border-gray-200">
+                                <label className="flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedWorkflow.is_public || false}
+                                    onChange={async (e) => {
+                                      const newValue = e.target.checked
+
+                                      // Optimistically update the UI
+                                      setSelectedWorkflow({
+                                        ...selectedWorkflow,
+                                        is_public: newValue
+                                      })
+
+                                      try {
+                                        const { error } = await supabase
+                                          .from('workflows')
+                                          .update({ is_public: newValue })
+                                          .eq('id', selectedWorkflow.id)
+
+                                        if (error) {
+                                          // Revert on error
+                                          setSelectedWorkflow({
+                                            ...selectedWorkflow,
+                                            is_public: !newValue
+                                          })
+                                          throw error
+                                        }
+                                      } catch (error) {
+                                        console.error('Failed to update workflow visibility:', error)
+                                      }
+                                    }}
+                                    className="mr-3 rounded"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-medium text-gray-900">Make this workflow public</span>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                      When enabled, all users in your organization can view and use this workflow
+                                    </p>
+                                  </div>
+                                </label>
+                              </div>
+                            )}
+
                             <p className="text-sm text-gray-600">
                               {selectedWorkflow.is_public && "Anyone in your organization can view and use this workflow"}
                               {selectedWorkflow.is_default && "This is the default workflow for new assets"}
@@ -3004,10 +3057,53 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
           onClose={() => setShowInviteModal(false)}
-          onInvite={(email, permission) => {
-            // TODO: Implement invite functionality
-            console.log('Inviting user:', email, 'with permission:', permission)
-            setShowInviteModal(false)
+          onInvite={async (email, permission) => {
+            try {
+              // Get the current user
+              const { data: { user } } = await supabase.auth.getUser()
+              if (!user) throw new Error('Not authenticated')
+
+              // Find the user by email
+              const { data: invitedUser, error: userError } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', email.toLowerCase())
+                .single()
+
+              if (userError || !invitedUser) {
+                alert('User not found. Please make sure the email address is correct.')
+                return
+              }
+
+              // Create the workflow collaboration
+              const { error: inviteError } = await supabase
+                .from('workflow_collaborations')
+                .insert({
+                  workflow_id: selectedWorkflow.id,
+                  user_id: invitedUser.id,
+                  permission: permission,
+                  invited_by: user.id
+                })
+
+              if (inviteError) {
+                if (inviteError.code === '23505') { // Unique constraint violation
+                  alert('This user already has access to this workflow.')
+                } else {
+                  throw inviteError
+                }
+                return
+              }
+
+              // Refresh the workflow data to show the new team member
+              queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+              queryClient.invalidateQueries({ queryKey: ['workflow-team', selectedWorkflow.id] })
+
+              setShowInviteModal(false)
+              alert(`Successfully invited ${email} with ${permission} access!`)
+            } catch (error) {
+              console.error('Error inviting user:', error)
+              alert('Failed to invite user. Please try again.')
+            }
           }}
         />
       )}
@@ -3103,7 +3199,6 @@ function AddStageModal({ workflowId, existingStages, onClose, onSave }: {
   onSave: (stage: Omit<WorkflowStage, 'id' | 'created_at' | 'updated_at'>) => void
 }) {
   const [formData, setFormData] = useState({
-    stage_key: '',
     stage_label: '',
     stage_description: '',
     stage_color: '#3b82f6',
@@ -3115,7 +3210,17 @@ function AddStageModal({ workflowId, existingStages, onClose, onSave }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
+
+    // Auto-generate stage_key from stage_label
+    const stage_key = formData.stage_label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+
+    onSave({
+      ...formData,
+      stage_key
+    })
   }
 
   return (
@@ -3124,24 +3229,13 @@ function AddStageModal({ workflowId, existingStages, onClose, onSave }: {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Stage</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Stage Key</label>
-            <input
-              type="text"
-              value={formData.stage_key}
-              onChange={(e) => setFormData({ ...formData, stage_key: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="e.g., new_stage"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Stage Label</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Stage Name</label>
             <input
               type="text"
               value={formData.stage_label}
               onChange={(e) => setFormData({ ...formData, stage_label: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="e.g., New Stage"
+              placeholder="e.g., Planning & Research"
               required
             />
           </div>

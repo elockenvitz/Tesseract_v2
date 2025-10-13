@@ -2,8 +2,10 @@ import React, { useState } from 'react'
 import { X, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown, Palette, Eye, Workflow, Settings2, Users, UserPlus, UserMinus, Search } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 import { Button } from './Button'
 import { Badge } from './Badge'
+import { Card } from './Card'
 
 interface WorkflowManagerProps {
   isOpen: boolean
@@ -89,7 +91,17 @@ export function WorkflowManager({
   const [showUserDropdown, setShowUserDropdown] = useState(false)
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean
+    collaborationId: string | null
+    userEmail: string
+  }>({
+    isOpen: false,
+    collaborationId: null,
+    userEmail: ''
+  })
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   // Enhanced state for selection mode
   const [viewMode, setViewMode] = useState<'list' | 'details' | 'create'>('list')
@@ -174,6 +186,34 @@ export function WorkflowManager({
     },
     enabled: !!selectedWorkflow
   })
+
+  //  Fetch workflow owner details (for both editing and viewing)
+  const currentWorkflow = editingWorkflow || workflows?.find(w => w.id === selectedWorkflow)
+  const { data: workflowOwner } = useQuery({
+    queryKey: ['workflow-owner', currentWorkflow?.created_by],
+    queryFn: async () => {
+      if (!currentWorkflow?.created_by) return null
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .eq('id', currentWorkflow.created_by)
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    enabled: !!currentWorkflow?.created_by
+  })
+
+  // Get current user's permission level for the editing workflow
+  const currentUserPermission = (() => {
+    if (!editingWorkflow || !user?.id) return null
+    if (editingWorkflow.created_by === user.id) return 'admin'
+
+    const userCollab = collaborations?.find(c => c.user_id === user.id)
+    return userCollab?.permission || null
+  })()
 
   const { data: collaborations } = useQuery({
     queryKey: ['workflow-collaborations', selectedWorkflow],
@@ -357,10 +397,31 @@ export function WorkflowManager({
           workflow_id: workflowId,
           user_id: userId,
           permission,
-          invited_by: (await supabase.auth.getUser()).data.user?.id
+          invited_by: user?.id
         }])
 
       if (error) throw error
+
+      // Create notification for the invited user
+      const workflow = workflows?.find(w => w.id === workflowId)
+      if (workflow) {
+        await supabase
+          .from('notifications')
+          .insert({
+            user_id: userId,
+            type: 'workflow_shared',
+            title: 'Workflow Shared With You',
+            message: `${user?.first_name || user?.email?.split('@')[0] || 'Someone'} shared the workflow "${workflow.name}" with you`,
+            context_type: 'workflow',
+            context_id: workflowId,
+            context_data: {
+              workflow_name: workflow.name,
+              workflow_id: workflowId,
+              shared_by: user?.id,
+              permission
+            }
+          })
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-collaborations'] })
@@ -535,6 +596,38 @@ export function WorkflowManager({
     setNewCollaboratorEmail(`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email)
     setShowUserDropdown(false)
     setFilteredUsers([])
+  }
+
+  const handleRemoveCollaboration = (collaborationId: string, userEmail: string) => {
+    setDeleteConfirm({
+      isOpen: true,
+      collaborationId,
+      userEmail
+    })
+  }
+
+  const confirmRemoveCollaboration = () => {
+    if (deleteConfirm.collaborationId) {
+      removeCollaboratorMutation.mutate(deleteConfirm.collaborationId)
+      setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })
+    }
+  }
+
+  const getUserDisplayName = (user: any) => {
+    if (!user) return 'Unknown User'
+    if (user.first_name && user.last_name) {
+      return `${user.first_name} ${user.last_name}`
+    }
+    return user.email?.split('@')[0] || 'Unknown User'
+  }
+
+  const getPermissionColor = (permission: string) => {
+    switch (permission) {
+      case 'admin': return 'error'
+      case 'write': return 'warning'
+      case 'read': return 'success'
+      default: return 'default'
+    }
   }
 
   // Helper functions for selection mode
@@ -974,17 +1067,6 @@ export function WorkflowManager({
                     />
                   </div>
 
-                  <div className="flex items-center space-x-4 mb-6">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editingWorkflow.is_public || false}
-                        onChange={(e) => setEditingWorkflow({ ...editingWorkflow, is_public: e.target.checked })}
-                        className="mr-2 rounded"
-                      />
-                      <span className="text-sm text-gray-700">Make public (visible to all users)</span>
-                    </label>
-                  </div>
                 </div>
 
                 {/* Tabs */}
@@ -1002,23 +1084,21 @@ export function WorkflowManager({
                         <Settings2 className="w-4 h-4 mr-1 inline" />
                         Stages
                       </button>
-                      {!editingWorkflow.is_public && (
-                        <button
-                          onClick={() => setShowCollaborators(true)}
-                          className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                            showCollaborators
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                          }`}
-                        >
-                          <Users className="w-4 h-4 mr-1 inline" />
-                          Collaborators
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setShowCollaborators(true)}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                          showCollaborators
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <Users className="w-4 h-4 mr-1 inline" />
+                        Team & Admins
+                      </button>
                     </nav>
                   </div>
 
-                  {!showCollaborators || editingWorkflow.is_public ? (
+                  {!showCollaborators ? (
                     <div>
                       <div className="flex items-center justify-between mb-4">
                         <h4 className="font-medium text-gray-900">Workflow Stages</h4>
@@ -1147,123 +1227,254 @@ export function WorkflowManager({
                   </div>
                 </div>
                   ) : (
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-medium text-gray-900">Collaborators</h4>
-                        <div className="flex items-center space-x-2">
-                          <div className="relative">
-                            <input
-                              type="text"
-                              placeholder="Search by name or email"
-                              value={newCollaboratorEmail}
-                              onChange={(e) => handleUserSearch(e.target.value)}
-                              onFocus={() => {
-                                if (filteredUsers.length > 0) setShowUserDropdown(true)
-                              }}
-                              onBlur={() => {
-                                // Delay hiding dropdown to allow clicks
-                                setTimeout(() => setShowUserDropdown(false), 200)
-                              }}
-                              className="px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
-                            />
-
-                            {/* Search Results Dropdown */}
-                            {showUserDropdown && filteredUsers.length > 0 && (
-                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-40 overflow-y-auto">
-                                {filteredUsers.map((user) => (
-                                  <button
-                                    key={user.id}
-                                    onClick={() => handleUserSelect(user)}
-                                    className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                                  >
-                                    <div className="text-sm font-medium text-gray-900">
-                                      {user.first_name && user.last_name
-                                        ? `${user.first_name} ${user.last_name}`
-                                        : user.email
-                                      }
-                                    </div>
-                                    <div className="text-xs text-gray-500">{user.email}</div>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <select
-                            value={newCollaboratorPermission}
-                            onChange={(e) => setNewCollaboratorPermission(e.target.value as 'read' | 'write' | 'admin')}
-                            className="px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="read">Read</option>
-                            <option value="write">Write</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              if (selectedUser) {
-                                addCollaboratorMutation.mutate({
-                                  workflowId: editingWorkflow.id!,
-                                  userId: selectedUser.id,
-                                  permission: newCollaboratorPermission
-                                })
-                              }
-                            }}
-                            disabled={!selectedUser || !editingWorkflow.id}
-                          >
-                            <UserPlus className="w-4 h-4 mr-1" />
-                            Add
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        {collaborations?.map((collab) => (
-                          <div key={collab.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                                <Users className="w-4 h-4 text-gray-600" />
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">
-                                  {collab.user?.first_name && collab.user?.last_name
-                                    ? `${collab.user.first_name} ${collab.user.last_name}`
-                                    : collab.user?.email
-                                  }
-                                </p>
-                                <p className="text-xs text-gray-500">{collab.user?.email}</p>
-                              </div>
+                    <div className="space-y-6">
+                      {/* Admin Status Notice */}
+                      {currentUserPermission === 'admin' ? (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
+                              <Badge variant="primary" size="sm">Admin Access</Badge>
                             </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-blue-900">
+                                You have full admin control over this workflow. You can manage visibility, invite collaborators, and adjust team member permissions.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
+                              <Badge variant={getPermissionColor(currentUserPermission || 'read')} size="sm">
+                                {currentUserPermission || 'View Only'}
+                              </Badge>
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-700">
+                                You have {currentUserPermission || 'view-only'} access to this workflow. Contact the workflow owner for permission changes.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Workflow Owner */}
+                      {workflowOwner && (
+                        <Card>
+                          <div className="p-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Workflow Owner</h4>
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                                <Users className="w-5 h-5 text-primary-600" />
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {getUserDisplayName(workflowOwner)}
+                                </p>
+                                <p className="text-xs text-gray-500">{workflowOwner.email}</p>
+                              </div>
+                              <Badge variant="error" size="sm">Owner</Badge>
+                            </div>
+                          </div>
+                        </Card>
+                      )}
+
+                      {/* Public/Private Toggle */}
+                      <Card>
+                        <div className="p-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">Visibility</h4>
+                          <label className={`flex items-center ${currentUserPermission === 'admin' ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                            <input
+                              type="checkbox"
+                              checked={editingWorkflow.is_public || false}
+                              onChange={async (e) => {
+                                if (currentUserPermission === 'admin' && editingWorkflow.id) {
+                                  const newValue = e.target.checked
+                                  // Update local state immediately
+                                  setEditingWorkflow({ ...editingWorkflow, is_public: newValue })
+
+                                  // Save to database immediately
+                                  const { error } = await supabase
+                                    .from('workflows')
+                                    .update({ is_public: newValue })
+                                    .eq('id', editingWorkflow.id)
+
+                                  if (error) {
+                                    console.error('Failed to update workflow visibility:', error)
+                                    // Revert on error
+                                    setEditingWorkflow({ ...editingWorkflow, is_public: !newValue })
+                                  } else {
+                                    // Refresh the workflows list
+                                    queryClient.invalidateQueries({ queryKey: ['workflows'] })
+                                  }
+                                }
+                              }}
+                              disabled={currentUserPermission !== 'admin' || !editingWorkflow.id}
+                              className="mr-3 rounded"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-medium text-gray-900">Public Workflow</span>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {currentUserPermission === 'admin'
+                                  ? 'When enabled, all users can view and use this workflow. Changes save automatically.'
+                                  : 'Only workflow admins can change visibility settings'
+                                }
+                              </p>
+                            </div>
+                          </label>
+                        </div>
+                      </Card>
+
+                      {/* Invite New Collaborator */}
+                      {!editingWorkflow.is_public && currentUserPermission === 'admin' && (
+                        <Card>
+                          <div className="p-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Invite Collaborator</h4>
                             <div className="flex items-center space-x-2">
+                              <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search by name or email"
+                                  value={newCollaboratorEmail}
+                                  onChange={(e) => handleUserSearch(e.target.value)}
+                                  onFocus={() => {
+                                    if (filteredUsers.length > 0) setShowUserDropdown(true)
+                                  }}
+                                  onBlur={() => {
+                                    setTimeout(() => setShowUserDropdown(false), 200)
+                                  }}
+                                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                />
+                                {showUserDropdown && filteredUsers.length > 0 && (
+                                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                                    {filteredUsers.map((user) => (
+                                      <button
+                                        key={user.id}
+                                        onClick={() => handleUserSelect(user)}
+                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                      >
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {user.first_name && user.last_name
+                                            ? `${user.first_name} ${user.last_name}`
+                                            : user.email}
+                                        </div>
+                                        <div className="text-xs text-gray-500">{user.email}</div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                               <select
-                                value={collab.permission}
-                                onChange={(e) => updateCollaboratorMutation.mutate({
-                                  collaborationId: collab.id,
-                                  permission: e.target.value
-                                })}
-                                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                value={newCollaboratorPermission}
+                                onChange={(e) => setNewCollaboratorPermission(e.target.value as 'read' | 'write' | 'admin')}
+                                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                               >
                                 <option value="read">Read</option>
                                 <option value="write">Write</option>
                                 <option value="admin">Admin</option>
                               </select>
-                              <button
-                                onClick={() => removeCollaboratorMutation.mutate(collab.id)}
-                                className="p-1 text-gray-400 hover:text-red-600"
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  if (selectedUser) {
+                                    addCollaboratorMutation.mutate({
+                                      workflowId: editingWorkflow.id!,
+                                      userId: selectedUser.id,
+                                      permission: newCollaboratorPermission
+                                    })
+                                  }
+                                }}
+                                disabled={!selectedUser || !editingWorkflow.id}
                               >
-                                <UserMinus className="w-4 h-4" />
-                              </button>
+                                <UserPlus className="w-4 h-4 mr-1" />
+                                Invite
+                              </Button>
                             </div>
                           </div>
-                        ))}
+                        </Card>
+                      )}
 
-                        {(!collaborations || collaborations.length === 0) && (
-                          <div className="text-center py-8 text-gray-500">
-                            <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                            <p>No collaborators yet</p>
-                            <p className="text-sm">Add users above to share this workflow</p>
+                      {/* Current Collaborators */}
+                      {!editingWorkflow.is_public && (
+                        <Card>
+                          <div className="p-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">
+                              Team Members ({collaborations?.length || 0})
+                            </h4>
+                            <div className="space-y-2">
+                              {collaborations?.map((collab) => (
+                                <div
+                                  key={collab.id}
+                                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                >
+                                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                                      <Users className="w-4 h-4 text-gray-600" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900 truncate">
+                                        {getUserDisplayName(collab.user)}
+                                      </p>
+                                      <p className="text-xs text-gray-500 truncate">{collab.user?.email}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
+                                    {currentUserPermission === 'admin' ? (
+                                      <>
+                                        <select
+                                          value={collab.permission}
+                                          onChange={(e) => updateCollaboratorMutation.mutate({
+                                            collaborationId: collab.id,
+                                            permission: e.target.value
+                                          })}
+                                          className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                        >
+                                          <option value="read">Read</option>
+                                          <option value="write">Write</option>
+                                          <option value="admin">Admin</option>
+                                        </select>
+                                        <button
+                                          onClick={() => handleRemoveCollaboration(collab.id, collab.user?.email || '')}
+                                          className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                                          title="Remove collaborator"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <Badge variant={getPermissionColor(collab.permission)} size="sm">
+                                        {collab.permission}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+
+                              {(!collaborations || collaborations.length === 0) && (
+                                <div className="text-center py-8 text-gray-500">
+                                  <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                                  <p className="text-sm font-medium">No team members yet</p>
+                                  <p className="text-xs mt-1">Invite users above to collaborate on this workflow</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
+                        </Card>
+                      )}
+
+                      {editingWorkflow.is_public && (
+                        <Card>
+                          <div className="p-4 text-center">
+                            <Eye className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                            <p className="text-sm font-medium text-gray-700">Public Workflow</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              This workflow is visible to all users. Disable public access to manage team members.
+                            </p>
+                          </div>
+                        </Card>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1320,9 +1531,42 @@ export function WorkflowManager({
                     }}
                   >
                     <Edit className="w-4 h-4 mr-1" />
-                    Edit
+                    Edit Stages
                   </Button>
                 </div>
+
+                {/* Tabs for view mode */}
+                <div>
+                  <div className="border-b border-gray-200 mb-6">
+                    <nav className="-mb-px flex space-x-8">
+                      <button
+                        onClick={() => setShowCollaborators(false)}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                          !showCollaborators
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <Settings2 className="w-4 h-4 mr-1 inline" />
+                        Overview
+                      </button>
+                      <button
+                        onClick={() => setShowCollaborators(true)}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                          showCollaborators
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <Users className="w-4 h-4 mr-1 inline" />
+                        Team & Admins
+                      </button>
+                    </nav>
+                  </div>
+
+                  {!showCollaborators ? (
+                    // Overview Tab
+                    <div className="space-y-6">
 
                 <div className="bg-gray-50 rounded-lg p-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -1377,6 +1621,269 @@ export function WorkflowManager({
                     ))}
                   </div>
                 </div>
+                    </div>
+                  ) : (
+                    // Team & Admins Tab in view mode
+                    <div className="space-y-6">
+                      {(() => {
+                        const workflow = workflows?.find(w => w.id === selectedWorkflow)
+                        if (!workflow) return null
+
+                        const isOwner = workflow.created_by === user?.id
+                        const userCollab = collaborations?.find(c => c.user_id === user?.id)
+                        const viewPermission = isOwner ? 'admin' : (userCollab?.permission || null)
+
+                        return (
+                          <>
+                            {/* Admin Status Notice */}
+                            {viewPermission === 'admin' ? (
+                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-start space-x-3">
+                                  <div className="flex-shrink-0">
+                                    <Badge variant="primary" size="sm">Admin Access</Badge>
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm text-blue-900">
+                                      You have full admin control over this workflow. You can manage visibility, invite collaborators, and adjust team member permissions.
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                <div className="flex items-start space-x-3">
+                                  <div className="flex-shrink-0">
+                                    <Badge variant={getPermissionColor(viewPermission || 'read')} size="sm">
+                                      {viewPermission || 'View Only'}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm text-gray-700">
+                                      You have {viewPermission || 'view-only'} access to this workflow. Contact the workflow owner for permission changes.
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Workflow Owner */}
+                            {workflowOwner && (
+                              <Card>
+                                <div className="p-4">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-3">Workflow Owner</h4>
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                                      <Users className="w-5 h-5 text-primary-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {getUserDisplayName(workflowOwner)}
+                                      </p>
+                                      <p className="text-xs text-gray-500">{workflowOwner.email}</p>
+                                    </div>
+                                    <Badge variant="error" size="sm">Owner</Badge>
+                                  </div>
+                                </div>
+                              </Card>
+                            )}
+
+                            {/* Public/Private Toggle */}
+                            <Card>
+                              <div className="p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-3">Visibility</h4>
+                                <label className={`flex items-center ${viewPermission === 'admin' ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={workflow.is_public || false}
+                                    onChange={async (e) => {
+                                      if (viewPermission === 'admin') {
+                                        const newValue = e.target.checked
+
+                                        // Save to database immediately
+                                        const { error } = await supabase
+                                          .from('workflows')
+                                          .update({ is_public: newValue })
+                                          .eq('id', workflow.id)
+
+                                        if (error) {
+                                          console.error('Failed to update workflow visibility:', error)
+                                        } else {
+                                          // Refresh the workflows list
+                                          queryClient.invalidateQueries({ queryKey: ['workflows'] })
+                                        }
+                                      }
+                                    }}
+                                    disabled={viewPermission !== 'admin'}
+                                    className="mr-3 rounded"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-medium text-gray-900">Public Workflow</span>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                      {viewPermission === 'admin'
+                                        ? 'When enabled, all users can view and use this workflow. Changes save automatically.'
+                                        : 'Only workflow admins can change visibility settings'
+                                      }
+                                    </p>
+                                  </div>
+                                </label>
+                              </div>
+                            </Card>
+
+                            {/* Invite New Collaborator */}
+                            {!workflow.is_public && viewPermission === 'admin' && (
+                              <Card>
+                                <div className="p-4">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-3">Invite Collaborator</h4>
+                                  <div className="flex items-center space-x-2">
+                                    <div className="relative flex-1">
+                                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                      <input
+                                        type="text"
+                                        placeholder="Search by name or email"
+                                        value={newCollaboratorEmail}
+                                        onChange={(e) => handleUserSearch(e.target.value)}
+                                        onFocus={() => {
+                                          if (filteredUsers.length > 0) setShowUserDropdown(true)
+                                        }}
+                                        onBlur={() => {
+                                          setTimeout(() => setShowUserDropdown(false), 200)
+                                        }}
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                      />
+                                      {showUserDropdown && filteredUsers.length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                                          {filteredUsers.map((user) => (
+                                            <button
+                                              key={user.id}
+                                              onClick={() => handleUserSelect(user)}
+                                              className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                            >
+                                              <div className="text-sm font-medium text-gray-900">
+                                                {user.first_name && user.last_name
+                                                  ? `${user.first_name} ${user.last_name}`
+                                                  : user.email}
+                                              </div>
+                                              <div className="text-xs text-gray-500">{user.email}</div>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <select
+                                      value={newCollaboratorPermission}
+                                      onChange={(e) => setNewCollaboratorPermission(e.target.value as 'read' | 'write' | 'admin')}
+                                      className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                    >
+                                      <option value="read">Read</option>
+                                      <option value="write">Write</option>
+                                      <option value="admin">Admin</option>
+                                    </select>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        if (selectedUser) {
+                                          addCollaboratorMutation.mutate({
+                                            workflowId: workflow.id,
+                                            userId: selectedUser.id,
+                                            permission: newCollaboratorPermission
+                                          })
+                                        }
+                                      }}
+                                      disabled={!selectedUser}
+                                    >
+                                      <UserPlus className="w-4 h-4 mr-1" />
+                                      Invite
+                                    </Button>
+                                  </div>
+                                </div>
+                              </Card>
+                            )}
+
+                            {/* Current Collaborators */}
+                            {!workflow.is_public && (
+                              <Card>
+                                <div className="p-4">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-3">
+                                    Team Members ({collaborations?.length || 0})
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {collaborations?.map((collab) => (
+                                      <div
+                                        key={collab.id}
+                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                      >
+                                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                          <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                                            <Users className="w-4 h-4 text-gray-600" />
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                              {getUserDisplayName(collab.user)}
+                                            </p>
+                                            <p className="text-xs text-gray-500 truncate">{collab.user?.email}</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
+                                          {viewPermission === 'admin' ? (
+                                            <>
+                                              <select
+                                                value={collab.permission}
+                                                onChange={(e) => updateCollaboratorMutation.mutate({
+                                                  collaborationId: collab.id,
+                                                  permission: e.target.value
+                                                })}
+                                                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                              >
+                                                <option value="read">Read</option>
+                                                <option value="write">Write</option>
+                                                <option value="admin">Admin</option>
+                                              </select>
+                                              <button
+                                                onClick={() => handleRemoveCollaboration(collab.id, collab.user?.email || '')}
+                                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                                                title="Remove collaborator"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <Badge variant={getPermissionColor(collab.permission)} size="sm">
+                                              {collab.permission}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+
+                                    {(!collaborations || collaborations.length === 0) && (
+                                      <div className="text-center py-8 text-gray-500">
+                                        <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                                        <p className="text-sm font-medium">No team members yet</p>
+                                        <p className="text-xs mt-1">Invite users above to collaborate on this workflow</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </Card>
+                            )}
+
+                            {workflow.is_public && (
+                              <Card>
+                                <div className="p-4 text-center">
+                                  <Eye className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                                  <p className="text-sm font-medium text-gray-700">Public Workflow</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    This workflow is visible to all users. Disable public access to manage team members.
+                                  </p>
+                                </div>
+                              </Card>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">
@@ -1390,6 +1897,37 @@ export function WorkflowManager({
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card>
+            <div className="p-6 max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Collaborator</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Are you sure you want to remove <strong>{deleteConfirm.userEmail}</strong> from this workflow?
+                They will no longer have access.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={confirmRemoveCollaboration}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
