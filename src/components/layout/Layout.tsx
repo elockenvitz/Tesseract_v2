@@ -136,6 +136,31 @@ export function Layout({
     return () => document.removeEventListener('keydown', handleEscKey)
   }, [isFocusMode, handleFocusMode])
 
+  // Listen for custom event to open direct messages
+  useEffect(() => {
+    const handleOpenDirectMessage = (event: CustomEvent) => {
+      const { conversationId } = event.detail
+      console.log('📬 Opening direct message conversation:', conversationId)
+
+      // Switch to direct-messages view
+      setCommPaneView('direct-messages')
+
+      // Open the comm pane if not already open
+      if (!isCommPaneOpen) {
+        toggleCommPane()
+      }
+
+      // Set the conversation ID in the URL or state
+      // The DirectMessagesSection will pick it up
+      const url = new URL(window.location.href)
+      url.searchParams.set('conversation', conversationId)
+      window.history.pushState({}, '', url.toString())
+    }
+
+    window.addEventListener('openDirectMessage', handleOpenDirectMessage as EventListener)
+    return () => window.removeEventListener('openDirectMessage', handleOpenDirectMessage as EventListener)
+  }, [isCommPaneOpen, toggleCommPane])
+
   // Determine communication context from active tab
   const getCommContext = () => {
     if (!activeTabId) return { contextType: undefined, contextId: undefined, contextTitle: undefined }

@@ -24,6 +24,8 @@ interface MentionInputProps {
   disabled?: boolean
   rows?: number
   hideHelper?: boolean
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
 }
 
 interface Suggestion {
@@ -32,7 +34,7 @@ interface Suggestion {
   type: 'user' | 'asset' | 'workflow' | 'list' | 'theme'
 }
 
-export function MentionInput({ value, onChange, placeholder, className, disabled, rows = 3, hideHelper = false }: MentionInputProps) {
+export function MentionInput({ value, onChange, placeholder, className, disabled, rows = 3, hideHelper = false, onKeyDown, onBlur }: MentionInputProps) {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestionType, setSuggestionType] = useState<'mention' | 'hashtag' | null>(null)
   const [suggestionQuery, setSuggestionQuery] = useState('')
@@ -181,11 +183,18 @@ export function MentionInput({ value, onChange, placeholder, className, disabled
 
   // Handle keyboard navigation in suggestions
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Handle suggestions first
     if (showSuggestions && suggestions.length > 0) {
       if (e.key === 'Escape') {
         setShowSuggestions(false)
         e.preventDefault()
+        return
       }
+    }
+
+    // Call parent onKeyDown if provided
+    if (onKeyDown) {
+      onKeyDown(e)
     }
   }
 
@@ -196,6 +205,7 @@ export function MentionInput({ value, onChange, placeholder, className, disabled
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onBlur={onBlur}
         placeholder={placeholder}
         disabled={disabled}
         className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${className}`}

@@ -2,8 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { UserPlus, X, Calendar, Check, Search } from 'lucide-react'
+import { UserPlus, X, Calendar, Check, Search, MessageSquare, Trash2 } from 'lucide-react'
 import { Button } from './Button'
+import { useNavigate } from 'react-router-dom'
 
 interface User {
   id: string
@@ -43,12 +44,15 @@ export function AssignmentSelector({
   onModalClose
 }: AssignmentSelectorProps) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [showAssignModal, setShowAssignModal] = useState(autoOpenModal)
   const [selectedUserId, setSelectedUserId] = useState('')
   const [userSearchQuery, setUserSearchQuery] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [notes, setNotes] = useState('')
+  const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
 
   // Auto-open modal if autoOpenModal prop is true
   useEffect(() => {
@@ -188,52 +192,192 @@ export function AssignmentSelector({
     })
   }, [users, userSearchQuery])
 
+  // Handle opening conversation with user
+  const handleOpenConversation = async (userId: string) => {
+    if (!user) return
+
+    try {
+      // Find existing direct message conversation between the two users
+      const { data: existingParticipants, error: fetchError } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id, conversations!inner(is_group)')
+        .eq('user_id', user.id)
+
+      if (fetchError) {
+        console.error('Error fetching conversations:', fetchError)
+        throw fetchError
+      }
+
+      // Check each conversation to see if it's a DM with the target user
+      let conversationId: string | null = null
+      if (existingParticipants) {
+        for (const participant of existingParticipants) {
+          // Only check non-group conversations
+          if (!(participant.conversations as any).is_group) {
+            const { data: otherParticipants, error: otherError } = await supabase
+              .from('conversation_participants')
+              .select('user_id')
+              .eq('conversation_id', participant.conversation_id)
+              .neq('user_id', user.id)
+
+            if (otherError) continue
+
+            // If this conversation has exactly one other participant and it's our target user
+            if (otherParticipants && otherParticipants.length === 1 && otherParticipants[0].user_id === userId) {
+              conversationId = participant.conversation_id
+              break
+            }
+          }
+        }
+      }
+
+      if (conversationId) {
+        // Dispatch custom event to open direct messages pane with conversation
+        window.dispatchEvent(new CustomEvent('openDirectMessage', {
+          detail: { conversationId }
+        }))
+      } else {
+        // Create new conversation
+        const { data: newConversation, error: createError } = await supabase
+          .from('conversations')
+          .insert({
+            is_group: false,
+            created_by: user.id
+          })
+          .select('id')
+          .single()
+
+        if (createError) {
+          console.error('Error creating conversation:', createError)
+          throw createError
+        }
+
+        // Add both participants
+        const { error: participantsError } = await supabase
+          .from('conversation_participants')
+          .insert([
+            { conversation_id: newConversation.id, user_id: user.id, is_admin: true },
+            { conversation_id: newConversation.id, user_id: userId, is_admin: false }
+          ])
+
+        if (participantsError) {
+          console.error('Error adding participants:', participantsError)
+          throw participantsError
+        }
+
+        // Dispatch custom event to open direct messages pane with new conversation
+        window.dispatchEvent(new CustomEvent('openDirectMessage', {
+          detail: { conversationId: newConversation.id }
+        }))
+      }
+    } catch (error) {
+      console.error('Error opening conversation:', error)
+    }
+  }
+
+  // Handle removing assignment with confirmation
+  const handleRemoveAssignment = (assignmentId: string, userName: string) => {
+    if (confirm(`Are you sure you want to remove ${userName} from this ${type === 'task' ? 'task' : 'stage'}?`)) {
+      deleteAssignment.mutate(assignmentId)
+      setOpenDropdownId(null)
+    }
+  }
+
   return (
     <div className="space-y-2">
-      {/* Show existing assignments */}
-      {assignments && assignments.length > 0 && (
-        <div className="space-y-1">
-          {assignments.map((assignment) => (
-            <div
-              key={assignment.id}
-              className="flex items-center justify-between p-2 bg-blue-50 rounded-lg text-sm"
+      <div>
+        {/* Header with Assign Button */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            Assigned to
+          </div>
+          {!autoOpenModal && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+              title={`Assign ${type === 'task' ? 'Task' : 'Stage'}`}
             >
-              <div className="flex items-center space-x-2 flex-1 min-w-0">
-                <UserPlus className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                <span className="text-gray-900 truncate">
-                  {getUserName(assignment.user)}
-                </span>
-                {assignment.due_date && (
-                  <span className="text-gray-500 text-xs flex items-center">
-                    <Calendar className="w-3 h-3 mr-1" />
-                    {new Date(assignment.due_date).toLocaleDateString()}
+              <UserPlus className="w-3.5 h-3.5 text-gray-600" />
+            </button>
+          )}
+        </div>
+
+        {/* Show existing assignments */}
+        {assignments && assignments.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-end">
+            {assignments.map((assignment) => (
+              <div
+                key={assignment.id}
+                className="relative"
+                onMouseEnter={() => {
+                  if (openDropdownId !== assignment.id) {
+                    setHoveredUserId(assignment.assigned_user_id)
+                  }
+                }}
+                onMouseLeave={() => setHoveredUserId(null)}
+              >
+                <button
+                  onClick={() => {
+                    setHoveredUserId(null) // Hide tooltip when clicking
+                    setOpenDropdownId(openDropdownId === assignment.id ? null : assignment.id)
+                  }}
+                  className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer"
+                >
+                  <span className="text-white text-xs font-semibold">
+                    {getUserName(assignment.user).split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
                   </span>
+                </button>
+
+                {/* Hover tooltip - only show when dropdown is closed and hovering */}
+                {hoveredUserId === assignment.assigned_user_id && openDropdownId !== assignment.id && (
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 z-50 pointer-events-none animate-in fade-in slide-in-from-bottom-1 duration-150">
+                    <div className="bg-gray-900 text-white text-xs px-2 py-1.5 rounded shadow-lg whitespace-nowrap">
+                      <div className="font-medium">{getUserName(assignment.user)}</div>
+                      {assignment.due_date && (
+                        <div className="text-gray-300 text-[10px] mt-0.5">
+                          Due {new Date(assignment.due_date).toLocaleDateString()}
+                        </div>
+                      )}
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dropdown menu */}
+                {openDropdownId === assignment.id && (
+                  <>
+                    {/* Backdrop to close dropdown */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setOpenDropdownId(null)}
+                    />
+
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px]">
+                      <button
+                        onClick={async () => {
+                          setOpenDropdownId(null)
+                          await handleOpenConversation(assignment.assigned_user_id)
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        <span>Message</span>
+                      </button>
+                      <button
+                        onClick={() => handleRemoveAssignment(assignment.id, getUserName(assignment.user))}
+                        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Remove</span>
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
-              <button
-                onClick={() => deleteAssignment.mutate(assignment.id)}
-                className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                title="Remove assignment"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Assign button - only show if not auto-opening */}
-      {!autoOpenModal && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setShowAssignModal(true)}
-          className="w-full text-gray-600 hover:text-gray-900"
-        >
-          <UserPlus className="w-4 h-4 mr-2" />
-          Assign {type === 'task' ? 'Task' : 'Stage'}
-        </Button>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Assignment modal */}
       {showAssignModal && (

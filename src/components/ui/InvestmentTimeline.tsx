@@ -162,8 +162,11 @@ export function InvestmentTimeline({
   const [commentText, setCommentText] = useState('')
   const [commentMentions, setCommentMentions] = useState<string[]>([])
   const [commentReferences, setCommentReferences] = useState<Array<{type: string, id: string, text: string}>>([])
-  const [assigningItem, setAssigningItem] = useState<{stageId: string, itemId: string} | null>(null)
+  const [editingComment, setEditingComment] = useState<{id: string, text: string} | null>(null)
+  const [assigningItem, setAssigningItem] = useState<{stageId: string, itemId: string, dbId: string} | null>(null)
   const [showingCommentsFor, setShowingCommentsFor] = useState<{stageId: string, itemId: string} | null>(null)
+  const [showingAttachmentsFor, setShowingAttachmentsFor] = useState<{stageId: string, itemId: string} | null>(null)
+  const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
   const [addingItemToStage, setAddingItemToStage] = useState<string | null>(null)
   const [newItemText, setNewItemText] = useState('')
   const [uploadingFiles, setUploadingFiles] = useState<{[key: string]: boolean}>({})
@@ -959,74 +962,134 @@ export function InvestmentTimeline({
   }
 
   const handleSaveComment = async () => {
-    if (!commentingItem || !assetId || !user || !workflowId) return
-
-    const trimmedComment = commentText.trim()
-    if (!trimmedComment) return
-
-    // Get checklist item ID from database first
-    const { data: checklistItem } = await supabase
-      .from('asset_checklist_items')
-      .select('id')
-      .eq('asset_id', assetId)
-      .eq('workflow_id', workflowId)
-      .eq('stage_id', commentingItem.stageId)
-      .eq('item_id', commentingItem.itemId)
-      .maybeSingle()
-
-    if (!checklistItem) return
-
-    // Save the comment to the new comments table
-    const { error: commentError } = await supabase
-      .from('checklist_item_comments')
-      .insert({
-        checklist_item_id: checklistItem.id,
-        user_id: user.id,
-        comment_text: trimmedComment
-      })
-
-    if (commentError) {
-      console.error('Error saving comment:', commentError)
+    if (!commentingItem || !assetId || !user || !workflowId) {
+      console.log('Missing required data for saving comment:', { commentingItem, assetId, userId: user?.id, workflowId })
       return
     }
 
-    // Save mentions to database if any
-    if (commentMentions.length > 0) {
-      for (const [index, mentionedUserId] of commentMentions.entries()) {
-        await supabase
-          .from('checklist_comment_mentions')
-          .insert({
-            checklist_item_id: checklistItem.id,
-            mentioned_user_id: mentionedUserId,
-            mentioned_by: user.id,
-            comment_text: trimmedComment,
-            mention_position: index
-          })
-      }
+    const trimmedComment = commentText.trim()
+    if (!trimmedComment) {
+      console.log('Empty comment text')
+      return
     }
 
-    // Save references to database if any
-    if (commentReferences.length > 0) {
-      for (const reference of commentReferences) {
-        await supabase
-          .from('checklist_comment_references')
+    try {
+      // Get checklist item ID from database first, or create it if it doesn't exist
+      let { data: checklistItem, error: checklistError } = await supabase
+        .from('asset_checklist_items')
+        .select('id')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+        .eq('stage_id', commentingItem.stageId)
+        .eq('item_id', commentingItem.itemId)
+        .maybeSingle()
+
+      if (checklistError) {
+        console.error('Error fetching checklist item:', checklistError)
+        return
+      }
+
+      // If checklist item doesn't exist, create it
+      if (!checklistItem) {
+        console.log('Checklist item not found, creating it...')
+
+        // Find the checklist item text from the workflow template
+        const stage = timelineStages?.find(s => s.id === commentingItem.stageId)
+        const item = stage?.checklist.find(i => i.id === commentingItem.itemId)
+
+        if (!item) {
+          console.error('Could not find item in workflow template')
+          return
+        }
+
+        const { data: newItem, error: createError } = await supabase
+          .from('asset_checklist_items')
           .insert({
-            checklist_item_id: checklistItem.id,
-            reference_type: reference.type,
-            reference_id: reference.id,
-            reference_text: reference.text,
+            asset_id: assetId,
+            workflow_id: workflowId,
+            stage_id: commentingItem.stageId,
+            item_id: commentingItem.itemId,
+            item_text: item.text,
+            completed: false,
             created_by: user.id
           })
+          .select('id')
+          .single()
+
+        if (createError) {
+          console.error('Error creating checklist item:', createError)
+          return
+        }
+
+        checklistItem = newItem
+        console.log('Created checklist item:', checklistItem)
       }
+
+      // Save the comment to the new comments table
+      const { error: commentError } = await supabase
+        .from('checklist_item_comments')
+        .insert({
+          checklist_item_id: checklistItem.id,
+          user_id: user.id,
+          comment_text: trimmedComment
+        })
+
+      if (commentError) {
+        console.error('Error saving comment:', commentError)
+        return
+      }
+
+      // Save mentions to database if any
+      if (commentMentions.length > 0) {
+        for (const [index, mentionedUserId] of commentMentions.entries()) {
+          const { error: mentionError } = await supabase
+            .from('checklist_comment_mentions')
+            .insert({
+              checklist_item_id: checklistItem.id,
+              mentioned_user_id: mentionedUserId,
+              mentioned_by: user.id,
+              comment_text: trimmedComment,
+              mention_position: index
+            })
+
+          if (mentionError) {
+            console.error('Error saving mention:', mentionError)
+          }
+        }
+      }
+
+      // Save references to database if any
+      if (commentReferences.length > 0) {
+        for (const reference of commentReferences) {
+          const { error: refError } = await supabase
+            .from('checklist_comment_references')
+            .insert({
+              checklist_item_id: checklistItem.id,
+              reference_type: reference.type,
+              reference_id: reference.id,
+              reference_text: reference.text,
+              created_by: user.id
+            })
+
+          if (refError) {
+            console.error('Error saving reference:', refError)
+          }
+        }
+      }
+
+      // Invalidate queries to refetch comments
+      queryClient.invalidateQueries({ queryKey: ['checklist-item-comments', assetId, workflowId] })
+
+      // Reset state
+      setCommentingItem(null)
+      setCommentText('')
+      setCommentMentions([])
+      setCommentReferences([])
+
+      console.log('Comment saved successfully')
+    } catch (error) {
+      console.error('Unexpected error saving comment:', error)
     }
-
-    // Invalidate queries to refetch comments
-    queryClient.invalidateQueries({ queryKey: ['checklist-item-comments'] })
-
-    setCommentingItem(null)
-    setCommentText('')
-    setCommentMentions([])
-    setCommentReferences([])
   }
 
   const handleCancelComment = () => {
@@ -1034,6 +1097,130 @@ export function InvestmentTimeline({
     setCommentText('')
     setCommentMentions([])
     setCommentReferences([])
+    setEditingComment(null)
+  }
+
+  const handleEditComment = (commentId: string, currentText: string) => {
+    setEditingComment({ id: commentId, text: currentText })
+  }
+
+  const handleUpdateComment = async (commentId: string) => {
+    if (!editingComment || !user) return
+
+    const trimmedText = editingComment.text.trim()
+    if (!trimmedText) return
+
+    try {
+      const { error } = await supabase
+        .from('checklist_item_comments')
+        .update({
+          comment_text: trimmedText,
+          is_edited: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', commentId)
+        .eq('user_id', user.id) // Only allow updating own comments
+
+      if (error) {
+        console.error('Error updating comment:', error)
+        return
+      }
+
+      // Invalidate queries to refetch comments
+      queryClient.invalidateQueries({ queryKey: ['checklist-item-comments', assetId, workflowId] })
+
+      setEditingComment(null)
+    } catch (error) {
+      console.error('Unexpected error updating comment:', error)
+    }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!user || !confirm('Are you sure you want to delete this comment?')) return
+
+    try {
+      const { error } = await supabase
+        .from('checklist_item_comments')
+        .delete()
+        .eq('id', commentId)
+        .eq('user_id', user.id) // Only allow deleting own comments
+
+      if (error) {
+        console.error('Error deleting comment:', error)
+        return
+      }
+
+      // Invalidate queries to refetch comments
+      queryClient.invalidateQueries({ queryKey: ['checklist-item-comments', assetId, workflowId] })
+    } catch (error) {
+      console.error('Unexpected error deleting comment:', error)
+    }
+  }
+
+  // Helper function to get or create checklist item database ID
+  const getOrCreateChecklistItemId = async (stageId: string, itemId: string): Promise<string | null> => {
+    if (!assetId || !user) return null
+
+    try {
+      // First, try to find existing checklist item
+      const { data: existingItem, error: fetchError } = await supabase
+        .from('asset_checklist_items')
+        .select('id')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+        .eq('stage_id', stageId)
+        .eq('item_id', itemId)
+        .maybeSingle()
+
+      if (fetchError) {
+        console.error('Error fetching checklist item:', fetchError)
+        return null
+      }
+
+      if (existingItem) {
+        return existingItem.id
+      }
+
+      // If not found, create it
+      const stage = timelineStages?.find(s => s.id === stageId)
+      const item = stage?.checklist.find(i => i.id === itemId)
+
+      if (!item) {
+        console.error('Could not find item in workflow template')
+        return null
+      }
+
+      const { data: newItem, error: createError } = await supabase
+        .from('asset_checklist_items')
+        .insert({
+          asset_id: assetId,
+          workflow_id: workflowId,
+          stage_id: stageId,
+          item_id: itemId,
+          item_text: item.text,
+          completed: false,
+          created_by: user.id
+        })
+        .select('id')
+        .single()
+
+      if (createError) {
+        console.error('Error creating checklist item:', createError)
+        return null
+      }
+
+      return newItem.id
+    } catch (error) {
+      console.error('Unexpected error getting/creating checklist item:', error)
+      return null
+    }
+  }
+
+  const handleOpenAssignment = async (stageId: string, itemId: string) => {
+    const dbId = await getOrCreateChecklistItemId(stageId, itemId)
+    if (dbId) {
+      setAssigningItem({ stageId, itemId, dbId })
+    }
   }
 
   const handleAddCustomItem = async (stageId: string) => {
@@ -1119,6 +1306,40 @@ export function InvestmentTimeline({
     }
   }
 
+  const handleToggleAttachments = (stageId: string, itemId: string) => {
+    const key = `${stageId}-${itemId}`
+    const isCurrentlyShowing = showingAttachmentsFor?.stageId === stageId && showingAttachmentsFor?.itemId === itemId
+
+    if (isCurrentlyShowing) {
+      setShowingAttachmentsFor(null)
+    } else {
+      setShowingAttachmentsFor({ stageId, itemId })
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent, stageId: string, itemId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingOver(`${stageId}-${itemId}`)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingOver(null)
+  }
+
+  const handleDrop = async (e: React.DragEvent, stageId: string, itemId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingOver(null)
+
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      await handleFileUpload(stageId, itemId, files)
+    }
+  }
+
   const handleFileUpload = async (stageId: string, itemId: string, files: FileList) => {
     if (!assetId || !files.length) return
 
@@ -1132,14 +1353,21 @@ export function InvestmentTimeline({
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `checklist-attachments/${assetId}/${stageId}/${itemId}/${fileName}`
 
+        console.log('Uploading file:', file.name, 'to path:', filePath)
+
         const { error: uploadError } = await supabase.storage
           .from('assets')
           .upload(filePath, file)
 
-        if (uploadError) throw uploadError
+        if (uploadError) {
+          console.error('Storage upload error:', uploadError)
+          throw new Error(`Storage error: ${uploadError.message}`)
+        }
 
         // Save attachment record to database
         const { data: user } = await supabase.auth.getUser()
+
+        console.log('Saving attachment to database')
         const { error: dbError } = await supabase
           .from('asset_checklist_attachments')
           .insert({
@@ -1154,14 +1382,19 @@ export function InvestmentTimeline({
             uploaded_by: user.user?.id
           })
 
-        if (dbError) throw dbError
+        if (dbError) {
+          console.error('Database insert error:', dbError)
+          throw new Error(`Database error: ${dbError.message}`)
+        }
+
+        console.log('File uploaded successfully')
       }
 
       // Refresh attachments
       queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist-attachments', assetId, workflowId] })
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading file:', error)
-      alert('Failed to upload file. Please try again.')
+      alert(`Failed to upload file: ${error.message || 'Unknown error'}. Please check the console for details.`)
     } finally {
       setUploadingFiles(prev => ({ ...prev, [uploadKey]: false }))
     }
@@ -1608,20 +1841,32 @@ export function InvestmentTimeline({
                   <Info className="w-5 h-5 text-white" />
                 )}
               </div>
-              <div>
+              <div className="flex-1">
                 <h4 className="text-lg font-semibold text-gray-900">
                   {timelineStages.find(s => s.id === showStageDetails)?.label} Stage
                 </h4>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 mb-3">
                   {assetSymbol && `For ${assetSymbol} • `}
                   {timelineStages.find(s => s.id === showStageDetails)?.description}
                 </p>
+
+                {/* Stage Deadline - Below Description */}
+                {showStageDetails !== 'completed' && showStageDetails !== 'outdated' && (
+                  <div className="mt-2">
+                    <StageDeadlineManager
+                      assetId={assetId || ''}
+                      stageId={showStageDetails}
+                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                      isCurrentStage={showStageDetails === effectiveCurrentStage}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Stage Assignment Section - Upper Right */}
             {showStageDetails && showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId && (
-              <div>
+              <div className="flex-shrink-0">
                 <AssignmentSelector
                   assetId={assetId}
                   workflowId={workflowId}
@@ -1653,21 +1898,13 @@ export function InvestmentTimeline({
             {showStageDetails && showStageDetails !== 'outdated' && showStageDetails !== 'completed' && stageChecklists[showStageDetails] && (
               <div>
                 <div className="mb-4">
-                  <div className="flex items-center justify-between">
-                    <h5 className="font-medium text-gray-900 flex items-center">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Checklist
-                      <span className="ml-2 text-xs text-gray-500">
-                        ({stageChecklists[showStageDetails].filter(item => item.completed).length}/{stageChecklists[showStageDetails].length} completed)
-                      </span>
-                    </h5>
-                    <StageDeadlineManager
-                      assetId={assetId || ''}
-                      stageId={showStageDetails}
-                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                      isCurrentStage={showStageDetails === effectiveCurrentStage}
-                    />
-                  </div>
+                  <h5 className="font-medium text-gray-900 flex items-center">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    Checklist
+                    <span className="ml-2 text-xs text-gray-500">
+                      ({stageChecklists[showStageDetails].filter(item => item.completed).length}/{stageChecklists[showStageDetails].length} completed)
+                    </span>
+                  </h5>
                 </div>
                 <div className="space-y-3">
                   {stageChecklists[showStageDetails].map((item) => {
@@ -1773,31 +2010,35 @@ export function InvestmentTimeline({
                                   )
                                 })()}
 
-                                {isEditable ? (
-                                  <label className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-blue-600 cursor-pointer">
-                                    <input
-                                      type="file"
-                                      multiple
-                                      className="hidden"
-                                      onChange={(e) => {
-                                        if (e.target.files) {
-                                          handleFileUpload(showStageDetails, item.id, e.target.files)
-                                          e.target.value = '' // Reset input
-                                        }
-                                      }}
-                                    />
-                                    <Paperclip className="w-4 h-4" />
-                                  </label>
-                                ) : (item.attachments && item.attachments.length > 0) ? (
-                                  <div className="flex items-center">
-                                    <Paperclip className="w-4 h-4 text-blue-600" />
-                                    <span className="text-xs text-blue-600 ml-1">{item.attachments.length}</span>
-                                  </div>
-                                ) : null}
+                                {(() => {
+                                  const hasAttachments = item.attachments && item.attachments.length > 0
+                                  const isShowingAttachments = showingAttachmentsFor?.stageId === showStageDetails && showingAttachmentsFor?.itemId === item.id
+
+                                  return (
+                                    <button
+                                      onClick={() => handleToggleAttachments(showStageDetails, item.id)}
+                                      className={`relative p-1 rounded transition-colors ${
+                                        isShowingAttachments
+                                          ? 'bg-blue-50 text-blue-600'
+                                          : hasAttachments
+                                          ? 'text-blue-600 hover:bg-blue-50'
+                                          : 'text-gray-400 hover:bg-gray-100 hover:text-blue-600'
+                                      }`}
+                                      title={hasAttachments ? `${item.attachments.length} attachment${item.attachments.length > 1 ? 's' : ''}` : 'View attachments'}
+                                    >
+                                      <Paperclip className="w-4 h-4" />
+                                      {hasAttachments && (
+                                        <span className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 text-[10px] font-semibold text-white bg-blue-600 rounded-full">
+                                          {item.attachments.length}
+                                        </span>
+                                      )}
+                                    </button>
+                                  )
+                                })()}
 
                                 {isEditable && (
                                   <button
-                                    onClick={() => setAssigningItem({ stageId: showStageDetails, itemId: item.id })}
+                                    onClick={() => handleOpenAssignment(showStageDetails, item.id)}
                                     className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-blue-600"
                                     title="Assign task"
                                   >
@@ -1835,101 +2076,202 @@ export function InvestmentTimeline({
                                   const userName = comment.user?.first_name && comment.user?.last_name
                                     ? `${comment.user.first_name} ${comment.user.last_name}`
                                     : comment.user?.email || 'Unknown'
+                                  const isOwnComment = user?.id === comment.user_id
+                                  const isEditing = editingComment?.id === comment.id
 
                                   return (
                                     <div key={comment.id} className="p-2">
                                       <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-medium text-gray-900">{userName}</span>
-                                        <span className="text-xs text-gray-500">
-                                          {new Date(comment.created_at).toLocaleString(undefined, {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            hour: 'numeric',
-                                            minute: '2-digit'
-                                          })}
-                                        </span>
+                                        <div className="flex items-center space-x-2">
+                                          <span className="text-xs font-medium text-gray-900">{userName}</span>
+                                          {comment.is_edited && (
+                                            <span className="text-xs text-gray-400 italic">(edited)</span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <span className="text-xs text-gray-500">
+                                            {new Date(comment.created_at).toLocaleString(undefined, {
+                                              month: 'short',
+                                              day: 'numeric',
+                                              hour: 'numeric',
+                                              minute: '2-digit'
+                                            })}
+                                          </span>
+                                          {isOwnComment && !isEditing && (
+                                            <div className="flex items-center space-x-1">
+                                              <button
+                                                onClick={() => handleEditComment(comment.id, comment.comment_text)}
+                                                className="text-gray-400 hover:text-blue-600 transition-colors"
+                                                title="Edit"
+                                              >
+                                                <Edit3 className="w-3 h-3" />
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteComment(comment.id)}
+                                                className="text-gray-400 hover:text-red-600 transition-colors"
+                                                title="Delete"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                      <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{comment.comment_text}</p>
+                                      {isEditing ? (
+                                        <div className="flex items-start space-x-2">
+                                          <textarea
+                                            value={editingComment.text}
+                                            onChange={(e) => setEditingComment({ id: comment.id, text: e.target.value })}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault()
+                                                handleUpdateComment(comment.id)
+                                              } else if (e.key === 'Escape') {
+                                                setEditingComment(null)
+                                              }
+                                            }}
+                                            className="flex-1 text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                            rows={2}
+                                            autoFocus
+                                          />
+                                          <div className="flex flex-col space-y-1">
+                                            <Button size="sm" onClick={() => handleUpdateComment(comment.id)}>
+                                              <Check className="w-3 h-3" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" onClick={() => setEditingComment(null)}>
+                                              <X className="w-3 h-3" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{comment.comment_text}</p>
+                                      )}
                                     </div>
                                   )
                                 })}
 
                                 {/* Add comment input */}
                                 <div className="p-2">
-                                  <div className="space-y-2">
-                                    <MentionInput
-                                      value={commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id ? commentText : ''}
-                                      onChange={(value, mentions, references) => {
-                                        if (!commentingItem || commentingItem.stageId !== showStageDetails || commentingItem.itemId !== item.id) {
-                                          handleAddComment(showStageDetails, item.id)
+                                  <MentionInput
+                                    value={commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id ? commentText : ''}
+                                    onChange={(value, mentions, references) => {
+                                      if (!commentingItem || commentingItem.stageId !== showStageDetails || commentingItem.itemId !== item.id) {
+                                        handleAddComment(showStageDetails, item.id)
+                                      }
+                                      setCommentText(value)
+                                      setCommentMentions(mentions)
+                                      setCommentReferences(references)
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault()
+                                        if (commentText.trim()) {
+                                          handleSaveComment()
                                         }
-                                        setCommentText(value)
-                                        setCommentMentions(mentions)
-                                        setCommentReferences(references)
-                                      }}
-                                      placeholder="Add a comment..."
-                                      className="text-xs"
-                                      rows={2}
-                                      hideHelper={true}
-                                    />
-                                    {commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id && (
-                                      <div className="flex justify-end space-x-2">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={handleCancelComment}
-                                        >
-                                          Cancel
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={handleSaveComment}
-                                          disabled={!commentText.trim()}
-                                        >
-                                          Comment
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
+                                      } else if (e.key === 'Escape') {
+                                        handleCancelComment()
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      // Only cancel if the text is empty
+                                      if (!commentText.trim()) {
+                                        handleCancelComment()
+                                      }
+                                    }}
+                                    placeholder="Add a comment (press Enter to send)..."
+                                    className="text-xs"
+                                    rows={2}
+                                    hideHelper={true}
+                                  />
                                 </div>
                               </div>
                             )}
 
-                            {item.attachments && item.attachments.length > 0 && (
-                              <div className="mt-2 space-y-1">
-                                {item.attachments.map((attachment) => (
-                                  <div key={attachment.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs border">
-                                    <div className="flex items-center space-x-2 flex-1 min-w-0">
-                                      <FileText className="w-3 h-3 text-gray-500 flex-shrink-0" />
-                                      <span className="truncate text-gray-700">{attachment.file_name}</span>
-                                      {attachment.file_size && (
-                                        <span className="text-gray-400 flex-shrink-0">
-                                          ({Math.round(attachment.file_size / 1024)}KB)
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center space-x-1 ml-2">
-                                      <button
-                                        onClick={() => handleDownloadAttachment(attachment)}
-                                        className="p-1 text-gray-400 hover:text-blue-600 rounded"
-                                        title="Download file"
-                                      >
-                                        <Download className="w-3 h-3" />
-                                      </button>
-                                      {isEditable && (
-                                        <button
-                                          onClick={() => handleDeleteAttachment(attachment.id)}
-                                          className="p-1 text-gray-400 hover:text-red-600 rounded"
-                                          title="Delete file"
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                    </div>
+                            {/* Attachments list */}
+                            {showingAttachmentsFor?.stageId === showStageDetails && showingAttachmentsFor?.itemId === item.id && (
+                              <div
+                                className={`mt-2 bg-gray-50 rounded-lg border-2 transition-colors ${
+                                  isDraggingOver === `${showStageDetails}-${item.id}`
+                                    ? 'border-blue-500 bg-blue-50'
+                                    : 'border-gray-200'
+                                }`}
+                                onDragOver={(e) => handleDragOver(e, showStageDetails, item.id)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, showStageDetails, item.id)}
+                              >
+                                {/* Existing attachments */}
+                                {item.attachments && item.attachments.length > 0 ? (
+                                  <div className="divide-y divide-gray-200">
+                                    {item.attachments.map((attachment) => (
+                                      <div key={attachment.id} className="flex items-center justify-between p-2 hover:bg-gray-100 transition-colors">
+                                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                          <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                          <span className="text-xs text-gray-700 truncate">{attachment.file_name}</span>
+                                          {attachment.file_size && (
+                                            <span className="text-xs text-gray-400">
+                                              ({(attachment.file_size / 1024).toFixed(1)} KB)
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center space-x-1 flex-shrink-0">
+                                          <button
+                                            onClick={() => handleDownloadAttachment(attachment)}
+                                            className="p-1 rounded hover:bg-blue-100 text-blue-600 transition-colors"
+                                            title="Download"
+                                          >
+                                            <Download className="w-3.5 h-3.5" />
+                                          </button>
+                                          {isEditable && (
+                                            <button
+                                              onClick={() => handleDeleteAttachment(attachment.id)}
+                                              className="p-1 rounded hover:bg-red-100 text-red-600 transition-colors"
+                                              title="Delete"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
+                                ) : (
+                                  <div className="p-4 text-center text-gray-400 text-xs">
+                                    No attachments yet
+                                  </div>
+                                )}
+
+                                {/* Upload area */}
+                                {isEditable && (
+                                  <div className="p-3 border-t border-gray-200">
+                                    <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors cursor-pointer">
+                                      <input
+                                        type="file"
+                                        multiple
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          if (e.target.files) {
+                                            handleFileUpload(showStageDetails, item.id, e.target.files)
+                                            e.target.value = '' // Reset input
+                                          }
+                                        }}
+                                      />
+                                      <Upload className="w-6 h-6 text-gray-400 mb-2" />
+                                      <span className="text-xs text-gray-600">
+                                        Click to browse or drag and drop files here
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
+
+                                {uploadingFiles[`${showStageDetails}-${item.id}`] && (
+                                  <div className="p-3 border-t border-gray-200 flex items-center justify-center space-x-2">
+                                    <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                                    <span className="text-xs text-gray-600">Uploading...</span>
+                                  </div>
+                                )}
                               </div>
                             )}
+
                           </div>
                         </div>
 
@@ -1937,7 +2279,7 @@ export function InvestmentTimeline({
                         {/* Assignment selector with auto-open modal */}
                         {assigningItem?.stageId === showStageDetails && assigningItem?.itemId === item.id && (
                           <AssignmentSelector
-                            checklistItemId={item.id}
+                            checklistItemId={assigningItem.dbId}
                             type="task"
                             autoOpenModal={true}
                             onAssignmentChange={() => {

@@ -85,6 +85,20 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
+  // Check URL for conversation parameter and select it
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const conversationId = params.get('conversation')
+    if (conversationId && conversationId !== selectedConversationId) {
+      console.log('📬 Setting conversation from URL:', conversationId)
+      setSelectedConversationId(conversationId)
+      // Clean up URL after setting
+      params.delete('conversation')
+      const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname
+      window.history.replaceState({}, '', newUrl)
+    }
+  }, [selectedConversationId])
+
   // Fetch all conversations for the current user
   const { data: conversations, isLoading: conversationsLoading, error: conversationsError } = useQuery({
     queryKey: ['conversations'],
