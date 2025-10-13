@@ -1057,28 +1057,28 @@ export function WorkflowManager({
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Stage Key
-                            </label>
-                            <input
-                              type="text"
-                              value={stage.stage_key}
-                              onChange={(e) => updateStage(index, { stage_key: e.target.value })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Display Label
+                              Stage Name
                             </label>
                             <input
                               type="text"
                               value={stage.stage_label}
-                              onChange={(e) => updateStage(index, { stage_label: e.target.value })}
+                              onChange={(e) => {
+                                const label = e.target.value
+                                // Auto-generate stage_key from label
+                                const stage_key = label
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9]+/g, '_')
+                                  .replace(/^_+|_+$/g, '')
+                                updateStage(index, {
+                                  stage_label: label,
+                                  stage_key: stage_key || `stage_${index + 1}`
+                                })
+                              }}
                               className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              placeholder="e.g., Planning & Research"
                             />
                           </div>
 
