@@ -681,13 +681,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       } else {
         console.log(`✅ Workflow started successfully for asset ${asset.symbol} in workflow ${workflowId}`)
         // Invalidate caches so the workflow shows up as active
-        queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
-        queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
-        queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
+        await queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
+        await queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
+        await queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
         // Invalidate ALL workflow status queries for this asset, not just this specific workflow
-        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id] })
-        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id] })
-        queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
+        await queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id] })
+        await queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
+        await queryClient.invalidateQueries({ queryKey: ['default-workflow-status'] })
+        await queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id] })
+        await queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
+        // Force refetch of workflow status
+        await queryClient.refetchQueries({ queryKey: ['current-workflow-status'] })
         console.log(`🔄 Cache invalidated for workflow status updates`)
       }
     } catch (error) {
@@ -713,18 +717,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       if (progressError) {
         console.error('❌ Error stopping workflow progress:', progressError)
-      } else {
-        console.log(`✅ Workflow stopped successfully for asset ${asset.symbol} in workflow ${workflowId}`)
-        // Invalidate caches so the workflow no longer shows as active
-        queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
-        queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
-        queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
-        // Invalidate ALL workflow status queries for this asset, not just this specific workflow
-        queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id] })
-        queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id] })
-        queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
-        console.log(`🔄 Cache invalidated for workflow stop updates`)
+        return
       }
+
+      console.log(`✅ Workflow stopped successfully for asset ${asset.symbol} in workflow ${workflowId}`)
+
+      // Immediately update the cache with the new status
+      queryClient.setQueryData(['current-workflow-status', asset.id, workflowId], {
+        is_started: false,
+        is_completed: false
+      })
+
+      // Also update default workflow status cache if this is the default
+      queryClient.setQueryData(['default-workflow-status', asset.id, workflowId], {
+        is_started: false,
+        is_completed: false
+      })
+
+      // Then invalidate and refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ['prioritizer-workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
+      queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
+      queryClient.refetchQueries({ queryKey: ['current-workflow-status'] })
+
+      console.log(`🔄 Cache updated and invalidated for workflow stop`)
     } catch (error) {
       console.error('Error stopping workflow:', error)
     }

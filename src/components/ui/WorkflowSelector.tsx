@@ -333,7 +333,7 @@ export function WorkflowSelector({
           />
 
           {/* Dropdown */}
-          <div className="absolute top-full left-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+          <div className="absolute top-full left-0 mt-2 w-[480px] bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
             <div className="p-2">
               {/* Search Input */}
               <div className="relative mb-3">
