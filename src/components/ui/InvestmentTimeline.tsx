@@ -21,6 +21,7 @@ interface ChecklistItem {
   isCustom?: boolean
   sortOrder?: number
   attachments?: ChecklistAttachment[]
+  dbId?: string
 }
 
 interface ChecklistAttachment {
@@ -227,6 +228,24 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!workflowId
+  })
+
+  // Query to load existing checklist items from DB (to get dbIds for assignment display)
+  const { data: existingChecklistItems } = useQuery({
+    queryKey: ['existing-checklist-items', assetId, workflowId],
+    queryFn: async () => {
+      if (!assetId || !workflowId) return []
+
+      const { data, error} = await supabase
+        .from('asset_checklist_items')
+        .select('id, stage_id, item_id')
+        .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!assetId && !!workflowId
   })
 
   // Query to load workflow-specific priority for this asset
@@ -612,6 +631,13 @@ export function InvestmentTimeline({
 
   // Initialize checklists for all stages, merging with saved data and custom items
   React.useEffect(() => {
+    // Always initialize checklists even if queries are still loading
+    if (timelineStages.length === 0) {
+      console.log('⚠️ Checklist initialization skipped: timelineStages is empty')
+      return
+    }
+
+    console.log('🔄 Initializing checklists for', timelineStages.length, 'stages')
     const initialChecklists: Record<string, ChecklistItem[]> = {}
 
     timelineStages.forEach(stage => {
@@ -622,6 +648,11 @@ export function InvestmentTimeline({
           saved => saved.stage_id === stage.id && saved.item_id === item.id
         )
 
+        // Find the dbId for this item
+        const existingItem = existingChecklistItems?.find(
+          existing => existing.stage_id === stage.id && existing.item_id === item.id
+        )
+
         if (savedItem) {
           return {
             ...item,
@@ -629,6 +660,7 @@ export function InvestmentTimeline({
             comment: savedItem.comment || undefined,
             completedAt: savedItem.completed_at || undefined,
             sortOrder: index,
+            dbId: existingItem?.id,
             attachments: checklistAttachments?.filter(
               att => att.stage_id === stage.id && att.item_id === item.id
             ) || []
@@ -638,6 +670,7 @@ export function InvestmentTimeline({
         return {
           ...item,
           sortOrder: index,
+          dbId: existingItem?.id,
           attachments: checklistAttachments?.filter(
             att => att.stage_id === stage.id && att.item_id === item.id
           ) || []
@@ -647,18 +680,26 @@ export function InvestmentTimeline({
       // Add custom items from database
       const customItems = savedChecklistItems?.filter(
         saved => saved.stage_id === stage.id && saved.is_custom
-      ).map(saved => ({
-        id: saved.item_id,
-        text: saved.item_text || saved.item_id,
-        completed: saved.completed,
-        comment: saved.comment || undefined,
-        completedAt: saved.completed_at || undefined,
-        isCustom: true,
-        sortOrder: saved.sort_order || 999,
-        attachments: checklistAttachments?.filter(
-          att => att.stage_id === stage.id && att.item_id === saved.item_id
-        ) || []
-      })) || []
+      ).map(saved => {
+        // Find the dbId for this custom item
+        const existingItem = existingChecklistItems?.find(
+          existing => existing.stage_id === stage.id && existing.item_id === saved.item_id
+        )
+
+        return {
+          id: saved.item_id,
+          text: saved.item_text || saved.item_id,
+          completed: saved.completed,
+          comment: saved.comment || undefined,
+          completedAt: saved.completed_at || undefined,
+          isCustom: true,
+          sortOrder: saved.sort_order || 999,
+          dbId: existingItem?.id,
+          attachments: checklistAttachments?.filter(
+            att => att.stage_id === stage.id && att.item_id === saved.item_id
+          ) || []
+        }
+      }) || []
 
       // Combine and sort by sort_order
       const allItems = [...defaultItems, ...customItems].sort((a, b) =>
@@ -666,18 +707,26 @@ export function InvestmentTimeline({
       )
 
       initialChecklists[stage.id] = allItems
+      console.log(`  ✓ Stage ${stage.id}: ${allItems.length} items`)
     })
 
+    console.log('✅ Setting stageChecklists with', Object.keys(initialChecklists).length, 'stages')
     setStageChecklists(initialChecklists)
-  }, [assetId, savedChecklistItems, checklistAttachments, timelineStages, workflowChecklistTemplates])
+  }, [assetId, savedChecklistItems, checklistAttachments, timelineStages, workflowChecklistTemplates, existingChecklistItems])
 
   // Automatically select the current stage when component loads (but only if no stage is selected)
+  // Only run after workflow stages have loaded to avoid selecting wrong stage
   React.useEffect(() => {
+    // Don't auto-select if workflow data is still loading
+    if (!workflowId) return
+    if (workflowId && !workflowStages) return // Wait for workflowStages to load
+
     if (effectiveCurrentStage && !showStageDetails) {
+      console.log(`🎬 Auto-selecting initial stage: ${effectiveCurrentStage}`)
       setShowStageDetails(effectiveCurrentStage)
       onStageClick(effectiveCurrentStage)
     }
-  }, [effectiveCurrentStage, showStageDetails, onStageClick])
+  }, [effectiveCurrentStage, showStageDetails, onStageClick, workflowId, workflowStages])
 
   // Only force current stage when workflow first starts (not on every render)
   const [hasInitialized, setHasInitialized] = React.useState(false)
@@ -701,6 +750,21 @@ export function InvestmentTimeline({
       }
     }
   }, [viewingStageId, showStageDetails, onStageClick, onViewingStageChange])
+
+  // Reset stage selection when timelineStages changes and current stage is invalid
+  React.useEffect(() => {
+    if (showStageDetails && showStageDetails !== 'outdated' && showStageDetails !== 'completed') {
+      const stageExists = timelineStages.some(stage => stage.id === showStageDetails)
+      if (!stageExists && timelineStages.length > 0) {
+        console.log(`⚠️ Current stage ${showStageDetails} doesn't exist in workflow, resetting to first stage`)
+        const firstStage = timelineStages[0]?.id
+        if (firstStage) {
+          setShowStageDetails(firstStage)
+          onStageClick(firstStage)
+        }
+      }
+    }
+  }, [timelineStages, showStageDetails, onStageClick])
 
   const getCurrentStageIndex = () => {
     return timelineStages.findIndex(stage => stage.id === effectiveCurrentStage)
@@ -1217,9 +1281,105 @@ export function InvestmentTimeline({
   }
 
   const handleOpenAssignment = async (stageId: string, itemId: string) => {
+    console.log('👥 handleOpenAssignment called for stage:', stageId, 'item:', itemId)
     const dbId = await getOrCreateChecklistItemId(stageId, itemId)
+    console.log('👥 Got dbId:', dbId)
     if (dbId) {
+      console.log('👥 Setting assigningItem to:', { stageId, itemId, dbId })
       setAssigningItem({ stageId, itemId, dbId })
+      // Invalidate to refresh dbIds in case item was just created
+      queryClient.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
+    }
+  }
+
+  const handleOpenConversation = async (userId: string) => {
+    if (!user) return
+
+    console.log('💬 Opening conversation with user:', userId)
+
+    try {
+      // Find existing direct message conversation between the two users
+      const { data: existingParticipants, error: fetchError } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id, conversations!inner(is_group)')
+        .eq('user_id', user.id)
+
+      if (fetchError) {
+        console.error('Error fetching conversations:', fetchError)
+        throw fetchError
+      }
+
+      console.log('📝 Found participant records:', existingParticipants?.length)
+
+      // Check each conversation to see if it's a DM with the target user
+      let conversationId: string | null = null
+      if (existingParticipants) {
+        for (const participant of existingParticipants) {
+          // Only check non-group conversations
+          if (!(participant.conversations as any).is_group) {
+            const { data: otherParticipants, error: otherError } = await supabase
+              .from('conversation_participants')
+              .select('user_id')
+              .eq('conversation_id', participant.conversation_id)
+              .neq('user_id', user.id)
+
+            if (otherError) continue
+
+            // If this conversation has exactly one other participant and it's our target user
+            if (otherParticipants && otherParticipants.length === 1 && otherParticipants[0].user_id === userId) {
+              conversationId = participant.conversation_id
+              break
+            }
+          }
+        }
+      }
+
+      if (conversationId) {
+        console.log('✅ Found existing conversation:', conversationId)
+        // Dispatch custom event to open direct messages pane with conversation
+        window.dispatchEvent(new CustomEvent('openDirectMessage', {
+          detail: { conversationId }
+        }))
+      } else {
+        console.log('🆕 Creating new conversation with user:', userId)
+        // Create new conversation
+        const { data: newConversation, error: createError } = await supabase
+          .from('conversations')
+          .insert({
+            is_group: false,
+            created_by: user.id
+          })
+          .select()
+          .single()
+
+        if (createError || !newConversation) {
+          console.error('Error creating conversation:', createError)
+          throw createError
+        }
+
+        console.log('✅ Created conversation:', newConversation.id)
+
+        // Add participants
+        const { error: participantsError } = await supabase
+          .from('conversation_participants')
+          .insert([
+            { conversation_id: newConversation.id, user_id: user.id },
+            { conversation_id: newConversation.id, user_id: userId }
+          ])
+
+        if (participantsError) {
+          console.error('Error adding participants:', participantsError)
+          throw participantsError
+        }
+
+        console.log('📨 Dispatching openDirectMessage event for new conversation')
+        // Dispatch custom event to open direct messages pane with new conversation
+        window.dispatchEvent(new CustomEvent('openDirectMessage', {
+          detail: { conversationId: newConversation.id }
+        }))
+      }
+    } catch (error) {
+      console.error('Error opening conversation:', error)
     }
   }
 
@@ -1849,18 +2009,6 @@ export function InvestmentTimeline({
                   {assetSymbol && `For ${assetSymbol} • `}
                   {timelineStages.find(s => s.id === showStageDetails)?.description}
                 </p>
-
-                {/* Stage Deadline - Below Description */}
-                {showStageDetails !== 'completed' && showStageDetails !== 'outdated' && (
-                  <div className="mt-2">
-                    <StageDeadlineManager
-                      assetId={assetId || ''}
-                      stageId={showStageDetails}
-                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                      isCurrentStage={showStageDetails === effectiveCurrentStage}
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1872,7 +2020,17 @@ export function InvestmentTimeline({
                   workflowId={workflowId}
                   stageId={showStageDetails}
                   type="stage"
-                />
+                >
+                  {/* Stage Deadline - Below Assigned To */}
+                  <div className="mt-2">
+                    <StageDeadlineManager
+                      assetId={assetId || ''}
+                      stageId={showStageDetails}
+                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                      isCurrentStage={showStageDetails === effectiveCurrentStage}
+                    />
+                  </div>
+                </AssignmentSelector>
               </div>
             )}
           </div>
@@ -1951,31 +2109,6 @@ export function InvestmentTimeline({
                               </span>
 
                               <div className="flex items-center space-x-2">
-                                {/* Show assigned users */}
-                                {(() => {
-                                  const assignments = taskAssignments?.[`${showStageDetails}-${item.id}`] || []
-                                  return assignments.length > 0 && (
-                                    <div className="flex items-center space-x-1">
-                                      {assignments.slice(0, 3).map((assignment, idx) => {
-                                        const userName = assignment.user?.first_name && assignment.user?.last_name
-                                          ? `${assignment.user.first_name} ${assignment.user.last_name}`
-                                          : assignment.user?.email || 'Unknown'
-                                        return (
-                                          <span
-                                            key={idx}
-                                            className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded"
-                                            title={userName}
-                                          >
-                                            {userName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                                          </span>
-                                        )
-                                      })}
-                                      {assignments.length > 3 && (
-                                        <span className="text-xs text-gray-500">+{assignments.length - 3}</span>
-                                      )}
-                                    </div>
-                                  )
-                                })()}
 
                                 {item.completedAt && (
                                   <span className="text-xs text-gray-400">
@@ -2045,6 +2178,42 @@ export function InvestmentTimeline({
                                     <Users className="w-4 h-4" />
                                   </button>
                                 )}
+
+                                {/* Show assigned users for this task */}
+                                {(() => {
+                                  const key = `${showStageDetails}-${item.id}`
+                                  const itemAssignments = taskAssignments?.[key] || []
+
+                                  if (itemAssignments.length > 0) {
+                                    return (
+                                      <div className="flex items-center gap-1 ml-1">
+                                        {itemAssignments.map((assignment: any) => {
+                                          const userName = assignment.user?.first_name && assignment.user?.last_name
+                                            ? `${assignment.user.first_name} ${assignment.user.last_name}`
+                                            : assignment.user?.email || 'Unknown'
+                                          const initials = userName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
+
+                                          return (
+                                            <div
+                                              key={assignment.id}
+                                              className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 cursor-pointer hover:bg-blue-700 transition-colors"
+                                              title={`Assigned to ${userName}. Click to message.`}
+                                              onClick={async () => {
+                                                // Open direct message with this user
+                                                await handleOpenConversation(assignment.assigned_user_id || assignment.user?.id)
+                                              }}
+                                            >
+                                              <span className="text-white text-[10px] font-semibold">
+                                                {initials}
+                                              </span>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )
+                                  }
+                                  return null
+                                })()}
 
                                 {uploadingFiles[`${showStageDetails}-${item.id}`] && (
                                   <div className="flex items-center">
@@ -2276,18 +2445,28 @@ export function InvestmentTimeline({
                         </div>
 
 
-                        {/* Assignment selector with auto-open modal */}
-                        {assigningItem?.stageId === showStageDetails && assigningItem?.itemId === item.id && (
-                          <AssignmentSelector
-                            checklistItemId={assigningItem.dbId}
-                            type="task"
-                            autoOpenModal={true}
-                            onAssignmentChange={() => {
-                              queryClient.invalidateQueries({ queryKey: ['task-assignments-all'] })
-                            }}
-                            onModalClose={() => setAssigningItem(null)}
-                          />
-                        )}
+                        {/* Assignment selector - always show if item exists in DB */}
+                        {(() => {
+                          const shouldAutoOpen = assigningItem?.stageId === showStageDetails && assigningItem?.itemId === item.id
+                          console.log(`🔍 Item ${item.id}: dbId=${item.dbId}, shouldAutoOpen=${shouldAutoOpen}, assigningItem=`, assigningItem)
+
+                          if (item.dbId) {
+                            return (
+                              <AssignmentSelector
+                                key={`${item.dbId}-${shouldAutoOpen ? 'auto' : 'normal'}`}
+                                checklistItemId={item.dbId}
+                                type="task"
+                                autoOpenModal={shouldAutoOpen}
+                                hideAssignedSection={true}
+                                onAssignmentChange={() => {
+                                  queryClient.invalidateQueries({ queryKey: ['task-assignments-all'] })
+                                }}
+                                onModalClose={() => setAssigningItem(null)}
+                              />
+                            )
+                          }
+                          return null
+                        })()}
                       </div>
                     )
                   })}
