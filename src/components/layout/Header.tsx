@@ -68,7 +68,7 @@ export function Header({
   })
 
   // Check for unread direct messages (conversation_messages table only)
-  const { data: hasUnreadDirectMessages } = useQuery({
+  const { data: hasUnreadDirectMessages, refetch: refetchDirectMessages } = useQuery({
     queryKey: ['unread-direct-messages', user?.id],
     queryFn: async () => {
       if (!user?.id) return false
@@ -110,6 +110,48 @@ export function Header({
     refetchInterval: 30000, // Check every 30 seconds
     staleTime: 0 // Always consider data stale to refetch on invalidation
   })
+
+  // Subscribe to real-time message updates
+  useEffect(() => {
+    if (!user?.id) return
+
+    console.log('Header: Setting up realtime subscription for new messages')
+
+    // Subscribe to new conversation messages
+    const channel = supabase
+      .channel('header-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversation_messages'
+        },
+        (payload) => {
+          console.log('Header: New message received, refetching unread status')
+          refetchDirectMessages()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversation_participants',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Header: Conversation marked as read, refetching unread status')
+          refetchDirectMessages()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      console.log('Header: Cleaning up realtime subscription')
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id, refetchDirectMessages])
 
   // Check for unread context messages (messages table only)
   const { data: hasUnreadContextMessages } = useQuery({
