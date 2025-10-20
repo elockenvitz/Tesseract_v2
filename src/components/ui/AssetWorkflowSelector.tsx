@@ -9,6 +9,7 @@ interface AssetWorkflowSelectorProps {
   onWorkflowChange: (workflowId: string) => void
   onWorkflowStart?: (workflowId: string) => void
   onWorkflowStop?: (workflowId: string) => void
+  onSwitchToStageTab?: () => void
   className?: string
 }
 
@@ -28,6 +29,7 @@ export function AssetWorkflowSelector({
   onWorkflowChange,
   onWorkflowStart,
   onWorkflowStop,
+  onSwitchToStageTab,
   className = ''
 }: AssetWorkflowSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -106,6 +108,9 @@ export function AssetWorkflowSelector({
 
   const handleWorkflowSelect = (workflowId: string) => {
     onWorkflowChange(workflowId)
+    if (onSwitchToStageTab) {
+      onSwitchToStageTab()
+    }
     setIsOpen(false)
   }
 

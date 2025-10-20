@@ -16,6 +16,7 @@ interface AssetListManagerProps {
   onClose: () => void
   onListSelect?: (list: any) => void
   selectedAssetId?: string // If provided, show "Add to List" functionality
+  filterType?: 'list' | 'theme' | 'portfolio'
 }
 
 interface AssetList {
@@ -40,7 +41,7 @@ interface AssetList {
   }>
 }
 
-export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetId }: AssetListManagerProps) {
+export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetId, filterType }: AssetListManagerProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
 
@@ -82,47 +83,44 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
 
   // Fetch user's asset lists
   const { data: assetLists, isLoading } = useQuery({
-    queryKey: ['asset-lists'],
+    queryKey: ['asset-lists', filterType],
     queryFn: async () => {
       if (!user?.id) return []
 
       let query = supabase
-        .from('asset_lists')
+        .from('lists')
         .select(`
           *,
-          asset_list_items(id),
-          asset_list_collaborations(
-            user_id,
-            permission,
-            collaborator_user:users!asset_list_collaborations_user_id_fkey(email, first_name, last_name)
-          )
+          list_items(id)
         `)
         .eq('created_by', user.id)
-        .order('is_default', { ascending: false })
+
+      // Filter by type if specified
+      if (filterType) {
+        query = query.eq('type', filterType)
+      }
+
+      query = query
         .order('created_at', { ascending: false })
-      
+
       const { data, error } = await query
       
       if (error) throw error
       
       const listsWithCounts = (data || []).map(list => ({
         ...list,
-        item_count: list.asset_list_items?.length || 0,
-        collaborators: (list.asset_list_collaborations || []).map(collab => ({
-          ...collab,
-          user: collab.collaborator_user
-        }))
+        item_count: list.list_items?.length || 0
       })) as AssetList[]
-      
+
       // If we have a selected asset, check which lists already contain it
       if (selectedAssetId) {
         const { data: existingItems } = await supabase
-          .from('asset_list_items')
+          .from('list_items')
           .select('list_id')
           .eq('asset_id', selectedAssetId)
-        
+
         const existingListIds = new Set(existingItems?.map(item => item.list_id) || [])
-        
+
         return listsWithCounts.map(list => ({
           ...list,
           isAdded: existingListIds.has(list.id)
@@ -138,14 +136,15 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const createListMutation = useMutation({
     mutationFn: async ({ name, description, color }: { name: string; description: string; color: string }) => {
       const { error } = await supabase
-        .from('asset_lists')
+        .from('lists')
         .insert([{
           name,
           description,
           color,
+          type: filterType || 'list',
           created_by: user?.id
         }])
-      
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -161,10 +160,10 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const updateListMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
       const { error } = await supabase
-        .from('asset_lists')
+        .from('lists')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
-      
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -177,10 +176,10 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const deleteListMutation = useMutation({
     mutationFn: async (listId: string) => {
       const { error } = await supabase
-        .from('asset_lists')
+        .from('lists')
         .delete()
         .eq('id', listId)
-      
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -193,21 +192,20 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const addToListMutation = useMutation({
     mutationFn: async ({ listId, assetId }: { listId: string; assetId: string }) => {
       console.log('🚀 Adding asset to list:', { listId, assetId })
-      
+
       const { data, error } = await supabase
-        .from('asset_list_items')
+        .from('list_items')
         .insert([{
           list_id: listId,
-          asset_id: assetId,
-          added_by: user?.id
+          asset_id: assetId
         }])
         .select()
-      
+
       if (error) {
         console.error('❌ Failed to add asset to list:', error)
         throw error
       }
-      
+
       console.log('✅ Asset added to list successfully:', data)
       return data
     },
@@ -324,11 +322,21 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
-                {selectedAssetId ? 'Add to List' : 'Asset Lists'}
+                {selectedAssetId
+                  ? filterType === 'theme'
+                    ? 'Add to Theme'
+                    : filterType === 'portfolio'
+                    ? 'Add to Portfolio'
+                    : 'Add to List'
+                  : 'Asset Lists'}
               </h3>
               <p className="text-sm text-gray-600 mt-1">
-                {selectedAssetId 
-                  ? 'Choose a list to add this asset to'
+                {selectedAssetId
+                  ? filterType === 'theme'
+                    ? 'Choose a theme to add this asset to'
+                    : filterType === 'portfolio'
+                    ? 'Choose a portfolio to add this asset to'
+                    : 'Choose a list to add this asset to'
                   : 'Manage your custom asset lists'
                 }
               </p>

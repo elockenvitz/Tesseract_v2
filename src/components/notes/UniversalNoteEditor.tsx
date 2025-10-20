@@ -100,6 +100,8 @@ export function UniversalNoteEditor({
   onClose,
   features: customFeatures
 }: UniversalNoteEditorProps) {
+  console.log('🎨 UniversalNoteEditor mounted/updated:', { entityType, entityId, selectedNoteId })
+
   const config = ENTITY_CONFIGS[entityType]
   const features = { ...config.defaultFeatures, ...customFeatures }
 
@@ -290,6 +292,34 @@ export function UniversalNoteEditor({
     }
   }, [selectedNote, selectedNoteId])
 
+  // Track if we've already auto-created a note
+  const [hasAutoCreated, setHasAutoCreated] = useState(false)
+
+  // Auto-create a note when editor is opened without a selected note
+  useEffect(() => {
+    console.log('🔍 Auto-create check:', {
+      selectedNoteId,
+      notesLength: notes?.length,
+      isLoading,
+      isPending: createNoteMutation.isPending,
+      hasAutoCreated,
+      hasUser: !!user
+    })
+
+    if (!selectedNoteId && notes?.length === 0 && !createNoteMutation.isPending && !isLoading && !hasAutoCreated && user) {
+      console.log('✅ Auto-creating note...')
+      setHasAutoCreated(true)
+      createNoteMutation.mutate()
+    }
+  }, [selectedNoteId, notes?.length, isLoading, hasAutoCreated, user])
+
+  // Reset auto-created flag when a note is selected
+  useEffect(() => {
+    if (selectedNoteId) {
+      setHasAutoCreated(false)
+    }
+  }, [selectedNoteId])
+
   // ---------- Mutations ----------
   const saveNoteMutation = useMutation({
     mutationFn: async ({ id, title, content }: { id: string; title?: string; content?: string }) => {
@@ -324,6 +354,7 @@ export function UniversalNoteEditor({
 
   const createNoteMutation = useMutation({
     mutationFn: async () => {
+      console.log('💾 createNoteMutation: Starting note creation...')
       if (!user) throw new Error('User not authenticated')
       const noteData = {
         [config.foreignKey]: entityId,
@@ -333,15 +364,21 @@ export function UniversalNoteEditor({
         created_by: user.id,
         updated_by: user.id
       }
+      console.log('💾 createNoteMutation: Inserting note data:', noteData)
       const { data, error } = await supabase
         .from(config.tableName)
         .insert([noteData])
         .select()
         .single()
-      if (error) throw error
+      if (error) {
+        console.error('❌ createNoteMutation: Error inserting note:', error)
+        throw error
+      }
+      console.log('✅ createNoteMutation: Note created successfully:', data)
       return data
     },
     onSuccess: (newNote) => {
+      console.log('🎉 createNoteMutation onSuccess: Note created, calling onNoteSelect with:', newNote.id)
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
       onNoteSelect(newNote.id)
@@ -349,32 +386,62 @@ export function UniversalNoteEditor({
       setEditingContent(newNote.content || '')
       setEditingTitle(newNote.title || 'Untitled')
       setIsTitleEditing(false)
+    },
+    onError: (error) => {
+      console.error('❌ createNoteMutation onError:', error)
     }
   })
 
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
+      console.log('🗑️ Deleting note:', noteId)
       const { error } = await supabase
         .from(config.tableName)
         .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
         .eq('id', noteId)
         .eq('created_by', user.id)
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error deleting note:', error)
+        throw error
+      }
+      console.log('✅ Note marked as deleted')
     },
     onSuccess: () => {
+      console.log('🗑️ Delete success, invalidating queries')
+      // Invalidate all note-related queries
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
+      queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
+      // Also remove from cache immediately to ensure UI updates
+      queryClient.removeQueries({ queryKey: ['recent-notes'] })
       const hiddenNoteId = deleteConfirmDialog.noteId
+
+      // Add to hidden notes set immediately
+      if (hiddenNoteId) {
+        setHiddenNoteIds(prev => new Set([...prev, hiddenNoteId]))
+      }
+
+      // If we're currently viewing the deleted note, switch to another note or close
       if (selectedNoteId === hiddenNoteId) {
         const remainingNotes = notes?.filter(n => n.id !== selectedNoteId && !hiddenNoteIds.has(n.id)) || []
-        if (remainingNotes.length > 0) onNoteSelect(remainingNotes[0].id)
-        else onNoteSelect('')
+        if (remainingNotes.length > 0) {
+          console.log('🗑️ Switching to remaining note:', remainingNotes[0].id)
+          onNoteSelect(remainingNotes[0].id)
+        } else {
+          console.log('🗑️ No remaining notes, closing editor')
+          // Close the editor completely by calling onClose if available
+          if (onClose) {
+            onClose()
+          } else {
+            onNoteSelect('')
+          }
+        }
       }
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
       setShowNoteMenu(null)
     },
     onError: (err) => {
-      console.error('Failed to hide note:', err)
+      console.error('❌ Failed to delete note:', err)
       setDeleteConfirmDialog({ isOpen: false, noteId: null, noteTitle: '' })
     }
   })

@@ -1,22 +1,22 @@
 import React, { useState } from 'react'
-import { List, Plus } from 'lucide-react'
+import { List } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { AssetListManager } from './AssetListManager'
 
 interface AddToListButtonProps {
   assetId: string
-  assetSymbol: string
+  assetSymbol?: string
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
-export function AddToListButton({ 
-  assetId, 
-  assetSymbol, 
-  variant = 'outline', 
+export function AddToListButton({
+  assetId,
+  assetSymbol,
+  variant = 'outline',
   size = 'sm',
-  className 
+  className
 }: AddToListButtonProps) {
   const [showListManager, setShowListManager] = useState(false)
 

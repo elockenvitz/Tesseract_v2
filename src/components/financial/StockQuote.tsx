@@ -100,7 +100,7 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
   // Price only mode for table cells
   if (showOnlyPrice) {
     return (
-      <div className={`text-sm text-gray-900 ${className}`}>
+      <div className={`text-gray-900 ${className}`}>
         ${quote.price.toFixed(2)}
       </div>
     )
@@ -109,8 +109,9 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
   // Change only mode for table cells
   if (showOnlyChange) {
     return (
-      <div className={`text-sm ${changeColor} ${className}`}>
-        {changeSymbol}{quote.changePercent.toFixed(2)}%
+      <div className={`${changeColor} ${className} flex items-center gap-2`}>
+        <span>{changeSymbol}{quote.change.toFixed(2)}</span>
+        <span>({changeSymbol}{quote.changePercent.toFixed(2)}%)</span>
       </div>
     )
   }

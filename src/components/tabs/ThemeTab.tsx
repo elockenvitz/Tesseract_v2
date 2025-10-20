@@ -12,6 +12,7 @@ import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
+import { TabStateManager } from '../../lib/tabStateManager'
 
 interface ThemeTabProps {
   theme: any
@@ -22,10 +23,57 @@ interface ThemeTabProps {
 export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) {
   const { user } = useAuth()
   const [themeType, setThemeType] = useState(theme.theme_type || 'general')
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'related-assets' | 'notes'>('thesis')
+
+  // Initialize state from saved tab state
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'related-assets' | 'notes'>(() => {
+    const savedState = TabStateManager.loadTabState(theme.id)
+    return savedState?.activeTab || 'thesis'
+  })
+
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
-  const [showNoteEditor, setShowNoteEditor] = useState(false)
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+
+  const [showNoteEditor, setShowNoteEditor] = useState(() => {
+    const savedState = TabStateManager.loadTabState(theme.id)
+    return savedState?.showNoteEditor || false
+  })
+
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(theme.id)
+    return savedState?.selectedNoteId || null
+  })
+
+  const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
+
+  // Mark tab state as initialized after first render
+  useEffect(() => {
+    setIsTabStateInitialized(true)
+  }, [])
+
+  // Handle noteId from navigation (e.g., from dashboard note click)
+  useEffect(() => {
+    if (theme.noteId && theme.id) {
+      console.log('📝 ThemeTab: Opening note from navigation:', theme.noteId)
+      setActiveTab('notes')
+      setShowNoteEditor(true)
+      setSelectedNoteId(theme.noteId)
+    }
+  }, [theme.id, theme.noteId])
+
+  // Debug logging
+  useEffect(() => {
+    console.log('🔔 ThemeTab state changed:', { showNoteEditor, selectedNoteId })
+  }, [showNoteEditor, selectedNoteId])
+
+  // Save tab state when it changes
+  useEffect(() => {
+    if (isTabStateInitialized && theme.id) {
+      TabStateManager.saveTabState(theme.id, {
+        activeTab,
+        showNoteEditor,
+        selectedNoteId
+      })
+    }
+  }, [theme.id, activeTab, showNoteEditor, selectedNoteId, isTabStateInitialized])
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showAddAssetModal, setShowAddAssetModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
@@ -381,8 +429,10 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   }
 
   const handleCreateNote = () => {
+    console.log('📝 handleCreateNote called')
     setSelectedNoteId(null)
     setShowNoteEditor(true)
+    console.log('📝 State updated - selectedNoteId: null, showNoteEditor: true')
   }
 
   const handleCloseNoteEditor = () => {
@@ -423,16 +473,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </div>
             {theme.description && (
               <p className="text-lg text-gray-600 mb-1">{theme.description}</p>
-            )}
-          </div>
-
-          {/* Right side: Stats */}
-          <div className="text-left">
-            {notes && notes.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</p>
-                <p className="text-xl font-bold text-gray-900">{notes.length}</p>
-              </div>
             )}
           </div>
         </div>
@@ -522,11 +562,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               <div className="flex items-center space-x-2">
                 <FileText className="h-4 w-4" />
                 <span>Notes</span>
-                {notes && notes.length > 0 && (
-                  <Badge variant="default" size="sm">
-                    {notes.length}
-                  </Badge>
-                )}
               </div>
             </button>
           </nav>
@@ -701,12 +736,14 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
             ) : (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <Button size="sm" onClick={handleCreateNote}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Note
-                  </Button>
-                </div>
+                {notes && notes.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <Button size="sm" onClick={handleCreateNote}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Note
+                    </Button>
+                  </div>
+                )}
 
                 {notes && notes.length > 0 ? (
                   <div className="space-y-4">
@@ -755,7 +792,10 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                     <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900">No related notes</h3>
                     <p className="text-gray-500 mb-4">Create notes to document your research and thoughts about this theme.</p>
-                    <Button size="sm" onClick={handleCreateNote}>
+                    <Button size="sm" onClick={() => {
+                      console.log('🔥 Add First Note button clicked!')
+                      handleCreateNote()
+                    }}>
                       <Plus className="h-4 w-4 mr-2" />
                       Add First Note
                     </Button>

@@ -63,28 +63,67 @@ export function DashboardPage() {
       const [assetNotes, portfolioNotes, themeNotes, customNotes] = await Promise.all([
         supabase
           .from('asset_notes')
-          .select('*, assets(symbol)')
+          .select(`
+            *,
+            assets (
+              id,
+              symbol,
+              company_name,
+              sector,
+              thesis,
+              where_different,
+              risks_to_thesis,
+              priority,
+              process_stage,
+              created_at,
+              updated_at
+            )
+          `)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false })
-          .limit(2),
+          .limit(10),
         supabase
           .from('portfolio_notes')
-          .select('*, portfolios(name)')
+          .select(`
+            *,
+            portfolios (
+              id,
+              name,
+              description,
+              portfolio_type,
+              created_at,
+              updated_at
+            )
+          `)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false })
-          .limit(2),
+          .limit(10),
         supabase
           .from('theme_notes')
-          .select('*, themes(name)')
+          .select(`
+            *,
+            themes (
+              id,
+              name,
+              description,
+              theme_type,
+              color,
+              thesis,
+              where_different,
+              risks_to_thesis,
+              created_at,
+              updated_at
+            )
+          `)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false })
-          .limit(2),
+          .limit(10),
         supabase
           .from('custom_notebook_notes')
           .select('*, custom_notebooks(name)')
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false })
-          .limit(2)
+          .limit(10)
       ])
       
       // Combine and sort all notes
@@ -898,15 +937,48 @@ export function DashboardPage() {
           ) : notes && notes.length > 0 ? (
             <div className="space-y-4">
               {notes.map((note) => (
-                <div 
-                  key={note.id} 
+                <div
+                  key={note.id}
                   className="p-4 border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 cursor-pointer"
-                  onClick={() => handleSearchResult({
-                    id: note.id,
-                    title: note.title,
-                    type: 'note',
-                    data: note
-                  })}
+                  onClick={async () => {
+                    // Navigate to the entity page with note selected
+                    let entityId = null
+                    let entityTitle = null
+                    let entityType = null
+                    let entityData = null
+
+                    if (note.type === 'asset' && note.asset_id) {
+                      entityId = note.asset_id
+                      entityTitle = note.assets?.symbol || 'Asset'
+                      entityType = 'asset'
+                      entityData = note.assets
+                    } else if (note.type === 'portfolio' && note.portfolio_id) {
+                      entityId = note.portfolio_id
+                      entityTitle = note.portfolios?.name || 'Portfolio'
+                      entityType = 'portfolio'
+                      entityData = note.portfolios
+                    } else if (note.type === 'theme' && note.theme_id) {
+                      entityId = note.theme_id
+                      entityTitle = note.themes?.name || 'Theme'
+                      entityType = 'theme'
+                      entityData = note.themes
+                    }
+
+                    if (entityId && entityType && entityData) {
+                      console.log('📝 Dashboard: Navigating to entity with note:', {
+                        entityId,
+                        entityType,
+                        noteId: note.id,
+                        noteTitle: note.title
+                      })
+                      handleSearchResult({
+                        id: entityId,
+                        title: entityTitle,
+                        type: entityType,
+                        data: { ...entityData, noteId: note.id }
+                      })
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-gray-900 truncate">{note.title}</h3>

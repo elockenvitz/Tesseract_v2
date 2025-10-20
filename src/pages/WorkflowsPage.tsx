@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home } from 'lucide-react'
+import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -60,7 +60,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
-  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'cadence'>('overview')
+  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'cadence' | 'templates'>('overview')
+  const [showUploadTemplateModal, setShowUploadTemplateModal] = useState(false)
+  const [templateFormData, setTemplateFormData] = useState({
+    name: '',
+    description: '',
+    file: null as File | null
+  })
+  const [uploadingTemplate, setUploadingTemplate] = useState(false)
   const [editingStage, setEditingStage] = useState<string | null>(null)
   const [editingChecklistItem, setEditingChecklistItem] = useState<string | null>(null)
   const [showAddStage, setShowAddStage] = useState(false)
@@ -300,8 +307,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           userPermission = 'admin'
         }
 
-        // Get stages for this workflow
-        const workflowStagesData = workflowStages?.filter(stage => stage.workflow_id === workflow.id) || []
+        // Get stages for this workflow and sort by sort_order
+        const workflowStagesData = workflowStages
+          ?.filter(stage => stage.workflow_id === workflow.id)
+          .sort((a, b) => a.sort_order - b.sort_order) || []
 
         return {
           ...workflow,
@@ -1010,6 +1019,108 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
+  // Fetch templates for selected workflow
+  const { data: workflowTemplates, isLoading: templatesLoading } = useQuery({
+    queryKey: ['workflow-templates', selectedWorkflow?.id],
+    queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
+      const { data, error } = await supabase
+        .from('workflow_templates')
+        .select('*')
+        .eq('workflow_id', selectedWorkflow.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!selectedWorkflow?.id
+  })
+
+  // Upload template mutation
+  const uploadTemplateMutation = useMutation({
+    mutationFn: async ({ workflowId, name, description, file }: { workflowId: string; name: string; description: string; file: File }) => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+
+      if (!userId) throw new Error('Not authenticated')
+
+      // Upload file to storage
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${workflowId}/${Date.now()}_${file.name}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('workflow-templates')
+        .upload(fileName, file)
+
+      if (uploadError) throw uploadError
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('workflow-templates')
+        .getPublicUrl(fileName)
+
+      // Create template record
+      const { data, error } = await supabase
+        .from('workflow_templates')
+        .insert({
+          workflow_id: workflowId,
+          name,
+          description,
+          file_url: publicUrl,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type,
+          uploaded_by: userId
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-templates', selectedWorkflow?.id] })
+      setShowUploadTemplateModal(false)
+      setTemplateFormData({ name: '', description: '', file: null })
+    },
+    onError: (error) => {
+      console.error('Error uploading template:', error)
+      alert('Failed to upload template. Please try again.')
+    }
+  })
+
+  // Delete template mutation
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      const template = workflowTemplates?.find(t => t.id === templateId)
+      if (!template) throw new Error('Template not found')
+
+      // Delete file from storage
+      const fileName = template.file_url.split('/').slice(-2).join('/')
+      const { error: storageError } = await supabase.storage
+        .from('workflow-templates')
+        .remove([fileName])
+
+      if (storageError) throw storageError
+
+      // Delete template record
+      const { error } = await supabase
+        .from('workflow_templates')
+        .delete()
+        .eq('id', templateId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-templates', selectedWorkflow?.id] })
+    },
+    onError: (error) => {
+      console.error('Error deleting template:', error)
+      alert('Failed to delete template. Please try again.')
+    }
+  })
+
   // Helper functions for workflow editing
   const startEditingWorkflow = () => {
     if (selectedWorkflow) {
@@ -1134,20 +1245,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     setDragOverItem(null)
   }
 
-  if (isLoading) {
-    return (
-      <div className={`space-y-6 ${className}`}>
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-48 mb-6"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="h-64 bg-gray-200 rounded-lg"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   if (workflowsError) {
     return (
@@ -1168,7 +1265,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-gray-900">Workflows</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-900">Workflows</h1>
+              <button
+                onClick={() => {
+                  setSelectedWorkflow(null)
+                  setActiveView('overview')
+                }}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Go to Workflow Dashboard"
+              >
+                <Home className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
             <Button onClick={handleCreateWorkflow} size="sm">
               <Plus className="w-4 h-4" />
             </Button>
@@ -1418,7 +1527,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   { id: 'overview', label: 'Overview', icon: BarChart3 },
                   { id: 'stages', label: 'Stages', icon: Target },
                   { id: 'admins', label: 'Team & Admins', icon: UserCog },
-                  { id: 'cadence', label: 'Cadence', icon: Calendar }
+                  { id: 'cadence', label: 'Cadence', icon: Calendar },
+                  { id: 'templates', label: 'Templates', icon: Copy }
                 ].map((tab) => {
                   const Icon = tab.icon
                   return (
@@ -2633,6 +2743,95 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   </div>
                 </div>
               )}
+
+              {/* Templates View */}
+              {activeView === 'templates' && (
+                <div className="px-6 py-6">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Workflow Templates</h3>
+                        <p className="text-sm text-gray-500 mt-1">Upload and manage templates that your team will use in this workflow</p>
+                      </div>
+                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                        <Button size="sm" onClick={() => setShowUploadTemplateModal(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Upload Template
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Templates List */}
+                    {templatesLoading ? (
+                      <div className="text-center py-12">
+                        <p className="text-gray-500">Loading templates...</p>
+                      </div>
+                    ) : workflowTemplates && workflowTemplates.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {workflowTemplates.map((template) => (
+                          <Card key={template.id} className="hover:shadow-md transition-shadow">
+                            <div className="p-4">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                                    <FileText className="w-5 h-5 text-blue-600" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-medium text-gray-900 truncate">{template.name}</h4>
+                                    <p className="text-xs text-gray-500">{template.file_name}</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {template.description && (
+                                <p className="text-xs text-gray-600 mb-3 line-clamp-2">{template.description}</p>
+                              )}
+
+                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                <span className="text-xs text-gray-400">
+                                  {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
+                                </span>
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    onClick={() => window.open(template.file_url, '_blank')}
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    title="Download template"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </button>
+                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`Are you sure you want to delete "${template.name}"?`)) {
+                                          deleteTemplateMutation.mutate(template.id)
+                                        }
+                                      }}
+                                      className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                      title="Delete template"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <Card className="border-2 border-dashed border-gray-300">
+                        <div className="p-8 text-center">
+                          <Copy className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500 font-medium">No templates uploaded yet</p>
+                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                            <p className="text-xs text-gray-400 mt-2">Click "Upload Template" to add files for your team</p>
+                          )}
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -2645,7 +2844,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             </div>
 
             <div className="flex-1 p-6 bg-gray-50 overflow-y-auto">
-              {filteredWorkflows.length === 0 ? (
+              {filteredWorkflows.length === 0 && !isLoading ? (
                 /* Empty State */
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center max-w-md">
@@ -2662,7 +2861,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </Button>
                   </div>
                 </div>
-              ) : (
+              ) : filteredWorkflows.length > 0 ? (
                 <div className="space-y-6">
                   {/* Quick Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -2740,10 +2939,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </div>
 
                     <div className="p-6">
-                      {console.log('Cadence Map - filteredWorkflows:', filteredWorkflows)}
-                      {console.log('First workflow:', filteredWorkflows[0])}
-                      {console.log('First workflow cadence_days:', filteredWorkflows[0]?.cadence_days)}
-                      {filteredWorkflows.forEach(w => console.log(`Workflow "${w.name}" cadence_days:`, w.cadence_days, 'raw:', workflows?.find(wf => wf.id === w.id)?.cadence_days))}
                       {filteredWorkflows.length > 0 ? (
                         <div className="space-y-6">
                           {/* Workflows grouped by cadence */}
@@ -2883,22 +3078,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                         </div>
 
                                         {/* Stages Preview */}
-                                        {workflow.stages && workflow.stages.length > 0 && (
+                                        {workflow.stages && Array.isArray(workflow.stages) && workflow.stages.length > 0 ? (
                                           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center space-x-2">
                                             <span className="text-xs text-gray-500">Stages:</span>
                                             <div className="flex items-center space-x-1">
-                                              {workflow.stages.slice(0, 6).map((stage) => (
+                                              {workflow.stages.filter(s => s).map((stage, idx) => (
                                                 <div
-                                                  key={stage.id}
+                                                  key={stage?.id || `stage-${idx}`}
                                                   className="w-2 h-2 rounded-full"
-                                                  style={{ backgroundColor: stage.stage_color }}
-                                                  title={stage.stage_label}
+                                                  style={{ backgroundColor: workflow.color || '#94a3b8' }}
+                                                  title={stage?.stage_label || `Stage ${idx + 1}`}
                                                 />
                                               ))}
-                                              {workflow.stages.length > 6 && (
-                                                <span className="text-xs text-gray-400">+{workflow.stages.length - 6}</span>
-                                              )}
                                             </div>
+                                          </div>
+                                        ) : (
+                                          <div className="mt-3 pt-3 border-t border-gray-100">
+                                            <span className="text-xs text-gray-400 italic">No stages configured</span>
                                           </div>
                                         )}
                                       </div>
@@ -2909,7 +3105,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             })
                           })()}
                         </div>
-                      ) : (
+                      ) : !isLoading ? (
                         <div className="text-center py-12">
                           <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                           <h3 className="text-lg font-medium text-gray-900 mb-2">No workflows available</h3>
@@ -2919,7 +3115,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             Create Workflow
                           </Button>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </Card>
 
@@ -3030,7 +3226,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </Card>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         )}
@@ -3198,6 +3394,95 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             updateRuleMutation.mutate({ ruleId: editingRule, updates })
           }}
         />
+      )}
+
+      {/* Upload Template Modal */}
+      {showUploadTemplateModal && selectedWorkflow && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Upload Template</h2>
+              <p className="text-sm text-gray-500 mt-1">Add a template file for your team to use</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Template Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Earnings Analysis Template"
+                  value={templateFormData.name}
+                  onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description (Optional)
+                </label>
+                <textarea
+                  placeholder="Describe what this template is used for..."
+                  rows={3}
+                  value={templateFormData.description}
+                  onChange={(e) => setTemplateFormData({ ...templateFormData, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload File
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                  onChange={(e) => setTemplateFormData({ ...templateFormData, file: e.target.files?.[0] || null })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                <p className="text-xs text-gray-400 mt-2">PDF, Word, Excel, PowerPoint, or Text files</p>
+                {templateFormData.file && (
+                  <p className="text-xs text-gray-600 mt-2">Selected: {templateFormData.file.name}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowUploadTemplateModal(false)
+                  setTemplateFormData({ name: '', description: '', file: null })
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!templateFormData.name.trim()) {
+                    alert('Please enter a template name')
+                    return
+                  }
+                  if (!templateFormData.file) {
+                    alert('Please select a file to upload')
+                    return
+                  }
+                  uploadTemplateMutation.mutate({
+                    workflowId: selectedWorkflow.id,
+                    name: templateFormData.name,
+                    description: templateFormData.description,
+                    file: templateFormData.file
+                  })
+                }}
+                loading={uploadTemplateMutation.isPending}
+              >
+                Upload Template
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Workflow Confirmation Modal */}

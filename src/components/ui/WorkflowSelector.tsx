@@ -426,20 +426,6 @@ export function WorkflowSelector({
                   }}
                   className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
                 >
-                  <MoreHorizontal className="w-4 h-4" />
-                  <span>See All Workflows</span>
-                </button>
-              )}
-
-              {onManageWorkflows && (
-                <button
-                  onClick={() => {
-                    onManageWorkflows()
-                    setIsOpen(false)
-                    setSearchTerm('')
-                  }}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
-                >
                   <Settings className="w-4 h-4" />
                   <span>Manage Workflows</span>
                 </button>

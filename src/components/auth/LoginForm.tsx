@@ -60,7 +60,7 @@ export function LoginForm() {
       <Input
         label="Email address"
         type="email"
-        autoComplete="email"
+        autoComplete="off"
         {...register('email')}
         error={errors.email?.message}
       />

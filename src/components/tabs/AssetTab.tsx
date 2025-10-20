@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap } from 'lucide-react'
+import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
@@ -17,6 +17,8 @@ import { WorkflowSelector } from '../ui/WorkflowSelector'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
+import { AddToThemeButton } from '../lists/AddToThemeButton'
+import { AddToQueueButton } from '../lists/AddToQueueButton'
 import { StockQuote } from '../financial/StockQuote'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
@@ -71,7 +73,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   const [stage, setStage] = useState(mapToTimelineStage(asset.process_stage))
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage'>('thesis')
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage' | 'lists'>('thesis')
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [showNoteEditor, setShowNoteEditor] = useState(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -89,10 +91,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
   const [showHoldingsHistory, setShowHoldingsHistory] = useState(false)
   const [showTimelineView, setShowTimelineView] = useState(false)
+  const [showTemplatesView, setShowTemplatesView] = useState(false)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [showAssetPriorityDropdown, setShowAssetPriorityDropdown] = useState(false)
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
+  const [showTickerDropdown, setShowTickerDropdown] = useState(false)
   const queryClient = useQueryClient()
 
   // Refs for EditableSectionWithHistory components
@@ -155,6 +159,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         workflow_id: asset.workflow_id,
         hasWorkflowProperty: 'workflow' in asset,
         assetPriority: asset.priority,
+        thesis: asset.thesis,
+        where_different: asset.where_different,
+        risks_to_thesis: asset.risks_to_thesis,
         fullAsset: asset
       })
       setStage(mapToTimelineStage(asset.process_stage))
@@ -175,6 +182,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   useEffect(() => {
     setIsTabStateInitialized(true)
   }, [asset.id])
+
+  // Handle noteId from navigation (e.g., from dashboard note click)
+  useEffect(() => {
+    if (asset.noteId && asset.id) {
+      console.log('📝 AssetTab: Opening note from navigation:', asset.noteId)
+      setActiveTab('notes')
+      setShowNoteEditor(true)
+      setSelectedNoteId(asset.noteId)
+    }
+  }, [asset.id, asset.noteId])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
@@ -391,12 +408,93 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     staleTime: 1000, // Cache for 1 second to be more responsive to workflow changes
   })
 
+  // Fetch templates for the asset's workflow
+  const { data: workflowTemplates, isLoading: templatesLoading } = useQuery({
+    queryKey: ['workflow-templates', effectiveWorkflowId],
+    queryFn: async () => {
+      if (!effectiveWorkflowId) return []
+
+      const { data, error } = await supabase
+        .from('workflow_templates')
+        .select('*')
+        .eq('workflow_id', effectiveWorkflowId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!effectiveWorkflowId
+  })
+
+  // Fetch checklist attachments for the asset
+  const { data: checklistAttachments, isLoading: attachmentsLoading } = useQuery({
+    queryKey: ['asset-checklist-attachments', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('asset_checklist_attachments')
+        .select('*')
+        .eq('asset_id', asset.id)
+        .order('uploaded_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  // Fetch lists that contain this asset
+  const { data: assetLists, isLoading: listsLoading } = useQuery({
+    queryKey: ['asset-lists', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('list_items')
+        .select('lists(id, name, description, type, created_at)')
+        .eq('asset_id', asset.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data?.map(item => item.lists).filter(Boolean) || []
+    }
+  })
+
+  // Fetch themes that contain this asset
+  const { data: assetThemes, isLoading: themesLoading } = useQuery({
+    queryKey: ['asset-themes', asset.id],
+    queryFn: async () => {
+      console.log('🔍 Fetching themes for asset:', asset.id)
+      const { data, error } = await supabase
+        .from('theme_assets')
+        .select('themes(id, name, description, created_at, theme_type, color)')
+        .eq('asset_id', asset.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('❌ Error fetching asset themes:', error)
+        throw error
+      }
+      console.log('📦 Raw theme_assets data:', data)
+      const themes = data?.map(item => item.themes).filter(Boolean) || []
+      console.log('🎨 Asset themes fetched:', themes)
+      return themes
+    }
+  })
+
   const nameFor = (id?: string | null) => {
     if (!id) return 'Unknown'
     const u = usersById?.[id]
     if (!u) return 'Unknown'
     if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
     return u.email?.split('@')[0] || 'Unknown'
+  }
+
+  const getThemeTypeColor = (type: string | null) => {
+    switch (type) {
+      case 'sector': return 'primary'
+      case 'geography': return 'success'
+      case 'strategy': return 'warning'
+      case 'macro': return 'error'
+      case 'general': return 'default'
+      default: return 'default'
+    }
   }
 
   // ---------- Mutations ----------
@@ -863,20 +961,48 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       <div className="space-y-4">
         {/* Single Row - All Summary Info and Controls */}
         <div className="flex items-center justify-between gap-6">
-          <div className="flex items-center gap-6">
-            <h1 className="text-3xl font-bold text-gray-900">{asset.symbol}</h1>
-            <span className="text-gray-300">|</span>
-            <p className="text-xl text-gray-700">{asset.company_name}</p>
-            <span className="text-gray-300">|</span>
-            <StockQuote symbol={asset.symbol} compact={true} className="min-w-0" />
-            <span className="text-gray-300">|</span>
-            <CoverageDisplay assetId={asset.id} coverage={coverage || []} />
-            {(asset.sector || fullAsset?.sector) && (
-              <>
-                <span className="text-gray-300">|</span>
-                <p className="text-sm text-gray-500">{asset.sector || fullAsset?.sector}</p>
-              </>
-            )}
+          <div className="flex items-start gap-6">
+            {/* Ticker, Price and Company Name */}
+            <div className="flex flex-col relative">
+              <div className="flex items-baseline gap-4">
+                <button
+                  onClick={() => setShowTickerDropdown(!showTickerDropdown)}
+                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors"
+                >
+                  {asset.symbol}
+                </button>
+                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-2xl font-bold" />
+                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-xl font-semibold" />
+              </div>
+              <p className="text-lg text-gray-600 mt-1">{asset.company_name}</p>
+
+              {/* Ticker Dropdown */}
+              {showTickerDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowTickerDropdown(false)}
+                  />
+                  <div className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-20 p-4 min-w-[300px]">
+                    <div className="space-y-4">
+                      {/* Coverage */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Coverage</h4>
+                        <CoverageDisplay assetId={asset.id} coverage={coverage || []} />
+                      </div>
+
+                      {/* Sector */}
+                      {(asset.sector || fullAsset?.sector) && (
+                        <div className="pt-4 border-t border-gray-200">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Sector</h4>
+                          <p className="text-sm text-gray-900">{asset.sector || fullAsset?.sector}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -977,9 +1103,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           </div>
 
-          {/* Add to List Button */}
-          <AddToListButton assetId={asset.id} assetSymbol={asset.symbol} variant="outline" size="sm" />
-
           {/* Workflow Selector */}
           <AssetWorkflowSelector
             assetId={asset.id}
@@ -987,6 +1110,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             onWorkflowChange={handleWorkflowChange}
             onWorkflowStart={handleWorkflowStart}
             onWorkflowStop={handleWorkflowStop}
+            onSwitchToStageTab={() => setActiveTab('stage')}
           />
           </div>
         </div>
@@ -1049,11 +1173,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="flex items-center space-x-2">
                 <FileText className="h-4 w-4" />
                 <span>Notes</span>
-                {notes && notes.length > 0 && (
-                  <Badge variant="default" size="sm">
-                    {notes.length}
-                  </Badge>
-                )}
               </div>
             </button>
 
@@ -1068,6 +1187,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="flex items-center space-x-2">
                 <Activity className="h-4 w-4" />
                 <span>Stage</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('lists')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'lists'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <List className="h-4 w-4" />
+                <span>Lists</span>
               </div>
             </button>
           </nav>
@@ -1462,25 +1595,154 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     }}
                   />
                 )}
-                <button
-                  onClick={() => setShowTimelineView(!showTimelineView)}
-                  className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300"
-                >
-                  {showTimelineView ? (
-                    <>
-                      <Activity className="w-4 h-4" />
-                      <span>Stage View</span>
-                    </>
-                  ) : (
-                    <>
-                      <Clock className="w-4 h-4" />
-                      <span>Timeline View</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => {
+                      setShowTimelineView(!showTimelineView)
+                      setShowTemplatesView(false)
+                    }}
+                    className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300"
+                  >
+                    {showTimelineView ? (
+                      <>
+                        <Activity className="w-4 h-4" />
+                        <span>Stage View</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4" />
+                        <span>Timeline</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowTemplatesView(!showTemplatesView)
+                      setShowTimelineView(false)
+                    }}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors duration-200 text-xs font-medium border ${
+                      showTemplatesView
+                        ? 'bg-blue-50 text-blue-700 border-blue-300'
+                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Files</span>
+                  </button>
+                </div>
               </div>
 
-              {showTimelineView ? (
+              {showTemplatesView ? (
+                <div className="mt-6 space-y-6">
+                  {/* Workflow Templates Section */}
+                  <Card>
+                    <div className="p-4 border-b border-gray-200">
+                      <h3 className="text-lg font-semibold text-gray-900">Workflow Templates</h3>
+                      <p className="text-sm text-gray-500 mt-1">Templates available for this workflow</p>
+                    </div>
+                    <div className="p-4">
+                      {templatesLoading ? (
+                        <div className="text-center py-8">
+                          <p className="text-gray-500 text-sm">Loading templates...</p>
+                        </div>
+                      ) : workflowTemplates && workflowTemplates.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {workflowTemplates.map((template) => (
+                            <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <FileText className="w-5 h-5 text-blue-600" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-medium text-gray-900 truncate">{template.name}</h4>
+                                    <p className="text-xs text-gray-500 truncate">{template.file_name}</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {template.description && (
+                                <p className="text-xs text-gray-600 mb-3 line-clamp-2">{template.description}</p>
+                              )}
+
+                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                <span className="text-xs text-gray-400">
+                                  {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
+                                </span>
+                                <button
+                                  onClick={() => window.open(template.file_url, '_blank')}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  title="Download template"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500 font-medium">No templates available</p>
+                          <p className="text-xs text-gray-400 mt-2">Workflow admins can upload templates in the Workflows tab</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* Workflow Attachments Section */}
+                  <Card>
+                    <div className="p-4 border-b border-gray-200">
+                      <h3 className="text-lg font-semibold text-gray-900">Workflow Attachments</h3>
+                      <p className="text-sm text-gray-500 mt-1">Files attached to workflow tasks and stages</p>
+                    </div>
+                    <div className="p-4">
+                      {attachmentsLoading ? (
+                        <div className="text-center py-8">
+                          <p className="text-gray-500 text-sm">Loading attachments...</p>
+                        </div>
+                      ) : checklistAttachments && checklistAttachments.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {checklistAttachments.map((attachment) => (
+                            <div key={attachment.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                  <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <FileText className="w-5 h-5 text-green-600" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-medium text-gray-900 truncate">{attachment.file_name}</h4>
+                                    <p className="text-xs text-gray-500">Stage: {attachment.stage_id}</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                <span className="text-xs text-gray-400">
+                                  {attachment.file_size ? `${(attachment.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
+                                </span>
+                                <button
+                                  onClick={() => window.open(attachment.file_path, '_blank')}
+                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                  title="Download file"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500 font-medium">No attachments yet</p>
+                          <p className="text-xs text-gray-400 mt-2">Files can be attached to workflow tasks in the Stage view</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </div>
+              ) : showTimelineView ? (
                 <AssetTimelineView
                   assetId={asset.id}
                   assetSymbol={asset.symbol}
@@ -1503,6 +1765,201 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   onPriorityChange={handleWorkflowPriorityChange}
                 />
               )}
+            </div>
+          )}
+
+          {activeTab === 'lists' && (
+            <div className="space-y-6">
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">Lists & Collections</h3>
+              </div>
+
+              <>
+                  {(() => {
+                    const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
+                      const type = list.type || 'list'
+                      if (!acc[type]) acc[type] = []
+                      acc[type].push(list)
+                      return acc
+                    }, {} as Record<string, any[]>)
+
+                    return (
+                      <div className="space-y-8">
+                        {/* Lists Section */}
+                        <div className="pb-8 border-b border-gray-200">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                              Lists
+                            </h4>
+                            <AddToListButton assetId={asset.id} />
+                          </div>
+                          {listsByType.list && listsByType.list.length > 0 ? (
+                            <div className="grid gap-3">
+                              {listsByType.list.map((list: any) => (
+                                <Card key={list.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                                  <div className="p-4">
+                                    <div className="flex items-start justify-between">
+                                      <div>
+                                        <h5 className="font-semibold text-gray-900">{list.name}</h5>
+                                        {list.description && (
+                                          <p className="text-sm text-gray-600 mt-1">{list.description}</p>
+                                        )}
+                                        {list.created_at && (
+                                          <p className="text-xs text-gray-500 mt-2">
+                                            Created {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Badge variant="default">list</Badge>
+                                    </div>
+                                  </div>
+                                </Card>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                              <p className="text-sm text-gray-500">Not in any lists</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Themes Section */}
+                        <div className="pb-8 border-b border-gray-200">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                              Themes
+                            </h4>
+                            <AddToThemeButton assetId={asset.id} />
+                          </div>
+                          {assetThemes && assetThemes.length > 0 ? (
+                            <div className="grid gap-2">
+                              {assetThemes.map((theme: any) => (
+                                <div
+                                  key={theme.id}
+                                  className="px-2 py-1 flex items-center gap-2"
+                                >
+                                  <span
+                                    onClick={() => {
+                                      if (onNavigate) {
+                                        onNavigate({
+                                          id: theme.id,
+                                          title: theme.name,
+                                          type: 'theme',
+                                          data: theme
+                                        })
+                                      }
+                                    }}
+                                    className="text-sm font-medium text-gray-900 hover:bg-gray-50 cursor-pointer transition-colors px-1 py-0.5 rounded"
+                                  >
+                                    {theme.name}
+                                  </span>
+                                  <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
+                                    {theme.theme_type || 'general'}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                              <p className="text-sm text-gray-500">Not in any themes</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Portfolios Section */}
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                              Portfolios
+                            </h4>
+                            <AddToQueueButton assetId={asset.id} />
+                          </div>
+                          {portfolioHoldings && portfolioHoldings.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Cost</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized P&L</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized %</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                  {portfolioHoldings.map((holding: any) => {
+                                    const currentPrice = currentQuote?.price || 0
+                                    const shares = parseFloat(holding.shares)
+                                    const costPerShare = parseFloat(holding.cost)
+                                    const totalCost = shares * costPerShare
+                                    const currentValue = shares * currentPrice
+                                    const unrealizedPnL = currentValue - totalCost
+                                    const unrealizedPercentage = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0
+                                    const isPositive = unrealizedPnL >= 0
+
+                                    // Calculate weight as percentage of total portfolio
+                                    const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
+                                    const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
+
+                                    return (
+                                      <tr key={holding.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                          <div className="text-sm font-medium text-gray-900">
+                                            {holding.portfolios?.name || 'Unknown Portfolio'}
+                                          </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                          {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '--'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                          {shares.toLocaleString()}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                          ${costPerShare.toFixed(2)}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                          ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                          {currentPrice > 0 ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                          {currentPrice > 0 ? (
+                                            <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                              {isPositive ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-400">--</span>
+                                          )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                          {currentPrice > 0 ? (
+                                            <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                              {isPositive ? '+' : ''}{unrealizedPercentage.toFixed(2)}%
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-400">--</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                              <p className="text-sm text-gray-500">Not in any portfolios</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+              </>
             </div>
           )}
         </div>

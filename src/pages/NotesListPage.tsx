@@ -57,17 +57,56 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       const [assetNotesRes, portfolioNotesRes, themeNotesRes, customNotesRes] = await Promise.all([
         supabase
           .from('asset_notes')
-          .select('*, assets(symbol, company_name)')
+          .select(`
+            *,
+            assets (
+              id,
+              symbol,
+              company_name,
+              sector,
+              thesis,
+              where_different,
+              risks_to_thesis,
+              priority,
+              process_stage,
+              created_at,
+              updated_at
+            )
+          `)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase
           .from('portfolio_notes')
-          .select('*, portfolios(name)')
+          .select(`
+            *,
+            portfolios (
+              id,
+              name,
+              description,
+              portfolio_type,
+              created_at,
+              updated_at
+            )
+          `)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase
           .from('theme_notes')
-          .select('*, themes(name)')
+          .select(`
+            *,
+            themes (
+              id,
+              name,
+              description,
+              theme_type,
+              color,
+              thesis,
+              where_different,
+              risks_to_thesis,
+              created_at,
+              updated_at
+            )
+          `)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase
@@ -212,12 +251,40 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   }
 
   const handleNoteClick = (note: Note) => {
-    onNoteSelect?.({
-      id: note.id,
-      title: note.title,
-      type: 'note',
-      data: note,
-    })
+    // Navigate to the entity page with the note selected
+    let entityId = note.source_id
+    let entityTitle = note.source_name
+    let entityType = note.source_type as 'asset' | 'portfolio' | 'theme'
+    let entityData = null
+
+    // Get the full entity data from the note
+    const rawNote = notes?.find(n => n.id === note.id)
+    if (rawNote) {
+      if (note.source_type === 'asset' && (rawNote as any).assets) {
+        entityData = (rawNote as any).assets
+      } else if (note.source_type === 'portfolio' && (rawNote as any).portfolios) {
+        entityData = (rawNote as any).portfolios
+      } else if (note.source_type === 'theme' && (rawNote as any).themes) {
+        entityData = (rawNote as any).themes
+      }
+    }
+
+    if (entityId && entityType && entityData) {
+      onNoteSelect?.({
+        id: entityId,
+        title: entityTitle,
+        type: entityType,
+        data: { ...entityData, noteId: note.id }
+      })
+    } else {
+      // Fallback to old behavior if entity data not available
+      onNoteSelect?.({
+        id: note.id,
+        title: note.title,
+        type: 'note',
+        data: note,
+      })
+    }
   }
 
   const clearFilters = () => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -9,18 +9,30 @@ import { PortfolioNoteEditor } from '../notes/PortfolioNoteEditorUnified'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { AddTeamMemberModal } from '../portfolios/AddTeamMemberModal'
-import { ConfirmDialog } from '../ui/ConfirmDialog' // Import ConfirmDialog
+import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { TabStateManager } from '../../lib/tabStateManager'
 
 interface PortfolioTabProps {
   portfolio: any
+  onNavigate?: (tab: { id: string; title: string; type: string; data?: any }) => void
 }
 
-export function PortfolioTab({ portfolio }: PortfolioTabProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'holdings' | 'performance' | 'notes' | 'team'>('overview')
-  const [showNoteEditor, setShowNoteEditor] = useState(false)
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'holdings' | 'performance' | 'notes' | 'team'>(() => {
+    const savedState = TabStateManager.loadTabState(portfolio.id)
+    return savedState?.activeTab || 'overview'
+  })
+  const [showNoteEditor, setShowNoteEditor] = useState(() => {
+    const savedState = TabStateManager.loadTabState(portfolio.id)
+    return savedState?.showNoteEditor || false
+  })
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(portfolio.id)
+    return savedState?.selectedNoteId || null
+  })
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showAddTeamMemberModal, setShowAddTeamMemberModal] = useState(false)
+  const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean
     teamMemberId: string | null
@@ -36,13 +48,49 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
   const [selectedDetailTopic, setSelectedDetailTopic] = useState<string | null>(null)
   const [sortColumn, setSortColumn] = useState<string>('symbol')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; assetId: string; symbol: string } | null>(null)
   const queryClient = useQueryClient()
 
+  // Update local state when switching to a different portfolio
   useEffect(() => {
-    if (portfolio.id && !hasLocalChanges) {
-      // reset local state if needed on portfolio switch
+    if (portfolio.id) {
+      // Restore saved tab state if available
+      const savedState = TabStateManager.loadTabState(portfolio.id)
+      if (savedState?.activeTab) {
+        setActiveTab(savedState.activeTab)
+      } else {
+        setActiveTab('overview')
+      }
+      setHasLocalChanges(false)
     }
-  }, [portfolio.id, hasLocalChanges])
+  }, [portfolio.id])
+
+  // Mark as initialized once portfolio is loaded
+  useEffect(() => {
+    setIsTabStateInitialized(true)
+  }, [])
+
+  // Handle noteId from navigation (e.g., from dashboard note click)
+  useEffect(() => {
+    if (portfolio.noteId && portfolio.id) {
+      console.log('📝 PortfolioTab: Opening note from navigation:', portfolio.noteId)
+      setActiveTab('notes')
+      setShowNoteEditor(true)
+      setSelectedNoteId(portfolio.noteId)
+    }
+  }, [portfolio.id, portfolio.noteId])
+
+  // Save tab state whenever it changes
+  useEffect(() => {
+    if (isTabStateInitialized && portfolio.id) {
+      const stateToSave = {
+        activeTab,
+        showNoteEditor,
+        selectedNoteId
+      }
+      TabStateManager.saveTabState(portfolio.id, stateToSave)
+    }
+  }, [portfolio.id, activeTab, showNoteEditor, selectedNoteId, isTabStateInitialized])
 
   // NOTES
   const { data: notes } = useQuery({
@@ -452,11 +500,6 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
               <div className="flex items-center space-x-2">
                 <FileText className="h-4 w-4" />
                 <span>Notes</span>
-                {notes && notes.length > 0 && (
-                  <Badge variant="default" size="sm">
-                    {notes.length}
-                  </Badge>
-                )}
               </div>
             </button>
 
@@ -473,7 +516,7 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                 <span>Team</span>
                 {teamWithUsers && teamWithUsers.length > 0 && (
                   <Badge variant="default" size="sm">
-                    {teamWithUsers.length}
+                    {new Set(teamWithUsers.map(t => `${t.user_id}-${t.role}`)).size}
                   </Badge>
                 )}
               </div>
@@ -639,17 +682,43 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                         return (
                           <React.Fragment key={holding.id}>
                             <tr
-                              className={`hover:bg-gray-50 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50' : ''}`}
-                              onClick={(e) => handleAssetRowClick(holding.asset_id, e)}
+                              className={`hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-blue-50' : ''}`}
                             >
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="pl-2 pr-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
-                                  <div className="flex-shrink-0 mr-3">
-                                    <div className={`w-2 h-2 rounded-full transition-transform duration-200 ${isExpanded ? 'bg-blue-500 rotate-90' : 'bg-gray-300'}`}></div>
+                                  <div className="relative mr-2">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (contextMenu?.assetId === holding.asset_id) {
+                                          setContextMenu(null)
+                                        } else {
+                                          const rect = e.currentTarget.getBoundingClientRect()
+                                          setContextMenu({
+                                            x: rect.right,
+                                            y: rect.top,
+                                            assetId: holding.asset_id,
+                                            symbol: holding.assets?.symbol || 'Unknown'
+                                          })
+                                        }
+                                      }}
+                                      className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                      title="Options"
+                                    >
+                                      <MoreVertical className="h-4 w-4 text-gray-500" />
+                                    </button>
                                   </div>
-                                  <div>
-                                    <div className="text-sm font-semibold text-gray-900">{holding.assets?.symbol}</div>
-                                    <div className="text-sm text-gray-600 max-w-xs truncate">{holding.assets?.company_name}</div>
+                                  <div
+                                    className="flex items-center cursor-pointer flex-1"
+                                    onClick={(e) => handleAssetRowClick(holding.asset_id, e)}
+                                  >
+                                    <div className="flex-shrink-0 mr-3">
+                                      <div className={`w-2 h-2 rounded-full transition-transform duration-200 ${isExpanded ? 'bg-blue-500 rotate-90' : 'bg-gray-300'}`}></div>
+                                    </div>
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-900">{holding.assets?.symbol}</div>
+                                      <div className="text-sm text-gray-600 max-w-xs truncate">{holding.assets?.company_name}</div>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -662,8 +731,10 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                                 <StockQuote symbol={holding.assets?.symbol} showOnlyPrice={true} />
                               </td>
 
-                              <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <StockQuote symbol={holding.assets?.symbol} showOnlyChange={true} />
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex justify-end">
+                                  <StockQuote symbol={holding.assets?.symbol} showOnlyChange={true} />
+                                </div>
                               </td>
 
                               <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -864,6 +935,40 @@ export function PortfolioTab({ portfolio }: PortfolioTabProps) {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Context Menu */}
+          {contextMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setContextMenu(null)}
+              />
+              <div
+                className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
+                style={{
+                  left: `${contextMenu.x}px`,
+                  top: `${contextMenu.y}px`
+                }}
+              >
+                <button
+                  onClick={() => {
+                    if (onNavigate) {
+                      onNavigate({
+                        id: contextMenu.assetId,
+                        title: contextMenu.symbol,
+                        type: 'asset',
+                        data: { id: contextMenu.assetId }
+                      })
+                    }
+                    setContextMenu(null)
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  Go to Asset Page
+                </button>
+              </div>
+            </>
           )}
 
           {activeTab === 'performance' && (

@@ -48,7 +48,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
     { value: '#6b7280', label: 'Gray' }
   ]
 
-  // Fetch themes user has access to (owned or collaborated)
+  // Fetch themes user has access to (owned, collaborated, or has assets in)
   const { data: themes, isLoading } = useQuery({
     queryKey: ['all-themes', user?.id],
     queryFn: async () => {
@@ -56,68 +56,27 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
 
       console.log('🔍 Fetching accessible themes from database for user:', user.id)
       try {
-        // Get themes where user is owner or has collaboration access
-        const { data: ownedThemes, error: ownedError } = await supabase
+        // Get all themes - we'll show all themes the user has any connection to
+        const { data: allThemes, error: themesError } = await supabase
           .from('themes')
           .select(`
             *,
-            theme_notes(id, title, updated_at)
+            theme_notes(id, title, updated_at),
+            theme_assets(asset_id)
           `)
-          .eq('created_by', user.id)
+          .order('created_at', { ascending: false })
 
-        console.log('📊 Owned themes:', ownedThemes?.length || 0, ownedThemes)
-        if (ownedError) {
-          console.error('❌ Error fetching owned themes:', ownedError)
-          throw ownedError
+        if (themesError) {
+          console.error('❌ Error fetching themes:', themesError)
+          throw themesError
         }
 
-        // Get themes where user is a collaborator
-        const { data: collaborations, error: collabError } = await supabase
-          .from('theme_collaborations')
-          .select('theme_id')
-          .eq('user_id', user.id)
-
-        if (collabError) throw collabError
-
-        const collaboratedThemeIds = collaborations?.map(c => c.theme_id) || []
-
-        let collaboratedThemes: any[] = []
-        if (collaboratedThemeIds.length > 0) {
-          const { data, error: collabThemesError } = await supabase
-            .from('themes')
-            .select(`
-              *,
-              theme_notes(id, title, updated_at)
-            `)
-            .in('id', collaboratedThemeIds)
-
-          if (collabThemesError) throw collabThemesError
-          collaboratedThemes = data || []
-        }
-
-        // Get public themes
-        const { data: publicThemes, error: publicError } = await supabase
-          .from('themes')
-          .select(`
-            *,
-            theme_notes(id, title, updated_at)
-          `)
-          .eq('is_public', true)
-          .neq('created_by', user.id) // Exclude owned themes already included
-
-        if (publicError) throw publicError
-
-        // Combine and deduplicate
-        const allThemes = [...(ownedThemes || []), ...collaboratedThemes, ...(publicThemes || [])]
-        const uniqueThemes = Array.from(new Map(allThemes.map(t => [t.id, t])).values())
-
+        console.log('📊 All themes:', allThemes?.length || 0, allThemes)
         console.log('✅ Themes summary:')
-        console.log('  - Owned:', ownedThemes?.length || 0)
-        console.log('  - Collaborated:', collaboratedThemes.length)
-        console.log('  - Public:', publicThemes?.length || 0)
-        console.log('  - Total unique:', uniqueThemes.length)
-        console.log('  - Final themes:', uniqueThemes)
-        return uniqueThemes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        console.log('  - Total themes:', allThemes?.length || 0)
+        console.log('  - Final themes:', allThemes)
+
+        return allThemes || []
       } catch (fetchError) {
         console.error('❌ Network or fetch error:', fetchError)
 
@@ -434,8 +393,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 options={[
                   { value: 'created_at', label: 'Date Created' },
                   { value: 'name', label: 'Theme Name' },
-                  { value: 'theme_type', label: 'Theme Type' },
-                  { value: 'notes_count', label: 'Notes Count' }
+                  { value: 'theme_type', label: 'Theme Type' }
                 ]}
               />
             </div>
@@ -488,16 +446,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="col-span-2">
-                  <button
-                    onClick={() => handleSort('notes_count')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
-                  >
-                    <span>Notes</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="col-span-3">
+                <div className="col-span-5">
                   <button
                     onClick={() => handleSort('created_at')}
                     className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
@@ -529,14 +478,6 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                           <p className="text-sm font-semibold text-gray-900 truncate">
                             {theme.name}
                           </p>
-                          {theme.theme_notes?.length > 0 && (
-                            <div className="flex items-center">
-                              <FileText className="h-3 w-3 text-gray-400" />
-                              <span className="text-xs text-gray-500 ml-1">
-                                {theme.theme_notes.length}
-                              </span>
-                            </div>
-                          )}
                         </div>
                         {theme.description && (
                           <p className="text-sm text-gray-600 truncate">
@@ -554,16 +495,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     </Badge>
                   </div>
 
-                  {/* Notes Count */}
-                  <div className="col-span-2">
-                    <div className="flex items-center text-sm text-gray-500">
-                      <FileText className="h-3 w-3 mr-1" />
-                      {theme.theme_notes?.length || 0}
-                    </div>
-                  </div>
-
                   {/* Created Date */}
-                  <div className="col-span-3">
+                  <div className="col-span-5">
                     <div className="flex items-center text-sm text-gray-500">
                       <Calendar className="h-3 w-3 mr-1" />
                       {formatDistanceToNow(new Date(theme.created_at || 0), { addSuffix: true })}
