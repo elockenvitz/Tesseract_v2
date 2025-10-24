@@ -104,7 +104,6 @@ export function WorkflowSelector({
       }
 
       const { data: workflows, error } = await query
-        .order('is_default', { ascending: false })
         .order('name')
 
       if (error) throw error
@@ -138,35 +137,12 @@ export function WorkflowSelector({
     }
   })
 
-  // Find current workflow, fallback to default, then first available
+  // Find current workflow, fallback to first available
   const currentWorkflow = allWorkflows?.find(w => w.id === currentWorkflowId) ||
-                         allWorkflows?.find(w => w.is_default) ||
                          allWorkflows?.[0]
 
-  // Use effective workflow ID (prop or determined default) for button visibility
+  // Use effective workflow ID (prop or current workflow) for button visibility
   const effectiveWorkflowId = currentWorkflowId || currentWorkflow?.id
-
-  // Query to check default workflow status when no currentWorkflowId is provided
-  const { data: defaultWorkflowStatus } = useQuery({
-    queryKey: ['default-workflow-status', assetId, currentWorkflow?.id],
-    queryFn: async () => {
-      if (!currentWorkflow?.id || !assetId || currentWorkflowId) return null // Only run when no currentWorkflowId
-
-      const { data, error } = await supabase
-        .from('asset_workflow_progress')
-        .select('is_started, is_completed')
-        .eq('asset_id', assetId)
-        .eq('workflow_id', currentWorkflow.id)
-        .single()
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching default workflow status:', error)
-        return null
-      }
-      return data
-    },
-    enabled: !!assetId && !!currentWorkflow?.id && !currentWorkflowId
-  })
 
   // Determine which workflows to show in dropdown
   const isSearching = searchTerm.length > 0
@@ -175,11 +151,8 @@ export function WorkflowSelector({
   const getRecentWorkflows = () => {
     if (!allWorkflows) return []
 
-    // Sort by: 1) default first, 2) most recently used, 3) name
+    // Sort by: 1) most recently used, 2) name
     const sortedWorkflows = [...allWorkflows].sort((a, b) => {
-      if (a.is_default && !b.is_default) return -1
-      if (!a.is_default && b.is_default) return 1
-
       // Sort by most recent usage
       if (a.last_used && b.last_used) {
         return new Date(b.last_used).getTime() - new Date(a.last_used).getTime()
@@ -190,16 +163,8 @@ export function WorkflowSelector({
       return a.name.localeCompare(b.name)
     })
 
-    // Ensure default workflow is always included
-    const defaultWorkflow = sortedWorkflows.find(w => w.is_default)
-    const nonDefaultWorkflows = sortedWorkflows.filter(w => !w.is_default)
-
-    // Start with default workflow if it exists
-    const result = defaultWorkflow ? [defaultWorkflow] : []
-
-    // Add up to 3 more workflows (to make total of 4)
-    const remainingSlots = 4 - result.length
-    result.push(...nonDefaultWorkflows.slice(0, remainingSlots))
+    // Take top 4 workflows
+    const result = sortedWorkflows.slice(0, 4)
 
     // Ensure current workflow is included if not already in the list
     if (currentWorkflow && !result.find(w => w.id === currentWorkflow.id)) {
@@ -233,7 +198,18 @@ export function WorkflowSelector({
 
   // Show button immediately with loading state for name only
   const displayName = currentWorkflow?.name || (isLoading ? 'Loading...' : 'Select Workflow')
-  const isCurrentWorkflowStarted = (currentWorkflowStatus?.is_started || defaultWorkflowStatus?.is_started) || false
+  const isCurrentWorkflowStarted = currentWorkflowStatus?.is_started || false
+
+  // Debug logging
+  console.log('🔍 WorkflowSelector Debug:', {
+    effectiveWorkflowId,
+    assetId,
+    assetIdType: typeof assetId,
+    hasOnWorkflowStart: !!onWorkflowStart,
+    hasOnWorkflowStop: !!onWorkflowStop,
+    shouldShowButtons: !!(effectiveWorkflowId && assetId && onWorkflowStart && onWorkflowStop),
+    isCurrentWorkflowStarted
+  })
 
   const handleConfirmAction = () => {
     if (!confirmDialog) {
@@ -371,12 +347,7 @@ export function WorkflowSelector({
                             style={{ backgroundColor: workflow.color }}
                           />
                           <span className="font-medium text-sm">{workflow.name}</span>
-                          {workflow.is_default && (
-                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                              Default
-                            </span>
-                          )}
-                          {workflow.is_public && !workflow.is_default && (
+                          {workflow.is_public && (
                             <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">
                               Public
                             </span>
@@ -393,9 +364,6 @@ export function WorkflowSelector({
                           </p>
                         )}
                       </div>
-                      {workflow.id === currentWorkflowId && (
-                        <div className="text-xs text-blue-600 font-medium">Current</div>
-                      )}
                     </div>
                   </button>
                 ))}

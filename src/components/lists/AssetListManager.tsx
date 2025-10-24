@@ -87,35 +87,50 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
     queryFn: async () => {
       if (!user?.id) return []
 
-      let query = supabase
-        .from('lists')
+      // Fetch lists created by user
+      let ownedQuery = supabase
+        .from('asset_lists')
         .select(`
           *,
-          list_items(id)
+          asset_list_items(id)
         `)
         .eq('created_by', user.id)
 
-      // Filter by type if specified
-      if (filterType) {
-        query = query.eq('type', filterType)
-      }
+      const { data: ownedLists, error: ownedError } = await ownedQuery.order('created_at', { ascending: false })
 
-      query = query
-        .order('created_at', { ascending: false })
+      if (ownedError) throw ownedError
 
-      const { data, error } = await query
-      
-      if (error) throw error
-      
-      const listsWithCounts = (data || []).map(list => ({
+      // Fetch lists shared with user via collaborations
+      const { data: collaborations, error: collabError } = await supabase
+        .from('asset_list_collaborations')
+        .select(`
+          list_id,
+          permission,
+          asset_lists (
+            *,
+            asset_list_items(id)
+          )
+        `)
+        .eq('user_id', user.id)
+
+      if (collabError) throw collabError
+
+      // Combine owned and shared lists
+      const sharedLists = (collaborations || [])
+        .map(collab => collab.asset_lists)
+        .filter(Boolean)
+
+      const allLists = [...(ownedLists || []), ...sharedLists]
+
+      const listsWithCounts = allLists.map(list => ({
         ...list,
-        item_count: list.list_items?.length || 0
+        item_count: list.asset_list_items?.length || 0
       })) as AssetList[]
 
       // If we have a selected asset, check which lists already contain it
       if (selectedAssetId) {
         const { data: existingItems } = await supabase
-          .from('list_items')
+          .from('asset_list_items')
           .select('list_id')
           .eq('asset_id', selectedAssetId)
 
@@ -126,7 +141,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           isAdded: existingListIds.has(list.id)
         }))
       }
-      
+
       return listsWithCounts
     },
     enabled: isOpen
@@ -136,12 +151,11 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const createListMutation = useMutation({
     mutationFn: async ({ name, description, color }: { name: string; description: string; color: string }) => {
       const { error } = await supabase
-        .from('lists')
+        .from('asset_lists')
         .insert([{
           name,
           description,
           color,
-          type: filterType || 'list',
           created_by: user?.id
         }])
 
@@ -160,7 +174,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const updateListMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
       const { error } = await supabase
-        .from('lists')
+        .from('asset_lists')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
 
@@ -176,7 +190,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const deleteListMutation = useMutation({
     mutationFn: async (listId: string) => {
       const { error } = await supabase
-        .from('lists')
+        .from('asset_lists')
         .delete()
         .eq('id', listId)
 
@@ -194,10 +208,11 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       console.log('🚀 Adding asset to list:', { listId, assetId })
 
       const { data, error } = await supabase
-        .from('list_items')
+        .from('asset_list_items')
         .insert([{
           list_id: listId,
-          asset_id: assetId
+          asset_id: assetId,
+          added_by: user?.id
         }])
         .select()
 

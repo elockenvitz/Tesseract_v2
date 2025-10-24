@@ -79,32 +79,8 @@ export function AssetWorkflowSelector({
     enabled: !!assetId
   })
 
-  // Query to check if current workflow is started
-  const { data: currentWorkflowStatus } = useQuery({
-    queryKey: ['current-workflow-status', assetId, currentWorkflowId],
-    queryFn: async () => {
-      if (!currentWorkflowId) return null
-
-      const { data, error } = await supabase
-        .from('asset_workflow_progress')
-        .select('is_started, is_completed')
-        .eq('asset_id', assetId)
-        .eq('workflow_id', currentWorkflowId)
-        .single()
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching current workflow status:', error)
-        return null
-      }
-
-      return data
-    },
-    enabled: !!assetId && !!currentWorkflowId
-  })
-
   const currentWorkflow = workflows?.find(w => w.id === currentWorkflowId)
   const workflowCount = workflows?.length || 0
-  const isCurrentWorkflowStarted = currentWorkflowStatus?.is_started || false
 
   const handleWorkflowSelect = (workflowId: string) => {
     onWorkflowChange(workflowId)
@@ -184,11 +160,6 @@ export function AssetWorkflowSelector({
                           style={{ backgroundColor: workflow.color }}
                         />
                         <span className="font-medium text-sm">{workflow.name}</span>
-                        {workflow.is_default && (
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                            Default
-                          </span>
-                        )}
                       </div>
                       {workflow.id === currentWorkflowId && (
                         <div className="text-xs text-blue-600 font-medium">Current</div>

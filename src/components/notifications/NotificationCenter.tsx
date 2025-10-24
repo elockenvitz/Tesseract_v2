@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User } from 'lucide-react'
+import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, UserCog, CheckCircle, XCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
@@ -18,10 +18,10 @@ interface NotificationCenterProps {
 interface Notification {
   id: string
   user_id: string
-  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change'
+  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'workflow_access_request' | 'workflow_invitation'
   title: string
   message: string
-  context_type: 'asset' | 'note' | 'portfolio' | 'theme'
+  context_type: 'asset' | 'note' | 'portfolio' | 'theme' | 'workflow'
   context_id: string
   context_data: any
   is_read: boolean
@@ -78,6 +78,93 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
     }
   })
 
+  // Approve workflow access request
+  const approveAccessRequestMutation = useMutation({
+    mutationFn: async ({ requestId, userId, workflowId, requestedPermission }: {
+      requestId: string
+      userId: string
+      workflowId: string
+      requestedPermission: 'write' | 'admin'
+    }) => {
+      // Update the request status to approved
+      const { error: requestError } = await supabase
+        .from('workflow_access_requests')
+        .update({
+          status: 'approved',
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq('id', requestId)
+
+      if (requestError) throw requestError
+
+      // Check if user already has a collaboration entry
+      const { data: existing } = await supabase
+        .from('workflow_collaborations')
+        .select('id')
+        .eq('workflow_id', workflowId)
+        .eq('user_id', userId)
+        .single()
+
+      if (existing) {
+        // Update existing collaboration
+        const { error: updateError } = await supabase
+          .from('workflow_collaborations')
+          .update({
+            permission: requestedPermission,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id)
+
+        if (updateError) throw updateError
+      } else {
+        // Create new collaboration
+        const { error: insertError } = await supabase
+          .from('workflow_collaborations')
+          .insert({
+            workflow_id: workflowId,
+            user_id: userId,
+            permission: requestedPermission,
+            invited_by: user?.id
+          })
+
+        if (insertError) throw insertError
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      alert('Access request approved!')
+    },
+    onError: (error) => {
+      console.error('Error approving access request:', error)
+      alert('Failed to approve access request. Please try again.')
+    }
+  })
+
+  // Deny workflow access request
+  const denyAccessRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      const { error } = await supabase
+        .from('workflow_access_requests')
+        .update({
+          status: 'denied',
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq('id', requestId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      alert('Access request denied.')
+    },
+    onError: (error) => {
+      console.error('Error denying access request:', error)
+      alert('Failed to deny access request. Please try again.')
+    }
+  })
+
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'asset_field_change':
@@ -89,6 +176,10 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
       case 'note_shared':
       case 'note_created':
         return <FileText className="h-4 w-4 text-purple-600" />
+      case 'workflow_access_request':
+        return <UserCog className="h-4 w-4 text-orange-600" />
+      case 'workflow_invitation':
+        return <User className="h-4 w-4 text-blue-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -105,6 +196,10 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
       case 'note_shared':
       case 'note_created':
         return 'purple'
+      case 'workflow_access_request':
+        return 'warning'
+      case 'workflow_invitation':
+        return 'secondary'
       default:
         return 'default'
     }
@@ -255,9 +350,10 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                 {filteredNotifications.map((notification) => (
                   <div
                     key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
+                    onClick={() => notification.type !== 'workflow_access_request' && handleNotificationClick(notification)}
                     className={clsx(
-                      'p-4 hover:bg-gray-50 cursor-pointer transition-colors relative',
+                      'p-4 transition-colors relative',
+                      notification.type !== 'workflow_access_request' && 'hover:bg-gray-50 cursor-pointer',
                       !notification.is_read && 'bg-blue-50 border-l-4 border-primary-500'
                     )}
                   >
@@ -267,7 +363,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                           {getNotificationIcon(notification.type)}
                         </div>
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-1">
                           <h4 className="text-sm font-semibold text-gray-900 truncate">
@@ -280,12 +376,57 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                             <div className="w-2 h-2 bg-primary-500 rounded-full"></div>
                           )}
                         </div>
-                        
+
                         <p className="text-sm text-gray-600 mb-2">
                           {notification.message}
                         </p>
-                        
-                        <div className="flex items-center space-x-4 text-xs text-gray-500">
+
+                        {/* Show reason for workflow access requests */}
+                        {notification.type === 'workflow_access_request' && notification.context_data?.reason && (
+                          <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                            <p className="text-xs text-gray-700">
+                              <span className="font-medium">Reason:</span> {notification.context_data.reason}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Accept/Decline buttons for workflow access requests */}
+                        {notification.type === 'workflow_access_request' && notification.context_data?.request_id && (
+                          <div className="flex items-center space-x-2 mt-3">
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                approveAccessRequestMutation.mutate({
+                                  requestId: notification.context_data.request_id,
+                                  userId: notification.context_data.user_id,
+                                  workflowId: notification.context_data.workflow_id,
+                                  requestedPermission: notification.context_data.requested_permission
+                                })
+                              }}
+                              disabled={approveAccessRequestMutation.isPending || denyAccessRequestMutation.isPending}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                denyAccessRequestMutation.mutate(notification.context_data.request_id)
+                              }}
+                              disabled={approveAccessRequestMutation.isPending || denyAccessRequestMutation.isPending}
+                              className="border-red-300 text-red-600 hover:bg-red-50"
+                            >
+                              <XCircle className="h-3 w-3 mr-1" />
+                              Decline
+                            </Button>
+                          </div>
+                        )}
+
+                        <div className="flex items-center space-x-4 text-xs text-gray-500 mt-2">
                           <div className="flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
                             {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
@@ -298,8 +439,8 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                           )}
                         </div>
                       </div>
-                      
-                      {!notification.is_read && (
+
+                      {!notification.is_read && notification.type !== 'workflow_access_request' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()

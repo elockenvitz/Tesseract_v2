@@ -17,13 +17,17 @@ interface ThemesListPageProps {
 }
 
 export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const [showContent, setShowContent] = useState(false)
+
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [sortBy, setSortBy] = useState('created_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [showFilters, setShowFilters] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
-  
+
   // Theme creation form state
   const [newThemeName, setNewThemeName] = useState('')
   const [newThemeDescription, setNewThemeDescription] = useState('')
@@ -32,9 +36,14 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
   const [newThemeIsPublic, setNewThemeIsPublic] = useState(false)
   const [similarThemes, setSimilarThemes] = useState<any[]>([])
   const [searchingSimilar, setSearchingSimilar] = useState(false)
-  
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
+
+  // Delay showing content to prevent flash
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowContent(true)
+    }, 50) // 50ms delay to let React Query initialize
+    return () => clearTimeout(timer)
+  }, [])
   
   // Color options for theme creation
   const colorOptions = [
@@ -49,7 +58,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
   ]
 
   // Fetch themes user has access to (owned, collaborated, or has assets in)
-  const { data: themes, isLoading } = useQuery({
+  const { data: themes, isLoading, isFetching, isPending, isSuccess, dataUpdatedAt } = useQuery({
     queryKey: ['all-themes', user?.id],
     queryFn: async () => {
       if (!user?.id) return []
@@ -88,8 +97,13 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
         throw fetchError
       }
     },
-    staleTime: 0, // Always fetch fresh data
+    staleTime: 30000, // Consider data fresh for 30 seconds
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
     refetchOnWindowFocus: true, // Refetch when window regains focus
+    initialData: () => {
+      // Use cached data on mount if available
+      return queryClient.getQueryData(['all-themes', user?.id]) as any
+    },
     retry: (failureCount, error) => {
       // Don't retry on RLS policy errors
       if (error?.message?.includes('Access denied') || error?.message?.includes('policy')) {
@@ -102,7 +116,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
 
   // Filter and sort themes
   const filteredThemes = useMemo(() => {
-    if (!themes) return []
+    if (!themes) return undefined
 
     let filtered = themes.filter(theme => {
       // Search filter
@@ -316,7 +330,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">All Themes</h1>
           <p className="text-gray-600">
-            {filteredThemes.length} of {themes?.length || 0} themes
+            {filteredThemes ? `${filteredThemes.length} of ${themes?.length || 0} themes` : 'Loading...'}
           </p>
         </div>
         <Button onClick={() => setShowCreateForm(true)}>
@@ -403,7 +417,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
 
       {/* Themes List */}
       <Card padding="none">
-        {isLoading ? (
+        {!showContent || !filteredThemes ? (
           <div className="p-6">
             <div className="space-y-4">
               {[...Array(5)].map((_, i) => (
@@ -515,7 +529,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
               {themes?.length === 0 ? 'No themes yet' : 'No themes match your filters'}
             </h3>
             <p className="text-gray-500 mb-4">
-              {themes?.length === 0 
+              {themes?.length === 0
                 ? 'Start by creating your first theme to organize your research.'
                 : 'Try adjusting your search criteria or clearing filters.'
               }

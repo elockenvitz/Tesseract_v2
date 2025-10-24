@@ -50,6 +50,8 @@ export function DashboardPage() {
       }
 
       console.log('✅ Assets fetched:', data?.length || 0, 'records')
+      console.log('🔍 First asset keys:', data && data.length > 0 ? Object.keys(data[0]) : 'no data')
+      console.log('🔍 First asset:', data && data.length > 0 ? data[0] : 'no data')
       return data
     },
     staleTime: 0, // Always fetch fresh data
@@ -215,7 +217,6 @@ export function DashboardPage() {
       }
 
       const { data: workflows, error } = await query
-        .order('is_default', { ascending: false })
         .order('name')
 
       if (error) throw error
@@ -504,7 +505,7 @@ export function DashboardPage() {
       case 'theme':
         return <ThemeTab theme={activeTab.data} />
       case 'portfolio':
-        return <PortfolioTab portfolio={activeTab.data} />
+        return <PortfolioTab portfolio={activeTab.data} onNavigate={handleSearchResult} />
       default:
         return renderDashboardContent()
     }
@@ -513,17 +514,10 @@ export function DashboardPage() {
   const renderDashboardContent = () => (
     <>
       <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Investment Dashboard</h1>
-        </div>
-      </div>
-
       {/* Navigation Buttons */}
-      <div className="flex items-center space-x-4 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7 gap-3">
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'idea-generator',
             title: 'Ideas',
@@ -531,17 +525,19 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Lightbulb className="h-6 w-6 text-purple-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Ideas</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">Discover insights</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Ideas</div>
+              <div className="text-xs text-gray-500">Discover insights</div>
+            </div>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'workflows',
             title: 'Workflows',
@@ -549,17 +545,19 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Workflow className="h-6 w-6 text-blue-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Workflows</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">Manage processes</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Workflows</div>
+              <div className="text-xs text-gray-500">Manage processes</div>
+            </div>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'assets-list',
             title: 'All Assets',
@@ -567,17 +565,19 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <TrendingUp className="h-6 w-6 text-primary-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Assets</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">Investment ideas</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Assets</div>
+              <div className="text-xs text-gray-500">Investment ideas</div>
+            </div>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'portfolios-list',
             title: 'All Portfolios',
@@ -585,17 +585,19 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-success-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-success-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Briefcase className="h-6 w-6 text-success-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Portfolios</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">Track performance</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Portfolios</div>
+              <div className="text-xs text-gray-500">Track performance</div>
+            </div>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'themes-list',
             title: 'All Themes',
@@ -603,17 +605,19 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Tag className="h-6 w-6 text-indigo-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Themes</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">Organize by topic</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Themes</div>
+              <div className="text-xs text-gray-500">Organize by topic</div>
+            </div>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'notes-list',
             title: 'All Notes',
@@ -621,17 +625,19 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <FileText className="h-6 w-6 text-slate-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Notes</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">All your notes</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Notes</div>
+              <div className="text-xs text-gray-500">All your notes</div>
+            </div>
           </div>
         </Card>
 
         <Card
-          className="hover:shadow-md transition-shadow cursor-pointer flex-shrink-0 w-36"
+          className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
             id: 'lists',
             title: 'Asset Lists',
@@ -639,401 +645,199 @@ export function DashboardPage() {
             data: null
           })}
         >
-          <div className="flex flex-col items-center p-4">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <List className="h-6 w-6 text-purple-600" />
             </div>
-            <span className="text-gray-900 font-semibold text-center">Lists</span>
-            <span className="text-gray-500 text-xs mt-1 text-center">Organize assets</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Lists</div>
+              <div className="text-xs text-gray-500">Organize assets</div>
+            </div>
           </div>
         </Card>
       </div>
 
-      {/* Active Workflows */}
-      <Card>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Active Workflows</h2>
-            <p className="text-sm text-gray-500">All available workflows with usage statistics</p>
+      {/* Curated Content Sections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Priority Assets */}
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Priority Assets</h2>
+            <p className="text-sm text-gray-500">High-priority items needing your attention</p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-primary-600 hover:text-primary-700"
-            onClick={() => handleSearchResult({
-              id: 'workflows',
-              title: 'Workflows',
-              type: 'workflows',
-              data: null
-            })}
-          >
-            Manage workflows →
-          </Button>
-        </div>
-
-        {workflowsLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="h-32 bg-gray-200 rounded-lg"></div>
-              </div>
-            ))}
-          </div>
-        ) : workflows && workflows.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {workflows.map((workflow) => (
-              <div
-                key={workflow.id}
-                className="relative p-4 border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-md transition-all duration-200 cursor-pointer"
-                onClick={() => handleSearchResult({
-                  id: 'workflows',
-                  title: 'Workflows',
-                  type: 'workflows',
-                  data: { selectedWorkflowId: workflow.id }
-                })}
-              >
-                {/* Header with color indicator and default badge */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <div
-                      className="w-4 h-4 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: workflow.color }}
-                    />
-                    <h3 className="font-semibold text-gray-900 truncate flex-1">
-                      {workflow.name}
-                    </h3>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    {workflow.is_default && (
-                      <div className="text-yellow-500">
-                        <Star className="w-4 h-4 fill-current" />
-                      </div>
-                    )}
-                    {workflow.is_public && (
-                      <Badge variant="secondary" size="sm">
-                        Public
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                {/* Description */}
-                {workflow.description && (
-                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                    {workflow.description}
-                  </p>
-                )}
-
-                {/* Statistics */}
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-blue-50 rounded-lg p-2">
-                    <div className="text-lg font-semibold text-blue-600">
-                      {workflow.usage_count || 0}
-                    </div>
-                    <div className="text-xs text-blue-600 font-medium">
-                      Total
-                    </div>
-                  </div>
-                  <div className="bg-green-50 rounded-lg p-2">
-                    <div className="text-lg font-semibold text-green-600">
-                      {workflow.active_assets || 0}
-                    </div>
-                    <div className="text-xs text-green-600 font-medium">
-                      Active
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-2">
-                    <div className="text-lg font-semibold text-gray-600">
-                      {workflow.completed_assets || 0}
-                    </div>
-                    <div className="text-xs text-gray-600 font-medium">
-                      Done
-                    </div>
-                  </div>
-                </div>
-
-                {/* Cadence info */}
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="w-3 h-3" />
-                      <span>{workflow.cadence_days} day cycle</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Activity className="w-3 h-3" />
-                      <span>
-                        {workflow.active_assets > 0
-                          ? `${Math.round((workflow.completed_assets / workflow.usage_count) * 100) || 0}% complete`
-                          : 'Ready to use'
-                        }
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Workflow className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No workflows available</h3>
-            <p className="text-gray-500 mb-4">Create your first workflow to start tracking your investment process.</p>
-            <Button
-              onClick={() => handleSearchResult({
-                id: 'workflows',
-                title: 'Workflows',
-                type: 'workflows',
-                data: null
-              })}
-            >
-              Create Workflow
-            </Button>
-          </div>
-        )}
-      </Card>
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Recent Assets - Takes 2 columns on xl screens */}
-        <div className="xl:col-span-2">
-          <Card>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Recent Assets</h2>
-              <p className="text-sm text-gray-500">Your latest investment ideas</p>
-            </div>
-            <Button variant="ghost" size="sm" className="text-primary-600 hover:text-primary-700">
-              <span onClick={() => handleSearchResult({
-                id: 'assets-list',
-                title: 'All Assets',
-                type: 'assets-list',
-                data: null
-              })}>
-                View all →
-              </span>
-            </Button>
-          </div>
-          
-          {assetsLoading ? (
-            <div className="space-y-3">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              ))}
-            </div>
-          ) : assets && assets.length > 0 ? (
-            <div className="space-y-4">
-              {assets.map((asset) => (
-                <div 
-                  key={asset.id} 
-                  className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 cursor-pointer"
-                  onClick={() => handleSearchResult({
-                    id: asset.id,
-                    title: asset.symbol,
-                    type: 'asset',
-                    data: asset
-                  })}
-                >
-                  <div className="flex items-center space-x-4 flex-1">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h3 className="font-semibold text-gray-900">{asset.symbol}</h3>
+          <div className="space-y-3">
+            {assets && assets.length > 0 ? (
+              assets
+                .filter(asset => asset.priority === 'high' || asset.priority === 'medium')
+                .slice(0, 5)
+                .map(asset => (
+                  <div
+                    key={asset.id}
+                    onClick={() => handleSearchResult({
+                      id: asset.id,
+                      title: asset.symbol,
+                      type: 'asset',
+                      data: asset
+                    })}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-semibold text-gray-900">{asset.symbol}</span>
                         <PriorityBadge priority={asset.priority} />
                       </div>
                       <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>
-                      <p className="text-xs text-gray-500">
-                        Updated {formatDistanceToNow(new Date(asset.updated_at || 0), { addSuffix: true })}
-                      </p>
+                    </div>
+                    {financialData?.[asset.symbol] && (
+                      <div className="text-right ml-4">
+                        <div className="font-semibold text-gray-900">
+                          ${financialData[asset.symbol].price?.toFixed(2)}
+                        </div>
+                        <div className={`text-sm flex items-center justify-end ${
+                          financialData[asset.symbol].changePercent >= 0 ? 'text-success-600' : 'text-error-600'
+                        }`}>
+                          {financialData[asset.symbol].changePercent >= 0 ? (
+                            <ArrowUpRight className="h-3 w-3 mr-1" />
+                          ) : (
+                            <ArrowDownRight className="h-3 w-3 mr-1" />
+                          )}
+                          {Math.abs(financialData[asset.symbol].changePercent).toFixed(2)}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Target className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-sm">No priority assets yet</p>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Active Workflows */}
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Active Workflows</h2>
+            <p className="text-sm text-gray-500">Workflows currently in progress</p>
+          </div>
+          <div className="space-y-3">
+            {workflows && workflows.length > 0 ? (
+              workflows
+                .filter(wf => wf.active_assets && wf.active_assets > 0)
+                .slice(0, 5)
+                .map(workflow => (
+                  <div
+                    key={workflow.id}
+                    className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-gray-900">{workflow.name}</span>
+                    </div>
+                    <div className="flex items-center space-x-4 text-sm text-gray-600">
+                      <div className="flex items-center space-x-1">
+                        <Activity className="h-4 w-4" />
+                        <span>{workflow.active_assets} active</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <Target className="h-4 w-4" />
+                        <span>{workflow.completed_assets} completed</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    {(() => {
-                      const quote = financialData?.[asset.symbol]
-
-                      // Show colored pulse animation while loading
-                      if (financialDataLoading) {
-                        return (
-                          <div className="animate-pulse">
-                            <div className="h-6 bg-primary-200 rounded w-16 mb-1"></div>
-                            <div className="h-4 bg-primary-200 rounded w-12"></div>
-                          </div>
-                        )
-                      }
-
-                      // Show dashes when no data available
-                      if (!quote) {
-                        return (
-                          <div className="text-gray-400 text-sm">
-                            <p className="text-lg font-semibold">--</p>
-                            <div className="text-sm">--</div>
-                          </div>
-                        )
-                      }
-
-                      const isPositive = quote.change >= 0
-                      const changeColor = isPositive ? 'text-success-600' : 'text-red-600'
-                      const ChangeIcon = isPositive ? ArrowUpRight : ArrowDownRight
-
-                      return (
-                        <>
-                          <p className="text-lg font-semibold text-gray-900">
-                            ${quote.price.toFixed(2)}
-                          </p>
-                          <div className={`flex items-center ${changeColor} text-sm`}>
-                            <ChangeIcon className="h-3 w-3 mr-1" />
-                            {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
-                          </div>
-                        </>
-                      )
-                    })()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <TrendingUp className="h-8 w-8 text-gray-400" />
+                ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Workflow className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-sm">No active workflows</p>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No assets yet</h3>
-              <p className="text-gray-500 mb-4">Start by adding your first investment idea.</p>
-            </div>
-          )}
-          </Card>
-        </div>
+            )}
+          </div>
+        </Card>
 
         {/* Recent Notes */}
         <Card>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Recent Notes</h2>
-              <p className="text-sm text-gray-500">Latest research</p>
-            </div>
-            <Button variant="ghost" size="sm" className="text-primary-600 hover:text-primary-700">
-              <span onClick={() => handleSearchResult({
-                id: 'notes-list',
-                title: 'All Notes',
-                type: 'notes-list',
-                data: null
-              })}>
-                View all →
-              </span>
-            </Button>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Recent Notes</h2>
+            <p className="text-sm text-gray-500">Your latest research and insights</p>
           </div>
-          
-          {notesLoading ? (
-            <div className="space-y-3">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              ))}
-            </div>
-          ) : notes && notes.length > 0 ? (
-            <div className="space-y-4">
-              {notes.map((note) => (
+          <div className="space-y-3">
+            {notes && notes.length > 0 ? (
+              notes.slice(0, 5).map((note: any) => (
                 <div
                   key={note.id}
-                  className="p-4 border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 cursor-pointer"
-                  onClick={async () => {
-                    // Navigate to the entity page with note selected
-                    let entityId = null
-                    let entityTitle = null
-                    let entityType = null
-                    let entityData = null
-
-                    if (note.type === 'asset' && note.asset_id) {
-                      entityId = note.asset_id
-                      entityTitle = note.assets?.symbol || 'Asset'
-                      entityType = 'asset'
-                      entityData = note.assets
-                    } else if (note.type === 'portfolio' && note.portfolio_id) {
-                      entityId = note.portfolio_id
-                      entityTitle = note.portfolios?.name || 'Portfolio'
-                      entityType = 'portfolio'
-                      entityData = note.portfolios
-                    } else if (note.type === 'theme' && note.theme_id) {
-                      entityId = note.theme_id
-                      entityTitle = note.themes?.name || 'Theme'
-                      entityType = 'theme'
-                      entityData = note.themes
-                    }
-
-                    if (entityId && entityType && entityData) {
-                      console.log('📝 Dashboard: Navigating to entity with note:', {
-                        entityId,
-                        entityType,
-                        noteId: note.id,
-                        noteTitle: note.title
-                      })
-                      handleSearchResult({
-                        id: entityId,
-                        title: entityTitle,
-                        type: entityType,
-                        data: { ...entityData, noteId: note.id }
-                      })
-                    }
-                  }}
+                  className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
                 >
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900 truncate">{note.title}</h3>
-                    <div className="flex items-center space-x-2">
-                      {(() => {
-                        let entityName = null
-                        if (note.type === 'asset' && note.assets?.symbol) {
-                          entityName = note.assets.symbol
-                        } else if (note.type === 'portfolio' && note.portfolios?.name) {
-                          entityName = note.portfolios.name
-                        } else if (note.type === 'theme' && note.themes?.name) {
-                          entityName = note.themes.name
-                        } else if (note.type === 'custom' && note.custom_notebooks?.name) {
-                          entityName = note.custom_notebooks.name
-                        }
-
-                        return entityName ? (
-                          <Badge variant="secondary" size="sm">
-                            {entityName}
-                          </Badge>
-                        ) : null
-                      })()}
-                      {note.note_type && (
-                        <Badge variant="default" size="sm">
-                          {note.note_type}
-                        </Badge>
-                      )}
-                      {note.is_shared && (
-                        <Badge variant="primary" size="sm">
-                          Shared
-                        </Badge>
-                      )}
-                    </div>
+                  <div className="flex items-start justify-between mb-1">
+                    <span className="font-medium text-gray-900 text-sm">
+                      {note.type === 'asset' ? note.assets?.symbol :
+                       note.type === 'portfolio' ? note.portfolios?.name :
+                       note.type === 'theme' ? note.themes?.name :
+                       note.custom_notebooks?.name}
+                    </span>
+                    <Badge variant="outline" size="sm">{note.type}</Badge>
                   </div>
-                  <p className="text-sm text-gray-600 mt-2 line-clamp-2">
-                    {note.content.substring(0, 100)}...
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
-                  </p>
+                  <p className="text-xs text-gray-600 line-clamp-2">{note.content}</p>
+                  <div className="flex items-center space-x-1 mt-2 text-xs text-gray-500">
+                    <Clock className="h-3 w-3" />
+                    <span>{formatDistanceToNow(new Date(note.updated_at), { addSuffix: true })}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileText className="h-8 w-8 text-gray-400" />
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-sm">No recent notes</p>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No notes yet</h3>
-              <p className="text-gray-500 mb-4">Start documenting your research.</p>
+            )}
+          </div>
+        </Card>
+
+        {/* Quick Stats */}
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Your Research</h2>
+            <p className="text-sm text-gray-500">Overview of your activity</p>
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-primary-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+                  <TrendingUp className="h-5 w-5 text-primary-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Total Assets</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats?.assets || 0}</p>
+                </div>
+              </div>
             </div>
-          )}
+            <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Total Notes</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats?.notes || 0}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-success-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-success-100 rounded-lg flex items-center justify-center">
+                  <Target className="h-5 w-5 text-success-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Price Targets</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats?.priceTargets || 0}</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </Card>
       </div>
-      </div>
+      </div> {/* End space-y-6 */}
     </>
   )
 

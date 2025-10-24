@@ -73,7 +73,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   const [stage, setStage] = useState(mapToTimelineStage(asset.process_stage))
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage' | 'lists'>('thesis')
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage' | 'lists'>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.activeTab || 'thesis'
+  })
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [showNoteEditor, setShowNoteEditor] = useState(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -105,21 +108,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const risksRef = useRef<EditableSectionWithHistoryRef>(null)
 
 
-  // Fetch full asset data if sector is missing
+  // Fetch full asset data if id or sector is missing
   const { data: fullAsset } = useQuery({
-    queryKey: ['asset-full-data', asset.id],
+    queryKey: ['asset-full-data', asset.id, asset.symbol],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Query by id if available, otherwise use symbol
+      let query = supabase
         .from('assets')
-        .select('sector')
-        .eq('id', asset.id)
-        .single()
+        .select('*')
+
+      if (asset.id) {
+        query = query.eq('id', asset.id)
+      } else if (asset.symbol) {
+        query = query.eq('symbol', asset.symbol)
+      } else {
+        throw new Error('No asset id or symbol available')
+      }
+
+      const { data, error } = await query.single()
 
       if (error) throw error
       return data
     },
-    enabled: !asset.sector && !!asset.id
+    enabled: (!asset.id || !asset.sector) && (!!asset.id || !!asset.symbol)
   })
+
+  // Create effective asset with full data merged in
+  const effectiveAsset = fullAsset ? { ...asset, ...fullAsset } : asset
 
   // Fetch workflow-specific priority
   const { data: workflowPriority } = useQuery({
@@ -184,14 +199,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }, [asset.id])
 
   // Handle noteId from navigation (e.g., from dashboard note click)
+  // Only auto-switch to notes tab when noteId is present AND it's different from current selection
+  // This prevents the tab from switching back to notes when user manually navigates to other tabs
   useEffect(() => {
-    if (asset.noteId && asset.id) {
+    if (asset.noteId && asset.id && asset.noteId !== selectedNoteId) {
       console.log('📝 AssetTab: Opening note from navigation:', asset.noteId)
       setActiveTab('notes')
       setShowNoteEditor(true)
       setSelectedNoteId(asset.noteId)
     }
-  }, [asset.id, asset.noteId])
+  }, [asset.id, asset.noteId, selectedNoteId])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
@@ -385,21 +402,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .single()
 
       if (error || !workflowProgress) {
-        console.log(`🔍 AssetTab: No active workflow progress, fetching default workflow`)
-        // No active workflow progress, fetch and return the default workflow
-        const { data: defaultWorkflow, error: defaultError } = await supabase
-          .from('workflows')
-          .select('id')
-          .eq('is_default', true)
+        console.log(`🔍 AssetTab: No active workflow progress, fetching most recent workflow`)
+        // No active workflow progress, fetch and return the most recently worked on workflow
+        const { data: recentWorkflow, error: recentError } = await supabase
+          .from('asset_workflow_progress')
+          .select('workflow_id')
+          .eq('asset_id', asset.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .single()
 
-        if (defaultError || !defaultWorkflow) {
-          console.log(`❌ AssetTab: No default workflow found`)
+        if (recentError || !recentWorkflow) {
+          console.log(`❌ AssetTab: No workflow history found for this asset`)
           return null
         }
 
-        console.log(`✅ AssetTab: Using default workflow: ${defaultWorkflow.id}`)
-        return defaultWorkflow.id
+        console.log(`✅ AssetTab: Using most recent workflow: ${recentWorkflow.workflow_id}`)
+        return recentWorkflow.workflow_id
       }
 
       console.log(`✅ AssetTab: Using active workflow progress: ${workflowProgress.workflow_id}`)
@@ -655,7 +674,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   const handleWorkflowChange = async (workflowId: string) => {
-    console.log(`🔄 Switching workflow for asset ${asset.symbol} (${asset.id}) to workflow ${workflowId}`)
+    console.log(`🔄 Switching workflow for asset ${asset.symbol} (${effectiveAsset.id}) to workflow ${workflowId}`)
     setHasLocalChanges(true)
 
     // Clear the viewing stage initially to prevent showing stale information from previous workflow
@@ -673,7 +692,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         supabase
           .from('asset_workflow_progress')
           .select('current_stage_key, is_started')
-          .eq('asset_id', asset.id)
+          .eq('asset_id', effectiveAsset.id)
           .eq('workflow_id', workflowId)
           .single()
       ])
@@ -721,19 +740,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       })
 
       // Invalidate the effective workflow query to update the UI immediately
-      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
     } catch (error) {
       console.error('Error in handleWorkflowChange:', error)
       // Fallback to just updating workflow
       asset.workflow_id = workflowId
       updateAssetMutation.mutate({ workflow_id: workflowId })
       // Invalidate the effective workflow query to update the UI immediately
-      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
     }
   }
 
   const handleWorkflowStart = async (workflowId: string) => {
-    console.log(`🔴 AssetTab: handleWorkflowStart called for asset ${asset.symbol} (${asset.id}) in workflow ${workflowId}`)
+    console.log(`🔴 AssetTab: handleWorkflowStart called for asset ${asset.symbol} (${effectiveAsset.id}) in workflow ${workflowId}`)
 
     try {
       // Get the first stage of the workflow
@@ -756,7 +775,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       // Create/update workflow progress as started
       const progressData = {
-        asset_id: asset.id,
+        asset_id: effectiveAsset.id,
         workflow_id: workflowId,
         current_stage_key: firstStageKey,
         is_started: true,
@@ -783,10 +802,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         await queryClient.invalidateQueries({ queryKey: ['asset-workflows-progress'] })
         await queryClient.invalidateQueries({ queryKey: ['idea-generator-data'] })
         // Invalidate ALL workflow status queries for this asset, not just this specific workflow
-        await queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id] })
-        await queryClient.invalidateQueries({ queryKey: ['current-workflow-status', asset.id, workflowId] })
-        await queryClient.invalidateQueries({ queryKey: ['default-workflow-status'] })
-        await queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id] })
+        await queryClient.invalidateQueries({ queryKey: ['current-workflow-status', effectiveAsset.id] })
+        await queryClient.invalidateQueries({ queryKey: ['current-workflow-status', effectiveAsset.id, workflowId] })
+        await queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', effectiveAsset.id] })
         await queryClient.invalidateQueries({ queryKey: ['workflows-all'] })
         // Force refetch of workflow status
         await queryClient.refetchQueries({ queryKey: ['current-workflow-status'] })
@@ -798,7 +816,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   const handleWorkflowStop = async (workflowId: string) => {
-    console.log(`⏸️ AssetTab: handleWorkflowStop called for asset ${asset.symbol} (${asset.id}) in workflow ${workflowId}`)
+    console.log(`⏸️ AssetTab: handleWorkflowStop called for asset ${asset.symbol} (${effectiveAsset.id}) in workflow ${workflowId}`)
 
     try {
       const now = new Date().toISOString()
@@ -810,7 +828,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           is_started: false,
           updated_at: now
         })
-        .eq('asset_id', asset.id)
+        .eq('asset_id', effectiveAsset.id)
         .eq('workflow_id', workflowId)
 
       if (progressError) {
@@ -821,13 +839,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       console.log(`✅ Workflow stopped successfully for asset ${asset.symbol} in workflow ${workflowId}`)
 
       // Immediately update the cache with the new status
-      queryClient.setQueryData(['current-workflow-status', asset.id, workflowId], {
-        is_started: false,
-        is_completed: false
-      })
-
-      // Also update default workflow status cache if this is the default
-      queryClient.setQueryData(['default-workflow-status', asset.id, workflowId], {
+      queryClient.setQueryData(['current-workflow-status', effectiveAsset.id, workflowId], {
         is_started: false,
         is_completed: false
       })
@@ -1105,7 +1117,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
           {/* Workflow Selector */}
           <AssetWorkflowSelector
-            assetId={asset.id}
+            assetId={effectiveAsset.id}
             currentWorkflowId={effectiveWorkflowId}
             onWorkflowChange={handleWorkflowChange}
             onWorkflowStart={handleWorkflowStart}
@@ -1570,31 +1582,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           ))}
 
-          {activeTab === 'stage' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                {showTimelineView ? (
-                  <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
-                ) : (
-                  <WorkflowSelector
-                    currentWorkflowId={effectiveWorkflowId}
-                    assetId={asset.id}
-                    onWorkflowChange={handleWorkflowChange}
-                    onWorkflowStart={handleWorkflowStart}
-                    onWorkflowStop={handleWorkflowStop}
-                    onManageWorkflows={() => setShowWorkflowManager(true)}
-                    onViewAllWorkflows={() => {
-                      if (onNavigate) {
-                        onNavigate({
-                          id: 'workflows',
-                          title: 'Workflows',
-                          type: 'workflows',
-                          data: null
-                        })
-                      }
-                    }}
-                  />
-                )}
+          {activeTab === 'stage' && (() => {
+            console.log('🔍 AssetTab Stage - asset.id:', asset.id, 'effectiveAsset.id:', effectiveAsset.id, 'typeof effectiveAsset.id:', typeof effectiveAsset.id)
+            return (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  {showTimelineView ? (
+                    <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
+                  ) : (
+                    <WorkflowSelector
+                      currentWorkflowId={effectiveWorkflowId}
+                      assetId={effectiveAsset.id}
+                      onWorkflowChange={handleWorkflowChange}
+                      onWorkflowStart={handleWorkflowStart}
+                      onWorkflowStop={handleWorkflowStop}
+                      onManageWorkflows={() => setShowWorkflowManager(true)}
+                      onViewAllWorkflows={() => {
+                        if (onNavigate) {
+                          onNavigate({
+                            id: 'workflows',
+                            title: 'Workflows',
+                            type: 'workflows',
+                            data: null
+                          })
+                        }
+                      }}
+                    />
+                  )}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => {
@@ -1744,7 +1758,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </div>
               ) : showTimelineView ? (
                 <AssetTimelineView
-                  assetId={asset.id}
+                  assetId={effectiveAsset.id}
                   assetSymbol={asset.symbol}
                   workflowId={effectiveWorkflowId}
                   isOpen={true}
@@ -1757,7 +1771,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   onStageChange={handleStageChange}
                   onStageClick={handleTimelineStageClick}
                   assetSymbol={asset.symbol}
-                  assetId={asset.id}
+                  assetId={effectiveAsset.id}
                   viewingStageId={viewingStageId}
                   onViewingStageChange={setViewingStageId}
                   workflowId={effectiveWorkflowId}
@@ -1766,14 +1780,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 />
               )}
             </div>
-          )}
+            )
+          })()}
 
           {activeTab === 'lists' && (
             <div className="space-y-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Lists & Collections</h3>
-              </div>
-
               <>
                   {(() => {
                     const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
@@ -1788,7 +1799,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         {/* Lists Section */}
                         <div className="pb-8 border-b border-gray-200">
                           <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                            <h4
+                              onClick={() => {
+                                if (onNavigate) {
+                                  onNavigate({
+                                    id: 'lists',
+                                    title: 'Lists',
+                                    type: 'lists',
+                                    data: null
+                                  })
+                                }
+                              }}
+                              className="text-sm font-semibold text-gray-700 uppercase tracking-wide hover:text-primary-600 cursor-pointer transition-colors"
+                            >
                               Lists
                             </h4>
                             <AddToListButton assetId={asset.id} />
@@ -1826,7 +1849,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         {/* Themes Section */}
                         <div className="pb-8 border-b border-gray-200">
                           <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                            <h4
+                              onClick={() => {
+                                if (onNavigate) {
+                                  onNavigate({
+                                    id: 'themes-list',
+                                    title: 'All Themes',
+                                    type: 'themes-list',
+                                    data: null
+                                  })
+                                }
+                              }}
+                              className="text-sm font-semibold text-gray-700 uppercase tracking-wide hover:text-primary-600 cursor-pointer transition-colors"
+                            >
                               Themes
                             </h4>
                             <AddToThemeButton assetId={asset.id} />
@@ -1869,7 +1904,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         {/* Portfolios Section */}
                         <div>
                           <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                            <h4
+                              onClick={() => {
+                                if (onNavigate) {
+                                  onNavigate({
+                                    id: 'portfolios-list',
+                                    title: 'All Portfolios',
+                                    type: 'portfolios-list',
+                                    data: null
+                                  })
+                                }
+                              }}
+                              className="text-sm font-semibold text-gray-700 uppercase tracking-wide hover:text-primary-600 cursor-pointer transition-colors"
+                            >
                               Portfolios
                             </h4>
                             <AddToQueueButton assetId={asset.id} />

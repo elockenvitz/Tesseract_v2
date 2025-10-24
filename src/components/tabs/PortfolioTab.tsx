@@ -48,7 +48,6 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   const [selectedDetailTopic, setSelectedDetailTopic] = useState<string | null>(null)
   const [sortColumn, setSortColumn] = useState<string>('symbol')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; assetId: string; symbol: string } | null>(null)
   const queryClient = useQueryClient()
 
   // Update local state when switching to a different portfolio
@@ -118,6 +117,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         .select(`
           *,
           assets(
+            id,
             symbol,
             company_name,
             sector,
@@ -126,6 +126,10 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             risks_to_thesis,
             priority,
             process_stage,
+            created_at,
+            updated_at,
+            created_by,
+            workflow_id,
             price_targets(type, price, timeframe, reasoning)
           )
         `)
@@ -690,20 +694,17 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        if (contextMenu?.assetId === holding.asset_id) {
-                                          setContextMenu(null)
-                                        } else {
-                                          const rect = e.currentTarget.getBoundingClientRect()
-                                          setContextMenu({
-                                            x: rect.right,
-                                            y: rect.top,
-                                            assetId: holding.asset_id,
-                                            symbol: holding.assets?.symbol || 'Unknown'
+                                        if (onNavigate && holding.assets) {
+                                          onNavigate({
+                                            id: holding.assets.id || holding.asset_id,
+                                            title: holding.assets.symbol || 'Unknown',
+                                            type: 'asset',
+                                            data: holding.assets
                                           })
                                         }
                                       }}
                                       className="p-1 hover:bg-gray-200 rounded transition-colors"
-                                      title="Options"
+                                      title="Go to Asset"
                                     >
                                       <MoreVertical className="h-4 w-4 text-gray-500" />
                                     </button>
@@ -935,40 +936,6 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                 </div>
               )}
             </div>
-          )}
-
-          {/* Context Menu */}
-          {contextMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setContextMenu(null)}
-              />
-              <div
-                className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
-                style={{
-                  left: `${contextMenu.x}px`,
-                  top: `${contextMenu.y}px`
-                }}
-              >
-                <button
-                  onClick={() => {
-                    if (onNavigate) {
-                      onNavigate({
-                        id: contextMenu.assetId,
-                        title: contextMenu.symbol,
-                        type: 'asset',
-                        data: { id: contextMenu.assetId }
-                      })
-                    }
-                    setContextMenu(null)
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  Go to Asset Page
-                </button>
-              </div>
-            </>
           )}
 
           {activeTab === 'performance' && (

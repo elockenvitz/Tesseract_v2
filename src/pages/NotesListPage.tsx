@@ -185,7 +185,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         }
       }
 
-      // Build final typed notes
+      // Build final typed notes, preserving entity data
       const allNotes: Note[] = allRaw.map((n: any) => ({
         id: n.id,
         title: n.title ?? '',
@@ -202,7 +202,11 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         source_id: n.__source_id,
         created_by_user: n.created_by ? usersMap.get(n.created_by) : undefined,
         updated_by_user: n.updated_by ? usersMap.get(n.updated_by) : undefined,
-      }))
+        // Preserve entity data for navigation
+        assets: n.assets,
+        portfolios: n.portfolios,
+        themes: n.themes,
+      } as any))
 
       return allNotes
     },
@@ -251,38 +255,32 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   }
 
   const handleNoteClick = (note: Note) => {
-    // Navigate to the entity page with the note selected
-    let entityId = note.source_id
-    let entityTitle = note.source_name
-    let entityType = note.source_type as 'asset' | 'portfolio' | 'theme'
-    let entityData = null
-
-    // Get the full entity data from the note
-    const rawNote = notes?.find(n => n.id === note.id)
-    if (rawNote) {
-      if (note.source_type === 'asset' && (rawNote as any).assets) {
-        entityData = (rawNote as any).assets
-      } else if (note.source_type === 'portfolio' && (rawNote as any).portfolios) {
-        entityData = (rawNote as any).portfolios
-      } else if (note.source_type === 'theme' && (rawNote as any).themes) {
-        entityData = (rawNote as any).themes
-      }
+    // Skip custom notebooks - they don't have a dedicated tab type
+    if (note.source_type === 'custom') {
+      return
     }
 
-    if (entityId && entityType && entityData) {
+    // Navigate to the entity page with the note selected
+    const entityId = note.source_id
+    const entityTitle = note.source_name
+    const entityType = note.source_type as 'asset' | 'portfolio' | 'theme'
+
+    // Get the full entity data from the note (we preserved it during mapping)
+    let entityData = null
+    if (note.source_type === 'asset' && (note as any).assets) {
+      entityData = (note as any).assets
+    } else if (note.source_type === 'portfolio' && (note as any).portfolios) {
+      entityData = (note as any).portfolios
+    } else if (note.source_type === 'theme' && (note as any).themes) {
+      entityData = (note as any).themes
+    }
+
+    if (entityId && entityData) {
       onNoteSelect?.({
         id: entityId,
         title: entityTitle,
         type: entityType,
         data: { ...entityData, noteId: note.id }
-      })
-    } else {
-      // Fallback to old behavior if entity data not available
-      onNoteSelect?.({
-        id: note.id,
-        title: note.title,
-        type: 'note',
-        data: note,
       })
     }
   }
