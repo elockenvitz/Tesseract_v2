@@ -9,9 +9,8 @@ export function useAuth() {
 
   const handleAuthSession = async (session: Session | null) => {
     setSession(session)
-    setUser(session?.user ?? null)
-    
-    // If user is authenticated, ensure they exist in public.users table
+
+    // If user is authenticated, fetch full profile from public.users table
     if (session?.user) {
       try {
         // Use upsert to handle user record creation/update
@@ -28,12 +27,31 @@ export function useAuth() {
         if (upsertError) {
           console.warn('Failed to upsert user record (non-blocking):', upsertError)
         }
+
+        // Fetch full user profile including coverage_admin field
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single()
+
+        if (profileError) {
+          console.warn('Failed to fetch user profile:', profileError)
+          // Fall back to auth user only
+          setUser(session.user)
+        } else {
+          // Merge auth user with profile data
+          setUser({ ...session.user, ...profile } as any)
+        }
       } catch (err) {
         console.warn('Network error handling user session (non-blocking):', err)
-        // Don't block authentication for network issues
+        // Fall back to auth user only
+        setUser(session.user)
       }
+    } else {
+      setUser(null)
     }
-    
+
     setLoading(false)
   }
 
