@@ -23,6 +23,7 @@ interface CommunicationPaneProps {
   onShowCoverageManager?: () => void
   onFocusMode?: (enable: boolean) => void
   isFocusMode?: boolean
+  onNotificationClick?: (notification: any) => void
 }
 
 export function CommunicationPane({
@@ -41,7 +42,8 @@ export function CommunicationPane({
   onContextChange,
   onShowCoverageManager,
   onFocusMode,
-  isFocusMode = false
+  isFocusMode = false,
+  onNotificationClick
 }: CommunicationPaneProps) {
 
   const handleBackToConversations = () => {
@@ -133,6 +135,7 @@ export function CommunicationPane({
             onToggle={onToggle}
             isFullscreen={isFullscreen}
             onToggleFullscreen={onToggleFullscreen}
+            onNotificationClick={onNotificationClick}
           />
         )
       default:

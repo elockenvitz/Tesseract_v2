@@ -46,6 +46,7 @@ export function Layout({
 
   const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages'>('messages')
   const [showCoverageManager, setShowCoverageManager] = useState(false)
+  const [coverageManagerView, setCoverageManagerView] = useState<'active' | 'history' | 'requests'>('active')
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
@@ -99,6 +100,26 @@ export function Layout({
       toggleCommPane()
     }
   }
+
+  const handleNotificationClick = useCallback((notification: any) => {
+    console.log('Notification clicked:', notification)
+
+    // Handle coverage_manager_requests type
+    if (notification.type === 'coverage_manager_requests') {
+      setCoverageManagerView('requests')
+      setShowCoverageManager(true)
+      // Close the comm pane
+      if (isCommPaneOpen) {
+        toggleCommPane()
+      }
+      return
+    }
+
+    // Handle other notification types...
+    if (notification.type === 'asset') {
+      onSearchResult(notification)
+    }
+  }, [isCommPaneOpen, toggleCommPane, onSearchResult])
 
   const handleFocusMode = useCallback((enable: boolean) => {
     setIsFocusMode(enable)
@@ -323,11 +344,16 @@ export function Layout({
         onShowCoverageManager={handleShowCoverageManager}
         onFocusMode={handleFocusMode}
         isFocusMode={isFocusMode}
+        onNotificationClick={handleNotificationClick}
       />
       
       <CoverageManager
         isOpen={showCoverageManager}
-        onClose={() => setShowCoverageManager(false)}
+        onClose={() => {
+          setShowCoverageManager(false)
+          setCoverageManagerView('active')
+        }}
+        initialView={coverageManagerView}
       />
       
     </div>
