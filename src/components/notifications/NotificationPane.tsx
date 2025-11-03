@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2 } from 'lucide-react'
+import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -19,7 +19,7 @@ interface NotificationPaneProps {
 interface Notification {
   id: string
   user_id: string
-  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change'
+  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request'
   title: string
   message: string
   context_type: 'asset' | 'note' | 'portfolio' | 'theme'
@@ -111,6 +111,8 @@ export function NotificationPane({
       case 'note_shared':
       case 'note_created':
         return <FileText className="h-4 w-4 text-purple-600" />
+      case 'coverage_request':
+        return <Users className="h-4 w-4 text-indigo-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -127,6 +129,8 @@ export function NotificationPane({
       case 'note_shared':
       case 'note_created':
         return 'purple'
+      case 'coverage_request':
+        return 'purple'
       default:
         return 'default'
     }
@@ -136,6 +140,18 @@ export function NotificationPane({
     // Mark as read if not already read
     if (!notification.is_read) {
       markAsReadMutation.mutate(notification.id)
+    }
+
+    // Handle coverage_request notifications by opening coverage manager
+    if (notification.type === 'coverage_request') {
+      if (onNotificationClick) {
+        onNotificationClick({
+          type: 'coverage_manager_requests',
+          id: 'coverage_manager',
+          title: 'Coverage Requests'
+        })
+      }
+      return
     }
 
     // Navigate to the related content
@@ -148,7 +164,7 @@ export function NotificationPane({
             id: notification.context_id,
             title: notification.context_data?.asset_symbol || 'Asset',
             type: 'asset',
-            data: { 
+            data: {
               id: notification.context_id,
               symbol: notification.context_data?.asset_symbol,
               company_name: notification.context_data?.asset_name
@@ -160,7 +176,7 @@ export function NotificationPane({
             id: notification.context_id,
             title: notification.title.split(': ')[1] || 'Note',
             type: 'note',
-            data: { 
+            data: {
               id: notification.context_id,
               title: notification.title.split(': ')[1] || 'Note'
             }

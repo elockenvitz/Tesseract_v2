@@ -49,23 +49,8 @@ export function Header({
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
 
-  // Fetch user details including names
-  const { data: userDetails } = useQuery({
-    queryKey: ['user-details', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null
-
-      const { data, error } = await supabase
-        .from('users')
-        .select('first_name, last_name, email')
-        .eq('id', user.id)
-        .single()
-
-      if (error) throw error
-      return data
-    },
-    enabled: !!user?.id
-  })
+  // User details are already loaded in the user object from useAuth
+  const userDetails = user as any
 
   // Check for unread direct messages (conversation_messages table only)
   const { data: hasUnreadDirectMessages, refetch: refetchDirectMessages } = useQuery({
@@ -208,16 +193,16 @@ export function Header({
     if (userDetails?.first_name && userDetails?.last_name) {
       return (userDetails.first_name[0] + userDetails.last_name[0]).toUpperCase()
     }
-    
+
     // Fallback to email-based initials
     const email = userDetails?.email || user?.email
-    if (!email) return 'U'
-    
+    if (!email) return ''
+
     const parts = email.split('@')[0].split('.')
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase()
     }
-    
+
     const name = email.split('@')[0]
     return name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase()
   }
@@ -230,16 +215,16 @@ export function Header({
     
     // Fallback to email username
     const email = userDetails?.email || user?.email
-    if (!email) return 'User'
-    
+    if (!email) return ''
+
     // Try to parse name from email if it follows firstname.lastname@domain format
     const emailParts = email.split('@')[0].split('.')
     if (emailParts.length >= 2) {
-      return emailParts.map((part: string) => 
+      return emailParts.map((part: string) =>
         part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
       ).join(' ')
     }
-    
+
     return email.split('@')[0]
   }
 

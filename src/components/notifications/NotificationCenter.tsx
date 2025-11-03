@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, UserCog, CheckCircle, XCircle } from 'lucide-react'
+import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, UserCog, CheckCircle, XCircle, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
@@ -18,7 +18,7 @@ interface NotificationCenterProps {
 interface Notification {
   id: string
   user_id: string
-  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'workflow_access_request' | 'workflow_invitation'
+  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'workflow_access_request' | 'workflow_invitation' | 'coverage_request'
   title: string
   message: string
   context_type: 'asset' | 'note' | 'portfolio' | 'theme' | 'workflow'
@@ -180,6 +180,8 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
         return <UserCog className="h-4 w-4 text-orange-600" />
       case 'workflow_invitation':
         return <User className="h-4 w-4 text-blue-600" />
+      case 'coverage_request':
+        return <Users className="h-4 w-4 text-indigo-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -200,6 +202,8 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
         return 'warning'
       case 'workflow_invitation':
         return 'secondary'
+      case 'coverage_request':
+        return 'purple'
       default:
         return 'default'
     }

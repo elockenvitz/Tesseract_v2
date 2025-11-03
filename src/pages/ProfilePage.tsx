@@ -13,26 +13,11 @@ export function ProfilePage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
-  const { user } = useAuth()
+  const { user, loading: isLoading } = useAuth()
   const queryClient = useQueryClient()
 
-  // Fetch user details
-  const { data: userDetails, isLoading } = useQuery({
-    queryKey: ['user-profile', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null
-      
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      
-      if (error) throw error
-      return data
-    },
-    enabled: !!user?.id
-  })
+  // User details are already loaded in the user object from useAuth
+  const userDetails = user as any
 
   // Update form fields when user data loads
   useState(() => {
@@ -77,15 +62,15 @@ export function ProfilePage() {
     if (userDetails?.first_name && userDetails?.last_name) {
       return (userDetails.first_name[0] + userDetails.last_name[0]).toUpperCase()
     }
-    
+
     const userEmail = userDetails?.email || user?.email
-    if (!userEmail) return 'U'
-    
+    if (!userEmail) return ''
+
     const parts = userEmail.split('@')[0].split('.')
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase()
     }
-    
+
     const name = userEmail.split('@')[0]
     return name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase()
   }
@@ -94,17 +79,17 @@ export function ProfilePage() {
     if (userDetails?.first_name && userDetails?.last_name) {
       return `${userDetails.first_name} ${userDetails.last_name}`
     }
-    
+
     const userEmail = userDetails?.email || user?.email
-    if (!userEmail) return 'User'
-    
+    if (!userEmail) return ''
+
     const emailParts = userEmail.split('@')[0].split('.')
     if (emailParts.length >= 2) {
-      return emailParts.map((part: string) => 
+      return emailParts.map((part: string) =>
         part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
       ).join(' ')
     }
-    
+
     return userEmail.split('@')[0]
   }
 
