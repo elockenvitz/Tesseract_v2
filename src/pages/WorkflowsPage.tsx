@@ -3659,37 +3659,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center space-x-2 ml-2">
-                                    {canEdit ? (
-                                      <>
-                                        <select
-                                          value={collab.permission}
-                                          onChange={(e) => {
-                                            updateCollaboratorMutation.mutate({
-                                              collaborationId: collab.id,
-                                              permission: e.target.value
-                                            })
-                                          }}
-                                          className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                          <option value="admin">Admin</option>
-                                          <option value="write">Write</option>
-                                          <option value="read">Read</option>
-                                        </select>
-                                        <button
-                                          onClick={() => {
-                                            if (confirm(`Remove ${userName} from this workflow?`)) {
-                                              removeCollaboratorMutation.mutate(collab.id)
-                                            }
-                                          }}
-                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                          title="Remove admin"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </>
-                                    ) : null}
-                                  </div>
+                                  {canEdit && (
+                                    <div className="flex items-center space-x-2 ml-2">
+                                      <button
+                                        onClick={() => {
+                                          if (confirm(`Remove ${userName} as admin from this workflow?`)) {
+                                            removeCollaboratorMutation.mutate(collab.id)
+                                          }
+                                        }}
+                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                        title="Remove admin"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )
                             })}
