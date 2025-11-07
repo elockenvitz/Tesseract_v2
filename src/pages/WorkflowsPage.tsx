@@ -3476,20 +3476,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">Team & Access Management</h3>
                       <p className="text-sm text-gray-600 mt-1">
-                        Invite users to collaborate on this workflow
+                        Manage admins, users, and stakeholders for this workflow
                       </p>
                     </div>
                     <div className="flex items-center space-x-3">
-                      {/* Invite User button */}
-                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                        <Button
-                          size="sm"
-                          onClick={() => setShowInviteModal(true)}
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Invite User
-                        </Button>
-                      )}
                       {/* Allow read and write users to request elevated permissions */}
                       {(selectedWorkflow.user_permission === 'read' || selectedWorkflow.user_permission === 'write') && (
                         <Button size="sm" variant="outline" onClick={() => setShowAccessRequestModal(true)}>
@@ -3621,6 +3611,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
                               Admins ({(workflowCollaborators?.filter((c: any) => c.permission === 'admin').length || 0) + 1})
                             </h5>
+                            {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setShowInviteModal(true)}
+                              >
+                                <Plus className="w-3 h-3 mr-1" />
+                                Add Admin
+                              </Button>
+                            )}
                           </div>
                           <div className="space-y-2">
                             {/* Creator as first admin (always) */}
@@ -3703,17 +3703,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
                                 Users ({workflowCollaborators.filter((c: any) => c.permission !== 'admin').length})
                               </h5>
-                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setShowInviteModal(true)}
-                                  disabled={selectedWorkflow.is_public}
-                                >
-                                  <Plus className="w-3 h-3 mr-1" />
-                                  Add User
-                                </Button>
-                              )}
                             </div>
                             <div className="space-y-2">
                               {workflowCollaborators.filter((c: any) => c.permission !== 'admin').map((collab: any) => {
