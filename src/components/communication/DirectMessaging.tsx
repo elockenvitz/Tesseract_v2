@@ -103,7 +103,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const { data: conversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
     queryKey: ['conversations'],
     enabled: !!user?.id && isOpen,
-    staleTime: 30000, // Consider data fresh for 30 seconds
+    staleTime: 60000, // Consider data fresh for 60 seconds to prevent refetch on view switch
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -188,16 +188,18 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       return conversationsWithMessages as Conversation[]
     },
-    refetchInterval: 10000, // Check for new messages every 10 seconds
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    refetchInterval: isOpen ? 10000 : false, // Only check for new messages when pane is open
+    refetchOnMount: false, // Don't refetch when switching back to this view
+    refetchOnWindowFocus: false, // Don't refetch on window focus
   })
 
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
     queryKey: ['conversation-messages', selectedConversationId],
     enabled: !!selectedConversationId && isOpen, // Only fetch when conversation is selected and pane is open
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    staleTime: 60000, // Consider data fresh for 60 seconds
+    refetchOnMount: false, // Don't refetch when switching back to this view
+    refetchOnWindowFocus: false, // Don't refetch on window focus
     queryFn: async () => {
       if (!selectedConversationId) return []
 

@@ -69,8 +69,9 @@ export function MessagingSection({
   const { data: recentConversations = [] } = useQuery({
     queryKey: ['recent-conversations', user?.id],
     enabled: !contextType && !contextId && !!user?.id && isOpen, // Only fetch when no context and pane is open
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    staleTime: 60000, // Consider data fresh for 60 seconds
+    refetchOnMount: false, // Don't refetch when switching back to this view
+    refetchOnWindowFocus: false, // Don't refetch on window focus
     queryFn: async () => {
       console.log('🔍 Starting recentConversations query, user:', user?.id)
       if (!user?.id) {
@@ -337,8 +338,9 @@ export function MessagingSection({
       return data
     },
     enabled: !!(contextType && contextId),
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    staleTime: 60000, // Consider data fresh for 60 seconds
+    refetchOnMount: false, // Don't refetch when switching back to this view
+    refetchOnWindowFocus: false, // Don't refetch on window focus
   })
 
   // Get reply-to message data
