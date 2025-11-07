@@ -187,6 +187,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false)
   const [workflowToPermanentlyDelete, setWorkflowToPermanentlyDelete] = useState<string | null>(null)
   const [showDeleteStageModal, setShowDeleteStageModal] = useState(false)
+  const [removeAdminConfirm, setRemoveAdminConfirm] = useState<{id: string, name: string} | null>(null)
+  const [removeStakeholderConfirm, setRemoveStakeholderConfirm] = useState<{id: string, name: string} | null>(null)
   const [stageToDelete, setStageToDelete] = useState<{ id: string, key: string, label: string } | null>(null)
   const [showDeleteRuleModal, setShowDeleteRuleModal] = useState(false)
   const [ruleToDelete, setRuleToDelete] = useState<{ id: string, name: string, type: string } | null>(null)
@@ -3662,11 +3664,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   {canEdit && (
                                     <div className="flex items-center space-x-2 ml-2">
                                       <button
-                                        onClick={() => {
-                                          if (confirm(`Remove ${userName} as admin from this workflow?`)) {
-                                            removeCollaboratorMutation.mutate(collab.id)
-                                          }
-                                        }}
+                                        onClick={() => setRemoveAdminConfirm({ id: collab.id, name: userName })}
                                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                         title="Remove admin"
                                       >
@@ -3791,11 +3789,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     {canEdit && (
                                       <div className="flex items-center space-x-2 ml-2">
                                         <button
-                                          onClick={() => {
-                                            if (confirm(`Remove ${userName} as stakeholder?`)) {
-                                              removeStakeholderMutation.mutate(stakeholder.id)
-                                            }
-                                          }}
+                                          onClick={() => setRemoveStakeholderConfirm({ id: stakeholder.id, name: userName })}
                                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                           title="Remove stakeholder"
                                         >
@@ -5082,6 +5076,50 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         cancelText="Cancel"
         variant="danger"
         isLoading={deleteRuleMutation.isPending}
+      />
+
+      {/* Remove Admin Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!removeAdminConfirm}
+        onClose={() => {
+          if (!removeCollaboratorMutation.isPending) {
+            setRemoveAdminConfirm(null)
+          }
+        }}
+        onConfirm={() => {
+          if (removeAdminConfirm) {
+            removeCollaboratorMutation.mutate(removeAdminConfirm.id)
+            setRemoveAdminConfirm(null)
+          }
+        }}
+        title="Remove Admin?"
+        message={`Are you sure you want to remove ${removeAdminConfirm?.name} as an admin from this workflow? They will lose all administrative privileges.`}
+        confirmText="Remove Admin"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={removeCollaboratorMutation.isPending}
+      />
+
+      {/* Remove Stakeholder Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!removeStakeholderConfirm}
+        onClose={() => {
+          if (!removeStakeholderMutation.isPending) {
+            setRemoveStakeholderConfirm(null)
+          }
+        }}
+        onConfirm={() => {
+          if (removeStakeholderConfirm) {
+            removeStakeholderMutation.mutate(removeStakeholderConfirm.id)
+            setRemoveStakeholderConfirm(null)
+          }
+        }}
+        title="Remove Stakeholder?"
+        message={`Are you sure you want to remove ${removeStakeholderConfirm?.name} as a stakeholder from this workflow? They will no longer have access to view this workflow.`}
+        confirmText="Remove Stakeholder"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={removeStakeholderMutation.isPending}
       />
 
       {/* Upload Template Modal */}
