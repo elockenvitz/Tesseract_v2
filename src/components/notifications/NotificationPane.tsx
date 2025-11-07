@@ -19,10 +19,10 @@ interface NotificationPaneProps {
 interface Notification {
   id: string
   user_id: string
-  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request'
+  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request' | 'workflow_access_request' | 'workflow_invitation'
   title: string
   message: string
-  context_type: 'asset' | 'note' | 'portfolio' | 'theme'
+  context_type: 'asset' | 'note' | 'portfolio' | 'theme' | 'workflow'
   context_id: string
   context_data: any
   is_read: boolean
@@ -113,6 +113,9 @@ export function NotificationPane({
         return <FileText className="h-4 w-4 text-purple-600" />
       case 'coverage_request':
         return <Users className="h-4 w-4 text-indigo-600" />
+      case 'workflow_access_request':
+      case 'workflow_invitation':
+        return <User className="h-4 w-4 text-orange-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -149,6 +152,19 @@ export function NotificationPane({
           type: 'coverage_manager_requests',
           id: 'coverage_manager',
           title: 'Coverage Requests'
+        })
+      }
+      return
+    }
+
+    // Handle workflow_access_request notifications by opening workflow Team & Admins tab
+    if (notification.type === 'workflow_access_request' && notification.context_data?.workflow_id) {
+      if (onNotificationClick) {
+        onNotificationClick({
+          type: 'workflow',
+          id: notification.context_data.workflow_id,
+          title: notification.context_data.workflow_name || 'Workflow',
+          tab: 'admins' // Open the Team & Admins tab
         })
       }
       return

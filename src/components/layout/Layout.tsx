@@ -115,6 +115,21 @@ export function Layout({
       return
     }
 
+    // Handle workflow access requests - navigate to workflow Team & Admins tab
+    if (notification.type === 'workflow' && notification.tab === 'admins') {
+      // Create a workflow search result with the tab parameter
+      onSearchResult({
+        ...notification,
+        type: 'workflow',
+        activeTab: 'admins' // Pass the tab to open
+      })
+      // Close the comm pane
+      if (isCommPaneOpen) {
+        toggleCommPane()
+      }
+      return
+    }
+
     // Handle other notification types...
     if (notification.type === 'asset') {
       onSearchResult(notification)
