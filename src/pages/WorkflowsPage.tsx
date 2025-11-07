@@ -3598,7 +3598,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <div className="flex items-center justify-between mb-3">
                             <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Created By</h5>
                           </div>
-                          <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
                             <div className="flex items-center space-x-3">
                               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
                                 <span className="text-white font-semibold text-sm">
@@ -3612,28 +3612,39 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 <div className="text-xs text-gray-500">Workflow creator</div>
                               </div>
                             </div>
-                            <Badge variant="default" size="sm" className="bg-gray-800 text-white">
-                              Owner
-                            </Badge>
                           </div>
                         </div>
 
                         {/* Admins Section */}
-                        {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission === 'admin').length > 0 && (
-                          <div className="mb-6">
-                            <div className="flex items-center justify-between mb-3">
-                              <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                                Admins ({workflowCollaborators.filter((c: any) => c.permission === 'admin').length})
-                              </h5>
+                        <div className="mb-6">
+                          <div className="flex items-center justify-between mb-3">
+                            <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                              Admins ({(workflowCollaborators?.filter((c: any) => c.permission === 'admin').length || 0) + 1})
+                            </h5>
+                          </div>
+                          <div className="space-y-2">
+                            {/* Creator as first admin (always) */}
+                            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                              <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                                  <span className="text-white font-semibold text-sm">
+                                    {selectedWorkflow.creator_name?.charAt(0).toUpperCase() || '?'}
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900 truncate">{selectedWorkflow.creator_name || 'Unknown User'}</div>
+                                  <div className="text-xs text-gray-500 truncate">Creator</div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="space-y-2">
-                              {workflowCollaborators.filter((c: any) => c.permission === 'admin').map((collab: any) => {
+
+                            {/* Other admins */}
+                            {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission === 'admin').map((collab: any) => {
                               const user = collab.user
                               const userName = user?.first_name && user?.last_name
                                 ? `${user.first_name} ${user.last_name}`
                                 : user?.email || 'Unknown User'
                               const userInitial = userName.charAt(0).toUpperCase()
-
                               const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'
 
                               return (
@@ -3650,46 +3661,40 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                                   <div className="flex items-center space-x-2 ml-2">
                                     {canEdit ? (
-                                      <select
-                                        value={collab.permission}
-                                        onChange={(e) => {
-                                          updateCollaboratorMutation.mutate({
-                                            collaborationId: collab.id,
-                                            permission: e.target.value
-                                          })
-                                        }}
-                                        className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                      >
-                                        <option value="admin">Admin</option>
-                                        <option value="write">Write</option>
-                                        <option value="read">Read</option>
-                                      </select>
-                                    ) : (
-                                      <Badge variant="secondary" size="sm" className="bg-blue-100 text-blue-700">
-                                        Admin
-                                      </Badge>
-                                    )}
-
-                                    {canEdit && (
-                                      <button
-                                        onClick={() => {
-                                          if (confirm(`Remove ${userName} from this workflow?`)) {
-                                            removeCollaboratorMutation.mutate(collab.id)
-                                          }
-                                        }}
-                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                        title="Remove admin"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    )}
+                                      <>
+                                        <select
+                                          value={collab.permission}
+                                          onChange={(e) => {
+                                            updateCollaboratorMutation.mutate({
+                                              collaborationId: collab.id,
+                                              permission: e.target.value
+                                            })
+                                          }}
+                                          className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                          <option value="admin">Admin</option>
+                                          <option value="write">Write</option>
+                                          <option value="read">Read</option>
+                                        </select>
+                                        <button
+                                          onClick={() => {
+                                            if (confirm(`Remove ${userName} from this workflow?`)) {
+                                              removeCollaboratorMutation.mutate(collab.id)
+                                            }
+                                          }}
+                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                          title="Remove admin"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </>
+                                    ) : null}
                                   </div>
                                 </div>
                               )
                             })}
-                            </div>
                           </div>
-                        )}
+                        </div>
 
                         {/* Users Section (Write and Read permissions) */}
                         {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission !== 'admin').length > 0 && (
@@ -3735,43 +3740,34 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                                     <div className="flex items-center space-x-2 ml-2">
                                       {canEdit ? (
-                                        <select
-                                          value={collab.permission}
-                                          onChange={(e) => {
-                                            updateCollaboratorMutation.mutate({
-                                              collaborationId: collab.id,
-                                              permission: e.target.value
-                                            })
-                                          }}
-                                          className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                          <option value="admin">Admin</option>
-                                          <option value="write">Write</option>
-                                          <option value="read">Read</option>
-                                        </select>
-                                      ) : (
-                                        <Badge
-                                          variant={collab.permission === 'write' ? 'outline' : 'destructive'}
-                                          size="sm"
-                                          className={collab.permission === 'write' ? 'bg-green-50 text-green-700 border-green-300' : ''}
-                                        >
-                                          {collab.permission === 'write' ? 'Write' : 'Read'}
-                                        </Badge>
-                                      )}
-
-                                      {canEdit && (
-                                        <button
-                                          onClick={() => {
-                                            if (confirm(`Remove ${userName} from this workflow?`)) {
-                                              removeCollaboratorMutation.mutate(collab.id)
-                                            }
-                                          }}
-                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                          title="Remove user"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      )}
+                                        <>
+                                          <select
+                                            value={collab.permission}
+                                            onChange={(e) => {
+                                              updateCollaboratorMutation.mutate({
+                                                collaborationId: collab.id,
+                                                permission: e.target.value
+                                              })
+                                            }}
+                                            className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                          >
+                                            <option value="admin">Admin</option>
+                                            <option value="write">Write</option>
+                                            <option value="read">Read</option>
+                                          </select>
+                                          <button
+                                            onClick={() => {
+                                              if (confirm(`Remove ${userName} from this workflow?`)) {
+                                                removeCollaboratorMutation.mutate(collab.id)
+                                              }
+                                            }}
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                            title="Remove user"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      ) : null}
                                     </div>
                                   </div>
                                 )
@@ -3819,11 +3815,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                       </div>
                                     </div>
 
-                                    <div className="flex items-center space-x-2 ml-2">
-                                      <Badge variant="success" size="sm" className="bg-green-100 text-green-700">
-                                        Stakeholder
-                                      </Badge>
-                                      {canEdit && (
+                                    {canEdit && (
+                                      <div className="flex items-center space-x-2 ml-2">
                                         <button
                                           onClick={() => {
                                             if (confirm(`Remove ${userName} as stakeholder?`)) {
@@ -3835,8 +3828,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                         >
                                           <Trash2 className="w-4 h-4" />
                                         </button>
-                                      )}
-                                    </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )
                               })}
