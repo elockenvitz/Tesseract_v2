@@ -658,9 +658,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         case 'my':
           workflowQuery = workflowQuery.eq('created_by', userId)
           break
-        case 'public':
-          workflowQuery = workflowQuery.eq('is_public', true)
-          break
         case 'shared':
           // Get shared workflow IDs first
           const { data: sharedIds } = await supabase
@@ -692,8 +689,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             .eq('user_id', userId)
 
           const allIds = allSharedIds?.map(s => s.workflow_id) || []
+          // Show only user's workflows + shared workflows (no public workflows)
           const sharedFilter = allIds.length > 0 ? `,id.in.(${allIds.join(',')})` : ''
-          workflowQuery = workflowQuery.or(`is_public.eq.true,created_by.eq.${userId}${sharedFilter}`)
+          workflowQuery = workflowQuery.or(`created_by.eq.${userId}${sharedFilter}`)
           break
       }
 
@@ -846,7 +844,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       const sharedIds = sharedArchivedIds?.map(s => s.workflow_id) || []
       const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
 
-      // Get archived workflows that user has access to
+      // Get archived workflows that user has access to (owned or shared)
       const { data: workflowData, error } = await supabase
         .from('workflows')
         .select(`
@@ -858,7 +856,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           )
         `)
         .eq('archived', true)
-        .or(`is_public.eq.true,created_by.eq.${userId}${sharedFilter}`)
+        .or(`created_by.eq.${userId}${sharedFilter}`)
         .order('archived_at', { ascending: false })
 
       console.log('🗄️ Archived workflows result:', { data: workflowData, error, count: workflowData?.length })
@@ -945,7 +943,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       const sharedIds = sharedDeletedIds?.map(s => s.workflow_id) || []
       const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
 
-      // Get deleted workflows that user has access to
+      // Get deleted workflows that user has access to (owned or shared)
       const { data: workflowData, error } = await supabase
         .from('workflows')
         .select(`
@@ -957,7 +955,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           )
         `)
         .eq('deleted', true)
-        .or(`is_public.eq.true,created_by.eq.${userId}${sharedFilter}`)
+        .or(`created_by.eq.${userId}${sharedFilter}`)
         .order('deleted_at', { ascending: false })
 
       console.log('🗑️ Deleted workflows result:', { data: workflowData, error, count: workflowData?.length })
@@ -1686,7 +1684,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           description: sourceWorkflow.description,
           color: sourceWorkflow.color,
           cadence_days: sourceWorkflow.cadence_days,
-          is_public: sourceWorkflow.is_public,
+          is_public: false, // Always private - users must be explicitly invited
           created_by: userId,
           parent_workflow_id: workflowId,
           branch_suffix: branchSuffix,
@@ -2374,14 +2372,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               Mine
             </button>
             <button
-              onClick={() => setFilterBy('public')}
-              className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                filterBy === 'public' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Public
-            </button>
-            <button
               onClick={() => setFilterBy('shared')}
               className={`px-3 py-1 text-xs rounded-full transition-colors ${
                 filterBy === 'shared' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -2431,11 +2421,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             {workflow.is_favorited && (
                               <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
                             )}
-                            {workflow.is_public && (
-                              <Badge variant="success" size="sm" className="flex-shrink-0">
-                                Public
-                              </Badge>
-                            )}
                           </div>
                           <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
                         </div>
@@ -2483,11 +2468,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
                             {workflow.is_favorited && (
                               <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
-                            )}
-                            {workflow.is_public && (
-                              <Badge variant="success" size="sm" className="flex-shrink-0">
-                                Public
-                              </Badge>
                             )}
                           </div>
                           <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
@@ -2697,21 +2677,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       </div>
                     </div>
 
-                    {/* Settings */}
-                    <div>
-                      <h3 className="text-lg font-medium text-gray-900 mb-4">Settings</h3>
-                      <div className="flex items-center">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={newWorkflowData.is_public}
-                            onChange={(e) => setNewWorkflowData({ ...newWorkflowData, is_public: e.target.checked })}
-                            className="mr-2 rounded"
-                          />
-                          <span className="text-sm text-gray-700">Make public (visible to all users)</span>
-                        </label>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Action Buttons */}
@@ -3472,79 +3437,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {activeView === 'admins' && (
                 <div className="space-y-6">
-                  {/* Header with Actions and Visibility Toggle */}
+                  {/* Header with Actions */}
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">Team & Access Management</h3>
                       <p className="text-sm text-gray-600 mt-1">
-                        Manage who can access and modify this workflow
+                        Invite users to collaborate on this workflow
                       </p>
                     </div>
                     <div className="flex items-center space-x-3">
-                      {/* Public/Private Toggle */}
-                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                        <div className="flex items-center space-x-2">
-                          <label className="flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={selectedWorkflow.is_public || false}
-                              onChange={async (e) => {
-                                const newValue = e.target.checked
-                                setSelectedWorkflow({ ...selectedWorkflow, is_public: newValue })
-                                try {
-                                  const { error } = await supabase
-                                    .from('workflows')
-                                    .update({ is_public: newValue })
-                                    .eq('id', selectedWorkflow.id)
-                                  if (error) {
-                                    setSelectedWorkflow({ ...selectedWorkflow, is_public: !newValue })
-                                    throw error
-                                  }
-                                } catch (error) {
-                                  console.error('Failed to update workflow visibility:', error)
-                                }
-                              }}
-                              className="mr-2 rounded"
-                            />
-                            <span className="text-sm text-gray-700 flex items-center">
-                              {selectedWorkflow.is_public ? (
-                                <>
-                                  <Eye className="w-4 h-4 mr-1 text-green-600" />
-                                  Public
-                                </>
-                              ) : (
-                                <>
-                                  <Users className="w-4 h-4 mr-1 text-gray-600" />
-                                  Private
-                                </>
-                              )}
-                            </span>
-                          </label>
-                        </div>
-                      )}
-                      {!(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                        <Badge variant={selectedWorkflow.is_public ? "success" : "default"} size="sm">
-                          {selectedWorkflow.is_public ? (
-                            <>
-                              <Eye className="w-3 h-3 mr-1" />
-                              Public
-                            </>
-                          ) : (
-                            <>
-                              <Users className="w-3 h-3 mr-1" />
-                              Private
-                            </>
-                          )}
-                        </Badge>
-                      )}
-
-                      {/* Invite User button - disabled when public */}
+                      {/* Invite User button */}
                       {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                         <Button
                           size="sm"
                           onClick={() => setShowInviteModal(true)}
-                          disabled={selectedWorkflow.is_public}
-                          className={selectedWorkflow.is_public ? 'opacity-50 cursor-not-allowed' : ''}
                         >
                           <Plus className="w-4 h-4 mr-2" />
                           Invite User
