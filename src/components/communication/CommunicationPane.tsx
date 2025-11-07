@@ -126,6 +126,7 @@ export function CommunicationPane({
             onBack={handleBackToConversations}
             onFocusMode={onFocusMode}
             isFocusMode={isFocusMode}
+            isOpen={isOpen}
           />
         )
       case 'notifications':

@@ -21,6 +21,7 @@ interface MessagingSectionProps {
   onBack?: () => void
   onFocusMode?: (enable: boolean) => void
   isFocusMode?: boolean
+  isOpen?: boolean
 }
 
 interface Message {
@@ -48,7 +49,8 @@ export function MessagingSection({
   onShowCoverageManager,
   onBack,
   onFocusMode,
-  isFocusMode = false
+  isFocusMode = false,
+  isOpen = true
 }: MessagingSectionProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -66,6 +68,8 @@ export function MessagingSection({
   // Fetch recent conversations (when no context is selected)
   const { data: recentConversations = [] } = useQuery({
     queryKey: ['recent-conversations', user?.id],
+    enabled: !contextType && !contextId && !!user?.id && isOpen, // Only fetch when no context and pane is open
+    staleTime: 30000, // Consider data fresh for 30 seconds
     queryFn: async () => {
       console.log('🔍 Starting recentConversations query, user:', user?.id)
       if (!user?.id) {
@@ -226,8 +230,7 @@ export function MessagingSection({
 
       console.log('🎉 Final conversations with names:', conversationsWithNames.length, conversationsWithNames)
       return conversationsWithNames
-    },
-    enabled: !contextType && !contextId && !!user?.id
+    }
   })
 
   // Fetch mention suggestions for assets/themes/notes
@@ -332,7 +335,8 @@ export function MessagingSection({
       if (error) throw error
       return data
     },
-    enabled: !!(contextType && contextId)
+    enabled: !!(contextType && contextId),
+    staleTime: 30000, // Consider data fresh for 30 seconds
   })
 
   // Get reply-to message data
