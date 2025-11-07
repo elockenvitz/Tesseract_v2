@@ -3032,7 +3032,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   </Card>
 
                   {/* Workflow Actions Section */}
-                  {((user as any)?.coverage_admin || selectedWorkflow.created_by === user?.id) && (
+                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                     <Card>
                       <div className="p-6">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">Workflow Actions</h3>
