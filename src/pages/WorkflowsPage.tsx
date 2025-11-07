@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle } from 'lucide-react'
+import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -118,6 +119,7 @@ function processDynamicSuffix(suffix: string): string {
 }
 
 export function WorkflowsPage({ className = '', tabId = 'workflows' }: WorkflowsPageProps) {
+  const { user } = useAuth()
   const [searchTerm, setSearchTerm] = useState('')
   const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>('all')
   const [sortBy, setSortBy] = useState<'name' | 'usage' | 'created' | 'updated'>('usage')
@@ -125,6 +127,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
   const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'templates'>('overview')
+  const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
 
   // Track the active tab for each workflow to restore when switching back
   const [workflowTabMemory, setWorkflowTabMemory] = useState<Record<string, 'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'templates'>>({})
@@ -598,7 +601,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           last_name,
           email
         )
-      `)
+      `).eq('archived', false) // Only show non-archived workflows
 
       switch (filterBy) {
         case 'my':
@@ -762,6 +765,109 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     workflow.description.toLowerCase().includes(searchTerm.toLowerCase())
   ) || []
 
+  // Query for archived workflows with full data processing
+  const { data: archivedWorkflows } = useQuery({
+    queryKey: ['workflows-archived', workflowStages],
+    enabled: !!workflowStages, // Only run when workflowStages are loaded
+    queryFn: async () => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+
+      console.log('🗄️ Fetching archived workflows for user:', userId)
+      console.log('🗄️ workflowStages available:', workflowStages?.length || 0, 'stages')
+
+      if (!userId) return []
+
+      // Get shared archived workflow IDs
+      const { data: sharedArchivedIds } = await supabase
+        .from('workflow_collaborations')
+        .select('workflow_id')
+        .eq('user_id', userId)
+
+      const sharedIds = sharedArchivedIds?.map(s => s.workflow_id) || []
+      const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
+
+      // Get archived workflows that user has access to
+      const { data: workflowData, error } = await supabase
+        .from('workflows')
+        .select(`
+          *,
+          users:created_by (
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .eq('archived', true)
+        .or(`is_public.eq.true,created_by.eq.${userId}${sharedFilter}`)
+        .order('archived_at', { ascending: false })
+
+      console.log('🗄️ Archived workflows result:', { data: workflowData, error, count: workflowData?.length })
+
+      if (error) {
+        console.error('🗄️ Error fetching archived workflows:', error)
+        throw error
+      }
+
+      if (!workflowData || workflowData.length === 0) return []
+
+      // Get usage statistics for archived workflows (preserved data)
+      const { data: usageStats } = await supabase
+        .from('asset_workflow_progress')
+        .select('workflow_id, is_started, completed_at, current_stage_key, started_at, asset_id')
+        .in('workflow_id', workflowData.map(w => w.id))
+
+      // Get user's favorited workflows
+      const { data: userFavorites } = await supabase
+        .from('workflow_favorites')
+        .select('workflow_id')
+        .eq('user_id', userId)
+
+      const favoritedWorkflowIds = new Set(userFavorites?.map(f => f.workflow_id) || [])
+
+      // Process archived workflows with full stats and stages (data is preserved)
+      const archivedWorkflowsWithStats: WorkflowWithStats[] = workflowData.map(workflow => {
+        const workflowUsage = usageStats?.filter(stat => stat.workflow_id === workflow.id) || []
+        const activeAssets = workflowUsage.filter(stat => stat.is_started && !stat.completed_at).length
+        const completedAssets = workflowUsage.filter(stat => stat.completed_at).length
+        const totalUsage = workflowUsage.length
+
+        const creator = workflow.users
+        const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
+
+        // Determine user permission
+        let userPermission: 'read' | 'write' | 'admin' | 'owner' = 'read'
+        if (workflow.created_by === userId) {
+          userPermission = 'owner'
+        }
+
+        // Get stages for this archived workflow (stages are preserved)
+        const workflowStagesData = workflowStages
+          ?.filter(stage => stage.workflow_id === workflow.id)
+          .sort((a, b) => a.sort_order - b.sort_order) || []
+
+        return {
+          ...workflow,
+          cadence_days: workflow.cadence_days || 365,
+          usage_count: totalUsage,
+          active_assets: activeAssets,
+          completed_assets: completedAssets,
+          creator_name: creatorName,
+          is_favorited: favoritedWorkflowIds.has(workflow.id),
+          stages: workflowStagesData,
+          user_permission: userPermission,
+          usage_stats: workflowUsage
+        }
+      })
+
+      console.log('🗄️ Archived workflows with stats:', archivedWorkflowsWithStats)
+
+      return archivedWorkflowsWithStats
+    }
+  })
+
+  console.log('🗄️ Archived workflows in component:', archivedWorkflows)
+
   // Debug logs can be removed in production
   // console.log('Filtered workflows for display:', filteredWorkflows)
 
@@ -857,23 +963,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  const deleteWorkflowMutation = useMutation({
+  const archiveWorkflowMutation = useMutation({
     mutationFn: async (workflowId: string) => {
-      // First delete workflow stages
-      const { error: stagesError } = await supabase
-        .from('workflow_stages')
-        .delete()
-        .eq('workflow_id', workflowId)
+      const { data: { user } } = await supabase.auth.getUser()
 
-      if (stagesError) throw stagesError
-
-      // Then delete the workflow
-      const { error: workflowError } = await supabase
+      const { error } = await supabase
         .from('workflows')
-        .delete()
+        .update({
+          archived: true,
+          archived_at: new Date().toISOString(),
+          archived_by: user?.id
+        })
         .eq('id', workflowId)
 
-      if (workflowError) throw workflowError
+      if (error) throw error
     },
     onSuccess: (_, deletedWorkflowId) => {
       // Find the next workflow to select
@@ -903,8 +1006,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       setWorkflowToDelete(null)
     },
     onError: (error) => {
-      console.error('Error deleting workflow:', error)
-      alert('Failed to delete workflow. Please try again.')
+      console.error('Error archiving workflow:', error)
+      alert('Failed to archive workflow. Please try again.')
       setShowDeleteConfirmModal(false)
       setWorkflowToDelete(null)
     }
@@ -947,9 +1050,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  const handleDeleteWorkflow = (workflowId: string, workflowName: string) => {
-    if (confirm(`Are you sure you want to delete "${workflowName}"? This action cannot be undone.`)) {
-      deleteWorkflowMutation.mutate(workflowId)
+  const handleArchiveWorkflow = (workflowId: string, workflowName: string) => {
+    if (confirm(`Are you sure you want to archive "${workflowName}"? It will be hidden from the UI but all data will be preserved.`)) {
+      archiveWorkflowMutation.mutate(workflowId)
     }
   }
 
@@ -2032,6 +2135,59 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               {searchTerm ? 'No workflows found' : 'No workflows available'}
             </div>
           )}
+
+          {/* Archived Workflows Section */}
+          {archivedWorkflows && archivedWorkflows.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
+                className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+              >
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Archived ({archivedWorkflows.length})
+                </h3>
+                <ChevronDown
+                  className={`w-4 h-4 text-gray-400 transition-transform ${
+                    isArchivedExpanded ? 'transform rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {isArchivedExpanded && (
+                <div className="space-y-1">
+                  {archivedWorkflows.map((workflow: WorkflowWithStats) => (
+                    <button
+                      key={workflow.id}
+                      onClick={() => {
+                        // Archived workflows already have full data loaded
+                        setSelectedWorkflow(workflow)
+                      }}
+                      className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
+                        selectedWorkflow?.id === workflow.id ? 'bg-gray-100' : ''
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0 opacity-50"
+                          style={{ backgroundColor: workflow.color }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-medium text-sm text-gray-500 truncate">{workflow.name}</h3>
+                            <Badge variant="secondary" size="sm" className="flex-shrink-0">
+                              Archived
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-gray-400 truncate mt-1">
+                            Archived {workflow.archived_at ? new Date(workflow.archived_at).toLocaleDateString() : 'recently'}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2549,6 +2705,68 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       )}
                     </div>
                   </Card>
+
+                  {/* Archive/Unarchive Workflow Section */}
+                  {((user as any)?.coverage_admin || selectedWorkflow.created_by === user?.id) && (
+                    <Card>
+                      <div className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                              {selectedWorkflow.archived ? 'Restore Workflow' : 'Danger Zone'}
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              {selectedWorkflow.archived
+                                ? 'Unarchive this workflow to make it active and visible in the interface again.'
+                                : 'Archive this workflow to hide it from the interface while preserving all data.'
+                              }
+                            </p>
+                          </div>
+                          {selectedWorkflow.archived ? (
+                            <Button
+                              variant="outline"
+                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400"
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to unarchive "${selectedWorkflow.name}"?`)) {
+                                  const { error } = await supabase
+                                    .from('workflows')
+                                    .update({
+                                      archived: false,
+                                      archived_at: null,
+                                      archived_by: null
+                                    })
+                                    .eq('id', selectedWorkflow.id)
+
+                                  if (error) {
+                                    alert('Failed to unarchive workflow. Please try again.')
+                                  } else {
+                                    queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+                                    queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
+                                    setSelectedWorkflow(null)
+                                  }
+                                }
+                              }}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Unarchive Workflow
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+                              onClick={() => {
+                                setWorkflowToDelete(selectedWorkflow.id)
+                                setShowDeleteConfirmModal(true)
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Archive Workflow
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  )}
                 </div>
               )}
 
@@ -4411,23 +4629,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         </div>
       )}
 
-      {/* Delete Workflow Confirmation Modal */}
+      {/* Archive Workflow Confirmation Modal */}
       {showDeleteConfirmModal && workflowToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
-                  <Trash2 className="w-6 h-6 text-red-600" />
+                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mr-4">
+                  <Trash2 className="w-6 h-6 text-orange-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Delete Workflow</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                  <h3 className="text-lg font-medium text-gray-900">Archive Workflow</h3>
+                  <p className="text-sm text-gray-500">Data will be preserved</p>
                 </div>
               </div>
               <p className="text-gray-700 mb-6">
-                Are you sure you want to delete <span className="font-semibold">{workflows?.find(w => w.id === workflowToDelete)?.name}</span>?
-                All workflow data, stages, and automation rules will be permanently removed.
+                Are you sure you want to archive <span className="font-semibold">{workflows?.find(w => w.id === workflowToDelete)?.name}</span>?
+                The workflow will be hidden from the UI but all data will be preserved. Assets will remain assigned but won't show as active.
               </p>
               <div className="flex justify-end space-x-3">
                 <Button
@@ -4440,11 +4658,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   Cancel
                 </Button>
                 <Button
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                  onClick={() => deleteWorkflowMutation.mutate(workflowToDelete)}
-                  disabled={deleteWorkflowMutation.isPending}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                  onClick={() => archiveWorkflowMutation.mutate(workflowToDelete)}
+                  disabled={archiveWorkflowMutation.isPending}
                 >
-                  {deleteWorkflowMutation.isPending ? 'Deleting...' : 'Yes, Delete'}
+                  {archiveWorkflowMutation.isPending ? 'Archiving...' : 'Yes, Archive'}
                 </Button>
               </div>
             </div>

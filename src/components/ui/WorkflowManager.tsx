@@ -140,7 +140,7 @@ export function WorkflowManager({
       }
 
       const { data, error } = await query
-        .order('is_default', { ascending: false })
+        .eq('archived', false) // Only show non-archived workflows
         .order('name')
 
       console.log('Workflows query result:', { data, error })
@@ -153,7 +153,8 @@ export function WorkflowManager({
       console.log('Returning workflows:', data)
       return data as Workflow[]
     },
-    enabled: isOpen
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    gcTime: 10 * 60 * 1000 // Keep in cache for 10 minutes
   })
 
   // Helper function to get workflow IDs shared with the user
@@ -370,11 +371,15 @@ export function WorkflowManager({
     }
   })
 
-  const deleteWorkflowMutation = useMutation({
+  const archiveWorkflowMutation = useMutation({
     mutationFn: async (workflowId: string) => {
       const { error } = await supabase
         .from('workflows')
-        .delete()
+        .update({
+          archived: true,
+          archived_at: new Date().toISOString(),
+          archived_by: user?.id
+        })
         .eq('id', workflowId)
 
       if (error) throw error
@@ -466,7 +471,6 @@ export function WorkflowManager({
       name: '',
       description: '',
       color: '#3b82f6',
-      is_default: false,
       is_public: false,
       cadence_days: 365,
       cadence_timeframe: 'annually',
@@ -801,9 +805,6 @@ export function WorkflowManager({
 
                         <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
                           <div className="flex items-center space-x-2">
-                            {workflow.is_default && (
-                              <Badge variant="secondary" size="xs">Default</Badge>
-                            )}
                             {workflow.is_public && (
                               <Badge variant="success" size="xs">Public</Badge>
                             )}
@@ -823,7 +824,16 @@ export function WorkflowManager({
                     )
                   })}
 
-                  {(!filteredWorkflows || filteredWorkflows.length === 0) && (
+                  {isLoading && (
+                    <div className="col-span-full text-center py-12">
+                      <div className="animate-pulse">
+                        <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-gray-500">Loading workflows...</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!isLoading && (!filteredWorkflows || filteredWorkflows.length === 0) && (
                     <div className="col-span-full text-center py-12">
                       <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                       <p className="text-gray-500">No workflows found</p>
@@ -914,33 +924,63 @@ export function WorkflowManager({
               {workflows?.map((workflow) => (
                 <div
                   key={workflow.id}
-                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                  className={`p-3 rounded-lg border transition-colors ${
                     selectedWorkflow === workflow.id
                       ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
-                  onClick={() => setSelectedWorkflow(workflow.id)}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: workflow.color }}
-                      />
-                      <span className="font-medium text-sm">{workflow.name}</span>
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => setSelectedWorkflow(workflow.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: workflow.color }}
+                        />
+                        <span className="font-medium text-sm">{workflow.name}</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        {workflow.is_public && (
+                          <Badge variant="success" size="sm">Public</Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-1">
-                      {workflow.is_default && (
-                        <Badge variant="secondary" size="sm">Default</Badge>
-                      )}
-                      {workflow.is_public && (
-                        <Badge variant="success" size="sm">Public</Badge>
-                      )}
-                    </div>
+                    {workflow.description && (
+                      <p className="text-xs text-gray-500 mt-1">{workflow.description}</p>
+                    )}
                   </div>
-                  {workflow.description && (
-                    <p className="text-xs text-gray-500 mt-1">{workflow.description}</p>
-                  )}
+                  {(() => {
+                    const isAdmin = (user as any)?.coverage_admin
+                    const isCreator = workflow.created_by === user?.id
+                    console.log('Archive button check:', {
+                      workflowId: workflow.id,
+                      workflowName: workflow.name,
+                      userId: user?.id,
+                      isAdmin,
+                      isCreator,
+                      createdBy: workflow.created_by,
+                      shouldShow: isAdmin || isCreator
+                    })
+                    return (isAdmin || isCreator) && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (confirm('Are you sure you want to archive this workflow? It will be hidden from the UI but all data will be preserved. Assets will remain assigned but won\'t show as active.')) {
+                              archiveWorkflowMutation.mutate(workflow.id)
+                            }
+                          }}
+                          className="text-xs text-red-600 hover:text-red-700 flex items-center"
+                        >
+                          <Trash2 className="w-3 h-3 mr-1" />
+                          Archive
+                        </button>
+                      </div>
+                    )
+                  })()}
                 </div>
               ))}
             </div>
@@ -1482,18 +1522,19 @@ export function WorkflowManager({
                 {/* Actions */}
                 <div className="flex items-center justify-between pt-6 border-t border-gray-200">
                   <div>
-                    {!isCreatingNew && !editingWorkflow.is_default && (
+                    {!isCreatingNew &&
+                     ((user as any)?.coverage_admin || editingWorkflow.created_by === user?.id) && (
                       <Button
                         variant="danger"
                         size="sm"
                         onClick={() => {
-                          if (editingWorkflow.id && confirm('Are you sure you want to delete this workflow?')) {
-                            deleteWorkflowMutation.mutate(editingWorkflow.id)
+                          if (editingWorkflow.id && confirm('Are you sure you want to archive this workflow? It will be hidden from the UI but all data will be preserved. Assets will remain assigned but won\'t show as active.')) {
+                            archiveWorkflowMutation.mutate(editingWorkflow.id)
                           }
                         }}
                       >
                         <Trash2 className="w-4 h-4 mr-1" />
-                        Delete Workflow
+                        Archive Workflow
                       </Button>
                     )}
                   </div>
