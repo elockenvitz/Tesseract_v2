@@ -128,6 +128,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
   const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'templates'>('overview')
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
+  const [isPersistentExpanded, setIsPersistentExpanded] = useState(true)
+  const [isCadenceExpanded, setIsCadenceExpanded] = useState(true)
 
   // Track the active tab for each workflow to restore when switching back
   const [workflowTabMemory, setWorkflowTabMemory] = useState<Record<string, 'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'templates'>>({})
@@ -764,6 +766,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     workflow.description.toLowerCase().includes(searchTerm.toLowerCase())
   ) || []
+
+  // Separate workflows into persistent and cadence groups
+  const persistentWorkflows = filteredWorkflows.filter(w =>
+    w.cadence_timeframe === 'persistent'
+  )
+  const cadenceWorkflows = filteredWorkflows.filter(w =>
+    w.cadence_timeframe !== 'persistent'
+  )
 
   // Query for archived workflows with full data processing
   const { data: archivedWorkflows } = useQuery({
@@ -2099,36 +2109,111 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         {/* Workflow List */}
         <div className="flex-1 overflow-y-auto">
-          {filteredWorkflows.map((workflow) => (
-            <button
-              key={workflow.id}
-              onClick={() => handleSelectWorkflow(workflow)}
-              className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
-              }`}
-            >
-              <div className="flex items-center space-x-3">
-                <div
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: workflow.color }}
+          {/* Persistent Workflows Section */}
+          {persistentWorkflows.length > 0 && (
+            <div>
+              <button
+                onClick={() => setIsPersistentExpanded(!isPersistentExpanded)}
+                className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
+              >
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Persistent Workflows ({persistentWorkflows.length})
+                </h3>
+                <ChevronDown
+                  className={`w-4 h-4 text-gray-400 transition-transform ${
+                    isPersistentExpanded ? 'transform rotate-180' : ''
+                  }`}
                 />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2">
-                    <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
-                    {workflow.is_favorited && (
-                      <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
-                    )}
-                    {workflow.is_public && (
-                      <Badge variant="success" size="sm" className="flex-shrink-0">
-                        Public
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+              </button>
+              {isPersistentExpanded && (
+                <div className="border-b border-gray-200">
+                  {persistentWorkflows.map((workflow) => (
+                    <button
+                      key={workflow.id}
+                      onClick={() => handleSelectWorkflow(workflow)}
+                      className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                        selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: workflow.color }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                            {workflow.is_favorited && (
+                              <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
+                            )}
+                            {workflow.is_public && (
+                              <Badge variant="success" size="sm" className="flex-shrink-0">
+                                Public
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </div>
-            </button>
-          ))}
+              )}
+            </div>
+          )}
+
+          {/* Cadence Workflows Section */}
+          {cadenceWorkflows.length > 0 && (
+            <div>
+              <button
+                onClick={() => setIsCadenceExpanded(!isCadenceExpanded)}
+                className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
+              >
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Cadence Workflows ({cadenceWorkflows.length})
+                </h3>
+                <ChevronDown
+                  className={`w-4 h-4 text-gray-400 transition-transform ${
+                    isCadenceExpanded ? 'transform rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {isCadenceExpanded && (
+                <div className="border-b border-gray-200">
+                  {cadenceWorkflows.map((workflow) => (
+                    <button
+                      key={workflow.id}
+                      onClick={() => handleSelectWorkflow(workflow)}
+                      className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                        selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: workflow.color }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                            {workflow.is_favorited && (
+                              <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
+                            )}
+                            {workflow.is_public && (
+                              <Badge variant="success" size="sm" className="flex-shrink-0">
+                                Public
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {filteredWorkflows.length === 0 && (
             <div className="p-4 text-center text-gray-500 text-sm">
