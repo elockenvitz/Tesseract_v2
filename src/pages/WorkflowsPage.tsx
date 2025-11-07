@@ -519,6 +519,46 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000
   })
 
+  // Fetch pending access requests for the workflow
+  const { data: pendingAccessRequests, refetch: refetchAccessRequests } = useQuery({
+    queryKey: ['workflow-access-requests', selectedWorkflow?.id],
+    queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
+      const { data, error } = await supabase
+        .from('workflow_access_requests')
+        .select(`
+          id,
+          user_id,
+          workflow_id,
+          current_permission,
+          requested_permission,
+          reason,
+          status,
+          created_at,
+          user:users!workflow_access_requests_user_id_fkey(
+            id,
+            email,
+            first_name,
+            last_name
+          )
+        `)
+        .eq('workflow_id', selectedWorkflow.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching access requests:', error)
+        throw error
+      }
+
+      return data || []
+    },
+    enabled: !!selectedWorkflow?.id && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'),
+    staleTime: 1 * 60 * 1000,
+    gcTime: 3 * 60 * 1000
+  })
+
   // Reset universe initialization flag when workflow changes
   useEffect(() => {
     universeInitialized.current = false
@@ -1207,6 +1247,64 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onError: (error) => {
       console.error('Error restoring workflow:', error)
       alert('Failed to restore workflow. Please try again.')
+    }
+  })
+
+  const approveAccessRequestMutation = useMutation({
+    mutationFn: async ({ requestId, userId, permission, workflowId }: { requestId: string, userId: string, permission: string, workflowId: string }) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      // Add or update collaboration
+      const { error: collabError } = await supabase
+        .from('workflow_collaborations')
+        .upsert({
+          workflow_id: workflowId,
+          user_id: userId,
+          permission: permission,
+          invited_by: user.id
+        }, {
+          onConflict: 'workflow_id,user_id'
+        })
+
+      if (collabError) throw collabError
+
+      // Update request status
+      const { error: requestError } = await supabase
+        .from('workflow_access_requests')
+        .update({ status: 'approved' })
+        .eq('id', requestId)
+
+      if (requestError) throw requestError
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-access-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-collaborators'] })
+      refetchAccessRequests()
+      refetchCollaborators()
+    },
+    onError: (error) => {
+      console.error('Error approving access request:', error)
+      alert('Failed to approve access request. Please try again.')
+    }
+  })
+
+  const rejectAccessRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      const { error } = await supabase
+        .from('workflow_access_requests')
+        .update({ status: 'rejected' })
+        .eq('id', requestId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-access-requests'] })
+      refetchAccessRequests()
+    },
+    onError: (error) => {
+      console.error('Error rejecting access request:', error)
+      alert('Failed to reject access request. Please try again.')
     }
   })
 
@@ -3463,6 +3561,92 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   </div>
 
                   <div className="space-y-6">
+
+                    {/* Pending Access Requests */}
+                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && pendingAccessRequests && pendingAccessRequests.length > 0 && (
+                      <Card>
+                        <div className="p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-sm font-semibold text-gray-900">Pending Access Requests</h4>
+                            <span className="text-xs text-gray-500 bg-orange-100 px-2 py-1 rounded-full">
+                              {pendingAccessRequests.length} pending
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {pendingAccessRequests.map((request: any) => {
+                              const user = request.user
+                              const userName = user?.first_name && user?.last_name
+                                ? `${user.first_name} ${user.last_name}`
+                                : user?.email || 'Unknown User'
+                              const userInitial = userName.charAt(0).toUpperCase()
+                              const permissionLabel = request.requested_permission === 'admin' ? 'Admin' : request.requested_permission === 'write' ? 'Write' : 'Read'
+                              const permissionColor = request.requested_permission === 'admin' ? 'blue' : request.requested_permission === 'write' ? 'green' : 'gray'
+
+                              return (
+                                <div key={request.id} className="flex items-start justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                  <div className="flex items-start space-x-3 flex-1 min-w-0">
+                                    <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                                      <span className="text-white font-semibold text-xs">{userInitial}</span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-sm font-medium text-gray-900">{userName}</span>
+                                        <Badge
+                                          variant="default"
+                                          size="sm"
+                                          className={`${
+                                            permissionColor === 'blue' ? 'bg-blue-100 text-blue-700' :
+                                            permissionColor === 'green' ? 'bg-green-100 text-green-700' :
+                                            'bg-gray-100 text-gray-700'
+                                          }`}
+                                        >
+                                          Requesting {permissionLabel}
+                                        </Badge>
+                                      </div>
+                                      {request.reason && (
+                                        <p className="text-xs text-gray-600 mb-2">"{request.reason}"</p>
+                                      )}
+                                      <p className="text-xs text-gray-500">
+                                        {request.current_permission ? `Current: ${request.current_permission}` : 'No current access'} •
+                                        Requested {new Date(request.created_at).toLocaleDateString()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-2 ml-3">
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      className="border-green-300 text-green-600 hover:bg-green-50"
+                                      onClick={() => approveAccessRequestMutation.mutate({
+                                        requestId: request.id,
+                                        userId: request.user_id,
+                                        permission: request.requested_permission,
+                                        workflowId: request.workflow_id
+                                      })}
+                                      disabled={approveAccessRequestMutation.isPending}
+                                    >
+                                      <Check className="w-3 h-3 mr-1" />
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      className="border-red-300 text-red-600 hover:bg-red-50"
+                                      onClick={() => rejectAccessRequestMutation.mutate(request.id)}
+                                      disabled={rejectAccessRequestMutation.isPending}
+                                    >
+                                      <X className="w-3 h-3 mr-1" />
+                                      Decline
+                                    </Button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </Card>
+                    )}
 
                     {/* Stakeholders */}
                     <Card>
