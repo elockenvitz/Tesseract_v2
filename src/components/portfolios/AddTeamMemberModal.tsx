@@ -1,5 +1,5 @@
 // src/components/portfolios/AddTeamMemberModal.tsx
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Plus, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -15,6 +15,12 @@ interface AddTeamMemberModalProps {
   onClose: () => void
   portfolioId: string
   portfolioName: string
+  editingMember?: {
+    id: string
+    user_id: string
+    role: string
+    focus: string | null
+  } | null
   onMemberAdded?: () => void
 }
 
@@ -30,13 +36,26 @@ export function AddTeamMemberModal({
   onClose,
   portfolioId,
   portfolioName,
+  editingMember,
   onMemberAdded,
 }: AddTeamMemberModalProps) {
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null)
-  const [role, setRole] = useState('')
-  const [focus, setFocus] = useState<string | null>(null)
+  const [role, setRole] = useState(editingMember?.role || '')
+  const [focus, setFocus] = useState<string | null>(editingMember?.focus || null)
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
+
+  // Sync form state when editingMember changes
+  useEffect(() => {
+    if (editingMember) {
+      setRole(editingMember.role || '')
+      setFocus(editingMember.focus || null)
+    } else {
+      setRole('')
+      setFocus(null)
+      setSelectedUser(null)
+    }
+  }, [editingMember])
 
   // IMPORTANT: Make sure these match your DB CHECK/ENUM exactly.
   // If your check is lowercase snake_case, switch values accordingly.
@@ -99,7 +118,7 @@ export function AddTeamMemberModal({
       if (error) throw error
       return data || []
     },
-    enabled: isOpen,
+    enabled: isOpen && !editingMember,
     staleTime: 0,
   })
 
@@ -130,28 +149,48 @@ export function AddTeamMemberModal({
 
   const addTeamMemberMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedUser || !role.trim()) {
+      if (!editingMember && (!selectedUser || !role.trim())) {
         throw new Error('Please select a user and a role.')
       }
-      const payload = {
-        portfolio_id: portfolioId,
-        user_id: selectedUser.id,
-        role: role.trim(),
-        focus: focus || null,
+      if (editingMember && !role.trim()) {
+        throw new Error('Please select a role.')
       }
 
-      const { data, error } = await supabase
-        .from('portfolio_team')
-        .insert([payload])
-        .select('id')
-        .single()
+      if (editingMember) {
+        // Update existing member
+        const { error } = await supabase
+          .from('portfolio_team')
+          .update({
+            role: role.trim(),
+            focus: focus || null,
+          })
+          .eq('id', editingMember.id)
 
-      if (error) throw error
-      return data
+        if (error) throw error
+      } else {
+        // Add new member
+        const payload = {
+          portfolio_id: portfolioId,
+          user_id: selectedUser!.id,
+          role: role.trim(),
+          focus: focus || null,
+        }
+
+        const { data, error } = await supabase
+          .from('portfolio_team')
+          .insert([payload])
+          .select('id')
+          .single()
+
+        if (error) throw error
+        return data
+      }
     },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['portfolio-team', portfolioId] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', portfolioId] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team-history', portfolioId] }),
         queryClient.invalidateQueries({ queryKey: ['team-users-by-id'] }),
       ])
 
@@ -182,7 +221,7 @@ export function AddTeamMemberModal({
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">
-              Add Team Member to {portfolioName}
+              {editingMember ? 'Edit Team Member' : `Add Team Member to ${portfolioName}`}
             </h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
               <X className="h-5 w-5" />
@@ -191,18 +230,19 @@ export function AddTeamMemberModal({
 
           {/* Form */}
           <div className="space-y-4">
-            {/* User SearchableSelect */}
-            <SearchableSelect
-              label="Select User"
-              placeholder="Search users by name or email..."
-              options={userOptions}
-              value={selectedUser ? { value: selectedUser.id, label: getUserDisplayName(selectedUser), ...selectedUser } : null}
-              onChange={(option) => setSelectedUser(option as UserOption)}
-              loading={usersLoading || existingTeamLoading}
-              disabled={usersLoading || existingTeamLoading}
-              displayKey="label" // Display the formatted name in the input
-              autocomplete="off" // ADD THIS LINE
-            />
+            {!editingMember && (
+              <SearchableSelect
+                label="Select User"
+                placeholder="Search users by name or email..."
+                options={userOptions}
+                value={selectedUser ? { value: selectedUser.id, label: getUserDisplayName(selectedUser), ...selectedUser } : null}
+                onChange={(option) => setSelectedUser(option as UserOption)}
+                loading={usersLoading || existingTeamLoading}
+                disabled={usersLoading || existingTeamLoading}
+                displayKey="label"
+                autocomplete="off"
+              />
+            )}
 
             {/* Role */}
             <Select
@@ -228,11 +268,15 @@ export function AddTeamMemberModal({
             </Button>
             <Button
               onClick={() => addTeamMemberMutation.mutate()}
-              disabled={!selectedUser || !role.trim() || addTeamMemberMutation.isPending}
+              disabled={!editingMember && (!selectedUser || !role.trim()) || addTeamMemberMutation.isPending}
               loading={addTeamMemberMutation.isPending}
             >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Team Member
+              {editingMember ? 'Save Changes' : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Team Member
+                </>
+              )}
             </Button>
           </div>
         </div>

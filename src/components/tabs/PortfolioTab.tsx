@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical, Edit, X } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -32,6 +32,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   })
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showAddTeamMemberModal, setShowAddTeamMemberModal] = useState(false)
+  const [editingTeamMember, setEditingTeamMember] = useState<any | null>(null)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean
@@ -1030,9 +1031,12 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900">Portfolio Team</h2>
-                <Button size="sm" onClick={() => setShowAddTeamMemberModal(true)}>
+                <Button size="sm" onClick={() => {
+                  setEditingTeamMember(null)
+                  setShowAddTeamMemberModal(true)
+                }}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Team Member
+                  Team Member
                 </Button>
               </div>
 
@@ -1083,18 +1087,35 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                                     )}
                                   </div>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setDeleteConfirm({
-                                    isOpen: true,
-                                    teamMemberId: member.teamRecordIds.join(','), // Pass all record IDs
-                                    userName: displayName,
-                                    role: role
-                                  })}
-                                >
-                                  <Trash2 className="h-4 w-4 text-error-600" />
-                                </Button>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingTeamMember({
+                                        id: member.id,
+                                        user_id: member.user.id,
+                                        role: role,
+                                        focus: member.focuses && member.focuses.length > 0 ? member.focuses[0] : null
+                                      })
+                                      setShowAddTeamMemberModal(true)
+                                    }}
+                                  >
+                                    <Edit className="h-4 w-4 text-primary-600" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setDeleteConfirm({
+                                      isOpen: true,
+                                      teamMemberId: member.teamRecordIds.join(','), // Pass all record IDs
+                                      userName: displayName,
+                                      role: role
+                                    })}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-error-600" />
+                                  </Button>
+                                </div>
                               </div>
                             </Card>
                           )
@@ -1122,14 +1143,19 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       {showAddTeamMemberModal && (
         <AddTeamMemberModal
           isOpen={showAddTeamMemberModal}
-          onClose={() => setShowAddTeamMemberModal(false)}
+          onClose={() => {
+            setShowAddTeamMemberModal(false)
+            setEditingTeamMember(null)
+          }}
           portfolioId={portfolio.id}
           portfolioName={portfolio.name}
+          editingMember={editingTeamMember}
           onMemberAdded={async () => {
             await refetchTeamWithUsers()
           }}
         />
       )}
+
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

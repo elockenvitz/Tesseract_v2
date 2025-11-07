@@ -127,7 +127,16 @@ export function ProfilePage() {
           </div>
           <h2 className="text-xl font-semibold text-gray-900">{getDisplayName()}</h2>
           <p className="text-gray-600">{userDetails?.email}</p>
-          <p className="text-sm text-gray-500 mt-1">Investor</p>
+          <div className="flex items-center justify-center gap-2 mt-1">
+            <p className="text-sm text-gray-500 capitalize">
+              {userDetails?.user_role || 'Investor'}
+            </p>
+            {userDetails?.coverage_admin && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800">
+                Admin
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Profile Form */}
@@ -213,8 +222,9 @@ export function ProfilePage() {
               <User className="h-5 w-5 text-success-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Account Type</p>
-              <p className="text-sm text-gray-900">Investor</p>
+              <p className="text-sm font-medium text-gray-600">Role</p>
+              <p className="text-sm text-gray-900 capitalize">{userDetails?.user_role || 'Investor'}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Contact support to change</p>
             </div>
           </div>
         </div>
