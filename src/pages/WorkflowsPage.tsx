@@ -1953,7 +1953,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-collaborators', selectedWorkflow?.id] })
-      alert('Team member removed successfully!')
     },
     onError: (error) => {
       console.error('Error removing collaborator:', error)
@@ -2005,7 +2004,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stakeholders', selectedWorkflow?.id] })
-      alert('Stakeholder removed successfully!')
       refetchStakeholders()
     },
     onError: (error) => {
