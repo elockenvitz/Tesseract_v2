@@ -70,6 +70,7 @@ export function MessagingSection({
     queryKey: ['recent-conversations', user?.id],
     enabled: !contextType && !contextId && !!user?.id && isOpen, // Only fetch when no context and pane is open
     staleTime: 30000, // Consider data fresh for 30 seconds
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching
     queryFn: async () => {
       console.log('🔍 Starting recentConversations query, user:', user?.id)
       if (!user?.id) {
@@ -337,6 +338,7 @@ export function MessagingSection({
     },
     enabled: !!(contextType && contextId),
     staleTime: 30000, // Consider data fresh for 30 seconds
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching
   })
 
   // Get reply-to message data
@@ -836,7 +838,7 @@ export function MessagingSection({
               <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm">Select an asset, portfolio, or theme to start a discussion</p>
             </div>
-          ) : isLoading ? (
+          ) : isLoading && messages.length === 0 ? (
             <div className="p-4 space-y-3">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="animate-pulse">
