@@ -4947,37 +4947,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         />
       )}
 
-      {/* Invite User Modal */}
+      {/* Add Admin Modal */}
       {showInviteModal && selectedWorkflow && (
-        <InviteUserModal
+        <AddAdminModal
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
           onClose={() => setShowInviteModal(false)}
-          onInvite={async (email, permission) => {
+          onAdd={async (userId) => {
             try {
               // Get the current user
               const { data: { user } } = await supabase.auth.getUser()
               if (!user) throw new Error('Not authenticated')
 
-              // Find the user by email
-              const { data: invitedUser, error: userError } = await supabase
-                .from('users')
-                .select('id')
-                .eq('email', email.toLowerCase())
-                .single()
-
-              if (userError || !invitedUser) {
-                alert('User not found. Please make sure the email address is correct.')
-                return
-              }
-
-              // Create the workflow collaboration
+              // Create the workflow collaboration with admin permission
               const { error: inviteError } = await supabase
                 .from('workflow_collaborations')
                 .insert({
                   workflow_id: selectedWorkflow.id,
-                  user_id: invitedUser.id,
-                  permission: permission,
+                  user_id: userId,
+                  permission: 'admin',
                   invited_by: user.id
                 })
 
@@ -4990,16 +4978,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                 return
               }
 
-              // Refresh the workflow data to show the new team member
+              // Refresh the workflow data to show the new admin
               queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
               queryClient.invalidateQueries({ queryKey: ['workflow-team', selectedWorkflow.id] })
               queryClient.invalidateQueries({ queryKey: ['workflow-collaborators', selectedWorkflow.id] })
 
               setShowInviteModal(false)
-              alert(`Successfully invited ${email} with ${permission} access!`)
             } catch (error) {
-              console.error('Error inviting user:', error)
-              alert('Failed to invite user. Please try again.')
+              console.error('Error adding admin:', error)
+              alert('Failed to add admin. Please try again.')
             }
           }}
         />
@@ -5914,6 +5901,148 @@ function AddStakeholderModal({ workflowId, workflowName, onClose, onAdd }: {
             </Button>
             <Button type="submit" disabled={!selectedUser}>
               Add Stakeholder
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function AddAdminModal({ workflowId, workflowName, onClose, onAdd }: {
+  workflowId: string
+  workflowName: string
+  onClose: () => void
+  onAdd: (userId: string) => void
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedUser, setSelectedUser] = useState<{id: string, email: string, name: string} | null>(null)
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  // Query to get all users for searchable dropdown
+  const { data: users } = useQuery({
+    queryKey: ['users-search'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .order('first_name')
+        .order('last_name')
+
+      if (error) throw error
+
+      return data.map(user => ({
+        id: user.id,
+        email: user.email,
+        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email
+      }))
+    }
+  })
+
+  // Filter users based on search term
+  const filteredUsers = users?.filter(user =>
+    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || []
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (selectedUser) {
+      onAdd(selectedUser.id)
+    }
+  }
+
+  const handleUserSelect = (user: {id: string, email: string, name: string}) => {
+    setSelectedUser(user)
+    setSearchTerm(user.name)
+    setShowDropdown(false)
+  }
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value)
+    setSelectedUser(null)
+    setShowDropdown(true)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Add Admin</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-sm text-gray-600 mb-2">
+            Add an admin to "{workflowName}"
+          </p>
+          <p className="text-xs text-gray-500">
+            Admins can manage the workflow, add/remove team members, and edit all settings.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4">
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Search User
+              </label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onFocus={() => setShowDropdown(true)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Search by name or email..."
+                required
+              />
+
+              {/* Searchable dropdown */}
+              {showDropdown && filteredUsers.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {filteredUsers.slice(0, 10).map((user) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => handleUserSelect(user)}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                    >
+                      <div className="font-medium text-sm text-gray-900">{user.name}</div>
+                      <div className="text-xs text-gray-500">{user.email}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedUser && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white font-semibold text-xs">
+                      {selectedUser.name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm text-gray-900">{selectedUser.name}</div>
+                    <div className="text-xs text-gray-500">{selectedUser.email}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!selectedUser}>
+              Add Admin
             </Button>
           </div>
         </form>
