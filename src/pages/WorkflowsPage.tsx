@@ -659,13 +659,22 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowQuery = workflowQuery.eq('created_by', userId)
           break
         case 'shared':
-          // Get shared workflow IDs first
+          // Get shared workflow IDs (as collaborator)
           const { data: sharedIds } = await supabase
             .from('workflow_collaborations')
             .select('workflow_id')
             .eq('user_id', userId)
 
-          const ids = sharedIds?.map(s => s.workflow_id) || []
+          // Get workflow IDs where user is a stakeholder
+          const { data: sharedStakeholderIds } = await supabase
+            .from('workflow_stakeholders')
+            .select('workflow_id')
+            .eq('user_id', userId)
+
+          const collaboratorWorkflowIds = sharedIds?.map(s => s.workflow_id) || []
+          const stakeholderWorkflowIds = sharedStakeholderIds?.map(s => s.workflow_id) || []
+          const ids = [...new Set([...collaboratorWorkflowIds, ...stakeholderWorkflowIds])]
+
           if (ids.length === 0) return []
           workflowQuery = workflowQuery.in('id', ids)
           break
@@ -682,14 +691,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           break
         case 'all':
         default:
-          // Get shared workflow IDs
+          // Get shared workflow IDs (as collaborator)
           const { data: allSharedIds } = await supabase
             .from('workflow_collaborations')
             .select('workflow_id')
             .eq('user_id', userId)
 
-          const allIds = allSharedIds?.map(s => s.workflow_id) || []
-          // Show only user's workflows + shared workflows (no public workflows)
+          // Get workflow IDs where user is a stakeholder
+          const { data: stakeholderIds } = await supabase
+            .from('workflow_stakeholders')
+            .select('workflow_id')
+            .eq('user_id', userId)
+
+          const collaboratorIds = allSharedIds?.map(s => s.workflow_id) || []
+          const stakeholderWorkflowIds = stakeholderIds?.map(s => s.workflow_id) || []
+          const allIds = [...new Set([...collaboratorIds, ...stakeholderWorkflowIds])]
+
+          // Show only user's workflows + shared workflows + stakeholder workflows
           const sharedFilter = allIds.length > 0 ? `,id.in.(${allIds.join(',')})` : ''
           workflowQuery = workflowQuery.or(`created_by.eq.${userId}${sharedFilter}`)
           break
@@ -835,13 +853,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (!userId) return []
 
-      // Get shared archived workflow IDs
+      // Get shared archived workflow IDs (as collaborator)
       const { data: sharedArchivedIds } = await supabase
         .from('workflow_collaborations')
         .select('workflow_id')
         .eq('user_id', userId)
 
-      const sharedIds = sharedArchivedIds?.map(s => s.workflow_id) || []
+      // Get workflow IDs where user is a stakeholder
+      const { data: archivedStakeholderIds } = await supabase
+        .from('workflow_stakeholders')
+        .select('workflow_id')
+        .eq('user_id', userId)
+
+      const collaboratorIds = sharedArchivedIds?.map(s => s.workflow_id) || []
+      const stakeholderIds = archivedStakeholderIds?.map(s => s.workflow_id) || []
+      const sharedIds = [...new Set([...collaboratorIds, ...stakeholderIds])]
       const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
 
       // Get archived workflows that user has access to (owned or shared)
@@ -934,13 +960,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (!userId) return []
 
-      // Get shared deleted workflow IDs
+      // Get shared deleted workflow IDs (as collaborator)
       const { data: sharedDeletedIds } = await supabase
         .from('workflow_collaborations')
         .select('workflow_id')
         .eq('user_id', userId)
 
-      const sharedIds = sharedDeletedIds?.map(s => s.workflow_id) || []
+      // Get workflow IDs where user is a stakeholder
+      const { data: deletedStakeholderIds } = await supabase
+        .from('workflow_stakeholders')
+        .select('workflow_id')
+        .eq('user_id', userId)
+
+      const collaboratorIds = sharedDeletedIds?.map(s => s.workflow_id) || []
+      const stakeholderIds = deletedStakeholderIds?.map(s => s.workflow_id) || []
+      const sharedIds = [...new Set([...collaboratorIds, ...stakeholderIds])]
       const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
 
       // Get deleted workflows that user has access to (owned or shared)
