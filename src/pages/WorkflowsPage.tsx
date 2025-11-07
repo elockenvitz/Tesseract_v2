@@ -184,6 +184,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showCreateBranchModal, setShowCreateBranchModal] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
   const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null)
+  const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false)
+  const [workflowToPermanentlyDelete, setWorkflowToPermanentlyDelete] = useState<string | null>(null)
   const [showDeleteStageModal, setShowDeleteStageModal] = useState(false)
   const [stageToDelete, setStageToDelete] = useState<{ id: string, key: string, label: string } | null>(null)
   const [showDeleteRuleModal, setShowDeleteRuleModal] = useState(false)
@@ -1143,38 +1145,45 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .eq('id', workflowId)
 
       if (error) throw error
+      return workflowId
     },
-    onSuccess: (_, deletedWorkflowId) => {
-      // Find the next workflow to select
-      if (workflows && workflows.length > 1) {
-        const deletedIndex = workflows.findIndex(w => w.id === deletedWorkflowId)
-        let nextWorkflow: WorkflowWithStats | null = null
+    onSuccess: async (deletedWorkflowId) => {
+      // Invalidate queries to refetch data
+      await queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      await queryClient.invalidateQueries({ queryKey: ['deleted-workflows'] })
 
-        // Try to select the next workflow in the list
-        if (deletedIndex < workflows.length - 1) {
-          nextWorkflow = workflows[deletedIndex + 1]
-        } else if (deletedIndex > 0) {
-          // If deleted was the last one, select the previous one
-          nextWorkflow = workflows[deletedIndex - 1]
-        }
+      // Fetch the updated deleted workflow to keep it selected
+      const { data: deletedWorkflow } = await supabase
+        .from('workflows')
+        .select(`
+          *,
+          users:created_by (
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .eq('id', deletedWorkflowId)
+        .single()
 
-        if (nextWorkflow) {
-          setSelectedWorkflow(nextWorkflow)
-        } else {
-          // No workflows left, clear selection
-          setSelectedWorkflow(null)
-        }
-      } else {
-        // Only one workflow left, clear selection
-        setSelectedWorkflow(null)
+      if (deletedWorkflow) {
+        // Update the selected workflow with the deleted version
+        setSelectedWorkflow({
+          ...selectedWorkflow!,
+          deleted: true,
+          deleted_at: deletedWorkflow.deleted_at,
+          deleted_by: deletedWorkflow.deleted_by
+        })
       }
 
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-      queryClient.invalidateQueries({ queryKey: ['deleted-workflows'] })
+      setShowPermanentDeleteModal(false)
+      setWorkflowToPermanentlyDelete(null)
     },
     onError: (error) => {
       console.error('Error deleting workflow:', error)
       alert('Failed to delete workflow. Please try again.')
+      setShowPermanentDeleteModal(false)
+      setWorkflowToPermanentlyDelete(null)
     }
   })
 
@@ -3022,77 +3031,76 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </div>
                   </Card>
 
-                  {/* Archive/Unarchive Workflow Section */}
-                  {((user as any)?.coverage_admin || selectedWorkflow.created_by === user?.id) && !selectedWorkflow.deleted && (
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                              {selectedWorkflow.archived ? 'Restore Workflow' : 'Workflow Archive'}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {selectedWorkflow.archived
-                                ? 'Unarchive this workflow to make it active and visible in the interface again.'
-                                : 'Archive this workflow to hide it from the interface while preserving all data.'
-                              }
-                            </p>
-                          </div>
-                          {selectedWorkflow.archived ? (
-                            <Button
-                              variant="outline"
-                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400"
-                              onClick={async () => {
-                                if (confirm(`Are you sure you want to unarchive "${selectedWorkflow.name}"?`)) {
-                                  const { error } = await supabase
-                                    .from('workflows')
-                                    .update({
-                                      archived: false,
-                                      archived_at: null,
-                                      archived_by: null
-                                    })
-                                    .eq('id', selectedWorkflow.id)
-
-                                  if (error) {
-                                    alert('Failed to unarchive workflow. Please try again.')
-                                  } else {
-                                    queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-                                    queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
-                                    setSelectedWorkflow(null)
-                                  }
-                                }
-                              }}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Unarchive Workflow
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400"
-                              onClick={() => {
-                                setWorkflowToDelete(selectedWorkflow.id)
-                                setShowDeleteConfirmModal(true)
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Archive Workflow
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  )}
-
-                  {/* Delete/Restore Workflow Section */}
+                  {/* Workflow Actions Section */}
                   {((user as any)?.coverage_admin || selectedWorkflow.created_by === user?.id) && (
                     <Card>
                       <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Workflow Actions</h3>
+
+                        {/* Archive Action */}
+                        {!selectedWorkflow.deleted && (
+                          <div className="flex items-center justify-between mb-6 pb-6 border-b border-gray-200">
+                            <div>
+                              <h4 className="text-base font-medium text-gray-900 mb-1">
+                                {selectedWorkflow.archived ? 'Restore from Archive' : 'Archive Workflow'}
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                {selectedWorkflow.archived
+                                  ? 'Unarchive this workflow to make it active and visible in the interface again.'
+                                  : 'Archive this workflow to hide it from the interface while preserving all data.'
+                                }
+                              </p>
+                            </div>
+                            {selectedWorkflow.archived ? (
+                              <Button
+                                variant="outline"
+                                className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4"
+                                onClick={async () => {
+                                  if (confirm(`Are you sure you want to unarchive "${selectedWorkflow.name}"?`)) {
+                                    const { error } = await supabase
+                                      .from('workflows')
+                                      .update({
+                                        archived: false,
+                                        archived_at: null,
+                                        archived_by: null
+                                      })
+                                      .eq('id', selectedWorkflow.id)
+
+                                    if (error) {
+                                      alert('Failed to unarchive workflow. Please try again.')
+                                    } else {
+                                      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+                                      queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
+                                      setSelectedWorkflow(null)
+                                    }
+                                  }
+                                }}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Unarchive
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400 ml-4"
+                                onClick={() => {
+                                  setWorkflowToDelete(selectedWorkflow.id)
+                                  setShowDeleteConfirmModal(true)
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Archive
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Delete Action */}
                         <div className="flex items-center justify-between">
                           <div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                            <h4 className="text-base font-medium text-gray-900 mb-1">
                               {selectedWorkflow.deleted ? 'Restore Deleted Workflow' : 'Delete Workflow'}
-                            </h3>
+                            </h4>
                             <p className="text-sm text-gray-600">
                               {selectedWorkflow.deleted
                                 ? 'Restore this workflow to make it active again. All data is preserved.'
@@ -3103,7 +3111,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           {selectedWorkflow.deleted ? (
                             <Button
                               variant="outline"
-                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400"
+                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4"
                               onClick={async () => {
                                 if (confirm(`Are you sure you want to restore "${selectedWorkflow.name}"?`)) {
                                   restoreDeletedWorkflowMutation.mutate(selectedWorkflow.id)
@@ -3112,20 +3120,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               }}
                             >
                               <CheckCircle className="w-4 h-4 mr-2" />
-                              Restore Workflow
+                              Restore
                             </Button>
                           ) : (
                             <Button
                               variant="outline"
-                              className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+                              className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 ml-4"
                               onClick={() => {
-                                if (confirm(`Are you sure you want to delete "${selectedWorkflow.name}"? You can restore it later from the Deleted section.`)) {
-                                  deleteWorkflowMutation.mutate(selectedWorkflow.id)
-                                }
+                                setWorkflowToPermanentlyDelete(selectedWorkflow.id)
+                                setShowPermanentDeleteModal(true)
                               }}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Delete Workflow
+                              Delete
                             </Button>
                           )}
                         </div>
@@ -5028,6 +5035,47 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   disabled={archiveWorkflowMutation.isPending}
                 >
                   {archiveWorkflowMutation.isPending ? 'Archiving...' : 'Yes, Archive'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Workflow Confirmation Modal */}
+      {showPermanentDeleteModal && workflowToPermanentlyDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Delete Workflow</h3>
+                  <p className="text-sm text-gray-500">Can be restored later</p>
+                </div>
+              </div>
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete <span className="font-semibold">{selectedWorkflow?.name}</span>?
+                The workflow will be removed from the main interface but all data will be preserved. You can restore it later from the Deleted section.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowPermanentDeleteModal(false)
+                    setWorkflowToPermanentlyDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => deleteWorkflowMutation.mutate(workflowToPermanentlyDelete)}
+                  disabled={deleteWorkflowMutation.isPending}
+                >
+                  {deleteWorkflowMutation.isPending ? 'Deleting...' : 'Yes, Delete'}
                 </Button>
               </div>
             </div>
