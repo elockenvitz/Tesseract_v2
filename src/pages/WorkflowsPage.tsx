@@ -660,7 +660,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           break
         case 'shared':
           // Get shared workflow IDs (as collaborator)
-          const { data: sharedIds } = await supabase
+          const { data: sharedCollabIds } = await supabase
             .from('workflow_collaborations')
             .select('workflow_id')
             .eq('user_id', userId)
@@ -671,9 +671,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             .select('workflow_id')
             .eq('user_id', userId)
 
-          const collaboratorWorkflowIds = sharedIds?.map(s => s.workflow_id) || []
-          const stakeholderWorkflowIds = sharedStakeholderIds?.map(s => s.workflow_id) || []
-          const ids = [...new Set([...collaboratorWorkflowIds, ...stakeholderWorkflowIds])]
+          const sharedCollaboratorIds = sharedCollabIds?.map(s => s.workflow_id) || []
+          const sharedStakeholderWorkflowIds = sharedStakeholderIds?.map(s => s.workflow_id) || []
+          const ids = [...new Set([...sharedCollaboratorIds, ...sharedStakeholderWorkflowIds])]
 
           if (ids.length === 0) return []
           workflowQuery = workflowQuery.in('id', ids)
@@ -692,20 +692,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         case 'all':
         default:
           // Get shared workflow IDs (as collaborator)
-          const { data: allSharedIds } = await supabase
+          const { data: allCollabIds } = await supabase
             .from('workflow_collaborations')
             .select('workflow_id')
             .eq('user_id', userId)
 
           // Get workflow IDs where user is a stakeholder
-          const { data: stakeholderIds } = await supabase
+          const { data: allStakeholderIds } = await supabase
             .from('workflow_stakeholders')
             .select('workflow_id')
             .eq('user_id', userId)
 
-          const collaboratorIds = allSharedIds?.map(s => s.workflow_id) || []
-          const stakeholderWorkflowIds = stakeholderIds?.map(s => s.workflow_id) || []
-          const allIds = [...new Set([...collaboratorIds, ...stakeholderWorkflowIds])]
+          const allCollaboratorIds = allCollabIds?.map(s => s.workflow_id) || []
+          const allStakeholderWorkflowIds = allStakeholderIds?.map(s => s.workflow_id) || []
+          const allIds = [...new Set([...allCollaboratorIds, ...allStakeholderWorkflowIds])]
 
           // Show only user's workflows + shared workflows + stakeholder workflows
           const sharedFilter = allIds.length > 0 ? `,id.in.(${allIds.join(',')})` : ''
