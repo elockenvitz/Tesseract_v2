@@ -3648,33 +3648,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       </Card>
                     )}
 
-                    {/* Stakeholders */}
+                    {/* Team & Access Control */}
                     <Card>
-                      <div className="p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-semibold text-gray-900">Stakeholders</h4>
-                            {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
-                              <button
-                                onClick={() => setShowAddStakeholderModal(true)}
-                                className="p-1 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
-                                title="Add stakeholder"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {(workflowCollaborators?.length || 0) + (workflowStakeholders?.length || 0) + 1} stakeholder{((workflowCollaborators?.length || 0) + (workflowStakeholders?.length || 0) + 1) !== 1 ? 's' : ''}
-                          </span>
-                        </div>
+                      <div className="p-4">
+                        <h4 className="text-base font-semibold text-gray-900 mb-4">Team & Access Control</h4>
 
-                        <div className="space-y-2">
-                          {/* Owner */}
-                          <div className="flex items-center justify-between p-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                            <div className="flex items-center space-x-2">
-                              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                <span className="text-white font-semibold text-xs">
+                        {/* Created By Section */}
+                        <div className="mb-6">
+                          <div className="flex items-center justify-between mb-3">
+                            <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Created By</h5>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                                <span className="text-white font-semibold text-sm">
                                   {selectedWorkflow.creator_name?.charAt(0).toUpperCase() || '?'}
                                 </span>
                               </div>
@@ -3682,17 +3669,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 <div className="text-sm font-medium text-gray-900">
                                   {selectedWorkflow.creator_name || 'Unknown User'}
                                 </div>
-                                <div className="text-xs text-gray-500">Workflow owner</div>
+                                <div className="text-xs text-gray-500">Workflow creator</div>
                               </div>
                             </div>
                             <Badge variant="default" size="sm" className="bg-gray-800 text-white">
                               Owner
                             </Badge>
                           </div>
+                        </div>
 
-                          {/* Collaborators */}
-                          {workflowCollaborators && workflowCollaborators.length > 0 ? (
-                            workflowCollaborators.map((collab: any) => {
+                        {/* Admins Section */}
+                        {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission === 'admin').length > 0 && (
+                          <div className="mb-6">
+                            <div className="flex items-center justify-between mb-3">
+                              <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                Admins ({workflowCollaborators.filter((c: any) => c.permission === 'admin').length})
+                              </h5>
+                            </div>
+                            <div className="space-y-2">
+                              {workflowCollaborators.filter((c: any) => c.permission === 'admin').map((collab: any) => {
                               const user = collab.user
                               const userName = user?.first_name && user?.last_name
                                 ? `${user.first_name} ${user.last_name}`
@@ -3702,14 +3697,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'
 
                               return (
-                                <div key={collab.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-                                  <div className="flex items-center space-x-2 flex-1 min-w-0">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                      collab.permission === 'admin' ? 'bg-blue-500' :
-                                      collab.permission === 'write' ? 'bg-green-500' :
-                                      'bg-gray-400'
-                                    }`}>
-                                      <span className="text-white font-semibold text-xs">{userInitial}</span>
+                                <div key={collab.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
+                                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                                      <span className="text-white font-semibold text-sm">{userInitial}</span>
                                     </div>
                                     <div className="flex-1 min-w-0">
                                       <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
@@ -3727,23 +3718,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                             permission: e.target.value
                                           })
                                         }}
-                                        className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                       >
                                         <option value="admin">Admin</option>
                                         <option value="write">Write</option>
                                         <option value="read">Read</option>
                                       </select>
                                     ) : (
-                                      <Badge
-                                        variant={
-                                          collab.permission === 'admin' ? 'secondary' :
-                                          collab.permission === 'write' ? 'outline' :
-                                          'destructive'
-                                        }
-                                        size="sm"
-                                        className="capitalize"
-                                      >
-                                        {collab.permission}
+                                      <Badge variant="secondary" size="sm" className="bg-blue-100 text-blue-700">
+                                        Admin
                                       </Badge>
                                     )}
 
@@ -3754,8 +3737,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                             removeCollaboratorMutation.mutate(collab.id)
                                           }
                                         }}
-                                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                        title="Remove member"
+                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                        title="Remove admin"
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
@@ -3763,51 +3746,163 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   </div>
                                 </div>
                               )
-                            })
-                          ) : null}
+                            })}
+                            </div>
+                          </div>
+                        )}
 
-                          {/* Stakeholders (non-collaborator users) */}
-                          {workflowStakeholders && workflowStakeholders.length > 0 && workflowStakeholders.map((stakeholder: any) => {
-                            const user = stakeholder.user
-                            const userName = user?.first_name && user?.last_name
-                              ? `${user.first_name} ${user.last_name}`
-                              : user?.email || 'Unknown User'
-                            const userInitial = userName.charAt(0).toUpperCase()
+                        {/* Users Section (Write and Read permissions) */}
+                        {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission !== 'admin').length > 0 && (
+                          <div className="mb-6">
+                            <div className="flex items-center justify-between mb-3">
+                              <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                Users ({workflowCollaborators.filter((c: any) => c.permission !== 'admin').length})
+                              </h5>
+                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setShowInviteModal(true)}
+                                  disabled={selectedWorkflow.is_public}
+                                >
+                                  <Plus className="w-3 h-3 mr-1" />
+                                  Add User
+                                </Button>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              {workflowCollaborators.filter((c: any) => c.permission !== 'admin').map((collab: any) => {
+                                const user = collab.user
+                                const userName = user?.first_name && user?.last_name
+                                  ? `${user.first_name} ${user.last_name}`
+                                  : user?.email || 'Unknown User'
+                                const userInitial = userName.charAt(0).toUpperCase()
+                                const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'
 
-                            const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write'
+                                return (
+                                  <div key={collab.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+                                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                        collab.permission === 'write' ? 'bg-green-500' : 'bg-gray-400'
+                                      }`}>
+                                        <span className="text-white font-semibold text-sm">{userInitial}</span>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
+                                        <div className="text-xs text-gray-500 truncate">{user?.email}</div>
+                                      </div>
+                                    </div>
 
-                            return (
-                              <div key={stakeholder.id} className="flex items-center justify-between p-2 bg-green-50 rounded-lg border border-green-200 hover:border-green-300 transition-colors">
-                                <div className="flex items-center space-x-2 flex-1 min-w-0">
-                                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                                    <span className="text-white font-semibold text-xs">{userInitial}</span>
+                                    <div className="flex items-center space-x-2 ml-2">
+                                      {canEdit ? (
+                                        <select
+                                          value={collab.permission}
+                                          onChange={(e) => {
+                                            updateCollaboratorMutation.mutate({
+                                              collaborationId: collab.id,
+                                              permission: e.target.value
+                                            })
+                                          }}
+                                          className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                          <option value="admin">Admin</option>
+                                          <option value="write">Write</option>
+                                          <option value="read">Read</option>
+                                        </select>
+                                      ) : (
+                                        <Badge
+                                          variant={collab.permission === 'write' ? 'outline' : 'destructive'}
+                                          size="sm"
+                                          className={collab.permission === 'write' ? 'bg-green-50 text-green-700 border-green-300' : ''}
+                                        >
+                                          {collab.permission === 'write' ? 'Write' : 'Read'}
+                                        </Badge>
+                                      )}
+
+                                      {canEdit && (
+                                        <button
+                                          onClick={() => {
+                                            if (confirm(`Remove ${userName} from this workflow?`)) {
+                                              removeCollaboratorMutation.mutate(collab.id)
+                                            }
+                                          }}
+                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                          title="Remove user"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
-                                    <div className="text-xs text-gray-500 truncate">{user?.email}</div>
-                                  </div>
-                                </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
 
-                                <div className="flex items-center space-x-2 ml-2">
-                                  <Badge variant="success" size="sm">Stakeholder</Badge>
-                                  {canEdit && (
-                                    <button
-                                      onClick={() => {
-                                        if (confirm(`Remove ${userName} as stakeholder?`)) {
-                                          removeStakeholderMutation.mutate(stakeholder.id)
-                                        }
-                                      }}
-                                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                      title="Remove stakeholder"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
+                        {/* Stakeholders Section */}
+                        {workflowStakeholders && workflowStakeholders.length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                Stakeholders ({workflowStakeholders.length})
+                              </h5>
+                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setShowAddStakeholderModal(true)}
+                                >
+                                  <Plus className="w-3 h-3 mr-1" />
+                                  Add Stakeholder
+                                </Button>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              {workflowStakeholders.map((stakeholder: any) => {
+                                const user = stakeholder.user
+                                const userName = user?.first_name && user?.last_name
+                                  ? `${user.first_name} ${user.last_name}`
+                                  : user?.email || 'Unknown User'
+                                const userInitial = userName.charAt(0).toUpperCase()
+                                const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write'
+
+                                return (
+                                  <div key={stakeholder.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:border-green-300 transition-colors">
+                                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                                      <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-white font-semibold text-sm">{userInitial}</span>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
+                                        <div className="text-xs text-gray-500 truncate">{user?.email}</div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center space-x-2 ml-2">
+                                      <Badge variant="success" size="sm" className="bg-green-100 text-green-700">
+                                        Stakeholder
+                                      </Badge>
+                                      {canEdit && (
+                                        <button
+                                          onClick={() => {
+                                            if (confirm(`Remove ${userName} as stakeholder?`)) {
+                                              removeStakeholderMutation.mutate(stakeholder.id)
+                                            }
+                                          }}
+                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                          title="Remove stakeholder"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </Card>
                   </div>
