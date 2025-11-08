@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft, Pin, Reply } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -75,6 +75,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewConversation, setShowNewConversation] = useState(false)
   const [showGroupCreation, setShowGroupCreation] = useState(false)
+  const queryClient = useQueryClient()
   const [groupName, setGroupName] = useState('')
   const [groupDescription, setGroupDescription] = useState('')
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
@@ -82,15 +83,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const queryClient = useQueryClient()
   const { user } = useAuth()
+
+  // Don't invalidate on open - let the cache work naturally
 
   // Check URL for conversation parameter and select it
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const conversationId = params.get('conversation')
     if (conversationId && conversationId !== selectedConversationId) {
-      console.log('📬 Setting conversation from URL:', conversationId)
       setSelectedConversationId(conversationId)
       // Clean up URL after setting
       params.delete('conversation')
@@ -100,13 +101,14 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   }, [selectedConversationId])
 
   // Fetch all conversations for the current user
-  const { data: conversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
+  const { data: rawConversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
     queryKey: ['conversations'],
-    enabled: !!user?.id, // Don't disable when pane closes - rely on staleTime instead
-    staleTime: 60000, // Consider data fresh for 60 seconds to prevent refetch on view switch
+    enabled: !!user?.id,
+    staleTime: 30000, // Keep data fresh for 30 seconds
     structuralSharing: false, // Prevent partial data updates that cause flashing
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
-      console.log('🔄 FETCHING conversations query...')
       if (!user?.id) return []
 
       // First get conversation IDs where user is a participant
@@ -190,10 +192,58 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       return conversationsWithMessages as Conversation[]
     },
-    refetchInterval: isOpen ? 10000 : false, // Only check for new messages when pane is open
-    refetchOnMount: false, // Don't refetch when switching back to this view
-    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   })
+
+  // Create a stable, memoized version of conversations to prevent flashing
+  // Use a ref to store the last valid conversations and only update when data is complete
+  const lastValidConversationsRef = useRef<typeof rawConversations>(null)
+  const lastSignatureRef = useRef<string>('')
+
+  // Create a signature based on participant IDs AND names to catch when names change
+  const participantSignature = rawConversations
+    ?.map(c => `${c.id}:${c.participants?.map(p =>
+      `${p.user_id}-${p.user?.first_name || ''}-${p.user?.last_name || ''}`
+    ).sort().join(',')}`)
+    .sort()
+    .join('|') || ''
+
+  const conversations = useMemo(() => {
+    if (!rawConversations) {
+      return undefined
+    }
+
+    // Check if all conversations have complete participant data
+    const isComplete = rawConversations.every(conv =>
+      conv.participants &&
+      conv.participants.length > 0 &&
+      conv.participants.every(p => p.user && p.user.first_name && p.user.last_name)
+    )
+
+    // If data is incomplete, show loading
+    if (!isComplete) {
+      return undefined
+    }
+
+    // If signature changed, show loading while we wait for stable data
+    if (participantSignature !== lastSignatureRef.current) {
+      // Update the ref for next render
+      lastSignatureRef.current = participantSignature
+      lastValidConversationsRef.current = rawConversations.map(conv => ({
+        ...conv,
+        participants: conv.participants?.map(p => ({
+          ...p,
+          user: p.user ? { ...p.user } : null
+        }))
+      }))
+      // Return undefined to show loading skeleton
+      return undefined
+    }
+
+    // Signature matches - return cached data
+    return lastValidConversationsRef.current
+  }, [participantSignature, rawConversations])
 
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
@@ -292,8 +342,6 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
     const markAsRead = async () => {
       try {
-        console.log('Marking conversation as read:', selectedConversationId, 'for user:', user.id)
-
         // Use RPC function to bypass RLS recursion issue
         const { error } = await supabase.rpc('mark_conversation_read', {
           p_conversation_id: selectedConversationId,
@@ -302,8 +350,6 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
         if (error) {
           console.error('Error updating last_read_at:', error)
-        } else {
-          console.log('Successfully marked as read')
         }
 
         // Invalidate and refetch the unread direct messages query to update the red dot immediately
@@ -571,17 +617,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
     // For direct messages, show the other user's name
     const otherParticipant = conversation.participants?.find(p => p.user_id !== user?.id)
-    const title = otherParticipant ? getUserDisplayName(otherParticipant.user) : 'Direct Message'
-
-    // Debug logging
-    console.log('🎯 getConversationTitle:', {
-      conversationId: conversation.id,
-      participantsCount: conversation.participants?.length,
-      otherParticipant: otherParticipant?.user,
-      title
-    })
-
-    return title
+    return otherParticipant ? getUserDisplayName(otherParticipant.user) : 'Direct Message'
   }
 
   const getConversationSubtitle = (conversation: Conversation) => {
@@ -661,7 +697,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 </div>
               ))}
             </div>
-          ) : conversationsFetching || !conversations || conversations.some(c => !c.participants || c.participants.length === 0 || c.participants.some(p => !p.user)) ? (
+          ) : !conversations || conversationsFetching ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="animate-pulse">
