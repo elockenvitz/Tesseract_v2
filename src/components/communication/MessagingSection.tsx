@@ -705,7 +705,12 @@ export function MessagingSection({
 
   // Show conversation list if no context is selected
   if (!contextType && !contextId) {
-    console.log('🎨 Rendering conversation list view, conversations:', recentConversations.length, recentConversations)
+    console.log('🎨 Rendering conversation list view', {
+      conversationsLoading,
+      hasData: !!recentConversations,
+      count: recentConversations?.length,
+      showLoading: conversationsLoading || !recentConversations
+    })
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto">

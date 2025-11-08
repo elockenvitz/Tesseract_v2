@@ -2363,9 +2363,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 -mx-4 sm:-mx-6 lg:-mx-8 -my-6">
+    <div className="flex h-full bg-gray-50 -mx-4 sm:-mx-6 lg:-mx-8 -my-6">
       {/* Left Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
@@ -2734,7 +2734,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             </div>
           </div>
         ) : selectedWorkflow ? (
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
             {/* Workflow Header */}
             <div className="bg-white border-b border-gray-200 px-6 py-4">
               <div className="flex items-center space-x-4">
