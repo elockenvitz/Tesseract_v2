@@ -68,7 +68,7 @@ export function MessagingSection({
   // Fetch recent conversations (when no context is selected)
   const { data: recentConversations = [] } = useQuery({
     queryKey: ['recent-conversations', user?.id],
-    enabled: !contextType && !contextId && !!user?.id && isOpen, // Only fetch when no context and pane is open
+    enabled: !contextType && !contextId && !!user?.id, // Don't disable when pane closes - rely on staleTime instead
     staleTime: 60000, // Consider data fresh for 60 seconds
     refetchOnMount: false, // Don't refetch when switching back to this view
     refetchOnWindowFocus: false, // Don't refetch on window focus

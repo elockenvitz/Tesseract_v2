@@ -102,7 +102,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   // Fetch all conversations for the current user
   const { data: conversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
     queryKey: ['conversations'],
-    enabled: !!user?.id && isOpen,
+    enabled: !!user?.id, // Don't disable when pane closes - rely on staleTime instead
     staleTime: 60000, // Consider data fresh for 60 seconds to prevent refetch on view switch
     queryFn: async () => {
       if (!user?.id) return []
@@ -196,7 +196,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
     queryKey: ['conversation-messages', selectedConversationId],
-    enabled: !!selectedConversationId && isOpen, // Only fetch when conversation is selected and pane is open
+    enabled: !!selectedConversationId, // Don't disable when pane closes - rely on staleTime instead
     staleTime: 60000, // Consider data fresh for 60 seconds
     refetchOnMount: false, // Don't refetch when switching back to this view
     refetchOnWindowFocus: false, // Don't refetch on window focus
