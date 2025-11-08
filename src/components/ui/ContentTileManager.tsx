@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, GripVertical, Eye, EyeOff, Settings } from 'lucide-react'
+import { Plus, Trash2, GripVertical, Eye, EyeOff, Settings, ChevronDown, ChevronRight } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd'
 import { supabase } from '../../lib/supabase'
 import { Button } from './Button'
@@ -66,6 +66,7 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
   const [showAddTile, setShowAddTile] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
   const [selectedTileForPreview, setSelectedTileForPreview] = useState<string | null>(null)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const queryClient = useQueryClient()
 
   // Query to get content tiles for this stage
@@ -201,57 +202,74 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
   }
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h4 className="font-semibold text-gray-900">Content Tiles</h4>
-          <p className="text-sm text-gray-600">Customize what information is shown in this stage</p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            size="sm"
-            variant={previewMode ? 'default' : 'outline'}
-            onClick={() => setPreviewMode(!previewMode)}
-          >
-            {previewMode ? <Settings className="w-4 h-4 mr-1" /> : <Eye className="w-4 h-4 mr-1" />}
-            {previewMode ? 'Edit' : 'Preview'}
-          </Button>
-          {!previewMode && (
-            <Button size="sm" onClick={() => setShowAddTile(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Tile
-            </Button>
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="flex items-center space-x-2 hover:text-gray-700 transition-colors"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
           )}
-        </div>
+          <div className="text-left">
+            <h4 className="font-semibold text-gray-900">Content Tiles {contentTiles && contentTiles.length > 0 && `(${contentTiles.length})`}</h4>
+            {isCollapsed && (
+              <p className="text-xs text-gray-500">Click to expand</p>
+            )}
+          </div>
+        </button>
+        {!isCollapsed && (
+          <div className="flex items-center space-x-2">
+            <Button
+              size="sm"
+              variant={previewMode ? 'default' : 'outline'}
+              onClick={() => setPreviewMode(!previewMode)}
+            >
+              {previewMode ? <Settings className="w-4 h-4 mr-1" /> : <Eye className="w-4 h-4 mr-1" />}
+              {previewMode ? 'Edit' : 'Preview'}
+            </Button>
+            {!previewMode && (
+              <Button size="sm" onClick={() => setShowAddTile(true)}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add Tile
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Preview Mode */}
-      {previewMode && (
-        <div className="space-y-4 border-2 border-dashed border-blue-300 rounded-lg p-4 bg-blue-50">
-          <div className="text-sm font-medium text-blue-800 mb-4">Preview Mode - How tiles will appear to users:</div>
-          {contentTiles && contentTiles.length > 0 ? (
-            contentTiles
-              .filter(tile => tile.is_enabled)
-              .map(tile => (
-                <ContentTile
-                  key={tile.id}
-                  tile={tile}
-                  assetId="preview"
-                  assetSymbol="PREVIEW"
-                />
-              ))
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              No content tiles configured for this stage
+      {/* Collapsible Content */}
+      {!isCollapsed && (
+        <div className="mt-4 space-y-4">
+          {/* Preview Mode */}
+          {previewMode && (
+            <div className="space-y-4 border-2 border-dashed border-blue-300 rounded-lg p-4 bg-blue-50">
+              <div className="text-sm font-medium text-blue-800 mb-4">Preview Mode - How tiles will appear to users:</div>
+              {contentTiles && contentTiles.length > 0 ? (
+                contentTiles
+                  .filter(tile => tile.is_enabled)
+                  .map(tile => (
+                    <ContentTile
+                      key={tile.id}
+                      tile={tile}
+                      assetId="preview"
+                      assetSymbol="PREVIEW"
+                    />
+                  ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  No content tiles configured for this stage
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Edit Mode */}
-      {!previewMode && (
-        <>
+          {/* Edit Mode */}
+          {!previewMode && (
+            <>
           {/* Content Tiles List */}
           {contentTiles && contentTiles.length > 0 ? (
             <DragDropContext onDragEnd={handleDragEnd}>
@@ -414,7 +432,9 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
               </Card>
             </div>
           )}
-        </>
+            </>
+          )}
+        </div>
       )}
     </div>
   )

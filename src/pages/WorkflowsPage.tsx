@@ -9,7 +9,9 @@ import { Badge } from '../components/ui/Badge'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { WorkflowManager } from '../components/ui/WorkflowManager'
 import { ContentTileManager } from '../components/ui/ContentTileManager'
+import { UniverseRuleBuilder } from '../components/workflow/UniverseRuleBuilder'
 import { CreateBranchModal } from '../components/modals/CreateBranchModal'
+import { UniversePreviewModal } from '../components/modals/UniversePreviewModal'
 import { TabStateManager } from '../lib/tabStateManager'
 
 interface WorkflowWithStats {
@@ -191,6 +193,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [removeStakeholderConfirm, setRemoveStakeholderConfirm] = useState<{id: string, name: string} | null>(null)
   const [stageToDelete, setStageToDelete] = useState<{ id: string, key: string, label: string } | null>(null)
   const [showDeleteRuleModal, setShowDeleteRuleModal] = useState(false)
+  const [showUniversePreview, setShowUniversePreview] = useState(false)
   const [ruleToDelete, setRuleToDelete] = useState<{ id: string, name: string, type: string } | null>(null)
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -208,12 +211,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     cadence_days: 365
   })
 
-  // Universe configuration state
-  const [selectedLists, setSelectedLists] = useState<string[]>([])
-  const [selectedThemes, setSelectedThemes] = useState<string[]>([])
-  const [selectedSectors, setSelectedSectors] = useState<string[]>([])
-  const [selectedPriorities, setSelectedPriorities] = useState<string[]>([])
-  const [selectedAnalysts, setSelectedAnalysts] = useState<string[]>([])
+  // Universe configuration state - new rule-based approach
+  const [universeRulesState, setUniverseRulesState] = useState<Array<{
+    id: string
+    type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority'
+    operator: 'includes' | 'excludes'
+    values: string[]
+    combineWith?: 'AND' | 'OR'
+  }>>([])
 
   // Track if universe has been initialized to prevent auto-save on load
   const universeInitialized = useRef(false)
@@ -296,7 +301,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 10 * 60 * 1000 // 10 minutes
   })
 
-  // Query for workflow branches
+  // Query for workflow branches with detailed stats
   const { data: workflowBranches } = useQuery({
     queryKey: ['workflow-branches', selectedWorkflow?.id],
     queryFn: async () => {
@@ -304,7 +309,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       const { data, error } = await supabase
         .from('workflows')
-        .select('id, name, parent_workflow_id, branch_suffix, branched_at, created_at')
+        .select(`
+          id,
+          name,
+          parent_workflow_id,
+          branch_suffix,
+          branched_at,
+          created_at,
+          cadence_timeframe,
+          cadence_days,
+          archived,
+          archived_at,
+          deleted,
+          deleted_at
+        `)
         .eq('parent_workflow_id', selectedWorkflow.id)
         .order('branched_at', { ascending: false })
 
@@ -313,7 +331,31 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         throw error
       }
 
-      return data || []
+      // For each branch, get asset progress stats
+      const branchesWithStats = await Promise.all((data || []).map(async (branch) => {
+        const { data: progressData } = await supabase
+          .from('asset_workflow_progress')
+          .select('id, current_stage_key, completed_at')
+          .eq('workflow_id', branch.id)
+
+        const totalAssets = progressData?.length || 0
+        const activeAssets = progressData?.filter(p => !p.completed_at).length || 0
+        const completedAssets = progressData?.filter(p => p.completed_at).length || 0
+
+        // Determine if branch is "ended" (no active assets and has had assets)
+        const isEnded = activeAssets === 0 && totalAssets > 0
+
+        return {
+          ...branch,
+          totalAssets,
+          activeAssets,
+          completedAssets,
+          isEnded,
+          status: isEnded ? 'ended' : 'active'
+        }
+      }))
+
+      return branchesWithStats
     },
     enabled: !!selectedWorkflow?.id,
     staleTime: 2 * 60 * 1000,
@@ -566,9 +608,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     universeInitialized.current = false
   }, [selectedWorkflow?.id])
 
-  // Load universe rules into state when they change
+  // Load universe rules into state when they change - convert from old format to new rule-based format
   useEffect(() => {
     if (!universeRules) {
+      setUniverseRulesState([])
       // Mark as initialized even if no rules to allow saving
       setTimeout(() => {
         universeInitialized.current = true
@@ -576,42 +619,47 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       return
     }
 
-    const lists: string[] = []
-    const themes: string[] = []
-    const sectors: string[] = []
-    const priorities: string[] = []
-    const analystIds: string[] = []
+    const convertedRules: typeof universeRulesState = []
 
-    universeRules.forEach((rule: any) => {
+    universeRules.forEach((rule: any, index: number) => {
+      let values: string[] = []
+      let type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority' = 'list'
+
       switch (rule.rule_type) {
         case 'list':
-          const listIds = rule.rule_config?.list_ids || []
-          lists.push(...listIds)
+          type = 'list'
+          values = rule.rule_config?.list_ids || []
           break
         case 'theme':
-          const themeIds = rule.rule_config?.theme_ids || []
-          themes.push(...themeIds)
+          type = 'theme'
+          values = rule.rule_config?.theme_ids || []
           break
         case 'sector':
-          const sectorNames = rule.rule_config?.sectors || []
-          sectors.push(...sectorNames)
+          type = 'sector'
+          values = rule.rule_config?.sectors || []
           break
         case 'priority':
-          const priorityLevels = rule.rule_config?.levels || []
-          priorities.push(...priorityLevels)
+          type = 'priority'
+          values = rule.rule_config?.levels || []
           break
         case 'coverage':
-          const analystUserIds = rule.rule_config?.analyst_user_ids || []
-          analystIds.push(...analystUserIds)
+          type = 'analyst'
+          values = rule.rule_config?.analyst_user_ids || []
           break
+      }
+
+      if (values.length > 0) {
+        convertedRules.push({
+          id: rule.id || `rule-${index}`,
+          type,
+          operator: 'includes', // Default to includes for now
+          values,
+          combineWith: index > 0 ? (rule.combination_operator === 'and' ? 'AND' : 'OR') : undefined
+        })
       }
     })
 
-    setSelectedLists(lists)
-    setSelectedThemes(themes)
-    setSelectedSectors(sectors)
-    setSelectedPriorities(priorities)
-    setSelectedAnalysts(analystIds)
+    setUniverseRulesState(convertedRules)
 
     // Mark as initialized after loading rules
     setTimeout(() => {
@@ -619,7 +667,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }, 100)
   }, [universeRules])
 
-  // Auto-save universe configuration when selections change
+  // Auto-save universe configuration when rules change
   useEffect(() => {
     if (!universeInitialized.current || !selectedWorkflow?.id) return
 
@@ -628,7 +676,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }, 1000) // Debounce for 1 second
 
     return () => clearTimeout(timeoutId)
-  }, [selectedLists, selectedThemes, selectedSectors, selectedPriorities, selectedAnalysts, selectedWorkflow?.id])
+  }, [universeRulesState, selectedWorkflow?.id])
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError } = useQuery({
@@ -1817,7 +1865,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  // Universe configuration mutation
+  // Universe configuration mutation - updated for rule-based approach
   const saveUniverseMutation = useMutation({
     mutationFn: async ({ workflowId }: { workflowId: string }) => {
       const user = await supabase.auth.getUser()
@@ -1832,73 +1880,49 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (deleteError) throw deleteError
 
-      // Now insert new rules based on selections
+      // Convert rules to database format
       const rulesToInsert: any[] = []
 
-      // Add list rules
-      if (selectedLists.length > 0) {
-        rulesToInsert.push({
-          workflow_id: workflowId,
-          rule_type: 'list',
-          rule_config: { list_ids: selectedLists },
-          combination_operator: 'or',
-          sort_order: 0,
-          is_active: true,
-          created_by: userId
-        })
-      }
+      universeRulesState.forEach((rule, index) => {
+        let rule_type: string
+        let rule_config: any = {}
 
-      // Add theme rules
-      if (selectedThemes.length > 0) {
-        rulesToInsert.push({
-          workflow_id: workflowId,
-          rule_type: 'theme',
-          rule_config: { theme_ids: selectedThemes, include_assets: true },
-          combination_operator: 'or',
-          sort_order: 1,
-          is_active: true,
-          created_by: userId
-        })
-      }
+        switch (rule.type) {
+          case 'analyst':
+            rule_type = 'coverage'
+            rule_config = { analyst_user_ids: rule.values }
+            break
+          case 'list':
+            rule_type = 'list'
+            rule_config = { list_ids: rule.values }
+            break
+          case 'theme':
+            rule_type = 'theme'
+            rule_config = { theme_ids: rule.values, include_assets: true }
+            break
+          case 'sector':
+            rule_type = 'sector'
+            rule_config = { sectors: rule.values }
+            break
+          case 'priority':
+            rule_type = 'priority'
+            rule_config = { levels: rule.values }
+            break
+          default:
+            rule_type = 'list'
+            rule_config = {}
+        }
 
-      // Add sector rules
-      if (selectedSectors.length > 0) {
         rulesToInsert.push({
           workflow_id: workflowId,
-          rule_type: 'sector',
-          rule_config: { sectors: selectedSectors },
-          combination_operator: 'or',
-          sort_order: 2,
+          rule_type,
+          rule_config,
+          combination_operator: rule.combineWith?.toLowerCase() || 'or',
+          sort_order: index,
           is_active: true,
           created_by: userId
         })
-      }
-
-      // Add priority rules
-      if (selectedPriorities.length > 0) {
-        rulesToInsert.push({
-          workflow_id: workflowId,
-          rule_type: 'priority',
-          rule_config: { levels: selectedPriorities },
-          combination_operator: 'or',
-          sort_order: 3,
-          is_active: true,
-          created_by: userId
-        })
-      }
-
-      // Add coverage rules (analyst coverage)
-      if (selectedAnalysts.length > 0) {
-        rulesToInsert.push({
-          workflow_id: workflowId,
-          rule_type: 'coverage',
-          rule_config: { analyst_user_ids: selectedAnalysts },
-          combination_operator: 'or',
-          sort_order: 4,
-          is_active: true,
-          created_by: userId
-        })
-      }
+      })
 
       // Insert new rules if there are any
       if (rulesToInsert.length > 0) {
@@ -3138,6 +3162,103 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </div>
                   </Card>
 
+                  {/* Workflow Branches Overview */}
+                  <Card>
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {workflowBranches?.length || 0} total branches
+                            ({workflowBranches?.filter(b => b.status === 'active').length || 0} active,
+                            {workflowBranches?.filter(b => b.status === 'ended').length || 0} ended)
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Button size="sm" variant="outline" onClick={() => handleTabChange('cadence')}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            View All
+                          </Button>
+                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                            <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Create Branch
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {!workflowBranches || workflowBranches.length === 0 ? (
+                        <div className="text-center py-8">
+                          <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                          <h4 className="text-lg font-medium text-gray-900 mb-2">No workflow branches yet</h4>
+                          <p className="text-gray-500 mb-4">
+                            Create branches to run this workflow for specific time periods or contexts
+                          </p>
+                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                            <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Create First Branch
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {/* Show only first 5 instances in overview */}
+                          {workflowBranches.slice(0, 5).map((branch: any) => {
+                            const statusColors = {
+                              active: 'bg-green-100 text-green-700 border-green-300',
+                              ended: 'bg-gray-100 text-gray-600 border-gray-300'
+                            }
+                            const statusIcons = {
+                              active: Activity,
+                              ended: CheckCircle
+                            }
+                            const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
+
+                            return (
+                              <div key={branch.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                                <div className="flex items-center space-x-3 flex-1">
+                                  <Workflow className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-2">
+                                      <h4 className="text-sm font-medium text-gray-900 truncate">{branch.name}</h4>
+                                      <Badge
+                                        size="sm"
+                                        className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
+                                      >
+                                        <StatusIcon className="w-3 h-3" />
+                                        <span>{branch.status}</span>
+                                      </Badge>
+                                    </div>
+                                    {branch.totalAssets > 0 && (
+                                      <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
+                                        <span>{branch.totalAssets} assets</span>
+                                        <span className="text-green-600">{branch.activeAssets} active</span>
+                                        <span className="text-blue-600">{branch.completedAssets} completed</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-xs text-gray-500 ml-4">
+                                  {new Date(branch.branched_at || branch.created_at).toLocaleDateString()}
+                                </div>
+                              </div>
+                            )
+                          })}
+
+                          {workflowBranches.length > 5 && (
+                            <div className="text-center pt-2">
+                              <Button size="sm" variant="ghost" onClick={() => handleTabChange('cadence')}>
+                                View all {workflowBranches.length} branches
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
                   {/* Workflow Actions Section */}
                   {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                     <Card>
@@ -3250,9 +3371,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               )}
 
               {activeView === 'stages' && (
-                <div className="space-y-6">
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Workflow Stages</h3>
                     {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') &&
                      (selectedWorkflow?.stages || []).length > 0 && (
                       <Button size="sm" onClick={() => setShowAddStage(true)}>
@@ -3262,13 +3383,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     )}
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {(selectedWorkflow?.stages || []).length === 0 ? (
                       <Card>
-                        <div className="text-center py-8">
-                          <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">No stages configured</h3>
-                          <p className="text-gray-500 mb-4">Add stages to organize your workflow process.</p>
+                        <div className="text-center py-6">
+                          <Target className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                          <h3 className="text-base font-medium text-gray-900 mb-2">No stages configured</h3>
+                          <p className="text-sm text-gray-500 mb-3">Add stages to organize your workflow process.</p>
                           {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                             <Button size="sm" onClick={() => setShowAddStage(true)}>
                               <Plus className="w-4 h-4 mr-2" />
@@ -3286,9 +3407,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                         return (
                           <Card key={stage.stage_key}>
-                            <div className="p-4">
+                            <div className="p-3">
                               {/* Stage Header */}
-                              <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center space-x-4">
                                   <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm">
                                     {index + 1}
@@ -3363,15 +3484,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               </div>
 
                               {/* Checklist Items */}
-                              <div className="border-t pt-4">
-                                <div className="flex items-center justify-between mb-3">
+                              <div className="border-t pt-3">
+                                <div className="flex items-center justify-between mb-2">
                                   <h5 className="text-sm font-medium text-gray-700">
                                     Checklist Template ({stageChecklistTemplates.length})
                                   </h5>
                                   {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                                     <button
                                       onClick={() => setShowAddChecklistItem(stage.stage_key)}
-                                      className="text-sm font-medium text-gray-700 hover:text-gray-900 flex items-center transition-colors"
+                                      className="text-xs font-medium text-gray-700 hover:text-gray-900 flex items-center transition-colors"
                                     >
                                       <Plus className="w-3 h-3 mr-1" />
                                       Add Item
@@ -3380,15 +3501,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 </div>
 
                                 {stageChecklistTemplates.length === 0 ? (
-                                  <div className="text-center py-6 bg-gray-50 rounded-lg">
-                                    <CheckSquare className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                                  <div className="text-center py-4 bg-gray-50 rounded-lg">
+                                    <CheckSquare className="w-6 h-6 text-gray-400 mx-auto mb-2" />
                                     <p className="text-sm text-gray-500">No checklist template items</p>
                                     {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
                                       <p className="text-xs text-gray-400 mt-1">Add template items that will appear for all assets using this workflow</p>
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="space-y-2">
+                                  <div className="space-y-1.5">
                                     {stageChecklistTemplates.map((template, itemIndex) => (
                                       <div
                                         key={template.id}
@@ -3399,7 +3520,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                         onDragLeave={handleDragLeave}
                                         onDrop={(e) => handleDrop(e, template.id, stageChecklistTemplates)}
                                         onDragEnd={handleDragEnd}
-                                        className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 ${
+                                        className={`flex items-center space-x-2 p-2 rounded-lg transition-all duration-200 ${
                                           draggedChecklistItem === template.id ? 'opacity-50 bg-blue-100' :
                                           dragOverItem === template.id ? 'bg-blue-200 border-2 border-blue-400' :
                                           'bg-gray-50 hover:bg-gray-100'
@@ -3423,9 +3544,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                             )}
                                           </div>
                                           {template.description && (
-                                            <p className="text-xs text-gray-500 mt-1">{template.description}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
                                           )}
-                                          <div className="flex items-center space-x-4 mt-2">
+                                          <div className="flex items-center space-x-3 mt-1">
                                             {template.estimated_hours && (
                                               <span className="text-xs text-gray-400">~{template.estimated_hours}h</span>
                                             )}
@@ -3463,7 +3584,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               </div>
 
                               {/* Content Tiles */}
-                              <div className="border-t pt-4 mt-4">
+                              <div className="border-t pt-3 mt-3">
                                 <ContentTileManager
                                   workflowId={selectedWorkflow.id}
                                   stageId={stage.stage_key}
@@ -3820,217 +3941,50 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               {activeView === 'universe' && (
                 <div className="space-y-6">
                   {/* Header */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Workflow Universe</h3>
-                    <p className="text-sm text-gray-500 mt-1">
-                      Define which assets, themes, or portfolios will automatically receive this workflow when it kicks off
-                    </p>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Workflow Universe</h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Build rules to define which assets will automatically receive this workflow when it kicks off
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowUniversePreview(true)}
+                      disabled={universeRulesState.length === 0}
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      Preview Matching Assets
+                    </Button>
                   </div>
 
-                  {/* Universe Definition Form */}
+                  {/* Universe Rule Builder */}
                   <Card>
                     <div className="p-6">
-                      <div className="flex items-center justify-between mb-6">
-                        <h4 className="text-base font-semibold text-gray-900">Define Universe</h4>
-                        <div className="text-sm text-gray-500">
-                          Select which assets should receive this workflow
-                        </div>
-                      </div>
+                      <UniverseRuleBuilder
+                        rules={universeRulesState}
+                        onChange={setUniverseRulesState}
+                        analysts={analysts}
+                        assetLists={assetLists}
+                        themes={themes}
+                        sectors={['Communication Services', 'Consumer', 'Energy', 'Financials', 'Healthcare', 'Industrials', 'Materials', 'Real Estate', 'Technology', 'Utilities']}
+                        priorities={['Critical', 'High', 'Medium', 'Low']}
+                      />
 
-                      <div className="space-y-6">
-                        {/* Analyst Coverage Section */}
-                        <div className="border-b border-gray-200 pb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-900 flex items-center">
-                              <Users className="w-4 h-4 mr-2 text-indigo-600" />
-                              Include assets covered by these analysts:
-                            </h5>
-                            <span className="text-xs text-gray-500">{selectedAnalysts.length} selected</span>
-                          </div>
-                          <div className="space-y-2 ml-6">
-                            {analysts && analysts.length > 0 ? (
-                              analysts.map((analyst: any) => (
-                                <label key={analyst.user_id} className="flex items-center space-x-3 cursor-pointer group">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedAnalysts.includes(analyst.user_id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedAnalysts([...selectedAnalysts, analyst.user_id])
-                                      } else {
-                                        setSelectedAnalysts(selectedAnalysts.filter(id => id !== analyst.user_id))
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                  />
-                                  <span className="text-sm text-gray-700 group-hover:text-gray-900">{analyst.analyst_name}</span>
-                                </label>
-                              ))
-                            ) : (
-                              <p className="text-xs text-gray-500 italic">No analyst coverage data available</p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Asset Lists Section */}
-                        <div className="border-b border-gray-200 pb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-900 flex items-center">
-                              <FileText className="w-4 h-4 mr-2 text-blue-600" />
-                              Include assets from these lists:
-                            </h5>
-                            <span className="text-xs text-gray-500">{selectedLists.length} selected</span>
-                          </div>
-                          <div className="space-y-2 ml-6">
-                            {assetLists && assetLists.length > 0 ? (
-                              assetLists.map((list: any) => (
-                                <label key={list.id} className="flex items-center space-x-3 cursor-pointer group">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedLists.includes(list.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedLists([...selectedLists, list.id])
-                                      } else {
-                                        setSelectedLists(selectedLists.filter(id => id !== list.id))
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                  />
-                                  <span className="text-sm text-gray-700 group-hover:text-gray-900">{list.name}</span>
-                                </label>
-                              ))
-                            ) : (
-                              <p className="text-xs text-gray-500 italic">No lists available - create a list first</p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Themes Section */}
-                        <div className="border-b border-gray-200 pb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-900 flex items-center">
-                              <PieChart className="w-4 h-4 mr-2 text-purple-600" />
-                              Include assets from these themes:
-                            </h5>
-                            <span className="text-xs text-gray-500">{selectedThemes.length} selected</span>
-                          </div>
-                          <div className="space-y-2 ml-6">
-                            {themes && themes.length > 0 ? (
-                              themes.map((theme: any) => (
-                                <label key={theme.id} className="flex items-center space-x-3 cursor-pointer group">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedThemes.includes(theme.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedThemes([...selectedThemes, theme.id])
-                                      } else {
-                                        setSelectedThemes(selectedThemes.filter(id => id !== theme.id))
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                  />
-                                  <span className="text-sm text-gray-700 group-hover:text-gray-900">{theme.name}</span>
-                                </label>
-                              ))
-                            ) : (
-                              <p className="text-xs text-gray-500 italic">No themes available - create a theme first</p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Sectors Section */}
-                        <div className="border-b border-gray-200 pb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-900 flex items-center">
-                              <Filter className="w-4 h-4 mr-2 text-green-600" />
-                              Include assets from these sectors:
-                            </h5>
-                            <span className="text-xs text-gray-500">{selectedSectors.length} selected</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 ml-6">
-                            {['Communication Services', 'Consumer', 'Energy', 'Financials', 'Healthcare', 'Industrials', 'Materials', 'Real Estate', 'Technology', 'Utilities'].map((sector) => (
-                              <label key={sector} className="flex items-center space-x-3 cursor-pointer group">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedSectors.includes(sector)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedSectors([...selectedSectors, sector])
-                                    } else {
-                                      setSelectedSectors(selectedSectors.filter(s => s !== sector))
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                                />
-                                <span className="text-sm text-gray-700 group-hover:text-gray-900">{sector}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Priority Section */}
-                        <div className="border-b border-gray-200 pb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-900 flex items-center">
-                              <Star className="w-4 h-4 mr-2 text-amber-600" />
-                              Include assets with these priorities:
-                            </h5>
-                            <span className="text-xs text-gray-500">{selectedPriorities.length} selected</span>
-                          </div>
-                          <div className="space-y-2 ml-6">
-                            {['Critical', 'High', 'Medium', 'Low'].map((priority) => (
-                              <label key={priority} className="flex items-center space-x-3 cursor-pointer group">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPriorities.includes(priority)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedPriorities([...selectedPriorities, priority])
-                                    } else {
-                                      setSelectedPriorities(selectedPriorities.filter(p => p !== priority))
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
-                                />
-                                <span className="text-sm text-gray-700 group-hover:text-gray-900">{priority}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex justify-between items-center pt-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedAnalysts([])
-                              setSelectedLists([])
-                              setSelectedThemes([])
-                              setSelectedSectors([])
-                              setSelectedPriorities([])
-                            }}
-                          >
-                            Reset
-                          </Button>
-
-                          {/* Auto-save status indicator */}
-                          <div className="flex items-center text-sm">
-                            {saveUniverseMutation.isPending ? (
-                              <>
-                                <Clock className="w-4 h-4 mr-2 text-gray-400 animate-pulse" />
-                                <span className="text-gray-500">Saving...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Check className="w-4 h-4 mr-2 text-green-600" />
-                                <span className="text-gray-500">Saved</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                      {/* Auto-save status indicator */}
+                      <div className="flex justify-end items-center text-sm mt-4 pt-4 border-t">
+                        {saveUniverseMutation.isPending ? (
+                          <>
+                            <Clock className="w-4 h-4 mr-2 text-gray-400 animate-pulse" />
+                            <span className="text-gray-500">Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4 mr-2 text-green-600" />
+                            <span className="text-gray-500">Saved</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -4444,8 +4398,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   <div className="mt-8">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="text-base font-semibold text-gray-900">Workflow Branches</h3>
-                        <p className="text-sm text-gray-500 mt-1">Workflow instances created</p>
+                        <h3 className="text-base font-semibold text-gray-900">Workflow Instances</h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {workflowBranches?.length || 0} total branches
+                          ({workflowBranches?.filter(b => b.status === 'active').length || 0} active,
+                          {workflowBranches?.filter(b => b.status === 'ended').length || 0} ended)
+                        </p>
                       </div>
                       {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
                         <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
@@ -4459,36 +4417,79 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       <Card>
                         <div className="text-center py-8">
                           <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h3 className="text-base font-medium text-gray-900 mb-2">No workflow branches yet</h3>
+                          <h3 className="text-base font-medium text-gray-900 mb-2">No workflow instances yet</h3>
                           <p className="text-sm text-gray-500">
-                            When a new workflow branch is created, it will appear here
+                            When a new workflow instance is created, it will appear here
                           </p>
                         </div>
                       </Card>
                     ) : (
                       <div className="space-y-3">
-                        {workflowBranches.map((branch) => (
-                          <Card key={branch.id} className="hover:shadow-md transition-shadow">
-                            <div className="p-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-2">
-                                    <Workflow className="w-4 h-4 text-indigo-600" />
-                                    <h4 className="text-sm font-medium text-gray-900">{branch.name}</h4>
-                                  </div>
-                                  {branch.branch_suffix && (
-                                    <div className="text-xs text-gray-500 mt-1 ml-6">
-                                      Suffix: {branch.branch_suffix}
+                        {workflowBranches.map((branch: any) => {
+                          const statusColors = {
+                            active: 'bg-green-100 text-green-700 border-green-300',
+                            ended: 'bg-gray-100 text-gray-600 border-gray-300'
+                          }
+                          const statusIcons = {
+                            active: Activity,
+                            ended: CheckCircle
+                          }
+                          const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
+
+                          return (
+                            <Card key={branch.id} className="hover:shadow-md transition-shadow">
+                              <div className="p-4">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                      <Workflow className="w-4 h-4 text-indigo-600" />
+                                      <h4 className="text-sm font-semibold text-gray-900">{branch.name}</h4>
+                                      <Badge
+                                        size="sm"
+                                        className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
+                                      >
+                                        <StatusIcon className="w-3 h-3" />
+                                        <span className="capitalize">{branch.status}</span>
+                                      </Badge>
                                     </div>
-                                  )}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  Created {new Date(branch.branched_at || branch.created_at).toLocaleDateString()}
+
+                                    <div className="flex items-center space-x-4 text-xs text-gray-600 ml-6">
+                                      {branch.totalAssets > 0 && (
+                                        <>
+                                          <span className="flex items-center space-x-1">
+                                            <Target className="w-3 h-3" />
+                                            <span>{branch.totalAssets} assets</span>
+                                          </span>
+                                          <span className="flex items-center space-x-1 text-green-600">
+                                            <Activity className="w-3 h-3" />
+                                            <span>{branch.activeAssets} active</span>
+                                          </span>
+                                          <span className="flex items-center space-x-1 text-blue-600">
+                                            <CheckCircle className="w-3 h-3" />
+                                            <span>{branch.completedAssets} completed</span>
+                                          </span>
+                                        </>
+                                      )}
+                                      {branch.branch_suffix && (
+                                        <span className="text-gray-500">
+                                          • {branch.branch_suffix}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-500 text-right">
+                                    <div>Created {new Date(branch.branched_at || branch.created_at).toLocaleDateString()}</div>
+                                    {branch.cadence_timeframe && (
+                                      <div className="mt-1 text-indigo-600 font-medium capitalize">
+                                        {branch.cadence_timeframe}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </Card>
-                        ))}
+                            </Card>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -5014,6 +5015,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               sourceBranchId
             })
           }}
+        />
+      )}
+
+      {/* Universe Preview Modal */}
+      {showUniversePreview && selectedWorkflow && (
+        <UniversePreviewModal
+          workflowId={selectedWorkflow.id}
+          rules={universeRulesState}
+          onClose={() => setShowUniversePreview(false)}
         />
       )}
 
