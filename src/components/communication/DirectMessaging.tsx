@@ -84,8 +84,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { user } = useAuth()
+  const hasInvalidatedOnceRef = useRef(false)
 
-  // Don't invalidate on open - let the cache work naturally
+  // Invalidate query once when component mounts to ensure fresh data
+  useEffect(() => {
+    if (!hasInvalidatedOnceRef.current && user?.id) {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      hasInvalidatedOnceRef.current = true
+    }
+  }, [user?.id, queryClient])
 
   // Check URL for conversation parameter and select it
   useEffect(() => {
@@ -212,7 +219,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       conv.participants.every(p => p.user && p.user.first_name && p.user.last_name)
     )
 
-    // If data is complete, update cache and return it
+    // If data is complete, cache it and return it
     if (isComplete) {
       lastValidConversationsRef.current = rawConversations
       return rawConversations
