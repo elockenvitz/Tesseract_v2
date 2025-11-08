@@ -66,7 +66,7 @@ export function MessagingSection({
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
 
   // Fetch recent conversations (when no context is selected)
-  const { data: recentConversations = [] } = useQuery({
+  const { data: recentConversations = [], isLoading: conversationsLoading } = useQuery({
     queryKey: ['recent-conversations', user?.id],
     enabled: !contextType && !contextId && !!user?.id, // Don't disable when pane closes - rely on staleTime instead
     staleTime: 60000, // Consider data fresh for 60 seconds
@@ -710,7 +710,21 @@ export function MessagingSection({
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto">
-          {recentConversations.length === 0 ? (
+          {conversationsLoading ? (
+            <div className="p-4 space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recentConversations.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <MessageCircle className="h-16 w-16 text-gray-400 mx-auto mb-4" />
               <p>No recent conversations</p>
