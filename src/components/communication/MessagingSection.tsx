@@ -66,12 +66,11 @@ export function MessagingSection({
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
 
   // Fetch recent conversations (when no context is selected)
-  const { data: recentConversations = [], isLoading: conversationsLoading } = useQuery({
+  const { data: recentConversations, isLoading: conversationsLoading } = useQuery({
     queryKey: ['recent-conversations', user?.id],
     enabled: !contextType && !contextId && !!user?.id, // Don't disable when pane closes - rely on staleTime instead
     staleTime: 60000, // Consider data fresh for 60 seconds
-    refetchOnMount: false, // Don't refetch when switching back to this view
-    refetchOnWindowFocus: false, // Don't refetch on window focus
+    gcTime: 300000, // Keep in cache for 5 minutes
     queryFn: async () => {
       console.log('🔍 Starting recentConversations query, user:', user?.id)
       if (!user?.id) {
@@ -710,7 +709,7 @@ export function MessagingSection({
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto">
-          {conversationsLoading ? (
+          {conversationsLoading || !recentConversations ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="animate-pulse">
