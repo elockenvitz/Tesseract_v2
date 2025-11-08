@@ -661,6 +661,20 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 </div>
               ))}
             </div>
+          ) : conversationsFetching || !conversations || conversations.some(c => !c.participants || c.participants.length === 0 || c.participants.some(p => !p.user)) ? (
+            <div className="p-4 space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : conversations && conversations.length > 0 ? (
             <div className="p-2">
               {conversations
