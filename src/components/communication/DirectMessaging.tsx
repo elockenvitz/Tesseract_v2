@@ -86,13 +86,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const { user } = useAuth()
   const hasInvalidatedOnceRef = useRef(false)
 
-  // Invalidate query once when component mounts to ensure fresh data
-  useEffect(() => {
-    if (!hasInvalidatedOnceRef.current && user?.id) {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] })
-      hasInvalidatedOnceRef.current = true
-    }
-  }, [user?.id, queryClient])
+  // Don't invalidate on mount - the query will fetch fresh data automatically
+  // and placeholderData will prevent showing stale cached data
 
   // Check URL for conversation parameter and select it
   useEffect(() => {
@@ -111,10 +106,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const { data: rawConversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
     queryKey: ['conversations'],
     enabled: !!user?.id,
-    staleTime: 30000, // Keep data fresh for 30 seconds
-    structuralSharing: false, // Prevent partial data updates that cause flashing
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    staleTime: 60000, // Keep data fresh for 60 seconds
+    gcTime: 300000, // Keep in cache for 5 minutes
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -208,6 +201,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const lastValidConversationsRef = useRef<typeof rawConversations>(null)
 
   const conversations = useMemo(() => {
+    // Wait for user to be available before showing conversations
+    // This prevents showing wrong names when user.id is undefined
+    if (!user?.id) {
+      return undefined
+    }
+
     if (!rawConversations) {
       return lastValidConversationsRef.current || undefined
     }
@@ -227,7 +226,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
     // Data is incomplete - return cached data if we have it, otherwise show loading
     return lastValidConversationsRef.current || undefined
-  }, [rawConversations])
+  }, [rawConversations, user?.id])
 
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
