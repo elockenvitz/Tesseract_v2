@@ -104,7 +104,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     queryKey: ['conversations'],
     enabled: !!user?.id, // Don't disable when pane closes - rely on staleTime instead
     staleTime: 60000, // Consider data fresh for 60 seconds to prevent refetch on view switch
+    structuralSharing: false, // Prevent partial data updates that cause flashing
     queryFn: async () => {
+      console.log('🔄 FETCHING conversations query...')
       if (!user?.id) return []
 
       // First get conversation IDs where user is a participant
@@ -566,10 +568,20 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     if (conversation.is_group) {
       return conversation.name || 'Group Chat'
     }
-    
+
     // For direct messages, show the other user's name
     const otherParticipant = conversation.participants?.find(p => p.user_id !== user?.id)
-    return otherParticipant ? getUserDisplayName(otherParticipant.user) : 'Direct Message'
+    const title = otherParticipant ? getUserDisplayName(otherParticipant.user) : 'Direct Message'
+
+    // Debug logging
+    console.log('🎯 getConversationTitle:', {
+      conversationId: conversation.id,
+      participantsCount: conversation.participants?.length,
+      otherParticipant: otherParticipant?.user,
+      title
+    })
+
+    return title
   }
 
   const getConversationSubtitle = (conversation: Conversation) => {
