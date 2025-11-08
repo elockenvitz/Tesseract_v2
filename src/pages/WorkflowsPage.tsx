@@ -2370,9 +2370,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-bold text-gray-900">Workflows</h1>
-            <Button onClick={handleCreateWorkflow} size="sm">
-              <Plus className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={() => setSelectedWorkflow(null)}
+                size="sm"
+                variant="outline"
+                title="Workflow Dashboard"
+              >
+                <Home className="w-4 h-4" />
+              </Button>
+              <Button onClick={handleCreateWorkflow} size="sm">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Search */}
