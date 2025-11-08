@@ -197,21 +197,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   })
 
   // Create a stable, memoized version of conversations to prevent flashing
-  // Use a ref to store the last valid conversations and only update when data is complete
+  // Use a ref to store the last valid conversations
   const lastValidConversationsRef = useRef<typeof rawConversations>(null)
-  const lastSignatureRef = useRef<string>('')
-
-  // Create a signature based on participant IDs AND names to catch when names change
-  const participantSignature = rawConversations
-    ?.map(c => `${c.id}:${c.participants?.map(p =>
-      `${p.user_id}-${p.user?.first_name || ''}-${p.user?.last_name || ''}`
-    ).sort().join(',')}`)
-    .sort()
-    .join('|') || ''
 
   const conversations = useMemo(() => {
     if (!rawConversations) {
-      return undefined
+      return lastValidConversationsRef.current || undefined
     }
 
     // Check if all conversations have complete participant data
@@ -221,29 +212,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       conv.participants.every(p => p.user && p.user.first_name && p.user.last_name)
     )
 
-    // If data is incomplete, show loading
-    if (!isComplete) {
-      return undefined
+    // If data is complete, update cache and return it
+    if (isComplete) {
+      lastValidConversationsRef.current = rawConversations
+      return rawConversations
     }
 
-    // If signature changed, show loading while we wait for stable data
-    if (participantSignature !== lastSignatureRef.current) {
-      // Update the ref for next render
-      lastSignatureRef.current = participantSignature
-      lastValidConversationsRef.current = rawConversations.map(conv => ({
-        ...conv,
-        participants: conv.participants?.map(p => ({
-          ...p,
-          user: p.user ? { ...p.user } : null
-        }))
-      }))
-      // Return undefined to show loading skeleton
-      return undefined
-    }
-
-    // Signature matches - return cached data
-    return lastValidConversationsRef.current
-  }, [participantSignature, rawConversations])
+    // Data is incomplete - return cached data if we have it, otherwise show loading
+    return lastValidConversationsRef.current || undefined
+  }, [rawConversations])
 
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
