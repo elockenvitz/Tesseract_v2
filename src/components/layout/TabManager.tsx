@@ -1,6 +1,24 @@
 import React, { useState, useRef } from 'react'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit } from 'lucide-react'
 import { clsx } from 'clsx'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  Modifier,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 export interface Tab {
   id: string
@@ -23,9 +41,79 @@ interface TabManagerProps {
   onFocusSearch: () => void
 }
 
+interface SortableTabProps {
+  tab: Tab
+  isActive: boolean
+  onTabChange: (tabId: string) => void
+  onTabClose: (tabId: string) => void
+  getTabIcon: (type: string) => JSX.Element
+}
+
+// Modifier to restrict drag overlay movement to horizontal axis only
+const restrictToHorizontalAxis: Modifier = ({ transform }) => {
+  return {
+    ...transform,
+    y: 0,
+  }
+}
+
+function SortableTab({ tab, isActive, onTabChange, onTabClose, getTabIcon }: SortableTabProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: tab.id,
+    disabled: tab.id === 'dashboard',
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    cursor: tab.id === 'dashboard' ? 'default' : 'grab',
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={clsx(
+        'flex items-center space-x-2 px-4 py-3 border-b-2 cursor-pointer transition-colors duration-200 group flex-shrink-0',
+        'min-w-[120px] max-w-[200px]',
+        isActive
+          ? 'border-primary-500 bg-primary-50 text-primary-700'
+          : 'border-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900',
+        tab.id === 'dashboard' && 'cursor-default'
+      )}
+      onClick={() => onTabChange(tab.id)}
+    >
+      <span className="text-gray-500">{getTabIcon(tab.type)}</span>
+      <span className="text-sm font-medium truncate min-w-0 max-w-[120px]" title={tab.isBlank ? 'New Tab' : tab.title}>
+        {tab.isBlank ? 'New Tab' : tab.title}
+      </span>
+      {(tab.type !== 'dashboard' || tab.isBlank) && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onTabClose(tab.id)
+          }}
+          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewTab, onFocusSearch }: TabManagerProps) {
-  const [draggedTab, setDraggedTab] = useState<string | null>(null)
-  const [draggedOverTab, setDraggedOverTab] = useState<string | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [showLeftArrow, setShowLeftArrow] = useState(false)
   const [showRightArrow, setShowRightArrow] = useState(false)
   const [isScrolling, setIsScrolling] = useState(false)
@@ -33,60 +121,31 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const visibilityCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const handleDragStart = (e: React.DragEvent, tabId: string) => {
-    // Don't allow dragging the dashboard tab
-    if (tabId === 'dashboard') {
-      e.preventDefault()
-      return
-    }
-    
-    setDraggedTab(tabId)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', tabId)
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px of movement before drag starts
+      },
+    })
+  )
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string)
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
 
-  const handleDragEnter = (e: React.DragEvent, tabId: string) => {
-    e.preventDefault()
-    if (draggedTab && draggedTab !== tabId) {
-      setDraggedOverTab(tabId)
-    }
-  }
+    if (over && active.id !== over.id) {
+      const oldIndex = tabs.findIndex(tab => tab.id === active.id)
+      const newIndex = tabs.findIndex(tab => tab.id === over.id)
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    // Only clear if we're leaving the tab entirely
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDraggedOverTab(null)
+      if (oldIndex !== -1 && newIndex !== -1) {
+        onTabReorder(oldIndex, newIndex)
+      }
     }
-  }
 
-  const handleDrop = (e: React.DragEvent, targetTabId: string) => {
-    e.preventDefault()
-    
-    if (!draggedTab || draggedTab === targetTabId) {
-      setDraggedTab(null)
-      setDraggedOverTab(null)
-      return
-    }
-    
-    const fromIndex = tabs.findIndex(tab => tab.id === draggedTab)
-    const toIndex = tabs.findIndex(tab => tab.id === targetTabId)
-    
-    if (fromIndex !== -1 && toIndex !== -1) {
-      onTabReorder(fromIndex, toIndex)
-    }
-    
-    setDraggedTab(null)
-    setDraggedOverTab(null)
-  }
-
-  const handleDragEnd = () => {
-    setDraggedTab(null)
-    setDraggedOverTab(null)
+    setActiveId(null)
   }
 
   const checkScrollVisibility = () => {
@@ -95,24 +154,22 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       const leftPadding = 16
       const rightPadding = 60
 
-      // With padding, arrows can always be visible
-      setShowLeftArrow(scrollLeft > leftPadding + 10) // Show when scrolled past left padding + buffer
-      setShowRightArrow(scrollLeft < scrollWidth - clientWidth - rightPadding - 10) // Show when not at right edge
+      setShowLeftArrow(scrollLeft > leftPadding + 10)
+      setShowRightArrow(scrollLeft < scrollWidth - clientWidth - rightPadding - 10)
     }
   }
 
   const debouncedCheckScrollVisibility = () => {
-    // Don't check visibility while actively scrolling to prevent interference
     if (isScrolling) return
 
     if (visibilityCheckTimeoutRef.current) {
       clearTimeout(visibilityCheckTimeoutRef.current)
     }
     visibilityCheckTimeoutRef.current = setTimeout(() => {
-      if (!isScrolling) { // Double check we're not scrolling
+      if (!isScrolling) {
         checkScrollVisibility()
       }
-    }, 150) // 150ms debounce to reduce interference
+    }, 150)
   }
 
   const scrollLeft = () => {
@@ -122,8 +179,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       const containerWidth = container.clientWidth
       const currentScrollLeft = container.scrollLeft
 
-      // Calculate scroll amount - we can now scroll more freely with padding
-      const scrollAmount = containerWidth * 0.75 // 75% of container width
+      const scrollAmount = containerWidth * 0.75
       const targetScrollLeft = Math.max(0, currentScrollLeft - scrollAmount)
 
       container.scrollTo({
@@ -131,7 +187,6 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
         behavior: 'smooth'
       })
 
-      // Reset scrolling state after animation completes
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current)
       }
@@ -150,7 +205,6 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       const maxScrollLeft = container.scrollWidth - containerWidth
       const rightPadding = 60
 
-      // Simple scroll: move by 75% of container width, but respect boundaries
       const scrollAmount = containerWidth * 0.75
       const targetScrollLeft = Math.min(currentScrollLeft + scrollAmount, maxScrollLeft - rightPadding)
 
@@ -159,7 +213,6 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
         behavior: 'smooth'
       })
 
-      // Reset scrolling state after animation completes
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current)
       }
@@ -175,14 +228,12 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       const lastTab = container.children[container.children.length - 1] as HTMLElement
 
       if (lastTab) {
-        // Use requestAnimationFrame to ensure the DOM has updated
         requestAnimationFrame(() => {
           const containerRect = container.getBoundingClientRect()
           const tabRect = lastTab.getBoundingClientRect()
 
-          // Check if the last tab is not fully visible
           if (tabRect.right > containerRect.right) {
-            const scrollDistance = container.scrollLeft + (tabRect.right - containerRect.right) + 24 // 24px padding for better visibility
+            const scrollDistance = container.scrollLeft + (tabRect.right - containerRect.right) + 24
 
             container.scrollTo({
               left: scrollDistance,
@@ -201,9 +252,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
     return () => window.removeEventListener('resize', handleResize)
   }, [tabs])
 
-  // Auto-scroll to show new tabs when they're added
   React.useEffect(() => {
-    // Use a timeout to ensure the new tab has been rendered
     const timer = setTimeout(() => {
       scrollToShowLastTab()
       checkScrollVisibility()
@@ -238,7 +287,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       case 'portfolio': return <Briefcase className="h-3.5 w-3.5" />
       case 'theme': return <Tag className="h-3.5 w-3.5" />
       case 'note': return <FileText className="h-3.5 w-3.5" />
-      case 'workflows': return <Workflow className="h-3.5 w-3.5" />
+      case 'workflows': return <Orbit className="h-3.5 w-3.5" />
       case 'dashboard': return <Home className="h-3.5 w-3.5" />
       case 'profile': return <User className="h-3.5 w-3.5" />
       case 'settings': return <Settings className="h-3.5 w-3.5" />
@@ -247,30 +296,26 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
   }
 
   const handleNewTabClick = () => {
-    // Check if there's already a blank tab open
     const existingBlankTab = tabs.find(tab => tab.isBlank)
 
     if (existingBlankTab) {
-      // Navigate to the existing blank tab instead of creating a new one
       onTabChange(existingBlankTab.id)
-      // Focus search after a brief delay
       setTimeout(() => {
         onFocusSearch?.()
       }, 100)
     } else {
-      // No blank tab exists, create a new one
       onNewTab()
-      // Focus search after a brief delay to ensure the tab is created
       setTimeout(() => {
         onFocusSearch?.()
       }, 100)
     }
   }
 
+  const activeTab = tabs.find(tab => tab.id === activeId)
+
   return (
     <div className="bg-white border-b border-gray-200 px-4 sticky top-16 z-30">
       <div className="flex items-center">
-        {/* Left scroll button */}
         {showLeftArrow && (
           <button
             onClick={scrollLeft}
@@ -281,63 +326,61 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
           </button>
         )}
 
-        {/* Tabs container */}
-        <div
-          ref={scrollContainerRef}
-          className="flex items-center space-x-1 overflow-x-auto flex-1"
-          style={{
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            WebkitScrollbar: 'none',
-            paddingLeft: '16px',
-            paddingRight: '60px'
-          }}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          modifiers={[restrictToHorizontalAxis]}
         >
-          {tabs.map((tab) => (
+          <SortableContext
+            items={tabs.map(tab => tab.id)}
+            strategy={horizontalListSortingStrategy}
+          >
             <div
-              key={tab.id}
-              draggable={tab.id !== 'dashboard'}
-              onDragStart={(e) => handleDragStart(e, tab.id)}
-              onDragOver={handleDragOver}
-              onDragEnter={(e) => handleDragEnter(e, tab.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, tab.id)}
-              onDragEnd={handleDragEnd}
-              className={clsx(
-                'flex items-center space-x-2 px-4 py-3 border-b-2 cursor-pointer transition-all duration-200 group flex-shrink-0',
-                'min-w-[120px] max-w-[200px]', // Set reasonable min and max width
-                tab.isActive
-                  ? 'border-primary-500 bg-primary-50 text-primary-700'
-                  : 'border-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900',
-                draggedTab === tab.id && 'opacity-50',
-                draggedOverTab === tab.id && 'bg-primary-100 border-primary-300',
-                tab.id === 'dashboard' && 'cursor-default'
-              )}
-              onClick={() => onTabChange(tab.id)}
+              ref={scrollContainerRef}
+              className="flex items-center space-x-1 overflow-x-auto flex-1"
               style={{
-                cursor: tab.id === 'dashboard' ? 'default' : draggedTab === tab.id ? 'grabbing' : 'grab'
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                WebkitScrollbar: 'none',
+                paddingLeft: '16px',
+                paddingRight: '60px'
               }}
             >
-              <span className="text-gray-500">{getTabIcon(tab.type)}</span>
-              <span className="text-sm font-medium truncate min-w-0 max-w-[120px]" title={tab.isBlank ? 'New Tab' : tab.title}>
-                {tab.isBlank ? 'New Tab' : tab.title}
-              </span>
-              {(tab.type !== 'dashboard' || tab.isBlank) && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onTabClose(tab.id)
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
+              {tabs.map((tab) => (
+                <SortableTab
+                  key={tab.id}
+                  tab={tab}
+                  isActive={tab.isActive}
+                  onTabChange={onTabChange}
+                  onTabClose={onTabClose}
+                  getTabIcon={getTabIcon}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
 
-        {/* Right scroll button */}
+          <DragOverlay>
+            {activeTab ? (
+              <div
+                className={clsx(
+                  'flex items-center space-x-2 px-4 py-3 border-b-2 group flex-shrink-0 bg-white shadow-lg',
+                  'min-w-[120px] max-w-[200px]',
+                  activeTab.isActive
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-transparent text-gray-600'
+                )}
+              >
+                <span className="text-gray-500">{getTabIcon(activeTab.type)}</span>
+                <span className="text-sm font-medium truncate min-w-0 max-w-[120px]">
+                  {activeTab.isBlank ? 'New Tab' : activeTab.title}
+                </span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+
         {showRightArrow && (
           <button
             onClick={scrollRight}
@@ -348,7 +391,6 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
           </button>
         )}
 
-        {/* New tab button */}
         <button
           onClick={handleNewTabClick}
           className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors ml-2 flex-shrink-0"

@@ -37,7 +37,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Create Workflow Branch</h2>
-              <p className="text-sm text-gray-500 mt-1">Create a new instance of "{workflowName}"</p>
+              <p className="text-sm text-gray-500 mt-1">Create a new branch of "{workflowName}"</p>
             </div>
             <button
               onClick={onClose}

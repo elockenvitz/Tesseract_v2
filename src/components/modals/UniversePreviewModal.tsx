@@ -7,9 +7,9 @@ import { Badge } from '../ui/Badge'
 
 interface UniverseRule {
   id: string
-  type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority'
-  operator: 'includes' | 'excludes'
-  values: string[]
+  type: string
+  operator: any
+  values: any
   combineWith?: 'AND' | 'OR'
 }
 
@@ -24,45 +24,77 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
 
   // Helper function to get asset IDs matching a single rule
   const getAssetIdsForRule = async (rule: UniverseRule): Promise<string[]> => {
-    switch (rule.type) {
-      case 'analyst':
-        const { data: coverageAssets } = await supabase
-          .from('coverage')
-          .select('asset_id')
-          .in('user_id', rule.values)
-        return coverageAssets?.map(c => c.asset_id) || []
+    console.log('🔍 Processing rule:', rule)
 
-      case 'list':
-        const { data: listAssets } = await supabase
-          .from('asset_list_items')
-          .select('asset_id')
-          .in('list_id', rule.values)
-        return listAssets?.map(l => l.asset_id) || []
+    // Handle array values (multi-select filters)
+    if (Array.isArray(rule.values)) {
+      console.log('📋 Rule has array values:', rule.values)
 
-      case 'theme':
-        const { data: themeAssets } = await supabase
-          .from('theme_assets')
-          .select('asset_id')
-          .in('theme_id', rule.values)
-        return themeAssets?.map(t => t.asset_id) || []
+      switch (rule.type) {
+        case 'analyst':
+          const { data: coverageAssets } = await supabase
+            .from('coverage')
+            .select('asset_id')
+            .in('user_id', rule.values)
+          console.log(`✅ Analyst filter found ${coverageAssets?.length || 0} assets`)
+          return coverageAssets?.map(c => c.asset_id) || []
 
-      case 'sector':
-        const { data: sectorAssets } = await supabase
-          .from('assets')
-          .select('id')
-          .in('sector', rule.values)
-        return sectorAssets?.map(a => a.id) || []
+        case 'list':
+          const { data: listAssets } = await supabase
+            .from('asset_list_items')
+            .select('asset_id')
+            .in('list_id', rule.values)
+          console.log(`✅ List filter found ${listAssets?.length || 0} assets`)
+          return listAssets?.map(l => l.asset_id) || []
 
-      case 'priority':
-        const { data: priorityAssets } = await supabase
-          .from('assets')
-          .select('id')
-          .in('priority', rule.values)
-        return priorityAssets?.map(a => a.id) || []
+        case 'theme':
+          const { data: themeAssets } = await supabase
+            .from('theme_assets')
+            .select('asset_id')
+            .in('theme_id', rule.values)
+          console.log(`✅ Theme filter found ${themeAssets?.length || 0} assets`)
+          return themeAssets?.map(t => t.asset_id) || []
 
-      default:
-        return []
+        case 'sector':
+          const { data: sectorAssets, error: sectorError } = await supabase
+            .from('assets')
+            .select('id')
+            .in('sector', rule.values)
+          if (sectorError) {
+            console.error('❌ Sector query error:', sectorError)
+          }
+          console.log(`✅ Sector filter found ${sectorAssets?.length || 0} assets for sectors:`, rule.values)
+          return sectorAssets?.map(a => a.id) || []
+
+        case 'priority':
+          const { data: priorityAssets } = await supabase
+            .from('assets')
+            .select('id')
+            .in('priority', rule.values)
+          console.log(`✅ Priority filter found ${priorityAssets?.length || 0} assets`)
+          return priorityAssets?.map(a => a.id) || []
+
+        case 'symbol':
+          const { data: symbolAssets, error: symbolError } = await supabase
+            .from('assets')
+            .select('id')
+            .in('symbol', rule.values)
+          if (symbolError) {
+            console.error('❌ Symbol query error:', symbolError)
+          }
+          console.log(`✅ Symbol filter found ${symbolAssets?.length || 0} assets for symbols:`, rule.values)
+          return symbolAssets?.map(a => a.id) || []
+
+        default:
+          console.warn(`⚠️ Unknown filter type for array values: ${rule.type}`)
+          return []
+      }
     }
+
+    // For now, return empty array for non-array filters (market_cap, price, etc.)
+    // These would need server-side filtering or full asset scan
+    console.warn(`⚠️ Filter type ${rule.type} with non-array values not yet supported in preview`)
+    return []
   }
 
   // Fetch matching assets based on rules with AND/OR logic

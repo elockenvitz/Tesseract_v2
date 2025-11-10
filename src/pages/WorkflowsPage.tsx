@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown } from 'lucide-react'
+import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, GitBranch, TreeDeciduous, Network, Orbit } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { Card } from '../components/ui/Card'
@@ -10,6 +10,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { WorkflowManager } from '../components/ui/WorkflowManager'
 import { ContentTileManager } from '../components/ui/ContentTileManager'
 import { UniverseRuleBuilder } from '../components/workflow/UniverseRuleBuilder'
+import { SimplifiedUniverseBuilder } from '../components/workflow/SimplifiedUniverseBuilder'
 import { CreateBranchModal } from '../components/modals/CreateBranchModal'
 import { UniversePreviewModal } from '../components/modals/UniversePreviewModal'
 import { TabStateManager } from '../lib/tabStateManager'
@@ -28,6 +29,8 @@ interface WorkflowWithStats {
   cadence_timeframe?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
   kickoff_cadence?: 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
   kickoff_custom_date?: string
+  auto_create_branch?: boolean
+  auto_branch_name?: string
   usage_count: number
   active_assets: number
   completed_assets: number
@@ -134,7 +137,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
-  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'templates'>('overview')
+  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'branches' | 'templates'>('overview')
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
   const [isPersistentExpanded, setIsPersistentExpanded] = useState(true)
   const [isCadenceExpanded, setIsCadenceExpanded] = useState(true)
@@ -195,6 +198,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showDeleteRuleModal, setShowDeleteRuleModal] = useState(false)
   const [showUniversePreview, setShowUniversePreview] = useState(false)
   const [ruleToDelete, setRuleToDelete] = useState<{ id: string, name: string, type: string } | null>(null)
+  const [branchToEnd, setBranchToEnd] = useState<{ id: string, name: string } | null>(null)
+  const [branchToContinue, setBranchToContinue] = useState<{ id: string, name: string } | null>(null)
+  const [editingBranchSuffix, setEditingBranchSuffix] = useState<{ id: string, currentSuffix: string } | null>(null)
+  const [branchSuffixValue, setBranchSuffixValue] = useState('')
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [editingWorkflowData, setEditingWorkflowData] = useState({
@@ -211,12 +218,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     cadence_days: 365
   })
 
-  // Universe configuration state - new rule-based approach
+  // Universe configuration state - simplified with flexible filters
   const [universeRulesState, setUniverseRulesState] = useState<Array<{
     id: string
-    type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority'
-    operator: 'includes' | 'excludes'
-    values: string[]
+    type: string
+    operator: any
+    values: any
     combineWith?: 'AND' | 'OR'
   }>>([])
 
@@ -321,7 +328,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           archived,
           archived_at,
           deleted,
-          deleted_at
+          deleted_at,
+          status
         `)
         .eq('parent_workflow_id', selectedWorkflow.id)
         .order('branched_at', { ascending: false })
@@ -342,16 +350,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         const activeAssets = progressData?.filter(p => !p.completed_at).length || 0
         const completedAssets = progressData?.filter(p => p.completed_at).length || 0
 
-        // Determine if branch is "ended" (no active assets and has had assets)
-        const isEnded = activeAssets === 0 && totalAssets > 0
-
         return {
           ...branch,
           totalAssets,
           activeAssets,
           completedAssets,
-          isEnded,
-          status: isEnded ? 'ended' : 'active'
+          status: branch.status || 'active'
         }
       }))
 
@@ -622,40 +626,53 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     const convertedRules: typeof universeRulesState = []
 
     universeRules.forEach((rule: any, index: number) => {
-      let values: string[] = []
-      let type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority' = 'list'
-
-      switch (rule.rule_type) {
-        case 'list':
-          type = 'list'
-          values = rule.rule_config?.list_ids || []
-          break
-        case 'theme':
-          type = 'theme'
-          values = rule.rule_config?.theme_ids || []
-          break
-        case 'sector':
-          type = 'sector'
-          values = rule.rule_config?.sectors || []
-          break
-        case 'priority':
-          type = 'priority'
-          values = rule.rule_config?.levels || []
-          break
-        case 'coverage':
-          type = 'analyst'
-          values = rule.rule_config?.analyst_user_ids || []
-          break
-      }
-
-      if (values.length > 0) {
+      // Check if this is a new-format rule (has operator and values in config)
+      if (rule.rule_config?.operator && rule.rule_config?.values !== undefined) {
+        // New format - directly use the stored values
         convertedRules.push({
           id: rule.id || `rule-${index}`,
-          type,
-          operator: 'includes', // Default to includes for now
-          values,
+          type: rule.rule_type,
+          operator: rule.rule_config.operator,
+          values: rule.rule_config.values,
           combineWith: index > 0 ? (rule.combination_operator === 'and' ? 'AND' : 'OR') : undefined
         })
+      } else {
+        // Old format - convert legacy rules
+        let values: string[] = []
+        let type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority' = 'list'
+
+        switch (rule.rule_type) {
+          case 'list':
+            type = 'list'
+            values = rule.rule_config?.list_ids || []
+            break
+          case 'theme':
+            type = 'theme'
+            values = rule.rule_config?.theme_ids || []
+            break
+          case 'sector':
+            type = 'sector'
+            values = rule.rule_config?.sectors || []
+            break
+          case 'priority':
+            type = 'priority'
+            values = rule.rule_config?.levels || []
+            break
+          case 'coverage':
+            type = 'analyst'
+            values = rule.rule_config?.analyst_user_ids || []
+            break
+        }
+
+        if (values.length > 0) {
+          convertedRules.push({
+            id: rule.id || `rule-${index}`,
+            type,
+            operator: 'includes', // Default to includes for now
+            values,
+            combineWith: index > 0 ? (rule.combination_operator === 'and' ? 'AND' : 'OR') : undefined
+          })
+        }
       }
     })
 
@@ -667,16 +684,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }, 100)
   }, [universeRules])
 
-  // Auto-save universe configuration when rules change
-  useEffect(() => {
-    if (!universeInitialized.current || !selectedWorkflow?.id) return
-
-    const timeoutId = setTimeout(() => {
+  // Manual save function for universe rules
+  const saveUniverseRules = () => {
+    if (selectedWorkflow?.id) {
       saveUniverseMutation.mutate({ workflowId: selectedWorkflow.id })
-    }, 1000) // Debounce for 1 second
-
-    return () => clearTimeout(timeoutId)
-  }, [universeRulesState, selectedWorkflow?.id])
+    }
+  }
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError } = useQuery({
@@ -993,13 +1006,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         }
       })
 
-      console.log('🗄️ Archived workflows with stats:', archivedWorkflowsWithStats)
-
       return archivedWorkflowsWithStats
     }
   })
-
-  console.log('🗄️ Archived workflows in component:', archivedWorkflows)
 
   // Fetch deleted workflows (separate from archived)
   const { data: deletedWorkflows } = useQuery<WorkflowWithStats[]>({
@@ -1100,13 +1109,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         }
       })
 
-      console.log('🗑️ Deleted workflows with stats:', deletedWorkflowsWithStats)
-
       return deletedWorkflowsWithStats
     }
   })
-
-  console.log('🗑️ Deleted workflows in component:', deletedWorkflows)
 
   // Debug logs can be removed in production
   // console.log('Filtered workflows for display:', filteredWorkflows)
@@ -1785,11 +1790,83 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       setShowCreateBranchModal(false)
-      alert('Workflow branch created successfully!')
     },
     onError: (error) => {
       console.error('Error creating workflow branch:', error)
       alert('Failed to create workflow branch. Please try again.')
+    }
+  })
+
+  const closeBranchMutation = useMutation({
+    mutationFn: async (branchId: string) => {
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({ status: 'ended' })
+        .eq('id', branchId)
+        .select()
+
+      if (error) {
+        console.error('Error updating branch status:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      setBranchToEnd(null)
+    },
+    onError: (error: any) => {
+      console.error('Error ending workflow branch:', error)
+      alert(`Failed to end workflow branch: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const continueBranchMutation = useMutation({
+    mutationFn: async (branchId: string) => {
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({ status: 'active' })
+        .eq('id', branchId)
+        .select()
+
+      if (error) {
+        console.error('Error updating branch status:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      setBranchToContinue(null)
+    },
+    onError: (error: any) => {
+      console.error('Error continuing workflow branch:', error)
+      alert(`Failed to continue workflow branch: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const updateBranchSuffixMutation = useMutation({
+    mutationFn: async ({ branchId, newSuffix }: { branchId: string, newSuffix: string }) => {
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({ branch_suffix: newSuffix })
+        .eq('id', branchId)
+        .select()
+
+      if (error) {
+        console.error('Error updating branch suffix:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      setEditingBranchSuffix(null)
+      setBranchSuffixValue('')
+    },
+    onError: (error: any) => {
+      console.error('Error updating branch suffix:', error)
+      alert(`Failed to update branch suffix: ${error.message || 'Unknown error'}`)
     }
   })
 
@@ -1865,7 +1942,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  // Universe configuration mutation - updated for rule-based approach
+  // Universe configuration mutation - updated for flexible filter approach
   const saveUniverseMutation = useMutation({
     mutationFn: async ({ workflowId }: { workflowId: string }) => {
       const user = await supabase.auth.getUser()
@@ -1884,33 +1961,37 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       const rulesToInsert: any[] = []
 
       universeRulesState.forEach((rule, index) => {
-        let rule_type: string
+        let rule_type: string = rule.type
         let rule_config: any = {}
 
+        // Convert legacy types to database format
         switch (rule.type) {
           case 'analyst':
             rule_type = 'coverage'
-            rule_config = { analyst_user_ids: rule.values }
+            rule_config = { analyst_user_ids: Array.isArray(rule.values) ? rule.values : [rule.values] }
             break
           case 'list':
             rule_type = 'list'
-            rule_config = { list_ids: rule.values }
+            rule_config = { list_ids: Array.isArray(rule.values) ? rule.values : [rule.values] }
             break
           case 'theme':
             rule_type = 'theme'
-            rule_config = { theme_ids: rule.values, include_assets: true }
+            rule_config = { theme_ids: Array.isArray(rule.values) ? rule.values : [rule.values], include_assets: true }
             break
           case 'sector':
             rule_type = 'sector'
-            rule_config = { sectors: rule.values }
+            rule_config = { sectors: Array.isArray(rule.values) ? rule.values : [rule.values] }
             break
           case 'priority':
             rule_type = 'priority'
-            rule_config = { levels: rule.values }
+            rule_config = { levels: Array.isArray(rule.values) ? rule.values : [rule.values] }
             break
           default:
-            rule_type = 'list'
-            rule_config = {}
+            // For new filter types, store the operator and values directly
+            rule_config = {
+              operator: rule.operator,
+              values: rule.values
+            }
         }
 
         rulesToInsert.push({
@@ -2905,6 +2986,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   { id: 'universe', label: 'Universe', icon: Globe },
                   { id: 'stages', label: 'Stages', icon: Target },
                   { id: 'cadence', label: 'Cadence', icon: Calendar },
+                  { id: 'branches', label: 'Branches', icon: Network },
                   { id: 'templates', label: 'Templates', icon: Copy }
                 ].map((tab) => {
                   const Icon = tab.icon
@@ -3190,7 +3272,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                       {!workflowBranches || workflowBranches.length === 0 ? (
                         <div className="text-center py-8">
-                          <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                          <Orbit className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                           <h4 className="text-lg font-medium text-gray-900 mb-2">No workflow branches yet</h4>
                           <p className="text-gray-500 mb-4">
                             Create branches to run this workflow for specific time periods or contexts
@@ -3219,7 +3301,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             return (
                               <div key={branch.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                                 <div className="flex items-center space-x-3 flex-1">
-                                  <Workflow className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                                  <Orbit className="w-4 h-4 text-indigo-600 flex-shrink-0" />
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center space-x-2">
                                       <h4 className="text-sm font-medium text-gray-900 truncate">{branch.name}</h4>
@@ -3941,79 +4023,48 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               {activeView === 'universe' && (
                 <div className="space-y-6">
                   {/* Header */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Workflow Universe</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Build rules to define which assets will automatically receive this workflow when it kicks off
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowUniversePreview(true)}
-                      disabled={universeRulesState.length === 0}
-                    >
-                      <Eye className="w-4 h-4 mr-2" />
-                      Preview Matching Assets
-                    </Button>
+                  {/* Simplified Universe Builder */}
+                  <SimplifiedUniverseBuilder
+                    workflowId={selectedWorkflow.id}
+                    rules={universeRulesState}
+                    onRulesChange={setUniverseRulesState}
+                    onSave={saveUniverseRules}
+                    analysts={analysts.map(a => ({ value: a.value, label: a.label }))}
+                    lists={assetLists.map(l => ({ value: l.id, label: l.name }))}
+                    themes={themes.map(t => ({ value: t.id, label: t.name }))}
+                    portfolios={[]} // Add portfolios when available
+                  />
+
+                  {/* Auto-save status indicator */}
+                  <div className="flex justify-end items-center text-sm mt-4 pt-4 border-t">
+                    {saveUniverseMutation.isPending ? (
+                      <>
+                        <Clock className="w-4 h-4 mr-2 text-gray-400 animate-pulse" />
+                        <span className="text-gray-500">Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 mr-2 text-green-600" />
+                        <span className="text-gray-500">Saved</span>
+                      </>
+                    )}
                   </div>
-
-                  {/* Universe Rule Builder */}
-                  <Card>
-                    <div className="p-6">
-                      <UniverseRuleBuilder
-                        rules={universeRulesState}
-                        onChange={setUniverseRulesState}
-                        analysts={analysts}
-                        assetLists={assetLists}
-                        themes={themes}
-                        sectors={['Communication Services', 'Consumer', 'Energy', 'Financials', 'Healthcare', 'Industrials', 'Materials', 'Real Estate', 'Technology', 'Utilities']}
-                        priorities={['Critical', 'High', 'Medium', 'Low']}
-                      />
-
-                      {/* Auto-save status indicator */}
-                      <div className="flex justify-end items-center text-sm mt-4 pt-4 border-t">
-                        {saveUniverseMutation.isPending ? (
-                          <>
-                            <Clock className="w-4 h-4 mr-2 text-gray-400 animate-pulse" />
-                            <span className="text-gray-500">Saving...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check className="w-4 h-4 mr-2 text-green-600" />
-                            <span className="text-gray-500">Saved</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
                 </div>
               )}
 
               {activeView === 'cadence' && (
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
                       <h3 className="text-lg font-semibold text-gray-900">Cadence & Automation</h3>
                       <p className="text-sm text-gray-500 mt-1">Configure workflow timing and automated rules</p>
                     </div>
-                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                      <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Rule
-                      </Button>
-                    )}
-                  </div>
 
-                  {/* Frequency Category Card */}
-                  <Card className="border-l-4 border-l-blue-500">
-                    <div className="px-3 py-2">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center space-x-2">
-                          <Calendar className="w-4 h-4 text-blue-600" />
-                          <h4 className="text-sm font-semibold text-gray-900">Frequency Category</h4>
-                        </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                          Cadence Group:
+                        </label>
                         <select
                           value={selectedWorkflow.cadence_timeframe || 'annually'}
                           onChange={async (e) => {
@@ -4028,7 +4079,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               'persistent': 0
                             }
 
-                            console.log('Updating workflow frequency category to:', timeframe, 'for workflow:', selectedWorkflow.id)
+                            console.log('Updating workflow cadence group to:', timeframe, 'for workflow:', selectedWorkflow.id)
 
                             const { data, error } = await supabase
                               .from('workflows')
@@ -4040,9 +4091,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               .select()
 
                             if (error) {
-                              console.error('Error updating workflow frequency category:', error)
+                              console.error('Error updating workflow cadence group:', error)
                               console.error('Error details:', JSON.stringify(error, null, 2))
-                              alert(`Failed to update frequency category: ${error.message || error.code || 'Unknown error'}`)
+                              alert(`Failed to update cadence group: ${error.message || error.code || 'Unknown error'}`)
                             } else {
                               console.log('Successfully updated workflow:', data)
                               queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
@@ -4066,8 +4117,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <option value="persistent">Persistent (No Reset)</option>
                         </select>
                       </div>
+
+                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                        <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Rule
+                        </Button>
+                      )}
                     </div>
-                  </Card>
+                  </div>
 
                   <div className="space-y-4">
                     {(() => {
@@ -4353,7 +4411,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     )}
                                     {rule.action_type === 'branch_nocopy' && (
                                       <span>
-                                        Create new instance and append "{rule.action_value?.branch_suffix || 'new branch'}"
+                                        Create new branch and append "{rule.action_value?.branch_suffix || 'new branch'}"
                                       </span>
                                     )}
                                     {rule.action_type === 'move_stage' && (
@@ -4394,89 +4452,141 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     })()}
                   </div>
 
-                  {/* Workflow Branches Section */}
-                  <div className="mt-8">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-base font-semibold text-gray-900">Workflow Instances</h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {workflowBranches?.length || 0} total branches
-                          ({workflowBranches?.filter(b => b.status === 'active').length || 0} active,
-                          {workflowBranches?.filter(b => b.status === 'ended').length || 0} ended)
+                </div>
+              )}
+
+              {/* Branches View */}
+              {activeView === 'branches' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {workflowBranches?.length || 0} total branches
+                        ({workflowBranches?.filter(b => b.status === 'active').length || 0} active, {workflowBranches?.filter(b => b.status === 'ended').length || 0} ended)
+                      </p>
+                    </div>
+                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                      <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Branch
+                      </Button>
+                    )}
+                  </div>
+
+                  {!workflowBranches || workflowBranches.length === 0 ? (
+                    <Card>
+                      <div className="text-center py-8">
+                        <Network className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-base font-medium text-gray-900 mb-2">No workflow branches yet</h3>
+                        <p className="text-sm text-gray-500">
+                          When a new workflow branch is created, it will appear here
                         </p>
                       </div>
-                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
-                        <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Create Branch
-                        </Button>
-                      )}
-                    </div>
+                    </Card>
+                  ) : (
+                    <div className="space-y-3">
+                      {workflowBranches.map((branch: any) => {
+                        const statusColors = {
+                          active: 'bg-green-100 text-green-700 border-green-300',
+                          ended: 'bg-gray-100 text-gray-600 border-gray-300'
+                        }
+                        const statusIcons = {
+                          active: Activity,
+                          ended: CheckCircle
+                        }
+                        const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
 
-                    {!workflowBranches || workflowBranches.length === 0 ? (
-                      <Card>
-                        <div className="text-center py-8">
-                          <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h3 className="text-base font-medium text-gray-900 mb-2">No workflow instances yet</h3>
-                          <p className="text-sm text-gray-500">
-                            When a new workflow instance is created, it will appear here
-                          </p>
-                        </div>
-                      </Card>
-                    ) : (
-                      <div className="space-y-3">
-                        {workflowBranches.map((branch: any) => {
-                          const statusColors = {
-                            active: 'bg-green-100 text-green-700 border-green-300',
-                            ended: 'bg-gray-100 text-gray-600 border-gray-300'
-                          }
-                          const statusIcons = {
-                            active: Activity,
-                            ended: CheckCircle
-                          }
-                          const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
-
-                          return (
-                            <Card key={branch.id} className="hover:shadow-md transition-shadow">
-                              <div className="p-4">
-                                <div className="flex items-start justify-between">
-                                  <div className="flex-1">
-                                    <div className="flex items-center space-x-2 mb-2">
-                                      <Workflow className="w-4 h-4 text-indigo-600" />
-                                      <h4 className="text-sm font-semibold text-gray-900">{branch.name}</h4>
-                                      <Badge
-                                        size="sm"
-                                        className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
-                                      >
-                                        <StatusIcon className="w-3 h-3" />
-                                        <span className="capitalize">{branch.status}</span>
-                                      </Badge>
-                                    </div>
-
-                                    <div className="flex items-center space-x-4 text-xs text-gray-600 ml-6">
-                                      {branch.totalAssets > 0 && (
-                                        <>
-                                          <span className="flex items-center space-x-1">
-                                            <Target className="w-3 h-3" />
-                                            <span>{branch.totalAssets} assets</span>
-                                          </span>
-                                          <span className="flex items-center space-x-1 text-green-600">
-                                            <Activity className="w-3 h-3" />
-                                            <span>{branch.activeAssets} active</span>
-                                          </span>
-                                          <span className="flex items-center space-x-1 text-blue-600">
-                                            <CheckCircle className="w-3 h-3" />
-                                            <span>{branch.completedAssets} completed</span>
-                                          </span>
-                                        </>
-                                      )}
-                                      {branch.branch_suffix && (
-                                        <span className="text-gray-500">
-                                          • {branch.branch_suffix}
-                                        </span>
-                                      )}
-                                    </div>
+                        return (
+                          <Card key={branch.id} className="hover:shadow-md transition-shadow">
+                            <div className="p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-2 mb-2">
+                                    <Network className="w-4 h-4 text-purple-600" />
+                                    <h4 className="text-sm font-semibold text-gray-900">{branch.name}</h4>
+                                    {editingBranchSuffix?.id === branch.id ? (
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-xs text-gray-500">(</span>
+                                        <input
+                                          type="text"
+                                          value={branchSuffixValue}
+                                          onChange={(e) => setBranchSuffixValue(e.target.value)}
+                                          onBlur={() => {
+                                            if (branchSuffixValue.trim() !== editingBranchSuffix.currentSuffix) {
+                                              updateBranchSuffixMutation.mutate({
+                                                branchId: branch.id,
+                                                newSuffix: branchSuffixValue.trim()
+                                              })
+                                            } else {
+                                              setEditingBranchSuffix(null)
+                                              setBranchSuffixValue('')
+                                            }
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.currentTarget.blur()
+                                            } else if (e.key === 'Escape') {
+                                              setEditingBranchSuffix(null)
+                                              setBranchSuffixValue('')
+                                            }
+                                          }}
+                                          className="text-xs text-gray-700 border-b border-primary-500 outline-none bg-transparent w-20"
+                                          autoFocus
+                                        />
+                                        <span className="text-xs text-gray-500">)</span>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {branch.branch_suffix && (
+                                          <div className="flex items-center space-x-1 group">
+                                            <span className="text-xs text-gray-500 font-normal">
+                                              ({branch.branch_suffix})
+                                            </span>
+                                            {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                              <button
+                                                onClick={() => {
+                                                  setEditingBranchSuffix({ id: branch.id, currentSuffix: branch.branch_suffix })
+                                                  setBranchSuffixValue(branch.branch_suffix)
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity"
+                                              >
+                                                <Edit3 className="w-3 h-3 text-gray-400" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                    <Badge
+                                      size="sm"
+                                      className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
+                                    >
+                                      <StatusIcon className="w-3 h-3" />
+                                      <span className="capitalize">{branch.status}</span>
+                                    </Badge>
                                   </div>
+
+                                  <div className="flex items-center space-x-4 text-xs text-gray-600 ml-6">
+                                    {branch.totalAssets > 0 && (
+                                      <>
+                                        <span className="flex items-center space-x-1">
+                                          <Target className="w-3 h-3" />
+                                          <span>{branch.totalAssets} assets</span>
+                                        </span>
+                                        <span className="flex items-center space-x-1 text-green-600">
+                                          <Activity className="w-3 h-3" />
+                                          <span>{branch.activeAssets} active</span>
+                                        </span>
+                                        <span className="flex items-center space-x-1 text-blue-600">
+                                          <CheckCircle className="w-3 h-3" />
+                                          <span>{branch.completedAssets} completed</span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-3">
                                   <div className="text-xs text-gray-500 text-right">
                                     <div>Created {new Date(branch.branched_at || branch.created_at).toLocaleDateString()}</div>
                                     {branch.cadence_timeframe && (
@@ -4485,14 +4595,34 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                       </div>
                                     )}
                                   </div>
+                                  {branch.status === 'active' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setBranchToEnd({ id: branch.id, name: branch.name })}
+                                    >
+                                      <X className="w-3 h-3 mr-1" />
+                                      End
+                                    </Button>
+                                  )}
+                                  {branch.status === 'ended' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setBranchToContinue({ id: branch.id, name: branch.name })}
+                                    >
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Continue
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
-                            </Card>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -4601,7 +4731,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center max-w-md">
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Workflow className="w-8 h-8 text-gray-400" />
+                      <Orbit className="w-8 h-8 text-gray-400" />
                     </div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No workflows found</h3>
                     <p className="text-gray-500 mb-4">
@@ -5051,6 +5181,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
           workflowStages={selectedWorkflow.stages || []}
+          cadenceTimeframe={selectedWorkflow.cadence_timeframe}
           onClose={() => setShowAddRuleModal(false)}
           onSave={(ruleData) => {
             addRuleMutation.mutate({ workflowId: selectedWorkflow.id, rule: ruleData })
@@ -5064,6 +5195,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           rule={automationRules?.find(r => r.id === editingRule)!}
           workflowName={selectedWorkflow.name}
           workflowStages={selectedWorkflow.stages || []}
+          cadenceTimeframe={selectedWorkflow.cadence_timeframe}
           onClose={() => setEditingRule(null)}
           onSave={(updates) => {
             updateRuleMutation.mutate({ ruleId: editingRule, updates })
@@ -5094,6 +5226,48 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         cancelText="Cancel"
         variant="danger"
         isLoading={deleteRuleMutation.isPending}
+      />
+
+      {/* End Branch Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!branchToEnd}
+        onClose={() => {
+          if (!closeBranchMutation.isPending) {
+            setBranchToEnd(null)
+          }
+        }}
+        onConfirm={() => {
+          if (branchToEnd) {
+            closeBranchMutation.mutate(branchToEnd.id)
+          }
+        }}
+        title="End Workflow Branch?"
+        message={`Are you sure you want to end "${branchToEnd?.name}"? This will move it to ended status and it can no longer be used for new assets.`}
+        confirmText="End Branch"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={closeBranchMutation.isPending}
+      />
+
+      {/* Continue Branch Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!branchToContinue}
+        onClose={() => {
+          if (!continueBranchMutation.isPending) {
+            setBranchToContinue(null)
+          }
+        }}
+        onConfirm={() => {
+          if (branchToContinue) {
+            continueBranchMutation.mutate(branchToContinue.id)
+          }
+        }}
+        title="Continue Workflow Branch?"
+        message={`Are you sure you want to continue "${branchToContinue?.name}"? This will reactivate the branch and allow new assets to be assigned to it.`}
+        confirmText="Continue Branch"
+        cancelText="Cancel"
+        variant="primary"
+        isLoading={continueBranchMutation.isPending}
       />
 
       {/* Remove Admin Confirmation Dialog */}
@@ -6528,10 +6702,11 @@ function parseNaturalLanguage(input: string) {
   }
 }
 
-function AddRuleModal({ workflowId, workflowName, workflowStages, onClose, onSave }: {
+function AddRuleModal({ workflowId, workflowName, workflowStages, cadenceTimeframe, onClose, onSave }: {
   workflowId: string
   workflowName: string
   workflowStages: WorkflowStage[]
+  cadenceTimeframe?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
   onClose: () => void
   onSave: (ruleData: any) => void
 }) {
@@ -6553,23 +6728,28 @@ function AddRuleModal({ workflowId, workflowName, workflowStages, onClose, onSav
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 overflow-y-auto flex-1">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Add Automation Rule</h2>
-            <p className="text-sm text-gray-500 mt-1">Configure when and how this workflow should be automated</p>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4 pt-32 pb-8">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
+        {/* Fixed Header */}
+        <div className="p-6 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Add Automation Rule</h2>
+              <p className="text-sm text-gray-500 mt-1">Configure when and how this workflow should be automated</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Scrollable Content */}
+        <div className="p-6 overflow-y-auto flex-1">
+
+        <form id="add-rule-form" onSubmit={handleSubmit} className="space-y-6">
           {/* Rule Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -7559,9 +7739,9 @@ function AddRuleModal({ workflowId, workflowName, workflowStages, onClose, onSav
                   <option value="advance_stage">Advance to next stage</option>
                   <option value="reset_workflow">Reset workflow to beginning</option>
                 </optgroup>
-                <optgroup label="Create New Instance">
+                <optgroup label="Create New Branch">
                   <option value="branch_copy">Create a copy (keep current progress)</option>
-                  <option value="branch_nocopy">Create a new instance (fresh start)</option>
+                  <option value="branch_nocopy">Create a new branch (fresh start)</option>
                 </optgroup>
                 <optgroup label="Notification">
                   <option value="send_reminder">Send a reminder notification</option>
@@ -7576,8 +7756,7 @@ function AddRuleModal({ workflowId, workflowName, workflowStages, onClose, onSav
                     How should the new workflow be named?
                   </label>
                   <p className="text-xs text-gray-500 mb-3">
-                    Add text that will be appended to "{workflowName}".
-                    Use dynamic codes that automatically update with the current date.
+                    Add text that will be appended to "{workflowName}". Use dynamic codes that automatically update with the current date.
                   </p>
                 </div>
 
@@ -7727,40 +7906,40 @@ function AddRuleModal({ workflowId, workflowName, workflowStages, onClose, onSav
           )}
 
           {/* Active Toggle */}
-          <div className="flex items-center justify-between py-3 border-t border-gray-200">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="is_active"
-                checked={formData.isActive}
-                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900 font-medium">
-                Activate
-              </label>
-            </div>
-
-            <div className="flex space-x-3">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                Create Rule
-              </Button>
-            </div>
+          <div className="flex items-center py-3">
+            <input
+              type="checkbox"
+              id="is_active"
+              checked={formData.isActive}
+              onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900 font-medium">
+              Activate
+            </label>
           </div>
         </form>
+        </div>
+
+        {/* Fixed Footer */}
+        <div className="p-4 border-t border-gray-200 flex justify-end space-x-3 flex-shrink-0 bg-gray-50">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="add-rule-form">
+            Create Rule
+          </Button>
         </div>
       </div>
     </div>
   )
 }
 
-function EditRuleModal({ rule, workflowName, workflowStages, onClose, onSave }: {
+function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimeframe, onClose, onSave }: {
   rule: any
   workflowName: string
   workflowStages: WorkflowStage[]
+  cadenceTimeframe?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
   onClose: () => void
   onSave: (updates: any) => void
 }) {
@@ -7782,23 +7961,28 @@ function EditRuleModal({ rule, workflowName, workflowStages, onClose, onSave }: 
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 overflow-y-auto flex-1">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Edit Automation Rule</h2>
-            <p className="text-sm text-gray-500 mt-1">Update when and how this workflow should be automated</p>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4 pt-32 pb-8">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
+        {/* Fixed Header */}
+        <div className="p-6 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Edit Automation Rule</h2>
+              <p className="text-sm text-gray-500 mt-1">Update when and how this workflow should be automated</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Scrollable Content */}
+        <div className="p-6 overflow-y-auto flex-1">
+
+        <form id="edit-rule-form" onSubmit={handleSubmit} className="space-y-6">
           {/* Rule Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -8788,9 +8972,9 @@ function EditRuleModal({ rule, workflowName, workflowStages, onClose, onSave }: 
                   <option value="advance_stage">Advance to next stage</option>
                   <option value="reset_workflow">Reset workflow to beginning</option>
                 </optgroup>
-                <optgroup label="Create New Instance">
+                <optgroup label="Create New Branch">
                   <option value="branch_copy">Create a copy (keep current progress)</option>
-                  <option value="branch_nocopy">Create a new instance (fresh start)</option>
+                  <option value="branch_nocopy">Create a new branch (fresh start)</option>
                 </optgroup>
                 <optgroup label="Notification">
                   <option value="send_reminder">Send a reminder notification</option>
@@ -8805,8 +8989,7 @@ function EditRuleModal({ rule, workflowName, workflowStages, onClose, onSave }: 
                     How should the new workflow be named?
                   </label>
                   <p className="text-xs text-gray-500 mb-3">
-                    Add text that will be appended to "{workflowName}".
-                    Use dynamic codes that automatically update with the current date.
+                    Add text that will be appended to "{workflowName}". Use dynamic codes that automatically update with the current date.
                   </p>
                 </div>
 
@@ -8956,30 +9139,29 @@ function EditRuleModal({ rule, workflowName, workflowStages, onClose, onSave }: 
           )}
 
           {/* Active Toggle */}
-          <div className="flex items-center justify-between py-3 border-t border-gray-200">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="is_active_edit"
-                checked={formData.isActive}
-                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="is_active_edit" className="ml-2 block text-sm text-gray-900 font-medium">
-                Activate
-              </label>
-            </div>
-
-            <div className="flex space-x-3">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                Save Changes
-              </Button>
-            </div>
+          <div className="flex items-center py-3">
+            <input
+              type="checkbox"
+              id="is_active_edit"
+              checked={formData.isActive}
+              onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <label htmlFor="is_active_edit" className="ml-2 block text-sm text-gray-900 font-medium">
+              Activate
+            </label>
           </div>
         </form>
+        </div>
+
+        {/* Fixed Footer */}
+        <div className="p-4 border-t border-gray-200 flex justify-end space-x-3 flex-shrink-0 bg-gray-50">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="edit-rule-form">
+            Save Changes
+          </Button>
         </div>
       </div>
     </div>
