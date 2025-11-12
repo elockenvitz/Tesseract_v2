@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, GitBranch, TreeDeciduous, Network, Orbit } from 'lucide-react'
+import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { Card } from '../components/ui/Card'
@@ -13,7 +13,12 @@ import { UniverseRuleBuilder } from '../components/workflow/UniverseRuleBuilder'
 import { SimplifiedUniverseBuilder } from '../components/workflow/SimplifiedUniverseBuilder'
 import { CreateBranchModal } from '../components/modals/CreateBranchModal'
 import { UniversePreviewModal } from '../components/modals/UniversePreviewModal'
+import { BranchMapModal } from '../components/workflow/BranchMapModal'
+import { TemplateVersionsModal } from '../components/modals/TemplateVersionsModal'
+import { CreateVersionModal } from '../components/modals/CreateVersionModal'
+import { VersionCreatedModal } from '../components/modals/VersionCreatedModal'
 import { TabStateManager } from '../lib/tabStateManager'
+import { FILTER_TYPE_REGISTRY } from '../lib/universeFilters'
 
 interface WorkflowWithStats {
   id: string
@@ -137,7 +142,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
-  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'branches' | 'templates'>('overview')
+  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'branches' | 'models'>('overview')
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
   const [isPersistentExpanded, setIsPersistentExpanded] = useState(true)
   const [isCadenceExpanded, setIsCadenceExpanded] = useState(true)
@@ -187,6 +192,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showAddRuleModal, setShowAddRuleModal] = useState(false)
   const [editingRule, setEditingRule] = useState<string | null>(null)
   const [showCreateBranchModal, setShowCreateBranchModal] = useState(false)
+  const [preselectedSourceBranch, setPreselectedSourceBranch] = useState<string | null>(null)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
   const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null)
   const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false)
@@ -200,8 +206,31 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [ruleToDelete, setRuleToDelete] = useState<{ id: string, name: string, type: string } | null>(null)
   const [branchToEnd, setBranchToEnd] = useState<{ id: string, name: string } | null>(null)
   const [branchToContinue, setBranchToContinue] = useState<{ id: string, name: string } | null>(null)
+  const [branchToArchive, setBranchToArchive] = useState<{ id: string, name: string } | null>(null)
+  const [branchToDelete, setBranchToDelete] = useState<{ id: string, name: string } | null>(null)
+  const [branchStatusFilter, setBranchStatusFilter] = useState<'all' | 'archived' | 'deleted'>('all')
+  const [showBranchHierarchy, setShowBranchHierarchy] = useState(false)
+  const [showTemplateVersions, setShowTemplateVersions] = useState(false)
+  const [showCreateVersion, setShowCreateVersion] = useState(false)
+  const [showVersionCreated, setShowVersionCreated] = useState(false)
+  const [createdVersionInfo, setCreatedVersionInfo] = useState<{
+    versionNumber: number
+    versionName: string
+    versionType: 'major' | 'minor'
+  } | null>(null)
+  const [isTemplateEditMode, setIsTemplateEditMode] = useState(false)
+  const [templateChanges, setTemplateChanges] = useState<Array<{
+    type: 'stage_added' | 'stage_edited' | 'stage_deleted' | 'stage_reordered' | 'checklist_added' | 'checklist_edited' | 'checklist_deleted' | 'rule_added' | 'rule_edited' | 'rule_deleted' | 'cadence_updated' | 'universe_updated' | 'workflow_updated'
+    description: string
+    timestamp: number
+  }>>([])
+  const [showChangesList, setShowChangesList] = useState(false)
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false)
+  const changesDropdownRef = React.useRef<HTMLDivElement>(null)
   const [editingBranchSuffix, setEditingBranchSuffix] = useState<{ id: string, currentSuffix: string } | null>(null)
   const [branchSuffixValue, setBranchSuffixValue] = useState('')
+  const [collapsedBranches, setCollapsedBranches] = useState<Set<string>>(new Set())
+  const [isTemplateCollapsed, setIsTemplateCollapsed] = useState(false)
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [editingWorkflowData, setEditingWorkflowData] = useState({
@@ -226,6 +255,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     values: any
     combineWith?: 'AND' | 'OR'
   }>>([])
+
+  // Track initial universe rules when entering template edit mode
+  const [initialUniverseRules, setInitialUniverseRules] = useState<typeof universeRulesState>([])
 
   // Track if universe has been initialized to prevent auto-save on load
   const universeInitialized = useRef(false)
@@ -309,17 +341,18 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   })
 
   // Query for workflow branches with detailed stats
-  const { data: workflowBranches } = useQuery({
-    queryKey: ['workflow-branches', selectedWorkflow?.id],
+  const { data: workflowBranches, isLoading: isLoadingBranches } = useQuery({
+    queryKey: ['workflow-branches', selectedWorkflow?.id, branchStatusFilter],
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
-      const { data, error } = await supabase
+      let branchQuery = supabase
         .from('workflows')
         .select(`
           id,
           name,
           parent_workflow_id,
+          source_branch_id,
           branch_suffix,
           branched_at,
           created_at,
@@ -332,7 +365,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           status
         `)
         .eq('parent_workflow_id', selectedWorkflow.id)
-        .order('branched_at', { ascending: false })
+
+      // Apply status filter
+      if (branchStatusFilter === 'archived') {
+        branchQuery = branchQuery.eq('archived', true)
+      } else if (branchStatusFilter === 'deleted') {
+        branchQuery = branchQuery.eq('deleted', true)
+      } else {
+        // 'all' shows only non-deleted, non-archived branches by default
+        branchQuery = branchQuery.eq('archived', false).eq('deleted', false)
+      }
+
+      branchQuery = branchQuery.order('branched_at', { ascending: false })
+
+      const { data, error } = await branchQuery
+
+      console.log('Branch query filter:', branchStatusFilter)
+      console.log('Branch query result:', { data, error, count: data?.length })
 
       if (error) {
         console.error('Error fetching workflow branches:', error)
@@ -366,6 +415,63 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000
   })
 
+  // Query for ALL workflow branches (for hierarchy view)
+  const { data: allWorkflowBranches } = useQuery({
+    queryKey: ['all-workflow-branches', selectedWorkflow?.id],
+    queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
+      const { data, error } = await supabase
+        .from('workflows')
+        .select(`
+          id,
+          name,
+          parent_workflow_id,
+          source_branch_id,
+          branch_suffix,
+          branched_at,
+          created_at,
+          archived,
+          archived_at,
+          deleted,
+          deleted_at,
+          status
+        `)
+        .eq('parent_workflow_id', selectedWorkflow.id)
+        .order('branched_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching all workflow branches:', error)
+        throw error
+      }
+
+      // For each branch, get asset progress stats
+      const branchesWithStats = await Promise.all((data || []).map(async (branch) => {
+        const { data: progressData } = await supabase
+          .from('asset_workflow_progress')
+          .select('id, current_stage_key, completed_at')
+          .eq('workflow_id', branch.id)
+
+        const totalAssets = progressData?.length || 0
+        const activeAssets = progressData?.filter(p => !p.completed_at).length || 0
+        const completedAssets = progressData?.filter(p => p.completed_at).length || 0
+
+        return {
+          ...branch,
+          totalAssets,
+          activeAssets,
+          completedAssets
+        }
+      }))
+
+      console.log('All workflow branches query result:', branchesWithStats)
+      return branchesWithStats
+    },
+    enabled: !!selectedWorkflow?.id,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000
+  })
+
   // Run in parallel instead of waiting for stages
   const { data: workflowChecklistTemplates } = useQuery({
     queryKey: ['workflow-checklist-templates'],
@@ -386,6 +492,30 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000 // 10 minutes
+  })
+
+  // Query for template versions
+  const { data: templateVersions, refetch: refetchVersions } = useQuery({
+    queryKey: ['template-versions', selectedWorkflow?.id],
+    queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
+      const { data, error } = await supabase
+        .from('workflow_template_versions')
+        .select('*')
+        .eq('workflow_id', selectedWorkflow.id)
+        .order('version_number', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching template versions:', error)
+        throw error
+      }
+
+      return data || []
+    },
+    enabled: !!selectedWorkflow?.id,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000
   })
 
   // Fetch asset lists for universe configuration
@@ -684,10 +814,106 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }, 100)
   }, [universeRules])
 
+  // Click outside to close changes dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (changesDropdownRef.current && !changesDropdownRef.current.contains(event.target as Node)) {
+        setShowChangesList(false)
+      }
+    }
+
+    if (showChangesList) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showChangesList])
+
   // Manual save function for universe rules
   const saveUniverseRules = () => {
     if (selectedWorkflow?.id) {
       saveUniverseMutation.mutate({ workflowId: selectedWorkflow.id })
+    }
+  }
+
+  // Handler to track universe rule changes
+  const handleUniverseRulesChange = (newRules: typeof universeRulesState) => {
+    // Always update the state first
+    setUniverseRulesState(newRules)
+
+    // Only track if in template edit mode
+    if (!isTemplateEditMode) {
+      return
+    }
+
+    // Compare against initial state to detect actual changes
+    // Remove all existing universe_updated changes first
+    setTemplateChanges(prev => prev.filter(change => change.type !== 'universe_updated'))
+
+    // Now add back only the changes that differ from initial state
+    const changes: Array<{ type: 'universe_updated', description: string }> = []
+
+    // Check for added rules (not in initial state)
+    const addedRules = newRules.filter(nr => !initialUniverseRules.find(ir => ir.id === nr.id))
+    addedRules.forEach(rule => {
+      const filterDef = FILTER_TYPE_REGISTRY[rule.type as keyof typeof FILTER_TYPE_REGISTRY]
+      changes.push({
+        type: 'universe_updated',
+        description: `Added ${filterDef?.label || rule.type} filter`
+      })
+    })
+
+    // Check for removed rules (in initial state but not in new state)
+    const removedRules = initialUniverseRules.filter(ir => !newRules.find(nr => nr.id === ir.id))
+    removedRules.forEach(rule => {
+      const filterDef = FILTER_TYPE_REGISTRY[rule.type as keyof typeof FILTER_TYPE_REGISTRY]
+      changes.push({
+        type: 'universe_updated',
+        description: `Removed ${filterDef?.label || rule.type} filter`
+      })
+    })
+
+    // Check for modified rules (same id but different values, operator, or combinator)
+    newRules.forEach(newRule => {
+      const initialRule = initialUniverseRules.find(ir => ir.id === newRule.id)
+      if (initialRule) {
+        const filterDef = FILTER_TYPE_REGISTRY[newRule.type as keyof typeof FILTER_TYPE_REGISTRY]
+        const filterLabel = filterDef?.label || newRule.type
+
+        // Check if values changed
+        if (JSON.stringify(initialRule.values) !== JSON.stringify(newRule.values)) {
+          changes.push({
+            type: 'universe_updated',
+            description: `Modified ${filterLabel} filter values`
+          })
+        }
+        // Check if operator changed
+        if (initialRule.operator !== newRule.operator) {
+          changes.push({
+            type: 'universe_updated',
+            description: `Changed ${filterLabel} filter from ${initialRule.operator} to ${newRule.operator}`
+          })
+        }
+        // Check if combinator changed (AND/OR)
+        if (initialRule.combineWith !== newRule.combineWith) {
+          changes.push({
+            type: 'universe_updated',
+            description: `Changed ${filterLabel} logic from ${initialRule.combineWith || 'OR'} to ${newRule.combineWith || 'OR'}`
+          })
+        }
+      }
+    })
+
+    // Add all changes with timestamps
+    if (changes.length > 0) {
+      setTemplateChanges(prev => [
+        ...prev,
+        ...changes.map(change => ({
+          ...change,
+          timestamp: Date.now()
+        }))
+      ])
     }
   }
 
@@ -715,7 +941,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           last_name,
           email
         )
-      `).eq('archived', false).eq('deleted', false) // Only show non-archived, non-deleted workflows
+      `).eq('archived', false).eq('deleted', false).is('parent_workflow_id', null) // Only show non-archived, non-deleted workflow templates (not branches)
 
       switch (filterBy) {
         case 'my':
@@ -945,6 +1171,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           )
         `)
         .eq('archived', true)
+        .is('parent_workflow_id', null) // Only show workflow templates, not branches
         .or(`created_by.eq.${userId}${sharedFilter}`)
         .order('archived_at', { ascending: false })
 
@@ -1048,6 +1275,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           )
         `)
         .eq('deleted', true)
+        .is('parent_workflow_id', null) // Only show workflow templates, not branches
         .or(`created_by.eq.${userId}${sharedFilter}`)
         .order('deleted_at', { ascending: false })
 
@@ -1432,6 +1660,276 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
+  const createVersionMutation = useMutation({
+    mutationFn: async ({ workflowId, versionName, description, versionType, workflowData }: {
+      workflowId: string
+      versionName: string
+      description: string
+      versionType: 'major' | 'minor'
+      workflowData: any
+    }) => {
+      // First create the template version
+      const { data: versionId, error: versionError } = await supabase
+        .rpc('create_new_template_version', {
+          p_workflow_id: workflowId,
+          p_version_name: versionName,
+          p_description: description,
+          p_version_type: versionType
+        })
+
+      if (versionError) throw versionError
+
+      // If this is a major version, create a new workflow record (template tile)
+      let newWorkflowId = workflowId
+      if (versionType === 'major') {
+        const { data: newWorkflow, error: workflowError } = await supabase
+          .from('workflows')
+          .insert({
+            name: `${workflowData.name} v${versionName}`,
+            description: workflowData.description,
+            color: workflowData.color,
+            parent_workflow_id: workflowData.parent_workflow_id || workflowId, // Link to original template
+            template_version_id: versionId,
+            created_by: workflowData.created_by,
+            project_id: workflowData.project_id
+          })
+          .select()
+          .single()
+
+        if (workflowError) throw workflowError
+        newWorkflowId = newWorkflow.id
+
+        // Copy stages to new workflow
+        const { error: stagesError } = await supabase
+          .from('workflow_stages')
+          .insert(
+            workflowData.stages.map((stage: any) => ({
+              workflow_id: newWorkflowId,
+              stage_key: stage.stage_key,
+              stage_label: stage.stage_label,
+              stage_description: stage.stage_description,
+              stage_color: stage.stage_color,
+              stage_icon: stage.stage_icon,
+              sort_order: stage.sort_order
+            }))
+          )
+
+        if (stagesError) throw stagesError
+
+        // Copy checklist templates
+        if (workflowData.checklists && workflowData.checklists.length > 0) {
+          const { error: checklistsError } = await supabase
+            .from('workflow_checklist_templates')
+            .insert(
+              workflowData.checklists.map((checklist: any) => ({
+                workflow_id: newWorkflowId,
+                stage_id: checklist.stage_id,
+                item_id: checklist.item_id,
+                item_text: checklist.item_text,
+                sort_order: checklist.sort_order,
+                is_required: checklist.is_required
+              }))
+            )
+
+          if (checklistsError) throw checklistsError
+        }
+
+        // Copy automation rules
+        if (workflowData.rules && workflowData.rules.length > 0) {
+          const { error: rulesError } = await supabase
+            .from('workflow_automation_rules')
+            .insert(
+              workflowData.rules.map((rule: any) => ({
+                workflow_id: newWorkflowId,
+                rule_name: rule.rule_name,
+                rule_type: rule.rule_type,
+                condition_type: rule.condition_type,
+                condition_value: rule.condition_value,
+                action_type: rule.action_type,
+                action_value: rule.action_value,
+                is_active: rule.is_active
+              }))
+            )
+
+          if (rulesError) throw rulesError
+        }
+
+        // Copy universe rules if they exist
+        const { data: universeRules } = await supabase
+          .from('workflow_universe_rules')
+          .select('*')
+          .eq('workflow_id', workflowId)
+
+        if (universeRules && universeRules.length > 0) {
+          const { error: universeError } = await supabase
+            .from('workflow_universe_rules')
+            .insert(
+              universeRules.map(rule => ({
+                workflow_id: newWorkflowId,
+                filter_type: rule.filter_type,
+                filter_operator: rule.filter_operator,
+                filter_values: rule.filter_values,
+                combinator: rule.combinator,
+                order_index: rule.order_index
+              }))
+            )
+
+          if (universeError) throw universeError
+        }
+      }
+
+      return { data: versionId, versionName, versionType, newWorkflowId }
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['template-versions'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      refetchVersions()
+      setShowCreateVersion(false)
+
+      // Calculate the new version number
+      const currentMaxVersion = templateVersions?.length ? Math.max(...templateVersions.map(v => v.version_number)) : 0
+      const newVersionNumber = currentMaxVersion + 1
+
+      // If major version, navigate to the new workflow
+      if (result.versionType === 'major' && result.newWorkflowId) {
+        // Refetch workflows to get the new one
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ['workflows'] })
+        }, 500)
+      }
+
+      // Show success modal
+      setCreatedVersionInfo({
+        versionNumber: newVersionNumber,
+        versionName: result.versionName,
+        versionType: result.versionType
+      })
+      setShowVersionCreated(true)
+    },
+    onError: (error: any) => {
+      console.error('Error creating template version:', error)
+      console.error('Error details:', {
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code
+      })
+      alert(`Failed to create template version: ${error?.message || 'Please try again.'}`)
+    }
+  })
+
+  const handleCreateVersion = (versionName: string, versionType: 'major' | 'minor', description: string) => {
+    if (!selectedWorkflow) return
+
+    // First save workflow metadata if it has changed
+    if (editingWorkflowData.name.trim() &&
+        (editingWorkflowData.name !== selectedWorkflow.name ||
+         editingWorkflowData.description !== selectedWorkflow.description ||
+         editingWorkflowData.color !== selectedWorkflow.color)) {
+      updateWorkflowMutation.mutate({
+        workflowId: selectedWorkflow.id,
+        updates: {
+          name: editingWorkflowData.name.trim(),
+          description: editingWorkflowData.description.trim(),
+          color: editingWorkflowData.color
+        }
+      })
+    }
+
+    // Save universe rules if there are any changes
+    saveUniverseRules()
+
+    // Prepare workflow data for major version creation
+    const workflowData = {
+      name: editingWorkflowData.name || selectedWorkflow.name,
+      description: editingWorkflowData.description || selectedWorkflow.description,
+      color: editingWorkflowData.color || selectedWorkflow.color,
+      parent_workflow_id: selectedWorkflow.parent_workflow_id,
+      created_by: selectedWorkflow.created_by,
+      project_id: selectedWorkflow.project_id,
+      stages: selectedWorkflow.stages || [],
+      checklists: workflowChecklistTemplates?.filter(c => c.workflow_id === selectedWorkflow.id) || [],
+      rules: automationRules?.filter(r => r.workflow_id === selectedWorkflow.id) || []
+    }
+
+    // Then create the version
+    createVersionMutation.mutate({
+      workflowId: selectedWorkflow.id,
+      versionName,
+      description,
+      versionType,
+      workflowData
+    })
+
+    // Clear changes and exit edit mode
+    setTemplateChanges([])
+    setIsTemplateEditMode(false)
+  }
+
+  // Helper function to add a change to the tracking list
+  const trackChange = (type: typeof templateChanges[0]['type'], description: string) => {
+    setTemplateChanges(prev => [...prev, {
+      type,
+      description,
+      timestamp: Date.now()
+    }])
+  }
+
+  // Detect if changes constitute a major or minor version
+  const detectVersionType = (): 'major' | 'minor' => {
+    // Major changes: Any stage modifications (added, edited, deleted, reordered)
+    const majorChangeTypes = [
+      'stage_added',
+      'stage_edited',
+      'stage_deleted',
+      'stage_reordered'
+    ]
+
+    // Minor changes: Cadence, universe, checklists, automation rules, workflow metadata
+    const hasMajorChanges = templateChanges.some(change =>
+      majorChangeTypes.includes(change.type)
+    )
+
+    return hasMajorChanges ? 'major' : 'minor'
+  }
+
+  // Enter template edit mode
+  const enterTemplateEditMode = () => {
+    setIsTemplateEditMode(true)
+    setTemplateChanges([])
+    // Initialize editing workflow data
+    if (selectedWorkflow) {
+      setEditingWorkflowData({
+        name: selectedWorkflow.name,
+        description: selectedWorkflow.description,
+        color: selectedWorkflow.color
+      })
+    }
+    // Capture initial universe rules state for comparison
+    setInitialUniverseRules(JSON.parse(JSON.stringify(universeRulesState)))
+  }
+
+  // Exit template edit mode and discard changes
+  const exitTemplateEditMode = () => {
+    // Now handled by ConfirmDialog modal
+    setIsTemplateEditMode(false)
+    setTemplateChanges([])
+    // Refetch data to reset any optimistic updates
+    queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
+    queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+    queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+  }
+
+  // Save changes and create version
+  const saveTemplateChanges = () => {
+    if (templateChanges.length === 0) {
+      alert('No changes to save')
+      return
+    }
+    setShowCreateVersion(true)
+  }
+
   const handleArchiveWorkflow = (workflowId: string, workflowName: string) => {
     if (confirm(`Are you sure you want to archive "${workflowName}"? It will be hidden from the UI but all data will be preserved.`)) {
       archiveWorkflowMutation.mutate(workflowId)
@@ -1462,6 +1960,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           ) || []
         })
       }
+      const stageName = selectedWorkflow?.stages?.find(s => s.id === result.stageId)?.name || result.updates.name || 'Stage'
+
+      // Build detailed description of what changed
+      const changes: string[] = []
+      if (result.updates.name) changes.push('name')
+      if (result.updates.stage_description) changes.push('description')
+      if (result.updates.stage_color) changes.push('color')
+      if (result.updates.standard_deadline_days !== undefined) changes.push('deadline')
+
+      const changesText = changes.length > 0 ? ` (${changes.join(', ')})` : ''
+      trackChange('stage_edited', `Edited "${stageName}" stage${changesText}`)
     },
     onError: (error) => {
       console.error('Error updating stage:', error)
@@ -1499,6 +2008,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           ...selectedWorkflow,
           stages: [...(selectedWorkflow.stages || []), newStage]
         })
+        trackChange('stage_added', `Added new stage: ${newStage.name}`)
       }
 
       // Only invalidate the specific workflow query, not all workflows
@@ -1534,10 +2044,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onSuccess: (result) => {
       // Update the selected workflow optimistically to remove the stage
       if (selectedWorkflow) {
+        const deletedStage = selectedWorkflow.stages?.find(s => s.id === result.stageId)
         setSelectedWorkflow({
           ...selectedWorkflow,
           stages: selectedWorkflow.stages?.filter(s => s.id !== result.stageId) || []
         })
+        if (deletedStage) {
+          trackChange('stage_deleted', `Deleted stage: ${deletedStage.name}`)
+        }
       }
 
       // Only invalidate specific queries
@@ -1550,7 +2064,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   })
 
   const reorderStagesMutation = useMutation({
-    mutationFn: async ({ stages }: { stages: { id: string, sort_order: number }[] }) => {
+    mutationFn: async ({ stages, movedStageName, direction }: { stages: { id: string, sort_order: number }[], movedStageName?: string, direction?: 'up' | 'down' }) => {
       // Update each stage's sort_order individually
       const updates = stages.map(stage =>
         supabase
@@ -1564,7 +2078,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (error) throw error
 
-      return { stages }
+      return { stages, movedStageName, direction }
     },
     onSuccess: (result) => {
       // Update the selected workflow optimistically
@@ -1578,6 +2092,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           ...selectedWorkflow,
           stages: updatedStages
         })
+      }
+
+      // Create detailed change description
+      if (result.movedStageName && result.direction) {
+        trackChange('stage_reordered', `Moved "${result.movedStageName}" stage ${result.direction}`)
+      } else {
+        trackChange('stage_reordered', 'Reordered workflow stages')
       }
     },
     onError: (error) => {
@@ -1595,9 +2116,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .eq('id', itemId)
 
       if (error) throw error
+      return { itemId, updates }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+      const itemName = result.updates.name || 'checklist item'
+
+      // Build detailed description of what changed
+      const changes: string[] = []
+      if (result.updates.name) changes.push('name')
+      if (result.updates.description) changes.push('description')
+      if (result.updates.item_type) changes.push('type')
+
+      const changesText = changes.length > 0 ? ` (${changes.join(', ')})` : ''
+      trackChange('checklist_edited', `Edited "${itemName}"${changesText}`)
     },
     onError: (error) => {
       console.error('Error updating checklist item:', error)
@@ -1622,10 +2154,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         })
 
       if (error) throw error
+      return { item }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
       setShowAddChecklistItem(null)
+      trackChange('checklist_added', `Added checklist item: ${result.item.name}`)
     },
     onError: (error) => {
       console.error('Error adding checklist item:', error)
@@ -1641,9 +2175,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .eq('id', itemId)
 
       if (error) throw error
+      return { itemId }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+      trackChange('checklist_deleted', 'Deleted checklist item')
     },
     onError: (error) => {
       console.error('Error deleting checklist item:', error)
@@ -1661,6 +2197,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+      trackChange('checklist_edited', 'Reordered checklist items')
     },
     onError: (error) => {
       console.error('Error reordering checklist items:', error)
@@ -1703,9 +2240,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
       return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setShowAddRuleModal(false)
+      trackChange('rule_added', `Added automation rule: ${data.rule_name}`)
     },
     onError: (error: any) => {
       console.error('Error adding automation rule:', error)
@@ -1733,9 +2271,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setEditingRule(null)
+      trackChange('rule_edited', `Edited automation rule: ${data.rule_name}`)
     },
     onError: (error) => {
       console.error('Error updating automation rule:', error)
@@ -1765,8 +2304,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (workflowError) throw workflowError
 
+      // Get the active template version for this workflow
+      const { data: activeVersion } = await supabase
+        .from('workflow_template_versions')
+        .select('id, version_number')
+        .eq('workflow_id', workflowId)
+        .eq('is_active', true)
+        .single()
+
       // Create new workflow
-      const { data: newWorkflow, error: createError } = await supabase
+      const { data: newWorkflow, error: createError} = await supabase
         .from('workflows')
         .insert({
           name: branchName,
@@ -1776,8 +2323,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           is_public: false, // Always private - users must be explicitly invited
           created_by: userId,
           parent_workflow_id: workflowId,
+          source_branch_id: sourceBranchId || null,
           branch_suffix: branchSuffix,
-          branched_at: new Date().toISOString()
+          branched_at: new Date().toISOString(),
+          template_version_id: activeVersion?.id || null,
+          template_version_number: activeVersion?.version_number || null
         })
         .select()
         .single()
@@ -1801,7 +2351,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     mutationFn: async (branchId: string) => {
       const { data, error } = await supabase
         .from('workflows')
-        .update({ status: 'ended' })
+        .update({ status: 'inactive' })
         .eq('id', branchId)
         .select()
 
@@ -1842,6 +2392,130 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onError: (error: any) => {
       console.error('Error continuing workflow branch:', error)
       alert(`Failed to continue workflow branch: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const archiveBranchMutation = useMutation({
+    mutationFn: async (branchId: string) => {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({
+          archived: true,
+          archived_at: new Date().toISOString(),
+          archived_by: user?.id,
+          status: 'inactive'
+        })
+        .eq('id', branchId)
+        .select()
+
+      if (error) {
+        console.error('Error archiving branch:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      setBranchToArchive(null)
+    },
+    onError: (error: any) => {
+      console.error('Error archiving workflow branch:', error)
+      alert(`Failed to archive workflow branch: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const deleteBranchMutation = useMutation({
+    mutationFn: async (branchId: string) => {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      console.log('Deleting branch:', branchId)
+
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({
+          deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: user?.id,
+          status: 'inactive'
+        })
+        .eq('id', branchId)
+        .select()
+
+      console.log('Delete branch result:', { data, error })
+
+      if (error) {
+        console.error('Error deleting branch:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      setBranchToDelete(null)
+    },
+    onError: (error: any) => {
+      console.error('Error deleting workflow branch:', error)
+      alert(`Failed to delete workflow branch: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const unarchiveBranchMutation = useMutation({
+    mutationFn: async (branchId: string) => {
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({
+          archived: false,
+          archived_at: null,
+          archived_by: null
+        })
+        .eq('id', branchId)
+        .select()
+
+      if (error) {
+        console.error('Error unarchiving branch:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    },
+    onError: (error: any) => {
+      console.error('Error unarchiving workflow branch:', error)
+      alert(`Failed to unarchive workflow branch: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const restoreBranchMutation = useMutation({
+    mutationFn: async (branchId: string) => {
+      const { data, error } = await supabase
+        .from('workflows')
+        .update({
+          deleted: false,
+          deleted_at: null,
+          deleted_by: null
+        })
+        .eq('id', branchId)
+        .select()
+
+      if (error) {
+        console.error('Error restoring branch:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    },
+    onError: (error: any) => {
+      console.error('Error restoring workflow branch:', error)
+      alert(`Failed to restore workflow branch: ${error.message || 'Unknown error'}`)
     }
   })
 
@@ -1891,6 +2565,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setShowDeleteRuleModal(false)
       setRuleToDelete(null)
+      if (data && data.length > 0 && data[0].rule_name) {
+        trackChange('rule_deleted', `Deleted automation rule: ${data[0].rule_name}`)
+      } else {
+        trackChange('rule_deleted', 'Deleted automation rule')
+      }
     },
     onError: (error) => {
       console.error('❌ Error deleting automation rule:', error)
@@ -2016,9 +2695,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       return rulesToInsert
     },
-    onSuccess: () => {
+    onSuccess: (rules) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', selectedWorkflow?.id] })
       // Auto-save: silent success
+      trackChange('universe_updated', `Updated universe rules (${rules.length} rule${rules.length !== 1 ? 's' : ''})`)
     },
     onError: (error) => {
       console.error('Error saving universe configuration:', error)
@@ -2853,7 +3533,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             {/* Workflow Header */}
             <div className="bg-white border-b border-gray-200 px-6 py-4">
               <div className="flex items-center space-x-4">
-                {isEditingWorkflow ? (
+                {isTemplateEditMode ? (
                   <>
                     {/* Color Picker Circle */}
                     <div className="relative flex-shrink-0">
@@ -2870,8 +3550,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <button
                                 key={color}
                                 onClick={() => {
+                                  const oldColor = editingWorkflowData.color
                                   setEditingWorkflowData(prev => ({ ...prev, color }))
                                   setShowColorPicker(false)
+                                  if (selectedWorkflow && color !== oldColor) {
+                                    trackChange('workflow_updated', `Changed workflow color`)
+                                  }
                                 }}
                                 className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
                                   editingWorkflowData.color === color ? 'border-gray-900 ring-2 ring-offset-2 ring-gray-900' : 'border-gray-300 hover:border-gray-400'
@@ -2885,59 +3569,101 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       )}
                     </div>
 
-                    {/* Editing Inputs - Inline Style */}
+                    {/* Editing Inputs - Template Edit Mode Style */}
                     <div className="flex-1 flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex flex-col">
-                          <input
-                            type="text"
-                            value={editingWorkflowData.name}
-                            onChange={(e) => setEditingWorkflowData(prev => ({ ...prev, name: e.target.value }))}
-                            className="block px-2 py-0.5 text-xl font-bold text-gray-900 bg-transparent border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mb-1"
-                            placeholder="Workflow name"
-                            style={{ width: '500px' }}
-                          />
-                          <input
-                            type="text"
-                            value={editingWorkflowData.description}
-                            onChange={(e) => setEditingWorkflowData(prev => ({ ...prev, description: e.target.value }))}
-                            className="block px-2 py-0.5 text-sm text-gray-600 bg-transparent border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                            placeholder="Description"
-                            style={{ width: '500px' }}
-                          />
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            size="sm"
-                            onClick={saveWorkflowChanges}
-                            disabled={updateWorkflowMutation.isPending || !editingWorkflowData.name.trim()}
-                            className="bg-primary-600 hover:bg-primary-700 text-white"
-                          >
-                            <Save className="w-3.5 h-3.5 mr-1" />
-                            {updateWorkflowMutation.isPending ? 'Saving...' : 'Save'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              cancelEditingWorkflow()
-                              setShowColorPicker(false)
-                            }}
-                            disabled={updateWorkflowMutation.isPending}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
+                      <div className="flex flex-col">
+                        <input
+                          type="text"
+                          value={editingWorkflowData.name}
+                          onChange={(e) => setEditingWorkflowData(prev => ({ ...prev, name: e.target.value }))}
+                          onBlur={(e) => {
+                            if (selectedWorkflow && e.target.value.trim() !== selectedWorkflow.name) {
+                              trackChange('workflow_updated', `Changed workflow name from "${selectedWorkflow.name}" to "${e.target.value.trim()}"`)
+                            }
+                          }}
+                          className="block px-2 py-0.5 text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mb-1"
+                          placeholder="Workflow name"
+                          style={{ width: '500px' }}
+                        />
+                        <input
+                          type="text"
+                          value={editingWorkflowData.description}
+                          onChange={(e) => setEditingWorkflowData(prev => ({ ...prev, description: e.target.value }))}
+                          onBlur={(e) => {
+                            if (selectedWorkflow && e.target.value.trim() !== selectedWorkflow.description) {
+                              trackChange('workflow_updated', `Changed workflow description`)
+                            }
+                          }}
+                          className="block px-2 py-0.5 text-sm text-gray-600 bg-white border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          placeholder="Description"
+                          style={{ width: '500px' }}
+                        />
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedWorkflow(null)}
-                        className="flex items-center space-x-2"
-                      >
-                        <Home className="w-4 h-4" />
-                        <span>Dashboard</span>
-                      </Button>
+
+                      <div className="flex items-center space-x-3">
+                        {/* Changes Counter with Dropdown */}
+                        <div className="relative" ref={changesDropdownRef}>
+                          <button
+                            onClick={() => setShowChangesList(!showChangesList)}
+                            className="flex items-center space-x-2 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors border border-amber-300"
+                            title="View changes"
+                          >
+                            <AlertCircle className="w-4 h-4" />
+                            <span className="text-sm font-medium">{templateChanges.length} change{templateChanges.length !== 1 ? 's' : ''}</span>
+                            <ChevronDown className={`w-4 h-4 transition-transform ${showChangesList ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* Changes Dropdown */}
+                          {showChangesList && templateChanges.length > 0 && (
+                            <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                              <div className="p-3 border-b border-gray-200 bg-gray-50">
+                                <h3 className="text-sm font-semibold text-gray-900">Pending Changes</h3>
+                              </div>
+                              <div className="p-2">
+                                {templateChanges.map((change, idx) => (
+                                  <div key={idx} className="px-3 py-2 hover:bg-gray-50 rounded text-sm">
+                                    <div className="flex items-start space-x-2">
+                                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                                        change.type.includes('added') ? 'bg-green-500' :
+                                        change.type.includes('deleted') ? 'bg-red-500' :
+                                        'bg-blue-500'
+                                      }`} />
+                                      <div className="flex-1">
+                                        <p className="text-gray-900">{change.description}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                          {new Date(change.timestamp).toLocaleTimeString()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Cancel Button */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowCancelConfirmation(true)}
+                          className="flex items-center space-x-2"
+                        >
+                          <X className="w-4 h-4" />
+                          <span>Cancel</span>
+                        </Button>
+
+                        {/* Save Button */}
+                        <Button
+                          size="sm"
+                          onClick={saveTemplateChanges}
+                          disabled={templateChanges.length === 0}
+                          className="flex items-center space-x-2"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>Save & Version</span>
+                        </Button>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -2952,25 +3678,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <h1 className="text-xl font-bold text-gray-900">{selectedWorkflow.name}</h1>
                           <p className="text-gray-600 text-sm">{selectedWorkflow.description}</p>
                         </div>
+                      </div>
+                      <div className="flex items-center space-x-3">
                         {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                          <button
-                            onClick={startEditingWorkflow}
-                            className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
-                            title="Edit workflow details"
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={enterTemplateEditMode}
+                            className="flex items-center space-x-2"
                           >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
+                            <Pencil className="w-4 h-4" />
+                            <span>Edit Template</span>
+                          </Button>
                         )}
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedWorkflow(null)}
-                        className="flex items-center space-x-2"
-                      >
-                        <Home className="w-4 h-4" />
-                        <span>Dashboard</span>
-                      </Button>
                     </div>
                   </>
                 )}
@@ -2987,7 +3708,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   { id: 'stages', label: 'Stages', icon: Target },
                   { id: 'cadence', label: 'Cadence', icon: Calendar },
                   { id: 'branches', label: 'Branches', icon: Network },
-                  { id: 'templates', label: 'Templates', icon: Copy }
+                  { id: 'models', label: 'Models', icon: Copy }
                 ].map((tab) => {
                   const Icon = tab.icon
                   return (
@@ -3177,6 +3898,74 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </Card>
                   </div>
 
+                  {/* Template Version Information */}
+                  <Card>
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <GitBranch className="w-5 h-5 text-indigo-600" />
+                          <h3 className="text-lg font-semibold text-gray-900">Template Version</h3>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowTemplateVersions(true)}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View All Versions
+                        </Button>
+                      </div>
+
+                      {templateVersions && templateVersions.length > 0 ? (
+                        <div className="space-y-3">
+                          {(() => {
+                            const activeVersion = templateVersions.find(v => v.is_active)
+                            return activeVersion ? (
+                              <>
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-sm font-medium text-gray-900">
+                                        Version {activeVersion.version_number}
+                                      </span>
+                                      {activeVersion.version_name && (
+                                        <span className="text-sm text-gray-600">- {activeVersion.version_name}</span>
+                                      )}
+                                      <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
+                                        Active
+                                      </span>
+                                    </div>
+                                    {activeVersion.description && (
+                                      <p className="text-xs text-gray-500 mt-1">{activeVersion.description}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-4 text-xs text-gray-500 pt-2 border-t">
+                                  <span>{activeVersion.stages?.length || 0} stages</span>
+                                  <span>•</span>
+                                  <span>{activeVersion.checklist_templates?.length || 0} checklists</span>
+                                  <span>•</span>
+                                  <span>{activeVersion.automation_rules?.length || 0} rules</span>
+                                  <span>•</span>
+                                  <span>Created {new Date(activeVersion.created_at).toLocaleDateString()}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-center py-4">
+                                <p className="text-sm text-gray-500">No active version</p>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4">
+                          <p className="text-sm text-gray-500 mb-2">No versions created yet</p>
+                          <p className="text-xs text-gray-400">Create a version to track template changes over time</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
                   {/* Workflow Stages Overview */}
                   <Card>
                     <div className="p-6">
@@ -3253,11 +4042,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <p className="text-sm text-gray-500 mt-1">
                             {workflowBranches?.length || 0} total branches
                             ({workflowBranches?.filter(b => b.status === 'active').length || 0} active,
-                            {workflowBranches?.filter(b => b.status === 'ended').length || 0} ended)
+                            {workflowBranches?.filter(b => b.status === 'inactive').length || 0} inactive)
                           </p>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => handleTabChange('cadence')}>
+                          <Button size="sm" variant="outline" onClick={() => handleTabChange('branches')}>
                             <Eye className="w-4 h-4 mr-2" />
                             View All
                           </Button>
@@ -3290,11 +4079,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           {workflowBranches.slice(0, 5).map((branch: any) => {
                             const statusColors = {
                               active: 'bg-green-100 text-green-700 border-green-300',
-                              ended: 'bg-gray-100 text-gray-600 border-gray-300'
+                              inactive: 'bg-gray-100 text-gray-600 border-gray-300'
                             }
                             const statusIcons = {
                               active: Activity,
-                              ended: CheckCircle
+                              inactive: CheckCircle
                             }
                             const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
 
@@ -3309,8 +4098,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                         size="sm"
                                         className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
                                       >
-                                        <StatusIcon className="w-3 h-3" />
-                                        <span>{branch.status}</span>
+                                        {StatusIcon && <StatusIcon className="w-3 h-3" />}
+                                        <span className="capitalize">{branch.status}</span>
                                       </Badge>
                                     </div>
                                     {branch.totalAssets > 0 && (
@@ -3363,8 +4152,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             </div>
                             {selectedWorkflow.archived ? (
                               <Button
+                                size="sm"
                                 variant="outline"
-                                className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4"
+                                className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4 min-w-[120px]"
                                 onClick={async () => {
                                   if (confirm(`Are you sure you want to unarchive "${selectedWorkflow.name}"?`)) {
                                     const { error } = await supabase
@@ -3391,14 +4181,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               </Button>
                             ) : (
                               <Button
+                                size="sm"
                                 variant="outline"
-                                className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400 ml-4"
+                                className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400 ml-4 min-w-[120px]"
                                 onClick={() => {
                                   setWorkflowToDelete(selectedWorkflow.id)
                                   setShowDeleteConfirmModal(true)
                                 }}
                               >
-                                <Trash2 className="w-4 h-4 mr-2" />
+                                <Archive className="w-4 h-4 mr-2" />
                                 Archive
                               </Button>
                             )}
@@ -3420,8 +4211,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           </div>
                           {selectedWorkflow.deleted ? (
                             <Button
+                              size="sm"
                               variant="outline"
-                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4"
+                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4 min-w-[120px]"
                               onClick={async () => {
                                 if (confirm(`Are you sure you want to restore "${selectedWorkflow.name}"?`)) {
                                   restoreDeletedWorkflowMutation.mutate(selectedWorkflow.id)
@@ -3434,8 +4226,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             </Button>
                           ) : (
                             <Button
+                              size="sm"
                               variant="outline"
-                              className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 ml-4"
+                              className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 ml-4 min-w-[120px]"
                               onClick={() => {
                                 setWorkflowToPermanentlyDelete(selectedWorkflow.id)
                                 setShowPermanentDeleteModal(true)
@@ -3453,17 +4246,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               )}
 
               {activeView === 'stages' && (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-gray-900">Workflow Stages</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
                     {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') &&
-                     (selectedWorkflow?.stages || []).length > 0 && (
+                     (selectedWorkflow?.stages || []).length > 0 && isTemplateEditMode && (
                       <Button size="sm" onClick={() => setShowAddStage(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Stage
                       </Button>
                     )}
                   </div>
+                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <p className="text-sm text-blue-800">
+                        Click <strong>"Edit Template"</strong> in the header to make changes to stages and checklists
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     {(selectedWorkflow?.stages || []).length === 0 ? (
@@ -3472,7 +4273,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <Target className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                           <h3 className="text-base font-medium text-gray-900 mb-2">No stages configured</h3>
                           <p className="text-sm text-gray-500 mb-3">Add stages to organize your workflow process.</p>
-                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                             <Button size="sm" onClick={() => setShowAddStage(true)}>
                               <Plus className="w-4 h-4 mr-2" />
                               Add First Stage
@@ -3508,7 +4309,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     </div>
                                   </div>
                                 </div>
-                                {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                                   <div className="flex items-center space-x-2">
                                     <Button size="xs" variant="outline" title="Move Up" disabled={index === 0}
                                       onClick={() => {
@@ -3522,7 +4323,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                             stages: [
                                               { id: stageToMove.id, sort_order: stageAbove.sort_order },
                                               { id: stageAbove.id, sort_order: stageToMove.sort_order }
-                                            ]
+                                            ],
+                                            movedStageName: stageToMove.name,
+                                            direction: 'up'
                                           })
                                         }
                                       }}>
@@ -3540,7 +4343,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                             stages: [
                                               { id: stageToMove.id, sort_order: stageBelow.sort_order },
                                               { id: stageBelow.id, sort_order: stageToMove.sort_order }
-                                            ]
+                                            ],
+                                            movedStageName: stageToMove.name,
+                                            direction: 'down'
                                           })
                                         }
                                       }}>
@@ -3571,7 +4376,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   <h5 className="text-sm font-medium text-gray-700">
                                     Checklist Template ({stageChecklistTemplates.length})
                                   </h5>
-                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                                     <button
                                       onClick={() => setShowAddChecklistItem(stage.stage_key)}
                                       className="text-xs font-medium text-gray-700 hover:text-gray-900 flex items-center transition-colors"
@@ -3595,7 +4400,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     {stageChecklistTemplates.map((template, itemIndex) => (
                                       <div
                                         key={template.id}
-                                        draggable={selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'}
+                                        draggable={(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode}
                                         onDragStart={(e) => handleDragStart(e, template.id)}
                                         onDragOver={handleDragOver}
                                         onDragEnter={(e) => handleDragEnter(e, template.id)}
@@ -3607,10 +4412,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                           dragOverItem === template.id ? 'bg-blue-200 border-2 border-blue-400' :
                                           'bg-gray-50 hover:bg-gray-100'
                                         } ${
-                                          (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') ? 'cursor-move' : ''
+                                          (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode ? 'cursor-move' : ''
                                         }`}
                                       >
-                                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                                           <div className="flex items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-600">
                                             <GripVertical className="w-4 h-4" />
                                           </div>
@@ -3638,7 +4443,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                           </div>
                                         </div>
                                         <div className="flex items-center space-x-2">
-                                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                                             <div className="flex items-center space-x-1">
                                               <Button size="xs" variant="outline" title="Edit Item"
                                                 onClick={(e) => {
@@ -3670,6 +4475,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 <ContentTileManager
                                   workflowId={selectedWorkflow.id}
                                   stageId={stage.stage_key}
+                                  isEditable={isTemplateEditMode}
+                                  onTileChange={(description) => trackChange('checklist_edited', description)}
                                 />
                               </div>
                             </div>
@@ -4022,38 +4829,39 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {activeView === 'universe' && (
                 <div className="space-y-6">
-                  {/* Header */}
+                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <p className="text-sm text-blue-800">
+                        Click <strong>"Edit Template"</strong> in the header to make changes to universe rules
+                      </p>
+                    </div>
+                  )}
                   {/* Simplified Universe Builder */}
                   <SimplifiedUniverseBuilder
                     workflowId={selectedWorkflow.id}
                     rules={universeRulesState}
-                    onRulesChange={setUniverseRulesState}
+                    onRulesChange={handleUniverseRulesChange}
                     onSave={saveUniverseRules}
+                    isEditable={isTemplateEditMode}
                     analysts={analysts.map(a => ({ value: a.value, label: a.label }))}
                     lists={assetLists.map(l => ({ value: l.id, label: l.name }))}
                     themes={themes.map(t => ({ value: t.id, label: t.name }))}
                     portfolios={[]} // Add portfolios when available
                   />
-
-                  {/* Auto-save status indicator */}
-                  <div className="flex justify-end items-center text-sm mt-4 pt-4 border-t">
-                    {saveUniverseMutation.isPending ? (
-                      <>
-                        <Clock className="w-4 h-4 mr-2 text-gray-400 animate-pulse" />
-                        <span className="text-gray-500">Saving...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 mr-2 text-green-600" />
-                        <span className="text-gray-500">Saved</span>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
 
               {activeView === 'cadence' && (
                 <div className="space-y-6">
+                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <p className="text-sm text-blue-800">
+                        Click <strong>"Edit Template"</strong> in the header to make changes to cadence and automation rules
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex-1">
                       <h3 className="text-lg font-semibold text-gray-900">Cadence & Automation</h3>
@@ -4103,9 +4911,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 cadence_timeframe: timeframe,
                                 cadence_days: daysMap[timeframe]
                               })
+                              trackChange('cadence_updated', `Updated cadence to: ${timeframe}`)
                             }
                           }}
-                          disabled={selectedWorkflow.user_permission === 'read'}
+                          disabled={selectedWorkflow.user_permission === 'read' || !isTemplateEditMode}
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
                         >
                           <option value="daily">Daily</option>
@@ -4118,7 +4927,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         </select>
                       </div>
 
-                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                         <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
                           <Plus className="w-4 h-4 mr-2" />
                           Add Rule
@@ -4138,7 +4947,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                               <h3 className="text-lg font-medium text-gray-900 mb-2">No automation rules</h3>
                               <p className="text-gray-500 mb-4">Set up automated workflows to trigger actions based on conditions.</p>
-                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                                 <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
                                   <Plus className="w-4 h-4 mr-2" />
                                   Create First Rule
@@ -4164,7 +4973,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   </Badge>
                                 </div>
                               </div>
-                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
                                 <div className="flex items-center space-x-1">
                                   <Button
                                     size="sm"
@@ -4456,197 +5265,540 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               )}
 
               {/* Branches View */}
-              {activeView === 'branches' && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {workflowBranches?.length || 0} total branches
-                        ({workflowBranches?.filter(b => b.status === 'active').length || 0} active, {workflowBranches?.filter(b => b.status === 'ended').length || 0} ended)
-                      </p>
+              {activeView === 'branches' && (() => {
+                // Build the tree structure
+                const branchMap = new Map<string, any>()
+
+                // Initialize all branches as tree nodes
+                workflowBranches?.forEach(branch => {
+                  branchMap.set(branch.id, {
+                    ...branch,
+                    children: [],
+                    depth: 0,
+                    isCopied: false
+                  })
+                })
+
+                // Build parent-child relationships with proper hierarchy
+                // Template -> Clean Branches -> Copied Branches (max 3 levels)
+                const rootBranches: any[] = []
+
+                // First pass: identify clean vs copied branches
+                workflowBranches?.forEach(branch => {
+                  const node = branchMap.get(branch.id)!
+
+                  // Mark as copied if it has a source_branch_id
+                  if (branch.source_branch_id) {
+                    node.isCopied = true
+                  }
+                })
+
+                // Second pass: build hierarchy
+                workflowBranches?.forEach(branch => {
+                  const node = branchMap.get(branch.id)!
+
+                  if (!branch.source_branch_id) {
+                    // This is a clean branch (created directly from template)
+                    rootBranches.push(node)
+                  } else if (branchMap.has(branch.source_branch_id)) {
+                    const sourceNode = branchMap.get(branch.source_branch_id)!
+
+                    // If source is a clean branch, add as child
+                    if (!sourceNode.isCopied) {
+                      sourceNode.children.push(node)
+                    } else {
+                      // If source is a copied branch, find the clean parent and add as sibling
+                      // by finding the clean branch that the source belongs to
+                      let cleanParent = sourceNode
+                      const sourceBranch = workflowBranches.find(b => b.id === branch.source_branch_id)
+
+                      if (sourceBranch?.source_branch_id && branchMap.has(sourceBranch.source_branch_id)) {
+                        const potentialCleanParent = branchMap.get(sourceBranch.source_branch_id)!
+                        if (!potentialCleanParent.isCopied) {
+                          cleanParent = potentialCleanParent
+                        }
+                      }
+
+                      // Add as sibling to source (child of the same clean parent)
+                      if (cleanParent && !cleanParent.isCopied) {
+                        cleanParent.children.push(node)
+                      } else {
+                        // Fallback: add as root if we can't find clean parent
+                        rootBranches.push(node)
+                      }
+                    }
+                  } else {
+                    // Source not found in current filter, add as root
+                    rootBranches.push(node)
+                  }
+                })
+
+                // Calculate depths (max depth of 2: 0 for clean branches, 1 for copied branches)
+                const calculateDepth = (node: any, depth: number) => {
+                  node.depth = depth
+                  if (depth < 2) {
+                    node.children.forEach((child: any) => calculateDepth(child, depth + 1))
+                  }
+                }
+                rootBranches.forEach(node => calculateDepth(node, 0))
+
+                // Sort by creation date
+                const sortByDate = (a: any, b: any) => {
+                  return new Date(a.branched_at || a.created_at).getTime() - new Date(b.branched_at || b.created_at).getTime()
+                }
+
+                rootBranches.sort(sortByDate)
+                rootBranches.forEach(node => {
+                  if (node.children.length > 0) {
+                    node.children.sort(sortByDate)
+                  }
+                })
+
+                const renderBranchNode = (node: any, isLast: boolean, parentLines: boolean[] = []): any => {
+                  const statusColors = {
+                    active: 'bg-green-100 text-green-700 border-green-300',
+                    inactive: 'bg-gray-100 text-gray-600 border-gray-300'
+                  }
+                  const statusIcons = {
+                    active: Activity,
+                    inactive: CheckCircle
+                  }
+                  const StatusIcon = statusIcons[node.status as keyof typeof statusIcons]
+                  const isCollapsed = collapsedBranches.has(node.id)
+                  const hasChildren = node.children.length > 0
+
+                  const toggleCollapse = () => {
+                    const newCollapsed = new Set(collapsedBranches)
+                    if (isCollapsed) {
+                      newCollapsed.delete(node.id)
+                    } else {
+                      newCollapsed.add(node.id)
+                    }
+                    setCollapsedBranches(newCollapsed)
+                  }
+
+                  return (
+                    <div key={node.id}>
+                      {/* Branch Node */}
+                      <div className="flex items-start">
+                        {/* Tree lines */}
+                        <div className="flex items-center mr-3">
+                          {parentLines.map((hasLine, idx) => (
+                            <div key={idx} className="w-6 relative">
+                              {hasLine && (
+                                <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gray-300" />
+                              )}
+                            </div>
+                          ))}
+                          {node.depth > 0 && (
+                            <div className="relative w-6 h-6">
+                              {/* Vertical line from parent */}
+                              <div className="absolute left-3 top-0 h-3 w-0.5 bg-gray-300" />
+                              {/* Horizontal line to node */}
+                              <div className="absolute left-3 top-3 w-6 h-0.5 bg-gray-300" />
+                              {/* Continue vertical line if not last */}
+                              {!isLast && (
+                                <div className="absolute left-3 top-3 bottom-0 w-0.5 bg-gray-300" style={{ height: 'calc(100% + 1rem)' }} />
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Collapse/Expand Toggle */}
+                        {hasChildren && (
+                          <button
+                            onClick={toggleCollapse}
+                            className="flex-shrink-0 mr-2 mt-3 p-1 hover:bg-gray-100 rounded transition-colors"
+                            title={isCollapsed ? 'Expand branch' : 'Collapse branch'}
+                          >
+                            {isCollapsed ? (
+                              <ChevronRight className="w-4 h-4 text-gray-500" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-gray-500" />
+                            )}
+                          </button>
+                        )}
+                        {!hasChildren && node.depth > 0 && (
+                          <div className="w-6 mr-2"></div>
+                        )}
+
+                        {/* Branch Card */}
+                        <div className="flex-1 mb-4">
+                          <div className={`rounded-lg p-3 hover:shadow-md transition-shadow ${
+                            node.status === 'inactive'
+                              ? 'bg-gray-50 border-2 border-gray-300'
+                              : 'bg-white border border-gray-200'
+                          }`}>
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                {/* Branch Header */}
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  {node.isCopied ? (
+                                    <Copy className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                  ) : (
+                                    <Network className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                                  )}
+                                  <h4
+                                    className={`text-sm font-semibold cursor-pointer hover:text-blue-600 transition-colors ${node.status === 'inactive' ? 'text-gray-600' : 'text-gray-900'}`}
+                                    onClick={() => setShowBranchHierarchy(true)}
+                                    title="Click to view branch hierarchy"
+                                  >
+                                    {node.name}
+                                  </h4>
+                                  {editingBranchSuffix?.id === node.id ? (
+                                    <div className="flex items-center space-x-1">
+                                      <span className="text-xs text-gray-500">(</span>
+                                      <input
+                                        type="text"
+                                        value={branchSuffixValue}
+                                        onChange={(e) => setBranchSuffixValue(e.target.value)}
+                                        onBlur={() => {
+                                          if (branchSuffixValue.trim() !== editingBranchSuffix.currentSuffix) {
+                                            updateBranchSuffixMutation.mutate({
+                                              branchId: node.id,
+                                              newSuffix: branchSuffixValue.trim()
+                                            })
+                                          } else {
+                                            setEditingBranchSuffix(null)
+                                            setBranchSuffixValue('')
+                                          }
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.currentTarget.blur()
+                                          } else if (e.key === 'Escape') {
+                                            setEditingBranchSuffix(null)
+                                            setBranchSuffixValue('')
+                                          }
+                                        }}
+                                        className="text-xs text-gray-700 border-b border-primary-500 outline-none bg-transparent w-20"
+                                        autoFocus
+                                      />
+                                      <span className="text-xs text-gray-500">)</span>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {node.branch_suffix && (
+                                        <div className="flex items-center space-x-1 group">
+                                          <span className="text-xs text-gray-500 font-normal">
+                                            ({node.branch_suffix})
+                                          </span>
+                                          {!node.deleted && !node.archived && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                            <button
+                                              onClick={() => {
+                                                setEditingBranchSuffix({ id: node.id, currentSuffix: node.branch_suffix })
+                                                setBranchSuffixValue(node.branch_suffix)
+                                              }}
+                                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity"
+                                            >
+                                              <Edit3 className="w-3 h-3 text-gray-400" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                  {/* Status Badge - Only show for active branches, right after suffix */}
+                                  {!node.deleted && !node.archived && (
+                                    <span className={`px-2 py-0.5 rounded-full text-xs flex items-center space-x-1 ${statusColors[node.status]}`}>
+                                      {StatusIcon && <StatusIcon className="w-3 h-3" />}
+                                      <span className="capitalize">{node.status}</span>
+                                    </span>
+                                  )}
+                                  {/* Child count indicator when collapsed */}
+                                  {hasChildren && isCollapsed && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-300">
+                                      {node.children.length} {node.children.length === 1 ? 'branch' : 'branches'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Branch Details */}
+                                <div className="space-y-1 ml-6">
+                                  {/* Branch Type */}
+                                  {node.isCopied && (
+                                    <div className="flex items-center space-x-1.5 text-xs text-blue-600">
+                                      <Copy className="w-3 h-3" />
+                                      <span className="font-medium">Copied branch with data from parent</span>
+                                    </div>
+                                  )}
+
+                                  {/* Dates */}
+                                  <div className="flex items-center gap-3 text-xs text-gray-600">
+                                    <span>Created {new Date(node.branched_at || node.created_at).toLocaleDateString()}</span>
+                                    {node.archived && node.archived_at && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-orange-600 font-medium">
+                                          Archived {new Date(node.archived_at).toLocaleDateString()}
+                                        </span>
+                                      </>
+                                    )}
+                                    {node.deleted && node.deleted_at && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-red-600 font-medium">
+                                          Deleted {new Date(node.deleted_at).toLocaleDateString()}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+
+                                  {/* Asset Stats */}
+                                  {node.totalAssets > 0 && (
+                                    <div className="flex items-center gap-3 text-xs">
+                                      <span className="text-gray-600">{node.totalAssets} total assets:</span>
+                                      <span className="text-green-600 font-medium">{node.activeAssets} active</span>
+                                      <span className="text-blue-600 font-medium">{node.completedAssets} completed</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                {/* Only show Branch button if not deleted or archived */}
+                                {!node.deleted && !node.archived && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  <button
+                                    onClick={() => {
+                                      setShowCreateBranchModal(true)
+                                      setPreselectedSourceBranch(node.id)
+                                    }}
+                                    className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                                    title="Create branch from this workflow"
+                                  >
+                                    <GitBranch className="w-4 h-4 text-gray-600" />
+                                  </button>
+                                )}
+                                {/* Only show End button if active and not deleted or archived */}
+                                {!node.deleted && !node.archived && node.status === 'active' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  <button
+                                    onClick={() => setBranchToEnd({ id: node.id, name: node.name })}
+                                    className="p-1.5 hover:bg-orange-100 rounded transition-colors"
+                                    title="End this branch"
+                                  >
+                                    <Pause className="w-4 h-4 text-orange-600 fill-orange-600" />
+                                  </button>
+                                )}
+                                {/* Only show Continue button if inactive and not deleted or archived */}
+                                {!node.deleted && !node.archived && node.status === 'inactive' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  <button
+                                    onClick={() => setBranchToContinue({ id: node.id, name: node.name })}
+                                    className="p-1.5 hover:bg-green-100 rounded transition-colors"
+                                    title="Continue this branch"
+                                  >
+                                    <Play className="w-4 h-4 text-green-600" />
+                                  </button>
+                                )}
+                                {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  <>
+                                    {!node.archived && !node.deleted && (
+                                      <>
+                                        <button
+                                          onClick={() => setBranchToArchive({ id: node.id, name: node.name })}
+                                          className="p-1.5 hover:bg-amber-100 rounded transition-colors"
+                                          title="Archive this branch"
+                                        >
+                                          <Archive className="w-4 h-4 text-amber-600" />
+                                        </button>
+                                        <button
+                                          onClick={() => setBranchToDelete({ id: node.id, name: node.name })}
+                                          className="p-1.5 hover:bg-red-100 rounded transition-colors"
+                                          title="Delete this branch"
+                                        >
+                                          <Trash2 className="w-4 h-4 text-red-600" />
+                                        </button>
+                                      </>
+                                    )}
+                                    {node.archived && (
+                                      <button
+                                        onClick={() => unarchiveBranchMutation.mutate(node.id)}
+                                        disabled={unarchiveBranchMutation.isPending}
+                                        className="p-1.5 hover:bg-amber-100 rounded transition-colors disabled:opacity-50"
+                                        title={unarchiveBranchMutation.isPending ? 'Unarchiving...' : 'Unarchive this branch'}
+                                      >
+                                        <Archive className="w-4 h-4 text-amber-600" />
+                                      </button>
+                                    )}
+                                    {node.deleted && (
+                                      <button
+                                        onClick={() => restoreBranchMutation.mutate(node.id)}
+                                        disabled={restoreBranchMutation.isPending}
+                                        className="p-1.5 hover:bg-green-100 rounded transition-colors disabled:opacity-50"
+                                        title={restoreBranchMutation.isPending ? 'Restoring...' : 'Restore this branch'}
+                                      >
+                                        <RotateCcw className="w-4 h-4 text-green-600" />
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Children - Only show if not collapsed */}
+                      {node.children.length > 0 && !isCollapsed && (
+                        <div>
+                          {node.children.map((child: any, idx: number) =>
+                            renderBranchNode(
+                              child,
+                              idx === node.children.length - 1,
+                              [...parentLines, !isLast]
+                            )
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
-                      <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
+                  )
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
+
+                    {/* Branch Status Filter */}
+                    <div className="flex items-center space-x-2 border-b border-gray-200">
+                      <button
+                        onClick={() => setBranchStatusFilter('all')}
+                        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                          branchStatusFilter === 'all'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setBranchStatusFilter('archived')}
+                        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                          branchStatusFilter === 'archived'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Archived
+                      </button>
+                      <button
+                        onClick={() => setBranchStatusFilter('deleted')}
+                        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                          branchStatusFilter === 'deleted'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Deleted
+                      </button>
+                    </div>
+
+                    {isLoadingBranches ? (
+                      <Card>
+                        <div className="text-center py-12">
+                          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mb-4"></div>
+                          <p className="text-sm text-gray-500">Loading branches...</p>
+                        </div>
+                      </Card>
+                    ) : !workflowBranches || workflowBranches.length === 0 ? (
+                      <Card>
+                        <div className="text-center py-8">
+                          <Network className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-base font-medium text-gray-900 mb-2">No workflow branches yet</h3>
+                          <p className="text-sm text-gray-500">
+                            When workflow branches are created, they will appear here in a timeline view
+                          </p>
+                        </div>
+                      </Card>
+                    ) : (
+                      <Card>
+                        <div className="p-4">
+                          <div className="space-y-2">
+
+                            {/* Workflow Template - Only show for 'all' filter */}
+                            {branchStatusFilter === 'all' && (
+                              <div className="mb-3">
+                                <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-2 flex-1">
+                                      {/* Collapse/Expand Toggle for Template */}
+                                      <button
+                                        onClick={() => setIsTemplateCollapsed(!isTemplateCollapsed)}
+                                        className="flex-shrink-0 p-1 hover:bg-indigo-200 rounded transition-colors"
+                                        title={isTemplateCollapsed ? 'Expand template branches' : 'Collapse template branches'}
+                                      >
+                                        {isTemplateCollapsed ? (
+                                          <ChevronRight className="w-4 h-4 text-indigo-600" />
+                                        ) : (
+                                          <ChevronDown className="w-4 h-4 text-indigo-600" />
+                                        )}
+                                      </button>
+                                      <Orbit className="w-5 h-5 text-indigo-600" />
+                                      <h3 className="text-base font-semibold text-indigo-900">{selectedWorkflow.name}</h3>
+                                      <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-200 text-indigo-800">
+                                        Template
+                                      </span>
+                                      {isTemplateCollapsed && (
+                                        <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-300">
+                                          {workflowBranches.length} {workflowBranches.length === 1 ? 'branch' : 'branches'}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {!isTemplateCollapsed && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setShowCreateBranchModal(true)
+                                          setPreselectedSourceBranch(null)
+                                        }}
+                                        className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                                      >
+                                        <GitBranch className="w-3 h-3 mr-1" />
+                                        Branch
+                                      </Button>
+                                    )}
+                                  </div>
+                                  {!isTemplateCollapsed && (
+                                    <p className="text-xs text-indigo-700 mt-2 ml-11">
+                                      Original workflow template • {workflowBranches.length} {workflowBranches.length === 1 ? 'branch' : 'branches'} created
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Branch Tree - Only show if template not collapsed */}
+                            {(!isTemplateCollapsed || branchStatusFilter !== 'all') && (
+                              <div className={branchStatusFilter === 'all' ? 'ml-4' : ''}>
+                                {rootBranches.map((node, idx) =>
+                                  renderBranchNode(node, idx === rootBranches.length - 1, [])
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* Models View */}
+              {activeView === 'models' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">Document Models</h3>
+                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                      <Button size="sm" onClick={() => setShowUploadTemplateModal(true)}>
                         <Plus className="w-4 h-4 mr-2" />
-                        Create Branch
+                        Upload Model
                       </Button>
                     )}
                   </div>
 
-                  {!workflowBranches || workflowBranches.length === 0 ? (
-                    <Card>
-                      <div className="text-center py-8">
-                        <Network className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-base font-medium text-gray-900 mb-2">No workflow branches yet</h3>
-                        <p className="text-sm text-gray-500">
-                          When a new workflow branch is created, it will appear here
-                        </p>
-                      </div>
-                    </Card>
-                  ) : (
-                    <div className="space-y-3">
-                      {workflowBranches.map((branch: any) => {
-                        const statusColors = {
-                          active: 'bg-green-100 text-green-700 border-green-300',
-                          ended: 'bg-gray-100 text-gray-600 border-gray-300'
-                        }
-                        const statusIcons = {
-                          active: Activity,
-                          ended: CheckCircle
-                        }
-                        const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
-
-                        return (
-                          <Card key={branch.id} className="hover:shadow-md transition-shadow">
-                            <div className="p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-2 mb-2">
-                                    <Network className="w-4 h-4 text-purple-600" />
-                                    <h4 className="text-sm font-semibold text-gray-900">{branch.name}</h4>
-                                    {editingBranchSuffix?.id === branch.id ? (
-                                      <div className="flex items-center space-x-1">
-                                        <span className="text-xs text-gray-500">(</span>
-                                        <input
-                                          type="text"
-                                          value={branchSuffixValue}
-                                          onChange={(e) => setBranchSuffixValue(e.target.value)}
-                                          onBlur={() => {
-                                            if (branchSuffixValue.trim() !== editingBranchSuffix.currentSuffix) {
-                                              updateBranchSuffixMutation.mutate({
-                                                branchId: branch.id,
-                                                newSuffix: branchSuffixValue.trim()
-                                              })
-                                            } else {
-                                              setEditingBranchSuffix(null)
-                                              setBranchSuffixValue('')
-                                            }
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                              e.currentTarget.blur()
-                                            } else if (e.key === 'Escape') {
-                                              setEditingBranchSuffix(null)
-                                              setBranchSuffixValue('')
-                                            }
-                                          }}
-                                          className="text-xs text-gray-700 border-b border-primary-500 outline-none bg-transparent w-20"
-                                          autoFocus
-                                        />
-                                        <span className="text-xs text-gray-500">)</span>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        {branch.branch_suffix && (
-                                          <div className="flex items-center space-x-1 group">
-                                            <span className="text-xs text-gray-500 font-normal">
-                                              ({branch.branch_suffix})
-                                            </span>
-                                            {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                                              <button
-                                                onClick={() => {
-                                                  setEditingBranchSuffix({ id: branch.id, currentSuffix: branch.branch_suffix })
-                                                  setBranchSuffixValue(branch.branch_suffix)
-                                                }}
-                                                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity"
-                                              >
-                                                <Edit3 className="w-3 h-3 text-gray-400" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        )}
-                                      </>
-                                    )}
-                                    <Badge
-                                      size="sm"
-                                      className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
-                                    >
-                                      <StatusIcon className="w-3 h-3" />
-                                      <span className="capitalize">{branch.status}</span>
-                                    </Badge>
-                                  </div>
-
-                                  <div className="flex items-center space-x-4 text-xs text-gray-600 ml-6">
-                                    {branch.totalAssets > 0 && (
-                                      <>
-                                        <span className="flex items-center space-x-1">
-                                          <Target className="w-3 h-3" />
-                                          <span>{branch.totalAssets} assets</span>
-                                        </span>
-                                        <span className="flex items-center space-x-1 text-green-600">
-                                          <Activity className="w-3 h-3" />
-                                          <span>{branch.activeAssets} active</span>
-                                        </span>
-                                        <span className="flex items-center space-x-1 text-blue-600">
-                                          <CheckCircle className="w-3 h-3" />
-                                          <span>{branch.completedAssets} completed</span>
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-3">
-                                  <div className="text-xs text-gray-500 text-right">
-                                    <div>Created {new Date(branch.branched_at || branch.created_at).toLocaleDateString()}</div>
-                                    {branch.cadence_timeframe && (
-                                      <div className="mt-1 text-indigo-600 font-medium capitalize">
-                                        {branch.cadence_timeframe}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {branch.status === 'active' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => setBranchToEnd({ id: branch.id, name: branch.name })}
-                                    >
-                                      <X className="w-3 h-3 mr-1" />
-                                      End
-                                    </Button>
-                                  )}
-                                  {branch.status === 'ended' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => setBranchToContinue({ id: branch.id, name: branch.name })}
-                                    >
-                                      <CheckCircle className="w-3 h-3 mr-1" />
-                                      Continue
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Templates View */}
-              {activeView === 'templates' && (
-                <div className="px-6 py-6">
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">Workflow Templates</h3>
-                        <p className="text-sm text-gray-500 mt-1">Upload and manage templates that your team will use in this workflow</p>
-                      </div>
-                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                        <Button size="sm" onClick={() => setShowUploadTemplateModal(true)}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Upload Template
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Templates List */}
+                  <div className="space-y-3">
+                    {/* Models List */}
                     {templatesLoading ? (
                       <div className="text-center py-12">
-                        <p className="text-gray-500">Loading templates...</p>
+                        <p className="text-gray-500">Loading models...</p>
                       </div>
                     ) : workflowTemplates && workflowTemplates.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -4704,9 +5856,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       <Card className="border-2 border-dashed border-gray-300">
                         <div className="p-8 text-center">
                           <Copy className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium">No templates uploaded yet</p>
+                          <p className="text-sm text-gray-500 font-medium">No models uploaded yet</p>
                           {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
-                            <p className="text-xs text-gray-400 mt-2">Click "Upload Template" to add files for your team</p>
+                            <p className="text-xs text-gray-400 mt-2">Click "Upload Model" to add document models for your team</p>
                           )}
                         </div>
                       </Card>
@@ -5135,7 +6287,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
           existingBranches={workflowBranches || []}
-          onClose={() => setShowCreateBranchModal(false)}
+          preselectedSourceBranch={preselectedSourceBranch}
+          onClose={() => {
+            setShowCreateBranchModal(false)
+            setPreselectedSourceBranch(null)
+          }}
           onSubmit={(branchName, branchSuffix, copyProgress, sourceBranchId) => {
             createBranchMutation.mutate({
               workflowId: selectedWorkflow.id,
@@ -5144,6 +6300,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               copyProgress,
               sourceBranchId
             })
+            setPreselectedSourceBranch(null)
           }}
         />
       )}
@@ -5154,6 +6311,73 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowId={selectedWorkflow.id}
           rules={universeRulesState}
           onClose={() => setShowUniversePreview(false)}
+        />
+      )}
+
+      {/* Branch Hierarchy Modal */}
+      {showBranchHierarchy && selectedWorkflow && (() => {
+        console.log('Passing to BranchMapModal:', allWorkflowBranches)
+        return (
+          <BranchMapModal
+            isOpen={showBranchHierarchy}
+            onClose={() => setShowBranchHierarchy(false)}
+            workflowName={selectedWorkflow.name}
+            workflowId={selectedWorkflow.id}
+            branches={allWorkflowBranches || []}
+          />
+        )
+      })()}
+
+      {/* Template Versions Modal */}
+      {selectedWorkflow && (
+        <TemplateVersionsModal
+          isOpen={showTemplateVersions}
+          onClose={() => setShowTemplateVersions(false)}
+          workflowId={selectedWorkflow.id}
+          workflowName={selectedWorkflow.name}
+          versions={templateVersions || []}
+          canCreateVersion={selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'}
+          onCreateVersion={() => setShowCreateVersion(true)}
+          onViewVersion={(versionId) => {
+            console.log('View version:', versionId)
+            // TODO: Implement version viewing/comparison
+            alert('Version viewing coming soon!')
+          }}
+        />
+      )}
+
+      {/* Create Version Modal */}
+      {selectedWorkflow && (
+        <CreateVersionModal
+          isOpen={showCreateVersion}
+          onClose={() => setShowCreateVersion(false)}
+          workflowName={selectedWorkflow.name}
+          currentVersionNumber={templateVersions?.length ? Math.max(...templateVersions.map(v => v.version_number)) : 0}
+          detectedVersionType={detectVersionType()}
+          onCreateVersion={handleCreateVersion}
+          previewData={{
+            stageCount: selectedWorkflow.stages?.length || 0,
+            checklistCount: workflowChecklistTemplates?.filter(c => c.workflow_id === selectedWorkflow.id).length || 0,
+            ruleCount: automationRules?.filter(r => r.workflow_id === selectedWorkflow.id).length || 0
+          }}
+        />
+      )}
+
+      {/* Version Created Success Modal */}
+      {selectedWorkflow && createdVersionInfo && (
+        <VersionCreatedModal
+          isOpen={showVersionCreated}
+          onClose={() => {
+            setShowVersionCreated(false)
+            setCreatedVersionInfo(null)
+          }}
+          versionNumber={createdVersionInfo.versionNumber}
+          versionName={createdVersionInfo.versionName}
+          versionType={createdVersionInfo.versionType}
+          workflowName={selectedWorkflow.name}
+          onViewVersion={() => {
+            setShowTemplateVersions(true)
+          }}
         />
       )}
 
@@ -5242,7 +6466,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           }
         }}
         title="End Workflow Branch?"
-        message={`Are you sure you want to end "${branchToEnd?.name}"? This will move it to ended status and it can no longer be used for new assets.`}
+        message={`Are you sure you want to end "${branchToEnd?.name}"? This will move it to inactive status and it can no longer be used for new assets.`}
         confirmText="End Branch"
         cancelText="Cancel"
         variant="danger"
@@ -5268,6 +6492,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         cancelText="Cancel"
         variant="primary"
         isLoading={continueBranchMutation.isPending}
+      />
+
+      {/* Cancel Template Edit Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showCancelConfirmation}
+        onClose={() => setShowCancelConfirmation(false)}
+        onConfirm={() => {
+          setShowCancelConfirmation(false)
+          exitTemplateEditMode()
+        }}
+        title="Discard Template Changes?"
+        message={templateChanges.length > 0
+          ? `You have ${templateChanges.length} unsaved change${templateChanges.length !== 1 ? 's' : ''}. Are you sure you want to discard all changes and exit edit mode? This action cannot be undone.`
+          : 'Are you sure you want to exit edit mode?'}
+        confirmText="Discard Changes"
+        cancelText="Keep Editing"
+        variant="danger"
       />
 
       {/* Remove Admin Confirmation Dialog */}
@@ -5312,6 +6553,48 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         cancelText="Cancel"
         variant="danger"
         isLoading={removeStakeholderMutation.isPending}
+      />
+
+      {/* Archive Branch Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!branchToArchive}
+        onClose={() => {
+          if (!archiveBranchMutation.isPending) {
+            setBranchToArchive(null)
+          }
+        }}
+        onConfirm={() => {
+          if (branchToArchive) {
+            archiveBranchMutation.mutate(branchToArchive.id)
+          }
+        }}
+        title="Archive Branch?"
+        message={`Are you sure you want to archive "${branchToArchive?.name}"? The branch will be hidden from view but all data will be preserved and can be restored later.`}
+        confirmText="Archive Branch"
+        cancelText="Cancel"
+        variant="warning"
+        isLoading={archiveBranchMutation.isPending}
+      />
+
+      {/* Delete Branch Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!branchToDelete}
+        onClose={() => {
+          if (!deleteBranchMutation.isPending) {
+            setBranchToDelete(null)
+          }
+        }}
+        onConfirm={() => {
+          if (branchToDelete) {
+            deleteBranchMutation.mutate(branchToDelete.id)
+          }
+        }}
+        title="Delete Branch?"
+        message={`Are you sure you want to delete "${branchToDelete?.name}"? The branch will be marked as deleted but can be restored later from the Deleted filter.`}
+        confirmText="Delete Branch"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={deleteBranchMutation.isPending}
       />
 
       {/* Upload Template Modal */}

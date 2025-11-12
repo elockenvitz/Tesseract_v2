@@ -12,6 +12,8 @@ interface ContentTileManagerProps {
   workflowId: string
   stageId: string
   className?: string
+  isEditable?: boolean
+  onTileChange?: (description: string) => void
 }
 
 interface ContentTileData {
@@ -62,7 +64,7 @@ const AVAILABLE_TILE_TYPES = [
   }
 ]
 
-export function ContentTileManager({ workflowId, stageId, className = '' }: ContentTileManagerProps) {
+export function ContentTileManager({ workflowId, stageId, className = '', isEditable = true, onTileChange }: ContentTileManagerProps) {
   const [showAddTile, setShowAddTile] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
   const [selectedTileForPreview, setSelectedTileForPreview] = useState<string | null>(null)
@@ -111,10 +113,12 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
         })
 
       if (error) throw error
+      return { tileName: tileConfig.name }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
       setShowAddTile(false)
+      onTileChange?.(`Added content tile: ${result.tileName}`)
     }
   })
 
@@ -127,9 +131,11 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
         .eq('id', tileId)
 
       if (error) throw error
+      return { tileId }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
+      onTileChange?.('Deleted content tile')
     }
   })
 
@@ -144,6 +150,7 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
+      onTileChange?.('Reordered content tiles')
     }
   })
 
@@ -156,9 +163,11 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
         .eq('id', tileId)
 
       if (error) throw error
+      return { enabled }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
+      onTileChange?.(`${result.enabled ? 'Enabled' : 'Disabled'} content tile`)
     }
   })
 
@@ -221,7 +230,7 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
             )}
           </div>
         </button>
-        {!isCollapsed && (
+        {!isCollapsed && isEditable && (
           <div className="flex items-center space-x-2">
             <Button
               size="sm"
@@ -292,12 +301,14 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center space-x-3">
-                                <div
-                                  {...provided.dragHandleProps}
-                                  className="text-gray-400 hover:text-gray-600 cursor-grab"
-                                >
-                                  <GripVertical className="w-4 h-4" />
-                                </div>
+                                {isEditable && (
+                                  <div
+                                    {...provided.dragHandleProps}
+                                    className="text-gray-400 hover:text-gray-600 cursor-grab"
+                                  >
+                                    <GripVertical className="w-4 h-4" />
+                                  </div>
+                                )}
                                 <div>
                                   <div className="flex items-center space-x-2">
                                     <h5 className="font-medium text-gray-900">{tile.title}</h5>
@@ -315,30 +326,32 @@ export function ContentTileManager({ workflowId, stageId, className = '' }: Cont
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => toggleTileMutation.mutate({
-                                    tileId: tile.id,
-                                    enabled: !tile.is_enabled
-                                  })}
-                                >
-                                  {tile.is_enabled ? (
-                                    <EyeOff className="w-4 h-4" />
-                                  ) : (
-                                    <Eye className="w-4 h-4" />
-                                  )}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => deleteTileMutation.mutate(tile.id)}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
+                              {isEditable && (
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => toggleTileMutation.mutate({
+                                      tileId: tile.id,
+                                      enabled: !tile.is_enabled
+                                    })}
+                                  >
+                                    {tile.is_enabled ? (
+                                      <EyeOff className="w-4 h-4" />
+                                    ) : (
+                                      <Eye className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => deleteTileMutation.mutate(tile.id)}
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </Card>
                         )}

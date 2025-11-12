@@ -27,6 +27,7 @@ interface SimplifiedUniverseBuilderProps {
   rules: FilterRule[]
   onRulesChange: (rules: FilterRule[]) => void
   onSave?: () => void
+  isEditable?: boolean
 
   // Data for dropdowns
   analysts?: Array<{ value: string; label: string }>
@@ -40,6 +41,7 @@ export function SimplifiedUniverseBuilder({
   rules,
   onRulesChange,
   onSave,
+  isEditable = true,
   analysts = [],
   lists = [],
   themes = [],
@@ -66,8 +68,7 @@ export function SimplifiedUniverseBuilder({
     console.log('📝 Current rules:', rules)
     console.log('📝 New rules array:', newRules)
     onRulesChange(newRules)
-    // Trigger save after adding
-    setTimeout(() => onSave?.(), 100)
+    // Save is now handled by parent component's edit mode
   }
 
   // Delete a rule
@@ -78,8 +79,7 @@ export function SimplifiedUniverseBuilder({
       newRules[0] = { ...newRules[0], combineWith: undefined }
     }
     onRulesChange(newRules)
-    // Trigger save after deleting
-    setTimeout(() => onSave?.(), 100)
+    // Save is now handled by parent component's edit mode
   }
 
   // Update rule
@@ -88,8 +88,7 @@ export function SimplifiedUniverseBuilder({
       r.id === updatedRule.id ? { ...updatedRule, combineWith: r.combineWith } : r
     )
     onRulesChange(newRules)
-    // Trigger save after updating
-    setTimeout(() => onSave?.(), 100)
+    // Save is now handled by parent component's edit mode
   }
 
   // Update rule combinator
@@ -99,8 +98,7 @@ export function SimplifiedUniverseBuilder({
         r.id === ruleId ? { ...r, combineWith: combinator } : r
       )
     )
-    // Trigger save after changing combinator
-    setTimeout(() => onSave?.(), 100)
+    // Save is now handled by parent component's edit mode
   }
 
   // Open add filter modal
@@ -560,16 +558,23 @@ export function SimplifiedUniverseBuilder({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setShowPreview(true)}
+            onClick={() => {
+              console.log('🔍 Preview button clicked')
+              console.log('📋 Current rules:', rules)
+              console.log('📏 Rules count:', rules.length)
+              setShowPreview(true)
+            }}
             disabled={rules.length === 0}
           >
             <Eye className="w-4 h-4 mr-1" />
             Preview
           </Button>
-          <Button size="sm" onClick={openAddFilterModal}>
-            <Plus className="w-4 h-4 mr-1" />
-            Add Filter
-          </Button>
+          {isEditable && (
+            <Button size="sm" onClick={openAddFilterModal}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Filter
+            </Button>
+          )}
         </div>
       </div>
 
@@ -603,22 +608,24 @@ export function SimplifiedUniverseBuilder({
                   <div className="flex justify-center my-2">
                     <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
                       <button
-                        onClick={() => updateRuleCombinator(rule.id, 'AND')}
+                        onClick={() => isEditable && updateRuleCombinator(rule.id, 'AND')}
+                        disabled={!isEditable}
                         className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                           rule.combineWith === 'AND'
                             ? 'bg-white text-gray-900 shadow-sm'
                             : 'text-gray-600 hover:text-gray-900'
-                        }`}
+                        } ${!isEditable ? 'cursor-not-allowed opacity-50' : ''}`}
                       >
                         AND
                       </button>
                       <button
-                        onClick={() => updateRuleCombinator(rule.id, 'OR')}
+                        onClick={() => isEditable && updateRuleCombinator(rule.id, 'OR')}
+                        disabled={!isEditable}
                         className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                           rule.combineWith === 'OR'
                             ? 'bg-white text-gray-900 shadow-sm'
                             : 'text-gray-600 hover:text-gray-900'
-                        }`}
+                        } ${!isEditable ? 'cursor-not-allowed opacity-50' : ''}`}
                       >
                         OR
                       </button>
@@ -685,24 +692,26 @@ export function SimplifiedUniverseBuilder({
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2 flex-shrink-0">
-                    <Button
-                      size="md"
-                      variant="ghost"
-                      onClick={() => openEditFilterModal(rule)}
-                      className="hover:bg-blue-50"
-                    >
-                      <Edit2 className="w-5 h-5" />
-                    </Button>
-                    <Button
-                      size="md"
-                      variant="ghost"
-                      onClick={() => deleteRule(rule.id)}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </Button>
-                  </div>
+                  {isEditable && (
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      <Button
+                        size="md"
+                        variant="ghost"
+                        onClick={() => openEditFilterModal(rule)}
+                        className="hover:bg-blue-50"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </Button>
+                      <Button
+                        size="md"
+                        variant="ghost"
+                        onClick={() => deleteRule(rule.id)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
