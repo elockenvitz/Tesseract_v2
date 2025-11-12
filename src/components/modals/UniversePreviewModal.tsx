@@ -101,14 +101,24 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
   const { data: previewData, isLoading } = useQuery({
     queryKey: ['universe-preview-full', workflowId, rules],
     queryFn: async () => {
-      if (rules.length === 0) return { assets: [], totalCount: 0 }
+      console.log('🚀 Universe Preview Query Starting')
+      console.log('📊 Workflow ID:', workflowId)
+      console.log('📋 Rules received:', rules)
+      console.log('📏 Number of rules:', rules.length)
+
+      if (rules.length === 0) {
+        console.log('⚠️ No rules provided, returning empty results')
+        return { assets: [], totalCount: 0 }
+      }
 
       // Process each rule and combine with AND/OR logic
       let resultAssetIds: Set<string> | null = null
 
       for (let i = 0; i < rules.length; i++) {
         const rule = rules[i]
+        console.log(`\n🔄 Processing rule ${i + 1}/${rules.length}:`, rule)
         const ruleAssetIds = await getAssetIdsForRule(rule)
+        console.log(`📊 Rule ${i + 1} returned ${ruleAssetIds.length} asset IDs`)
         const ruleSet = new Set(ruleAssetIds)
 
         // Apply include/exclude operator
@@ -160,8 +170,17 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
       }
 
       if (!resultAssetIds || resultAssetIds.size === 0) {
-        console.log('No assets matched the rules')
-        return { assets: [], totalCount: 0 }
+        console.log('❌ No assets matched the rules')
+
+        // Provide diagnostic info about why no matches
+        const diagnostics = {
+          totalRules: rules.length,
+          rulesWithAnd: rules.filter(r => r.combineWith === 'AND').length,
+          rulesWithOr: rules.filter(r => r.combineWith === 'OR').length
+        }
+
+        console.log('📊 Diagnostics:', diagnostics)
+        return { assets: [], totalCount: 0, diagnostics }
       }
 
       const totalCount = resultAssetIds.size
@@ -186,6 +205,7 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
 
   const matchingAssets = previewData?.assets || []
   const totalCount = previewData?.totalCount || 0
+  const diagnostics = previewData?.diagnostics || null
 
   // Filter assets based on search term
   const filteredAssets = matchingAssets.filter((asset: any) => {
@@ -307,8 +327,43 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3">
                 <Search className="w-6 h-6 text-gray-400" />
               </div>
-              <p className="text-sm text-gray-500">No matching assets found</p>
-              <p className="text-xs text-gray-400 mt-1">Try different criteria or add more rules</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">No matching assets found</p>
+
+              {/* Provide helpful context based on rule configuration */}
+              {diagnostics && diagnostics.rulesWithAnd > 0 ? (
+                <div className="max-w-md mx-auto">
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-3">
+                    <p className="text-sm text-amber-800 mb-2">
+                      <strong>Your filters are using AND logic</strong>, which means assets must match <strong>all</strong> conditions simultaneously.
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      It appears no assets exist that match all {diagnostics.totalRules} filters at the same time.
+                    </p>
+                  </div>
+                  <div className="space-y-2 text-left">
+                    <p className="text-xs font-medium text-gray-700">Try these solutions:</p>
+                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
+                      <li>Change some AND combinators to OR to broaden your criteria</li>
+                      <li>Remove or modify filters that may be too restrictive</li>
+                      <li>Choose filters with overlapping asset pools</li>
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-md mx-auto">
+                  <p className="text-xs text-gray-500 mb-3">
+                    No assets match your current filter criteria.
+                  </p>
+                  <div className="space-y-2 text-left">
+                    <p className="text-xs font-medium text-gray-700">Suggestions:</p>
+                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
+                      <li>Try different filter values</li>
+                      <li>Add more rules with OR logic to expand coverage</li>
+                      <li>Verify that assets exist matching these criteria</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
