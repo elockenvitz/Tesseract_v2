@@ -1,13 +1,16 @@
 import React, { useState } from 'react'
-import { X, GitBranch, CheckCircle, Clock, Eye, Plus, ChevronDown, ChevronRight, GitCompare } from 'lucide-react'
+import { X, GitBranch, CheckCircle, Clock, Eye, Plus, ChevronDown, ChevronRight, GitCompare, RotateCcw } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { VersionComparisonModal } from './VersionComparisonModal'
+import { formatVersion } from '../../lib/versionUtils'
 
 interface TemplateVersion {
   id: string
   workflow_id: string
   version_number: number
+  major_version?: number | null
+  minor_version?: number | null
   version_name: string | null
   version_type?: 'major' | 'minor'
   description: string | null
@@ -28,6 +31,8 @@ interface TemplateVersionsModalProps {
   canCreateVersion: boolean
   onCreateVersion: () => void
   onViewVersion: (versionId: string) => void
+  onActivateVersion?: (versionId: string) => void
+  canActivateVersion?: boolean
 }
 
 export function TemplateVersionsModal({
@@ -38,7 +43,9 @@ export function TemplateVersionsModal({
   versions,
   canCreateVersion,
   onCreateVersion,
-  onViewVersion
+  onViewVersion,
+  onActivateVersion,
+  canActivateVersion = false
 }: TemplateVersionsModalProps) {
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   const [compareMode, setCompareMode] = useState(false)
@@ -85,9 +92,9 @@ export function TemplateVersionsModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
           <div>
             <div className="flex items-center space-x-2 mb-1">
               <GitBranch className="w-5 h-5 text-indigo-600" />
@@ -170,8 +177,7 @@ export function TemplateVersionsModal({
                           <div className="flex-1">
                             <div className="flex items-center space-x-2 mb-1">
                               <h3 className="text-base font-semibold text-gray-900">
-                                Version {version.version_number}
-                                {version.version_name && ` - ${version.version_name}`}
+                                {formatVersion(version.version_number, version.major_version, version.minor_version)}
                               </h3>
                               {version.version_type && (
                                 <span className={`px-2 py-0.5 rounded-full text-xs flex items-center ${
@@ -210,14 +216,27 @@ export function TemplateVersionsModal({
                           </div>
                         </div>
                         {!compareMode && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onViewVersion(version.id)}
-                          >
-                            <Eye className="w-3 h-3 mr-1" />
-                            View
-                          </Button>
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onViewVersion(version.id)}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              View
+                            </Button>
+                            {canActivateVersion && !version.is_active && onActivateVersion && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => onActivateVersion(version.id)}
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-300"
+                              >
+                                <RotateCcw className="w-3 h-3 mr-1" />
+                                Activate
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </div>
 
@@ -238,9 +257,9 @@ export function TemplateVersionsModal({
                                   >
                                     <div
                                       className="w-2 h-2 rounded-full"
-                                      style={{ backgroundColor: stage.color || '#6B7280' }}
+                                      style={{ backgroundColor: stage.stage_color || stage.color || '#6B7280' }}
                                     />
-                                    <span>{stage.name}</span>
+                                    <span>{stage.stage_label || stage.name}</span>
                                   </div>
                                 ))}
                               </div>
@@ -256,7 +275,7 @@ export function TemplateVersionsModal({
                               <div className="space-y-1">
                                 {version.checklist_templates.slice(0, 5).map((item: any, idx: number) => (
                                   <div key={idx} className="text-xs text-gray-600">
-                                    • {item.name}
+                                    • {item.item_text}
                                   </div>
                                 ))}
                                 {checklistCount > 5 && (
@@ -277,7 +296,7 @@ export function TemplateVersionsModal({
                               <div className="space-y-1">
                                 {version.automation_rules.slice(0, 3).map((rule: any, idx: number) => (
                                   <div key={idx} className="text-xs text-gray-600">
-                                    • {rule.name}
+                                    • {rule.rule_name}
                                   </div>
                                 ))}
                                 {ruleCount > 3 && (
@@ -299,7 +318,7 @@ export function TemplateVersionsModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0">
           <div className="text-sm text-gray-600">
             {versions.length} {versions.length === 1 ? 'version' : 'versions'} total
           </div>

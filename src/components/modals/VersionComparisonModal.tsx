@@ -3,11 +3,14 @@ import { X, ArrowRight, Plus, Minus, Edit, ChevronDown, ChevronRight } from 'luc
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
+import { formatVersion } from '../../lib/versionUtils'
 
 interface TemplateVersion {
   id: string
   workflow_id: string
   version_number: number
+  major_version?: number | null
+  minor_version?: number | null
   version_name: string | null
   version_type?: 'major' | 'minor'
   description: string | null
@@ -232,15 +235,13 @@ export function VersionComparisonModal({
               <div className="flex items-center space-x-2 mt-2">
                 <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg">
                   <span className="text-sm font-medium text-gray-700">
-                    Version {olderVersion.version_number}
-                    {olderVersion.version_name && ` - ${olderVersion.version_name}`}
+                    {formatVersion(olderVersion.version_number, olderVersion.major_version, olderVersion.minor_version)}
                   </span>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-400" />
                 <div className="flex items-center space-x-2 px-3 py-1 bg-primary-100 rounded-lg">
                   <span className="text-sm font-medium text-primary-700">
-                    Version {newerVersion.version_number}
-                    {newerVersion.version_name && ` - ${newerVersion.version_name}`}
+                    {formatVersion(newerVersion.version_number, newerVersion.major_version, newerVersion.minor_version)}
                   </span>
                 </div>
               </div>

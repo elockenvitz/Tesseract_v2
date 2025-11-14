@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { X, GitBranch, Info, FileText, Tag, AlertCircle } from 'lucide-react'
+import { X, GitBranch, Info, Tag, AlertCircle } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 
@@ -26,10 +26,9 @@ export function CreateVersionModal({
   onCreateVersion,
   previewData
 }: CreateVersionModalProps) {
-  const [versionName, setVersionName] = useState('')
   const [versionType, setVersionType] = useState<'major' | 'minor'>(detectedVersionType)
   const [description, setDescription] = useState('')
-  const [errors, setErrors] = useState<{ versionName?: string; description?: string }>({})
+  const [errors, setErrors] = useState<{ description?: string }>({})
 
   // Update version type when modal opens or detectedVersionType changes
   useEffect(() => {
@@ -40,17 +39,19 @@ export function CreateVersionModal({
 
   if (!isOpen) return null
 
-  const nextVersionNumber = currentVersionNumber + 1
+  // Calculate semantic version numbers
+  const currentMajor = Math.floor(currentVersionNumber / 100) || 1
+  const currentMinor = currentVersionNumber % 100
+
+  const nextMajor = detectedVersionType === 'major' ? currentMajor + 1 : currentMajor
+  const nextMinor = detectedVersionType === 'major' ? 0 : currentMinor + 1
+  const nextVersionString = `v${nextMajor}.${nextMinor}`
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
     // Validate inputs
-    const newErrors: { versionName?: string; description?: string } = {}
-
-    if (!versionName.trim()) {
-      newErrors.versionName = 'Version name is required'
-    }
+    const newErrors: { description?: string } = {}
 
     if (!description.trim()) {
       newErrors.description = 'Version notes are required'
@@ -61,17 +62,15 @@ export function CreateVersionModal({
       return
     }
 
-    onCreateVersion(versionName.trim(), versionType, description.trim())
+    onCreateVersion(nextVersionString, versionType, description.trim())
 
     // Reset form
-    setVersionName('')
     setVersionType('minor')
     setDescription('')
     setErrors({})
   }
 
   const handleClose = () => {
-    setVersionName('')
     setVersionType('minor')
     setDescription('')
     setErrors({})
@@ -101,16 +100,21 @@ export function CreateVersionModal({
         <form onSubmit={handleSubmit}>
           <div className="p-4 space-y-4">
             {/* Version Number Display */}
-            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <Info className="w-4 h-4 text-indigo-600" />
-                <span className="text-sm font-medium text-indigo-900">
-                  Version {nextVersionNumber} - {workflowName}
-                </span>
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Info className="w-4 h-4 text-indigo-600" />
+                  <span className="text-sm font-medium text-indigo-900">
+                    Creating {nextVersionString} for {workflowName}
+                  </span>
+                </div>
+                <div className="px-3 py-1 bg-indigo-600 text-white rounded-full text-sm font-bold">
+                  {nextVersionString}
+                </div>
               </div>
             </div>
 
-            {/* Version Type */}
+            {/* Version Type - Auto-detected, Read-only */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">
@@ -121,66 +125,36 @@ export function CreateVersionModal({
                   Auto-detected based on changes
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setVersionType('minor')}
-                  className={`p-3 rounded-lg border-2 transition-all ${
-                    versionType === 'minor'
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-900 text-sm">Minor Update</div>
-                    <div className="text-xs text-gray-600">Incremental changes</div>
+              <div className={`p-4 rounded-lg border-2 ${
+                versionType === 'major'
+                  ? 'border-amber-300 bg-amber-50'
+                  : 'border-indigo-300 bg-indigo-50'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className={`font-semibold text-sm ${
+                      versionType === 'major' ? 'text-amber-900' : 'text-indigo-900'
+                    }`}>
+                      {versionType === 'major' ? 'Major Update' : 'Minor Update'}
+                    </div>
+                    <div className={`text-xs mt-1 ${
+                      versionType === 'major' ? 'text-amber-700' : 'text-indigo-700'
+                    }`}>
+                      {versionType === 'major'
+                        ? 'Stage changes detected (added, edited, deleted, or reordered)'
+                        : 'Incremental changes to checklists, rules, cadence, or metadata'
+                      }
+                    </div>
                   </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVersionType('major')}
-                  className={`p-3 rounded-lg border-2 transition-all ${
+                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
                     versionType === 'major'
-                      ? 'border-amber-500 bg-amber-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-900 text-sm">Major Update</div>
-                    <div className="text-xs text-gray-600">Breaking changes</div>
+                      ? 'bg-amber-200 text-amber-800'
+                      : 'bg-indigo-200 text-indigo-800'
+                  }`}>
+                    {versionType === 'major' ? 'MAJOR' : 'MINOR'}
                   </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Version Name */}
-            <div>
-              <label htmlFor="versionName" className="block text-sm font-medium text-gray-700 mb-2">
-                <FileText className="w-4 h-4 inline mr-1" />
-                Version Name *
-              </label>
-              <input
-                id="versionName"
-                type="text"
-                value={versionName}
-                onChange={(e) => {
-                  setVersionName(e.target.value)
-                  if (errors.versionName) {
-                    setErrors({ ...errors, versionName: undefined })
-                  }
-                }}
-                placeholder="e.g., Q4 2024 Update, Enhanced Automation, New Stage Structure"
-                autoComplete="off"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                  errors.versionName ? 'border-red-500' : 'border-gray-300'
-                }`}
-              />
-              {errors.versionName && (
-                <div className="mt-1 flex items-center space-x-1 text-red-600 text-xs">
-                  <AlertCircle className="w-3 h-3" />
-                  <span>{errors.versionName}</span>
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Description/Notes */}
@@ -231,7 +205,7 @@ export function CreateVersionModal({
             </Button>
             <Button type="submit">
               <GitBranch className="w-4 h-4 mr-2" />
-              Create Version {nextVersionNumber}
+              Create {nextVersionString}
             </Button>
           </div>
         </form>
