@@ -17,8 +17,10 @@ import { BranchMapModal } from '../components/workflow/BranchMapModal'
 import { TemplateVersionsModal } from '../components/modals/TemplateVersionsModal'
 import { CreateVersionModal } from '../components/modals/CreateVersionModal'
 import { VersionCreatedModal } from '../components/modals/VersionCreatedModal'
+import { VersionDetailModal } from '../components/modals/VersionDetailModal'
 import { TabStateManager } from '../lib/tabStateManager'
 import { FILTER_TYPE_REGISTRY } from '../lib/universeFilters'
+import { formatVersion } from '../lib/versionUtils'
 
 interface WorkflowWithStats {
   id: string
@@ -146,7 +148,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
   const [isPersistentExpanded, setIsPersistentExpanded] = useState(true)
   const [isCadenceExpanded, setIsCadenceExpanded] = useState(true)
-  const [isDeletedExpanded, setIsDeletedExpanded] = useState(false)
 
   // Track the active tab for each workflow to restore when switching back
   const [workflowTabMemory, setWorkflowTabMemory] = useState<Record<string, 'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'templates'>>({})
@@ -213,6 +214,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showTemplateVersions, setShowTemplateVersions] = useState(false)
   const [showCreateVersion, setShowCreateVersion] = useState(false)
   const [showVersionCreated, setShowVersionCreated] = useState(false)
+  const [showVersionDetail, setShowVersionDetail] = useState(false)
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [createdVersionInfo, setCreatedVersionInfo] = useState<{
     versionNumber: number
     versionName: string
@@ -1237,110 +1240,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  // Fetch deleted workflows (separate from archived)
-  const { data: deletedWorkflows } = useQuery<WorkflowWithStats[]>({
-    queryKey: ['deleted-workflows'],
-    queryFn: async () => {
-      const user = await supabase.auth.getUser()
-      const userId = user.data.user?.id
-
-      if (!userId) return []
-
-      // Get shared deleted workflow IDs (as collaborator)
-      const { data: sharedDeletedIds } = await supabase
-        .from('workflow_collaborations')
-        .select('workflow_id')
-        .eq('user_id', userId)
-
-      // Get workflow IDs where user is a stakeholder
-      const { data: deletedStakeholderIds } = await supabase
-        .from('workflow_stakeholders')
-        .select('workflow_id')
-        .eq('user_id', userId)
-
-      const collaboratorIds = sharedDeletedIds?.map(s => s.workflow_id) || []
-      const stakeholderIds = deletedStakeholderIds?.map(s => s.workflow_id) || []
-      const sharedIds = [...new Set([...collaboratorIds, ...stakeholderIds])]
-      const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
-
-      // Get deleted workflows that user has access to (owned or shared)
-      const { data: workflowData, error } = await supabase
-        .from('workflows')
-        .select(`
-          *,
-          users:created_by (
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('deleted', true)
-        .is('parent_workflow_id', null) // Only show workflow templates, not branches
-        .or(`created_by.eq.${userId}${sharedFilter}`)
-        .order('deleted_at', { ascending: false })
-
-      console.log('🗑️ Deleted workflows result:', { data: workflowData, error, count: workflowData?.length })
-
-      if (error) {
-        console.error('🗑️ Error fetching deleted workflows:', error)
-        throw error
-      }
-
-      if (!workflowData || workflowData.length === 0) return []
-
-      // Get usage statistics for deleted workflows (preserved data)
-      const { data: usageStats } = await supabase
-        .from('asset_workflow_progress')
-        .select('workflow_id, is_started, completed_at, current_stage_key, started_at, asset_id')
-        .in('workflow_id', workflowData.map(w => w.id))
-
-      // Get user's favorited workflows
-      const { data: userFavorites } = await supabase
-        .from('workflow_favorites')
-        .select('workflow_id')
-        .eq('user_id', userId)
-
-      const favoritedWorkflowIds = new Set(userFavorites?.map(f => f.workflow_id) || [])
-
-      // Process deleted workflows with full stats and stages (data is preserved)
-      const deletedWorkflowsWithStats: WorkflowWithStats[] = workflowData.map(workflow => {
-        const workflowUsage = usageStats?.filter(stat => stat.workflow_id === workflow.id) || []
-        const activeAssets = workflowUsage.filter(stat => stat.is_started && !stat.completed_at).length
-        const completedAssets = workflowUsage.filter(stat => stat.completed_at).length
-        const totalUsage = workflowUsage.length
-
-        const creator = workflow.users
-        const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
-
-        // Determine user permission
-        let userPermission: 'read' | 'write' | 'admin' | 'owner' = 'read'
-        if (workflow.created_by === userId) {
-          userPermission = 'owner'
-        }
-
-        // Get stages for this deleted workflow (stages are preserved)
-        const workflowStagesData = workflowStages
-          ?.filter(stage => stage.workflow_id === workflow.id)
-          .sort((a, b) => a.sort_order - b.sort_order) || []
-
-        return {
-          ...workflow,
-          cadence_days: workflow.cadence_days || 365,
-          usage_count: totalUsage,
-          active_assets: activeAssets,
-          completed_assets: completedAssets,
-          creator_name: creatorName,
-          is_favorited: favoritedWorkflowIds.has(workflow.id),
-          stages: workflowStagesData,
-          user_permission: userPermission,
-          usage_stats: workflowUsage
-        }
-      })
-
-      return deletedWorkflowsWithStats
-    }
-  })
-
   // Debug logs can be removed in production
   // console.log('Filtered workflows for display:', filteredWorkflows)
 
@@ -1490,6 +1389,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     mutationFn: async (workflowId: string) => {
       const { data: { user } } = await supabase.auth.getUser()
 
+      // Always use soft delete - mark as deleted but keep data for recovery
       const { error } = await supabase
         .from('workflows')
         .update({
@@ -1500,37 +1400,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .eq('id', workflowId)
 
       if (error) throw error
-      return workflowId
+      return { workflowId, isPermanent: false }
     },
-    onSuccess: async (deletedWorkflowId) => {
+    onSuccess: async (result) => {
       // Invalidate queries to refetch data
       await queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-      await queryClient.invalidateQueries({ queryKey: ['deleted-workflows'] })
+      await queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
 
-      // Fetch the updated deleted workflow to keep it selected
-      const { data: deletedWorkflow } = await supabase
-        .from('workflows')
-        .select(`
-          *,
-          users:created_by (
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('id', deletedWorkflowId)
-        .single()
-
-      if (deletedWorkflow) {
-        // Update the selected workflow with the deleted version
-        setSelectedWorkflow({
-          ...selectedWorkflow!,
-          deleted: true,
-          deleted_at: deletedWorkflow.deleted_at,
-          deleted_by: deletedWorkflow.deleted_by
-        })
-      }
-
+      // Close the workflow view and clear selection
+      setSelectedWorkflow(null)
       setShowPermanentDeleteModal(false)
       setWorkflowToPermanentlyDelete(null)
     },
@@ -1815,6 +1693,31 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         code: error?.code
       })
       alert(`Failed to create template version: ${error?.message || 'Please try again.'}`)
+    }
+  })
+
+  const activateVersionMutation = useMutation({
+    mutationFn: async (versionId: string) => {
+      const { data, error } = await supabase
+        .rpc('activate_template_version', {
+          p_version_id: versionId
+        })
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['template-versions'] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-stages', selectedWorkflow?.id] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-checklists', selectedWorkflow?.id] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules', selectedWorkflow?.id] })
+      queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', selectedWorkflow?.id] })
+      refetchVersions()
+      alert('Version activated successfully! The workflow has been updated to use this version.')
+    },
+    onError: (error: any) => {
+      console.error('Error activating template version:', error)
+      alert(`Failed to activate version: ${error?.message || 'Please try again.'}`)
     }
   })
 
@@ -2868,6 +2771,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     },
     onSuccess: async (createdWorkflow) => {
       console.log('✅ Workflow created:', createdWorkflow)
+
+      // Create initial Version 1 for the new workflow
+      try {
+        const { error: versionError } = await supabase
+          .rpc('create_initial_template_version', {
+            p_workflow_id: createdWorkflow.id
+          })
+
+        if (versionError) {
+          console.error('Error creating initial version:', versionError)
+        } else {
+          console.log('✅ Initial version created for workflow')
+        }
+      } catch (error) {
+        console.error('Error creating initial version:', error)
+      }
+
       // Invalidate and refetch workflows list - use the correct query key
       await queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
       await queryClient.refetchQueries({ queryKey: ['workflows-full'] })
@@ -3213,212 +3133,178 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         {/* Workflow List */}
         <div className="flex-1 overflow-y-auto">
-          {/* Persistent Workflows Section */}
-          {persistentWorkflows.length > 0 && (
-            <div>
-              <button
-                onClick={() => setIsPersistentExpanded(!isPersistentExpanded)}
-                className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
-              >
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Persistent Workflows ({persistentWorkflows.length})
-                </h3>
-                <ChevronDown
-                  className={`w-4 h-4 text-gray-400 transition-transform ${
-                    isPersistentExpanded ? 'transform rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {isPersistentExpanded && (
-                <div className="border-b border-gray-200">
-                  {persistentWorkflows.map((workflow) => (
-                    <button
-                      key={workflow.id}
-                      onClick={() => handleSelectWorkflow(workflow)}
-                      className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                        selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+          {isLoading ? (
+            /* Loading skeleton for sidebar */
+            <div className="p-4 space-y-3 animate-pulse">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="p-3 border border-gray-200 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-full"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* Persistent Workflows Section */}
+              {persistentWorkflows.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setIsPersistentExpanded(!isPersistentExpanded)}
+                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
+                  >
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Persistent Workflows ({persistentWorkflows.length})
+                    </h3>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 transition-transform ${
+                        isPersistentExpanded ? 'transform rotate-180' : ''
                       }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: workflow.color }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
-                            {workflow.is_favorited && (
-                              <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
-                            )}
+                    />
+                  </button>
+                  {isPersistentExpanded && (
+                    <div className="border-b border-gray-200">
+                      {persistentWorkflows.map((workflow) => (
+                        <button
+                          key={workflow.id}
+                          onClick={() => handleSelectWorkflow(workflow)}
+                          className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                            selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: workflow.color }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                                {workflow.is_favorited && (
+                                  <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                            </div>
                           </div>
-                          <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Cadence Workflows Section */}
-          {cadenceWorkflows.length > 0 && (
-            <div>
-              <button
-                onClick={() => setIsCadenceExpanded(!isCadenceExpanded)}
-                className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
-              >
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Cadence Workflows ({cadenceWorkflows.length})
-                </h3>
-                <ChevronDown
-                  className={`w-4 h-4 text-gray-400 transition-transform ${
-                    isCadenceExpanded ? 'transform rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {isCadenceExpanded && (
-                <div className="border-b border-gray-200">
-                  {cadenceWorkflows.map((workflow) => (
-                    <button
-                      key={workflow.id}
-                      onClick={() => handleSelectWorkflow(workflow)}
-                      className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                        selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+              {/* Cadence Workflows Section */}
+              {cadenceWorkflows.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setIsCadenceExpanded(!isCadenceExpanded)}
+                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
+                  >
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Cadence Workflows ({cadenceWorkflows.length})
+                    </h3>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 transition-transform ${
+                        isCadenceExpanded ? 'transform rotate-180' : ''
                       }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: workflow.color }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
-                            {workflow.is_favorited && (
-                              <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
-                            )}
+                    />
+                  </button>
+                  {isCadenceExpanded && (
+                    <div className="border-b border-gray-200">
+                      {cadenceWorkflows.map((workflow) => (
+                        <button
+                          key={workflow.id}
+                          onClick={() => handleSelectWorkflow(workflow)}
+                          className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                            selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: workflow.color }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                                {workflow.is_favorited && (
+                                  <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                            </div>
                           </div>
-                          <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {filteredWorkflows.length === 0 && (
-            <div className="p-4 text-center text-gray-500 text-sm">
-              {searchTerm ? 'No workflows found' : 'No workflows available'}
-            </div>
-          )}
-
-          {/* Archived Workflows Section */}
-          {archivedWorkflows && archivedWorkflows.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <button
-                onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
-              >
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Archived ({archivedWorkflows.length})
-                </h3>
-                <ChevronDown
-                  className={`w-4 h-4 text-gray-400 transition-transform ${
-                    isArchivedExpanded ? 'transform rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {isArchivedExpanded && (
-                <div className="space-y-1">
-                  {archivedWorkflows.map((workflow: WorkflowWithStats) => (
-                    <button
-                      key={workflow.id}
-                      onClick={() => {
-                        // Archived workflows already have full data loaded
-                        setSelectedWorkflow(workflow)
-                      }}
-                      className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
-                        selectedWorkflow?.id === workflow.id ? 'bg-gray-100' : ''
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0 opacity-50"
-                          style={{ backgroundColor: workflow.color }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-sm text-gray-500 truncate">{workflow.name}</h3>
-                            <Badge variant="secondary" size="sm" className="flex-shrink-0">
-                              Archived
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-400 truncate mt-1">
-                            Archived {workflow.archived_at ? new Date(workflow.archived_at).toLocaleDateString() : 'recently'}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+              {filteredWorkflows.length === 0 && !isLoading && (
+                <div className="p-4 text-center text-gray-500 text-sm">
+                  {searchTerm ? 'No workflows found' : 'No workflows available'}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Deleted Workflows Section */}
-          {deletedWorkflows && deletedWorkflows.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <button
-                onClick={() => setIsDeletedExpanded(!isDeletedExpanded)}
-                className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
-              >
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Deleted ({deletedWorkflows.length})
-                </h3>
-                <ChevronDown
-                  className={`w-4 h-4 text-gray-400 transition-transform ${
-                    isDeletedExpanded ? 'transform rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {isDeletedExpanded && (
-                <div className="space-y-1">
-                  {deletedWorkflows.map((workflow: WorkflowWithStats) => (
-                    <button
-                      key={workflow.id}
-                      onClick={() => {
-                        // Deleted workflows already have full data loaded
-                        setSelectedWorkflow(workflow)
-                      }}
-                      className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
-                        selectedWorkflow?.id === workflow.id ? 'bg-gray-100' : ''
+              {/* Archived Workflows Section */}
+              {archivedWorkflows && archivedWorkflows.length > 0 && !isLoading && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
+                    className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Archived ({archivedWorkflows.length})
+                    </h3>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 transition-transform ${
+                        isArchivedExpanded ? 'transform rotate-180' : ''
                       }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0 opacity-50"
-                          style={{ backgroundColor: workflow.color }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-sm text-gray-500 truncate">{workflow.name}</h3>
-                            <Badge variant="secondary" size="sm" className="flex-shrink-0">
-                              Deleted
-                            </Badge>
+                    />
+                  </button>
+                  {isArchivedExpanded && (
+                    <div className="space-y-1">
+                      {archivedWorkflows.map((workflow: WorkflowWithStats) => (
+                        <button
+                          key={workflow.id}
+                          onClick={() => {
+                            // Archived workflows already have full data loaded
+                            setSelectedWorkflow(workflow)
+                          }}
+                          className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
+                            selectedWorkflow?.id === workflow.id ? 'bg-gray-100' : ''
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0 opacity-50"
+                              style={{ backgroundColor: workflow.color }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <h3 className="font-medium text-sm text-gray-500 truncate">{workflow.name}</h3>
+                                <Badge variant="secondary" size="sm" className="flex-shrink-0">
+                                  Archived
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-gray-400 truncate mt-1">
+                                Archived {workflow.archived_at ? new Date(workflow.archived_at).toLocaleDateString() : 'recently'}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-xs text-gray-400 truncate mt-1">
-                            Deleted {workflow.deleted_at ? new Date(workflow.deleted_at).toLocaleDateString() : 'recently'}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -3926,11 +3812,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   <div>
                                     <div className="flex items-center space-x-2">
                                       <span className="text-sm font-medium text-gray-900">
-                                        Version {activeVersion.version_number}
+                                        {formatVersion(activeVersion.version_number, activeVersion.major_version, activeVersion.minor_version)}
                                       </span>
-                                      {activeVersion.version_name && (
-                                        <span className="text-sm text-gray-600">- {activeVersion.version_name}</span>
-                                      )}
                                       <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
                                         Active
                                       </span>
@@ -4196,49 +4079,31 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           </div>
                         )}
 
-                        {/* Delete Action */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-base font-medium text-gray-900 mb-1">
-                              {selectedWorkflow.deleted ? 'Restore Deleted Workflow' : 'Delete Workflow'}
-                            </h4>
-                            <p className="text-sm text-gray-600">
-                              {selectedWorkflow.deleted
-                                ? 'Restore this workflow to make it active again. All data is preserved.'
-                                : 'Delete this workflow to remove it from the interface. You can restore it later from the Deleted section.'
-                              }
-                            </p>
-                          </div>
-                          {selectedWorkflow.deleted ? (
+                        {/* Permanent Delete Action (only for archived workflows) */}
+                        {selectedWorkflow.archived && (
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="text-base font-medium text-gray-900 mb-1">
+                                Remove Workflow
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                Remove this workflow from the archived section. All data will be preserved and can be recovered by the application team if needed.
+                              </p>
+                            </div>
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4 min-w-[120px]"
-                              onClick={async () => {
-                                if (confirm(`Are you sure you want to restore "${selectedWorkflow.name}"?`)) {
-                                  restoreDeletedWorkflowMutation.mutate(selectedWorkflow.id)
-                                  setSelectedWorkflow(null)
-                                }
-                              }}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Restore
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 ml-4 min-w-[120px]"
+                              className="border-red-500 text-red-700 hover:bg-red-100 hover:border-red-600 ml-4 min-w-[160px]"
                               onClick={() => {
                                 setWorkflowToPermanentlyDelete(selectedWorkflow.id)
                                 setShowPermanentDeleteModal(true)
                               }}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                              Remove from Archive
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </Card>
                   )}
@@ -5735,6 +5600,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                       <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-200 text-indigo-800">
                                         Template
                                       </span>
+                                      {(() => {
+                                        const activeVersion = templateVersions?.find(v => v.is_active)
+                                        if (activeVersion) {
+                                          return (
+                                            <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
+                                              {formatVersion(activeVersion.version_number, activeVersion.major_version, activeVersion.minor_version)}
+                                            </span>
+                                          )
+                                        }
+                                        return null
+                                      })()}
                                       {isTemplateCollapsed && (
                                         <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-300">
                                           {workflowBranches.length} {workflowBranches.length === 1 ? 'branch' : 'branches'}
@@ -5878,7 +5754,68 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             </div>
 
             <div className="flex-1 p-6 bg-gray-50 overflow-y-auto">
-              {filteredWorkflows.length === 0 && !isLoading ? (
+              {isLoading ? (
+                /* Loading State */
+                <div className="space-y-6 animate-pulse">
+                  {/* Loading Skeleton for Cadence Map Card */}
+                  <Card>
+                    <div className="p-6 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 bg-gray-200 rounded mr-3"></div>
+                          <div>
+                            <div className="h-6 bg-gray-200 rounded w-48 mb-2"></div>
+                            <div className="h-4 bg-gray-200 rounded w-64"></div>
+                          </div>
+                        </div>
+                        <div className="h-9 w-32 bg-gray-200 rounded"></div>
+                      </div>
+                    </div>
+                    <div className="p-6 space-y-6">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="space-y-3">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
+                            <div className="h-4 bg-gray-200 rounded w-24"></div>
+                          </div>
+                          <div className="bg-white border border-gray-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
+                                <div className="h-5 bg-gray-200 rounded w-40"></div>
+                              </div>
+                              <div className="flex items-center space-x-4">
+                                <div className="h-4 w-8 bg-gray-200 rounded"></div>
+                                <div className="h-4 w-8 bg-gray-200 rounded"></div>
+                                <div className="h-4 w-8 bg-gray-200 rounded"></div>
+                              </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <div className="h-3 bg-gray-200 rounded w-full"></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                  {/* Loading Skeleton for Quick Stats */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <Card>
+                      <div className="p-4 border-b border-gray-200">
+                        <div className="h-5 bg-gray-200 rounded w-32"></div>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        {[1, 2, 3, 4].map((i) => (
+                          <div key={i} className="flex items-center justify-between">
+                            <div className="h-4 bg-gray-200 rounded w-32"></div>
+                            <div className="h-6 bg-gray-200 rounded w-12"></div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </div>
+                </div>
+              ) : filteredWorkflows.length === 0 ? (
                 /* Empty State */
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center max-w-md">
@@ -5895,7 +5832,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </Button>
                   </div>
                 </div>
-              ) : filteredWorkflows.length > 0 ? (
+              ) : (
                 <div className="space-y-6">
                   {/* Workflow Cadence Visualization */}
                   <Card>
@@ -6021,17 +5958,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             })
                           })()}
                         </div>
-                      ) : !isLoading ? (
-                        <div className="text-center py-12">
-                          <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">No workflows available</h3>
-                          <p className="text-gray-500 mb-6">Create your first workflow to see the cadence visualization</p>
-                          <Button onClick={handleCreateWorkflow}>
-                            <Plus className="w-4 h-4 mr-2" />
-                            Create Workflow
-                          </Button>
-                        </div>
-                      ) : null}
+                      ) : (
+                        !isLoading && (
+                          <div className="text-center py-12">
+                            <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No workflows available</h3>
+                            <p className="text-gray-500 mb-6">Create your first workflow to see the cadence visualization</p>
+                            <Button onClick={handleCreateWorkflow}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Create Workflow
+                            </Button>
+                          </div>
+                        )
+                      )}
                     </div>
                   </Card>
 
@@ -6142,7 +6081,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     </Card>
                   </div>
                 </div>
-              ) : null}
+              )}
             </div>
           </div>
         )}
@@ -6339,10 +6278,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           canCreateVersion={selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'}
           onCreateVersion={() => setShowCreateVersion(true)}
           onViewVersion={(versionId) => {
-            console.log('View version:', versionId)
-            // TODO: Implement version viewing/comparison
-            alert('Version viewing coming soon!')
+            setSelectedVersionId(versionId)
+            setShowVersionDetail(true)
           }}
+          onActivateVersion={(versionId) => {
+            if (confirm('Are you sure you want to activate this version? This will update the workflow to use this version\'s configuration.')) {
+              activateVersionMutation.mutate(versionId)
+            }
+          }}
+          canActivateVersion={selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'}
         />
       )}
 
@@ -6378,6 +6322,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           onViewVersion={() => {
             setShowTemplateVersions(true)
           }}
+        />
+      )}
+
+      {/* Version Detail Modal */}
+      {selectedWorkflow && selectedVersionId && (
+        <VersionDetailModal
+          isOpen={showVersionDetail}
+          onClose={() => {
+            setShowVersionDetail(false)
+            setSelectedVersionId(null)
+          }}
+          version={templateVersions?.find(v => v.id === selectedVersionId)!}
+          workflowName={selectedWorkflow.name}
         />
       )}
 
@@ -6737,13 +6694,26 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   <Trash2 className="w-6 h-6 text-red-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Delete Workflow</h3>
-                  <p className="text-sm text-gray-500">Can be restored later</p>
+                  <h3 className="text-lg font-medium text-gray-900">
+                    {selectedWorkflow?.archived ? 'Remove Archived Workflow' : 'Delete Workflow'}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Data will be preserved for recovery
+                  </p>
                 </div>
               </div>
               <p className="text-gray-700 mb-6">
-                Are you sure you want to delete <span className="font-semibold">{selectedWorkflow?.name}</span>?
-                The workflow will be removed from the main interface but all data will be preserved. You can restore it later from the Deleted section.
+                {selectedWorkflow?.archived ? (
+                  <>
+                    Are you sure you want to remove <span className="font-semibold">{selectedWorkflow?.name}</span> from the archived section?
+                    This will hide it from the interface, but <strong>all data will be preserved</strong> and can be recovered by the application team if needed.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to delete <span className="font-semibold">{selectedWorkflow?.name}</span>?
+                    The workflow will be removed from the main interface but all data will be preserved. You can restore it later from the Deleted section.
+                  </>
+                )}
               </p>
               <div className="flex justify-end space-x-3">
                 <Button
@@ -6760,7 +6730,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   onClick={() => deleteWorkflowMutation.mutate(workflowToPermanentlyDelete)}
                   disabled={deleteWorkflowMutation.isPending}
                 >
-                  {deleteWorkflowMutation.isPending ? 'Deleting...' : 'Yes, Delete'}
+                  {deleteWorkflowMutation.isPending ? 'Removing...' : selectedWorkflow?.archived ? 'Yes, Remove' : 'Yes, Delete'}
                 </Button>
               </div>
             </div>
