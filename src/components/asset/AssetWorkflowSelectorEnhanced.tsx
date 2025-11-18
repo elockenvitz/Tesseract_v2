@@ -136,12 +136,12 @@ export function AssetWorkflowSelectorEnhanced({
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-[100]"
             onClick={() => setIsOpen(false)}
           />
 
           {/* Dropdown Menu */}
-          <div className="absolute top-full left-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-[500px] overflow-y-auto">
+          <div className="absolute top-full left-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-[101] max-h-[500px] overflow-y-auto">
             {mode === 'header' ? (
               /* Header Mode - Simple Active Only */
               <div className="p-2">
