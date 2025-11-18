@@ -141,7 +141,7 @@ export function AssetWorkflowSelectorEnhanced({
           />
 
           {/* Dropdown Menu */}
-          <div className="absolute top-full left-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-[101] max-h-[500px] overflow-y-auto">
+          <div className="absolute top-full right-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-[101] max-h-[500px] overflow-y-auto">
             {mode === 'header' ? (
               /* Header Mode - Simple Active Only */
               <div className="p-2">
