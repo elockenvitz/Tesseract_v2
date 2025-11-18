@@ -377,6 +377,78 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
 
   // Query to determine the effective workflow ID for this asset
+  // Fetch all workflow relationships for this asset
+  const { data: allAssetWorkflows, refetch: refetchAllWorkflows } = useQuery({
+    queryKey: ['asset-all-workflows', asset.id],
+    queryFn: async () => {
+      // Get all workflow progress records for this asset
+      const { data: progressData, error: progressError } = await supabase
+        .from('asset_workflow_progress')
+        .select(`
+          *,
+          workflows:workflow_id (
+            id,
+            name,
+            description,
+            status,
+            template_version_id,
+            template_version_number,
+            created_at,
+            is_archived
+          )
+        `)
+        .eq('asset_id', asset.id)
+        .order('updated_at', { ascending: false })
+
+      if (progressError) {
+        console.error('Error fetching asset workflows:', progressError)
+        return []
+      }
+
+      return progressData || []
+    },
+    enabled: !!asset.id
+  })
+
+  // Fetch available active workflow branches that asset can join
+  const { data: availableWorkflows } = useQuery({
+    queryKey: ['asset-available-workflows', asset.id, user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      // Get IDs of workflows the asset is already in
+      const assetWorkflowIds = allAssetWorkflows?.map(aw => aw.workflow_id) || []
+
+      // Fetch active workflow branches user has access to
+      const { data: workflows, error } = await supabase
+        .from('workflows')
+        .select(`
+          id,
+          name,
+          description,
+          status,
+          template_version_id,
+          template_version_number,
+          created_by,
+          is_public,
+          is_archived
+        `)
+        .eq('status', 'active')
+        .eq('is_archived', false)
+        .or(`is_public.eq.true,created_by.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching available workflows:', error)
+        return []
+      }
+
+      // Filter out workflows asset is already in
+      return workflows?.filter(w => !assetWorkflowIds.includes(w.id)) || []
+    },
+    enabled: !!asset.id && !!user?.id && !!allAssetWorkflows
+  })
+
   const { data: effectiveWorkflowId } = useQuery({
     queryKey: ['asset-effective-workflow', asset.id, asset.workflow_id],
     queryFn: async () => {
@@ -604,6 +676,100 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       // Recalculate completeness after creating price target
       await updateAssetCompleteness()
     },
+  })
+
+  // Workflow action mutations
+  const joinWorkflowMutation = useMutation({
+    mutationFn: async ({ workflowId, startImmediately }: { workflowId: string; startImmediately: boolean }) => {
+      const { error } = await supabase
+        .from('asset_workflow_progress')
+        .insert({
+          asset_id: asset.id,
+          workflow_id: workflowId,
+          is_started: startImmediately,
+          started_at: startImmediately ? new Date().toISOString() : null
+        })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
+      refetchAllWorkflows()
+    }
+  })
+
+  const markWorkflowCompleteMutation = useMutation({
+    mutationFn: async (workflowId: string) => {
+      const { error } = await supabase
+        .from('asset_workflow_progress')
+        .update({
+          is_completed: true,
+          completed_at: new Date().toISOString()
+        })
+        .eq('asset_id', asset.id)
+        .eq('workflow_id', workflowId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      refetchAllWorkflows()
+    }
+  })
+
+  const removeFromWorkflowMutation = useMutation({
+    mutationFn: async (workflowId: string) => {
+      const { error } = await supabase
+        .from('asset_workflow_progress')
+        .delete()
+        .eq('asset_id', asset.id)
+        .eq('workflow_id', workflowId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
+      refetchAllWorkflows()
+    }
+  })
+
+  const startWorkflowMutation = useMutation({
+    mutationFn: async (workflowId: string) => {
+      const { error } = await supabase
+        .from('asset_workflow_progress')
+        .update({
+          is_started: true,
+          started_at: new Date().toISOString()
+        })
+        .eq('asset_id', asset.id)
+        .eq('workflow_id', workflowId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      refetchAllWorkflows()
+    }
+  })
+
+  const restartWorkflowMutation = useMutation({
+    mutationFn: async (workflowId: string) => {
+      const { error } = await supabase
+        .from('asset_workflow_progress')
+        .update({
+          is_completed: false,
+          completed_at: null,
+          is_started: true,
+          started_at: new Date().toISOString()
+        })
+        .eq('asset_id', asset.id)
+        .eq('workflow_id', workflowId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      refetchAllWorkflows()
+    }
   })
 
   // ---------- Helpers ----------
