@@ -114,7 +114,10 @@ export function AssetWorkflowSelectorEnhanced({
       >
         <GitBranch className="w-4 h-4 text-gray-500" />
         <span className="font-medium text-gray-900">
-          {selectedWorkflowData?.name || 'Select Workflow'}
+          {mode === 'header'
+            ? (selectedWorkflowData?.name || 'Active Workflows')
+            : (selectedWorkflowData?.name || 'Select Workflow')
+          }
         </span>
         {selectedWorkflow && selectedWorkflowData && (
           <span className="text-xs text-gray-500">
@@ -138,7 +141,7 @@ export function AssetWorkflowSelectorEnhanced({
           />
 
           {/* Dropdown Menu */}
-          <div className="absolute top-full right-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-[600px] overflow-y-auto">
+          <div className="absolute top-full left-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-[500px] overflow-y-auto">
             {mode === 'header' ? (
               /* Header Mode - Simple Active Only */
               <div className="p-2">
