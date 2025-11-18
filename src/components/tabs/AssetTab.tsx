@@ -14,6 +14,7 @@ import { InvestmentTimeline } from '../ui/InvestmentTimeline'
 import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 import { AssetWorkflowSelector } from '../ui/AssetWorkflowSelector'
 import { WorkflowSelector } from '../ui/WorkflowSelector'
+import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
@@ -1282,13 +1283,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
 
           {/* Workflow Selector */}
-          <AssetWorkflowSelector
-            assetId={effectiveAsset.id}
-            currentWorkflowId={effectiveWorkflowId}
-            onWorkflowChange={handleWorkflowChange}
-            onWorkflowStart={handleWorkflowStart}
-            onWorkflowStop={handleWorkflowStop}
-            onSwitchToStageTab={() => setActiveTab('stage')}
+          <AssetWorkflowSelectorEnhanced
+            mode="header"
+            selectedWorkflowId={effectiveWorkflowId || null}
+            allAssetWorkflows={allAssetWorkflows || []}
+            availableWorkflows={[]}
+            onSelectWorkflow={handleWorkflowChange}
+            onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
           />
           </div>
         </div>
@@ -1756,23 +1757,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {showTimelineView ? (
                     <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
                   ) : (
-                    <WorkflowSelector
-                      currentWorkflowId={effectiveWorkflowId}
-                      assetId={effectiveAsset.id}
-                      onWorkflowChange={handleWorkflowChange}
-                      onWorkflowStart={handleWorkflowStart}
-                      onWorkflowStop={handleWorkflowStop}
-                      onManageWorkflows={() => setShowWorkflowManager(true)}
-                      onViewAllWorkflows={() => {
-                        if (onNavigate) {
-                          onNavigate({
-                            id: 'workflows',
-                            title: 'Workflows',
-                            type: 'workflows',
-                            data: null
-                          })
-                        }
-                      }}
+                    <AssetWorkflowSelectorEnhanced
+                      mode="stage-tab"
+                      selectedWorkflowId={effectiveWorkflowId || null}
+                      allAssetWorkflows={allAssetWorkflows || []}
+                      availableWorkflows={availableWorkflows || []}
+                      onSelectWorkflow={handleWorkflowChange}
+                      onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
                     />
                   )}
                 <div className="flex items-center space-x-2">
