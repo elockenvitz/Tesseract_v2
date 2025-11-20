@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle } from 'lucide-react'
+import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { Card } from '../components/ui/Card'
@@ -13,7 +13,6 @@ import { UniverseRuleBuilder } from '../components/workflow/UniverseRuleBuilder'
 import { SimplifiedUniverseBuilder } from '../components/workflow/SimplifiedUniverseBuilder'
 import { CreateBranchModal } from '../components/modals/CreateBranchModal'
 import { UniversePreviewModal } from '../components/modals/UniversePreviewModal'
-import { BranchMapModal } from '../components/workflow/BranchMapModal'
 import { TemplateVersionsModal } from '../components/modals/TemplateVersionsModal'
 import { CreateVersionModal } from '../components/modals/CreateVersionModal'
 import { VersionCreatedModal } from '../components/modals/VersionCreatedModal'
@@ -198,6 +197,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null)
   const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false)
   const [workflowToPermanentlyDelete, setWorkflowToPermanentlyDelete] = useState<string | null>(null)
+  const [showUnarchiveModal, setShowUnarchiveModal] = useState(false)
+  const [workflowToUnarchive, setWorkflowToUnarchive] = useState<string | null>(null)
   const [showDeleteStageModal, setShowDeleteStageModal] = useState(false)
   const [removeAdminConfirm, setRemoveAdminConfirm] = useState<{id: string, name: string} | null>(null)
   const [removeStakeholderConfirm, setRemoveStakeholderConfirm] = useState<{id: string, name: string} | null>(null)
@@ -206,11 +207,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showUniversePreview, setShowUniversePreview] = useState(false)
   const [ruleToDelete, setRuleToDelete] = useState<{ id: string, name: string, type: string } | null>(null)
   const [branchToEnd, setBranchToEnd] = useState<{ id: string, name: string } | null>(null)
+  const [showBranchOverviewModal, setShowBranchOverviewModal] = useState(false)
+  const [selectedBranch, setSelectedBranch] = useState<any | null>(null)
+  const [collapsedAssetGroups, setCollapsedAssetGroups] = useState<Record<string, boolean>>({
+    active: false,
+    inherited: false,
+    ruleBased: false,
+    added: false,
+    deleted: false,
+    completed: false
+  })
   const [branchToContinue, setBranchToContinue] = useState<{ id: string, name: string } | null>(null)
   const [branchToArchive, setBranchToArchive] = useState<{ id: string, name: string } | null>(null)
   const [branchToDelete, setBranchToDelete] = useState<{ id: string, name: string } | null>(null)
   const [branchStatusFilter, setBranchStatusFilter] = useState<'all' | 'archived' | 'deleted'>('all')
-  const [showBranchHierarchy, setShowBranchHierarchy] = useState(false)
   const [showTemplateVersions, setShowTemplateVersions] = useState(false)
   const [showCreateVersion, setShowCreateVersion] = useState(false)
   const [showVersionCreated, setShowVersionCreated] = useState(false)
@@ -365,7 +375,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           archived_at,
           deleted,
           deleted_at,
-          status
+          status,
+          template_version_id,
+          template_version_number
         `)
         .eq('parent_workflow_id', selectedWorkflow.id)
 
@@ -418,13 +430,226 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000
   })
 
+  // Query for selected branch assets
+  const { data: selectedBranchAssets } = useQuery({
+    queryKey: ['branch-assets', selectedBranch?.id],
+    queryFn: async () => {
+      if (!selectedBranch?.id) return null
+
+      // Get all asset progress records for this branch
+      console.log('🔍 Fetching assets for branch:', selectedBranch.id)
+
+      const { data: progressRecords, error: progressError } = await supabase
+        .from('asset_workflow_progress')
+        .select('*')
+        .eq('workflow_id', selectedBranch.id)
+
+      if (progressError) {
+        console.error('🚨 Error fetching branch progress:', progressError)
+        return null
+      }
+
+      console.log('🔍 Progress records fetched:', progressRecords?.length || 0)
+
+      // Fetch all unique asset IDs in a single query using OR conditions
+      const assetIds = [...new Set((progressRecords || []).map(p => p.asset_id))]
+
+      let currentAssets = progressRecords || []
+
+      if (assetIds.length > 0) {
+        console.log('🔍 DEBUG: About to fetch asset details for', assetIds.length, 'asset IDs')
+        console.log('🔍 DEBUG: First 3 asset IDs:', assetIds.slice(0, 3))
+
+        // Build OR query for assets
+        const orQuery = assetIds.map(id => `id.eq.${id}`).join(',')
+        console.log('🔍 DEBUG: OR query length:', orQuery.length, 'characters')
+        console.log('🔍 DEBUG: OR query preview:', orQuery.substring(0, 200) + '...')
+
+        const { data: assetsData, error: assetsError } = await supabase
+          .from('assets')
+          .select('id, symbol, company_name')
+          .or(orQuery)
+
+        console.log('🔍 DEBUG: Assets query completed')
+        console.log('🔍 Assets fetched:', assetsData?.length || 0, 'Error:', assetsError)
+
+        if (assetsError) {
+          console.error('🚨 ASSET FETCH ERROR:', assetsError)
+        }
+
+        if (assetsData) {
+          console.log('🔍 DEBUG: Sample asset data:', assetsData.slice(0, 2))
+        }
+
+        if (!assetsError && assetsData) {
+          // Create a map for quick lookup
+          const assetsMap = Object.fromEntries(assetsData.map(a => [a.id, a]))
+          console.log('🔍 DEBUG: Assets map created with', Object.keys(assetsMap).length, 'entries')
+
+          // Attach asset data to progress records
+          currentAssets = progressRecords.map(p => ({
+            ...p,
+            assets: assetsMap[p.asset_id] || null
+          }))
+
+          console.log('🔍 DEBUG: After join, sample with asset data:', currentAssets.slice(0, 2))
+        } else {
+          console.error('🚨 DEBUG: Skipping join - assetsError:', assetsError, 'assetsData:', assetsData)
+        }
+      } else {
+        console.log('🔍 DEBUG: No asset IDs to fetch')
+      }
+
+      console.log('🔍 Current assets with joined data:', currentAssets?.length || 0)
+      console.log('🔍 Sample:', currentAssets?.slice(0, 2))
+
+      // Get parent workflow assets if this is a branched workflow
+      let parentAssets: any[] = []
+      if (selectedBranch.parent_workflow_id) {
+        const { data: parentProgressRecords, error: parentError } = await supabase
+          .from('asset_workflow_progress')
+          .select('*')
+          .eq('workflow_id', selectedBranch.parent_workflow_id)
+
+        if (parentError) {
+          console.error('🚨 Error fetching parent assets:', parentError)
+        } else if (parentProgressRecords && parentProgressRecords.length > 0) {
+          const parentAssetIds = [...new Set(parentProgressRecords.map(p => p.asset_id))]
+          const parentOrQuery = parentAssetIds.map(id => `id.eq.${id}`).join(',')
+
+          const { data: parentAssetsData } = await supabase
+            .from('assets')
+            .select('id, symbol, company_name')
+            .or(parentOrQuery)
+
+          if (parentAssetsData) {
+            const parentAssetsMap = Object.fromEntries(parentAssetsData.map(a => [a.id, a]))
+            parentAssets = parentProgressRecords.map(p => ({
+              ...p,
+              assets: parentAssetsMap[p.asset_id] || null
+            }))
+          }
+        }
+
+        console.log('🔍 Parent assets fetched:', parentAssets.length, 'assets')
+      }
+
+      // Fetch universe rules from the PARENT WORKFLOW's workflow_universe_rules table
+      // These rules determine which assets are "rule-based" (vs inherited or manually added)
+      let universeRules: any[] = []
+      let ruleBasedAssetIds = new Set<string>()
+
+      console.log('🔍 Fetching universe rules from parent workflow:', selectedWorkflow?.id)
+
+      if (selectedWorkflow?.id) {
+        // Fetch universe rules from the workflow_universe_rules table
+        const { data: workflowRules, error: rulesError } = await supabase
+          .from('workflow_universe_rules')
+          .select('*')
+          .eq('workflow_id', selectedWorkflow.id)
+          .eq('is_active', true)
+          .order('sort_order')
+
+        console.log('🔍 Universe rules from workflow_universe_rules table:', workflowRules, 'Error:', rulesError)
+
+        if (workflowRules && workflowRules.length > 0) {
+          universeRules = workflowRules
+          console.log('🔍 Found', universeRules.length, 'active universe rules')
+
+          // Fetch assets that match these universe rules
+          for (const rule of universeRules) {
+            console.log('🔍 Processing rule:', rule.rule_type, rule.rule_config)
+
+            if (rule.rule_type === 'sector' && rule.rule_config?.sectors) {
+              console.log('🔍 Fetching sector assets for sectors:', rule.rule_config.sectors)
+              const { data: sectorAssets, error: sectorError } = await supabase
+                .from('assets')
+                .select('id')
+                .in('sector', rule.rule_config.sectors)
+
+              console.log('🔍 Sector assets found:', sectorAssets?.length, 'Error:', sectorError)
+              sectorAssets?.forEach(a => ruleBasedAssetIds.add(a.id))
+            } else if (rule.rule_type === 'theme' && rule.rule_config?.theme_ids) {
+              console.log('🔍 Fetching theme assets for themes:', rule.rule_config.theme_ids)
+              // Fetch assets from theme relationships
+              const { data: themeAssets, error: themeError } = await supabase
+                .from('theme_assets')
+                .select('asset_id')
+                .in('theme_id', rule.rule_config.theme_ids)
+
+              console.log('🔍 Theme assets found:', themeAssets?.length, 'Error:', themeError)
+              themeAssets?.forEach(a => ruleBasedAssetIds.add(a.asset_id))
+            }
+          }
+        }
+      }
+
+      console.log('🔍 Rule-based asset IDs:', ruleBasedAssetIds.size, 'assets', Array.from(ruleBasedAssetIds).slice(0, 3))
+
+      // Categorize assets
+      const parentAssetIds = new Set(parentAssets.map(a => a.asset_id))
+      const currentAssetIds = new Set(currentAssets?.map(a => a.asset_id) || [])
+
+      const activeAssets = (currentAssets || []).filter(a => !a.completed_at)
+      const completedAssets = (currentAssets || []).filter(a => a.completed_at)
+
+      // Rule-based assets: match current branch's universe rules
+      const ruleBasedAssets = (currentAssets || []).filter(a => ruleBasedAssetIds.has(a.asset_id))
+
+      // Inherited assets: in parent AND in current, but NOT added by current branch's rules
+      const originalAssets = (currentAssets || []).filter(a =>
+        parentAssetIds.has(a.asset_id) && !ruleBasedAssetIds.has(a.asset_id)
+      )
+
+      // Manually added: NOT in parent, NOT from rules
+      const addedAssets = (currentAssets || []).filter(a =>
+        !parentAssetIds.has(a.asset_id) && !ruleBasedAssetIds.has(a.asset_id)
+      )
+
+      // Find deleted assets (in parent but not in current)
+      const deletedAssetIds = [...parentAssetIds].filter(id => !currentAssetIds.has(id))
+      const deletedAssets = parentAssets.filter(a => deletedAssetIds.includes(a.asset_id))
+
+      const result = {
+        all: currentAssets || [],
+        active: activeAssets,
+        completed: completedAssets,
+        original: originalAssets,
+        ruleBased: ruleBasedAssets,
+        added: addedAssets,
+        deleted: deletedAssets
+      }
+
+      console.log('🔍 Branch Assets Query Result:', {
+        branchId: selectedBranch.id,
+        currentAssetsCount: currentAssets?.length || 0,
+        parentAssetsCount: parentAssets.length,
+        categorized: {
+          all: result.all.length,
+          active: result.active.length,
+          completed: result.completed.length,
+          original: result.original.length,
+          ruleBased: result.ruleBased.length,
+          added: result.added.length,
+          deleted: result.deleted.length
+        },
+        sampleData: result.all.slice(0, 2)
+      })
+
+      return result
+    },
+    enabled: !!selectedBranch?.id && showBranchOverviewModal,
+    staleTime: 0, // Temporarily disabled to test asset join fix
+    gcTime: 5 * 60 * 1000
+  })
+
   // Query for ALL workflow branches (for hierarchy view)
   const { data: allWorkflowBranches } = useQuery({
     queryKey: ['all-workflow-branches', selectedWorkflow?.id],
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from('workflows')
         .select(`
           id,
@@ -441,6 +666,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           status
         `)
         .eq('parent_workflow_id', selectedWorkflow.id)
+        .eq('deleted', false)  // Exclude deleted branches from hierarchy view
         .order('branched_at', { ascending: false })
 
       if (error) {
@@ -501,7 +727,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const { data: templateVersions, refetch: refetchVersions } = useQuery({
     queryKey: ['template-versions', selectedWorkflow?.id],
     queryFn: async () => {
-      if (!selectedWorkflow?.id) return []
+      if (!selectedWorkflow?.id) {
+        console.log('🔍 Template Versions Query: No workflow selected')
+        return []
+      }
+
+      console.log('🔍 Template Versions Query: Fetching for workflow ID:', selectedWorkflow.id)
 
       const { data, error } = await supabase
         .from('workflow_template_versions')
@@ -510,9 +741,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .order('version_number', { ascending: false })
 
       if (error) {
-        console.error('Error fetching template versions:', error)
+        console.error('❌ Error fetching template versions:', error)
         throw error
       }
+
+      console.log('✅ Template Versions Query Result:', data)
+      console.log('📊 Template Versions Count:', data?.length || 0)
 
       return data || []
     },
@@ -1095,43 +1329,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000 // 5 minutes
   })
 
-  // Restore selected workflow when workflows are loaded
-  useEffect(() => {
-    if (workflows && workflows.length > 0) {
-      const savedState = TabStateManager.loadTabState(tabId)
-      if (savedState?.selectedWorkflowId && !selectedWorkflow) {
-        const workflowToRestore = workflows.find(w => w.id === savedState.selectedWorkflowId)
-        if (workflowToRestore) {
-          setSelectedWorkflow(workflowToRestore)
-        }
-      }
-    }
-  }, [workflows, tabId, selectedWorkflow])
-
-  // Update selectedWorkflow when workflows data changes (to pick up updated stages)
-  useEffect(() => {
-    if (selectedWorkflow && workflows) {
-      const updatedWorkflow = workflows.find(w => w.id === selectedWorkflow.id)
-      if (updatedWorkflow) {
-        setSelectedWorkflow(updatedWorkflow)
-      }
-    }
-  }, [workflows])
-
-  // Filter workflows by search term
-  const filteredWorkflows = workflows?.filter(workflow =>
-    workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    workflow.description.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || []
-
-  // Separate workflows into persistent and cadence groups
-  const persistentWorkflows = filteredWorkflows.filter(w =>
-    w.cadence_timeframe === 'persistent'
-  )
-  const cadenceWorkflows = filteredWorkflows.filter(w =>
-    w.cadence_timeframe !== 'persistent'
-  )
-
   // Query for archived workflows with full data processing
   const { data: archivedWorkflows } = useQuery({
     queryKey: ['workflows-archived', workflowStages],
@@ -1163,6 +1360,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
 
       // Get archived workflows that user has access to (owned or shared)
+      // Exclude deleted workflows from the archived list
       const { data: workflowData, error } = await supabase
         .from('workflows')
         .select(`
@@ -1174,6 +1372,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           )
         `)
         .eq('archived', true)
+        .is('deleted', false) // Don't show deleted workflows in archived section
         .is('parent_workflow_id', null) // Only show workflow templates, not branches
         .or(`created_by.eq.${userId}${sharedFilter}`)
         .order('archived_at', { ascending: false })
@@ -1239,6 +1438,47 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       return archivedWorkflowsWithStats
     }
   })
+
+  // Restore selected workflow when workflows are loaded
+  useEffect(() => {
+    if (workflows && workflows.length > 0) {
+      const savedState = TabStateManager.loadTabState(tabId)
+      if (savedState?.selectedWorkflowId && !selectedWorkflow) {
+        // Check both active and archived workflows
+        const workflowToRestore = workflows.find(w => w.id === savedState.selectedWorkflowId) ||
+          archivedWorkflows?.find(w => w.id === savedState.selectedWorkflowId)
+        if (workflowToRestore) {
+          setSelectedWorkflow(workflowToRestore)
+        }
+      }
+    }
+  }, [workflows, archivedWorkflows, tabId, selectedWorkflow])
+
+  // Update selectedWorkflow when workflows data changes (to pick up updated stages)
+  useEffect(() => {
+    if (selectedWorkflow && workflows) {
+      // Check both active and archived workflows for updates
+      const updatedWorkflow = workflows.find(w => w.id === selectedWorkflow.id) ||
+        archivedWorkflows?.find(w => w.id === selectedWorkflow.id)
+      if (updatedWorkflow) {
+        setSelectedWorkflow(updatedWorkflow)
+      }
+    }
+  }, [workflows, archivedWorkflows])
+
+  // Filter workflows by search term
+  const filteredWorkflows = workflows?.filter(workflow =>
+    workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    workflow.description.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || []
+
+  // Separate workflows into persistent and cadence groups
+  const persistentWorkflows = filteredWorkflows.filter(w =>
+    w.cadence_timeframe === 'persistent'
+  )
+  const cadenceWorkflows = filteredWorkflows.filter(w =>
+    w.cadence_timeframe !== 'persistent'
+  )
 
   // Debug logs can be removed in production
   // console.log('Filtered workflows for display:', filteredWorkflows)
@@ -1440,6 +1680,34 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onError: (error) => {
       console.error('Error restoring workflow:', error)
       alert('Failed to restore workflow. Please try again.')
+    }
+  })
+
+  const unarchiveWorkflowMutation = useMutation({
+    mutationFn: async (workflowId: string) => {
+      const { error } = await supabase
+        .from('workflows')
+        .update({
+          archived: false,
+          archived_at: null,
+          archived_by: null
+        })
+        .eq('id', workflowId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
+      setSelectedWorkflow(null)
+      setShowUnarchiveModal(false)
+      setWorkflowToUnarchive(null)
+    },
+    onError: (error) => {
+      console.error('Error unarchiving workflow:', error)
+      alert('Failed to unarchive workflow. Please try again.')
+      setShowUnarchiveModal(false)
+      setWorkflowToUnarchive(null)
     }
   })
 
@@ -2198,20 +2466,29 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       const userId = user.data.user?.id
       if (!userId) throw new Error('Not authenticated')
 
-      // Get the source workflow
+      // Determine which workflow to copy from
+      // If sourceBranchId is provided, copy from that branch
+      // Otherwise, copy from the template (workflowId)
+      const sourceId = sourceBranchId || workflowId
+
+      // Get the source workflow data
       const { data: sourceWorkflow, error: workflowError } = await supabase
         .from('workflows')
         .select('*')
-        .eq('id', workflowId)
+        .eq('id', sourceId)
         .single()
 
       if (workflowError) throw workflowError
 
-      // Get the active template version for this workflow
+      // Determine the root parent workflow ID
+      // If source is a branch, use its parent; if source is root, use itself
+      const rootParentId = sourceWorkflow.parent_workflow_id || workflowId
+
+      // Get the active template version for the root workflow
       const { data: activeVersion } = await supabase
         .from('workflow_template_versions')
         .select('id, version_number')
-        .eq('workflow_id', workflowId)
+        .eq('workflow_id', rootParentId)
         .eq('is_active', true)
         .single()
 
@@ -2223,9 +2500,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           description: sourceWorkflow.description,
           color: sourceWorkflow.color,
           cadence_days: sourceWorkflow.cadence_days,
+          status: 'active', // New branches are active by default
           is_public: false, // Always private - users must be explicitly invited
           created_by: userId,
-          parent_workflow_id: workflowId,
+          parent_workflow_id: rootParentId, // Always point to root template
           source_branch_id: sourceBranchId || null,
           branch_suffix: branchSuffix,
           branched_at: new Date().toISOString(),
@@ -2237,11 +2515,66 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (createError) throw createError
 
+      // Get universe rules from the root template workflow
+      const { data: universeRules } = await supabase
+        .from('workflow_universe_rules')
+        .select('*')
+        .eq('workflow_id', rootParentId)
+
+      // Automatically add assets based on universe rules
+      if (universeRules && universeRules.length > 0) {
+        console.log(`🌌 Found ${universeRules.length} universe rules, adding matching assets to new branch`)
+
+        const { addAssetsToWorkflowByUniverse } = await import('../lib/universeAssetMatcher')
+        const rules = universeRules.map(r => {
+          // Extract values from rule_config based on rule_type
+          let values: string[] = []
+          const config = r.rule_config || {}
+
+          switch (r.rule_type) {
+            case 'coverage':
+              values = config.analyst_user_ids || []
+              break
+            case 'list':
+              values = config.list_ids || []
+              break
+            case 'theme':
+              values = config.theme_ids || []
+              break
+            case 'sector':
+              values = config.sectors || []
+              break
+            case 'priority':
+              values = config.levels || []
+              break
+            default:
+              values = config.values || []
+          }
+
+          return {
+            id: r.id,
+            type: r.rule_type === 'coverage' ? 'analyst' : r.rule_type,
+            values: values,
+            operator: r.combination_operator
+          }
+        })
+
+        const result = await addAssetsToWorkflowByUniverse(
+          newWorkflow.id,
+          rules,
+          'OR' // Default to OR operator for combining rules
+        )
+
+        console.log(`✅ Added ${result.added} assets to workflow branch, ${result.errors} errors`)
+      }
+
       return newWorkflow
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows'] })
       setShowCreateBranchModal(false)
     },
     onError: (error) => {
@@ -3924,8 +4257,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
                           <p className="text-sm text-gray-500 mt-1">
                             {workflowBranches?.length || 0} total branches
-                            ({workflowBranches?.filter(b => b.status === 'active').length || 0} active,
-                            {workflowBranches?.filter(b => b.status === 'inactive').length || 0} inactive)
+                            {' '}({workflowBranches?.filter(b => b.status === 'active').length || 0} active,{' '}
+                            {workflowBranches?.filter(b => b.status === 'inactive').length || 0} ended)
                           </p>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -3970,13 +4303,41 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             }
                             const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
 
+                            // Construct full branch name with suffix
+                            const fullBranchName = branch.branch_suffix ? `${branch.name} ${branch.branch_suffix}` : branch.name
+
+                            // Determine if this is a clean branch or a copy
+                            const isCleanBranch = !branch.source_branch_id
+                            const BranchIcon = isCleanBranch ? Network : Copy
+
+                            // Format version number as v1.02 (major.minor)
+                            const formatVersion = (versionNumber: number) => {
+                              if (!versionNumber) return ''
+                              const major = Math.floor(versionNumber / 100)
+                              const minor = versionNumber % 100
+                              return `v${major}.${minor.toString().padStart(2, '0')}`
+                            }
+
                             return (
                               <div key={branch.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                                 <div className="flex items-center space-x-3 flex-1">
-                                  <Orbit className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                                  <div className="relative">
+                                    <BranchIcon
+                                      className={`w-4 h-4 flex-shrink-0 ${isCleanBranch ? 'text-indigo-600' : 'text-amber-600'}`}
+                                      title={isCleanBranch ? 'Clean branch' : 'Copied branch'}
+                                    />
+                                  </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center space-x-2">
-                                      <h4 className="text-sm font-medium text-gray-900 truncate">{branch.name}</h4>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedBranch(branch)
+                                          setShowBranchOverviewModal(true)
+                                        }}
+                                        className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate text-left"
+                                      >
+                                        {fullBranchName}
+                                      </button>
                                       <Badge
                                         size="sm"
                                         className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
@@ -3985,13 +4346,18 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                         <span className="capitalize">{branch.status}</span>
                                       </Badge>
                                     </div>
-                                    {branch.totalAssets > 0 && (
-                                      <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
-                                        <span>{branch.totalAssets} assets</span>
-                                        <span className="text-green-600">{branch.activeAssets} active</span>
-                                        <span className="text-blue-600">{branch.completedAssets} completed</span>
-                                      </div>
-                                    )}
+                                    <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
+                                      {branch.template_version_number && (
+                                        <span className="text-purple-600 font-medium">{formatVersion(branch.template_version_number)}</span>
+                                      )}
+                                      {branch.totalAssets > 0 && (
+                                        <>
+                                          <span>{branch.totalAssets} assets</span>
+                                          <span className="text-green-600">{branch.activeAssets} active</span>
+                                          <span className="text-blue-600">{branch.completedAssets} completed</span>
+                                        </>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="text-xs text-gray-500 ml-4">
@@ -4038,25 +4404,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 size="sm"
                                 variant="outline"
                                 className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4 min-w-[120px]"
-                                onClick={async () => {
-                                  if (confirm(`Are you sure you want to unarchive "${selectedWorkflow.name}"?`)) {
-                                    const { error } = await supabase
-                                      .from('workflows')
-                                      .update({
-                                        archived: false,
-                                        archived_at: null,
-                                        archived_by: null
-                                      })
-                                      .eq('id', selectedWorkflow.id)
-
-                                    if (error) {
-                                      alert('Failed to unarchive workflow. Please try again.')
-                                    } else {
-                                      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-                                      queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
-                                      setSelectedWorkflow(null)
-                                    }
-                                  }
+                                onClick={() => {
+                                  setWorkflowToUnarchive(selectedWorkflow.id)
+                                  setShowUnarchiveModal(true)
                                 }}
                               >
                                 <CheckCircle className="w-4 h-4 mr-2" />
@@ -5131,6 +5481,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {/* Branches View */}
               {activeView === 'branches' && (() => {
+                console.log('🌳 Branches View Rendering')
+                console.log('📋 Selected Workflow:', selectedWorkflow?.id, selectedWorkflow?.name)
+                console.log('📊 Template Versions Available:', templateVersions)
+                console.log('📊 Template Versions Details:', JSON.stringify(templateVersions, null, 2))
+
                 // Build the tree structure
                 const branchMap = new Map<string, any>()
 
@@ -5158,41 +5513,59 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   }
                 })
 
+                // Helper function to recursively find the clean parent
+                const findCleanParent = (branchId: string): any => {
+                  const branch = workflowBranches.find(b => b.id === branchId)
+                  if (!branch) return null
+
+                  const node = branchMap.get(branchId)
+                  if (!node) return null
+
+                  // If this is a clean branch (not copied), we found it
+                  if (!node.isCopied) {
+                    return node
+                  }
+
+                  // If this is a copied branch, recursively check its source
+                  if (branch.source_branch_id) {
+                    return findCleanParent(branch.source_branch_id)
+                  }
+
+                  return null
+                }
+
                 // Second pass: build hierarchy
                 workflowBranches?.forEach(branch => {
                   const node = branchMap.get(branch.id)!
 
                   if (!branch.source_branch_id) {
                     // This is a clean branch (created directly from template)
+                    console.log(`🌱 Clean branch: ${branch.name}`)
                     rootBranches.push(node)
                   } else if (branchMap.has(branch.source_branch_id)) {
                     const sourceNode = branchMap.get(branch.source_branch_id)!
+                    console.log(`🔗 Processing branch: ${branch.name}, source: ${sourceNode.name}, source is copied: ${sourceNode.isCopied}`)
 
                     // If source is a clean branch, add as child
                     if (!sourceNode.isCopied) {
+                      console.log(`  ✅ Adding ${branch.name} as child of clean branch ${sourceNode.name}`)
                       sourceNode.children.push(node)
                     } else {
-                      // If source is a copied branch, find the clean parent and add as sibling
-                      // by finding the clean branch that the source belongs to
-                      let cleanParent = sourceNode
-                      const sourceBranch = workflowBranches.find(b => b.id === branch.source_branch_id)
+                      // If source is a copied branch, recursively find the clean parent
+                      console.log(`  🔍 Source is copied, finding clean parent recursively...`)
+                      const cleanParent = findCleanParent(branch.source_branch_id)
 
-                      if (sourceBranch?.source_branch_id && branchMap.has(sourceBranch.source_branch_id)) {
-                        const potentialCleanParent = branchMap.get(sourceBranch.source_branch_id)!
-                        if (!potentialCleanParent.isCopied) {
-                          cleanParent = potentialCleanParent
-                        }
-                      }
-
-                      // Add as sibling to source (child of the same clean parent)
                       if (cleanParent && !cleanParent.isCopied) {
+                        console.log(`  ✅ Found clean parent: ${cleanParent.name}, adding ${branch.name} as child`)
                         cleanParent.children.push(node)
                       } else {
+                        console.log(`  ⚠️ No clean parent found, adding ${branch.name} as root`)
                         // Fallback: add as root if we can't find clean parent
                         rootBranches.push(node)
                       }
                     }
                   } else {
+                    console.log(`⚠️ Source not found for ${branch.name}, adding as root`)
                     // Source not found in current filter, add as root
                     rootBranches.push(node)
                   }
@@ -5303,13 +5676,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   ) : (
                                     <Network className="w-4 h-4 text-purple-600 flex-shrink-0" />
                                   )}
-                                  <h4
-                                    className={`text-sm font-semibold cursor-pointer hover:text-blue-600 transition-colors ${node.status === 'inactive' ? 'text-gray-600' : 'text-gray-900'}`}
-                                    onClick={() => setShowBranchHierarchy(true)}
-                                    title="Click to view branch hierarchy"
+                                  <button
+                                    onClick={() => {
+                                      setSelectedBranch(node)
+                                      setShowBranchOverviewModal(true)
+                                    }}
+                                    className={`text-sm font-semibold hover:text-indigo-600 transition-colors cursor-pointer ${node.status === 'inactive' ? 'text-gray-600' : 'text-gray-900'}`}
                                   >
                                     {node.name}
-                                  </h4>
+                                  </button>
                                   {editingBranchSuffix?.id === node.id ? (
                                     <div className="flex items-center space-x-1">
                                       <span className="text-xs text-gray-500">(</span>
@@ -5519,10 +5894,323 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                 return (
                   <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
+                    {/* Show branch detail view if a branch is selected */}
+                    {showBranchOverviewModal && selectedBranch ? (
+                      <div className="space-y-4">
+                        {/* Back button and header */}
+                        <div className="flex items-center space-x-3">
+                          <button
+                            onClick={() => {
+                              setShowBranchOverviewModal(false)
+                              setSelectedBranch(null)
+                            }}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                          </button>
+                          <div className="flex items-center space-x-3">
+                            {selectedBranch.isCopied ? (
+                              <Copy className="w-6 h-6 text-blue-600" />
+                            ) : (
+                              <Network className="w-6 h-6 text-purple-600" />
+                            )}
+                            <div>
+                              <h3 className="text-xl font-bold text-gray-900">{selectedBranch.name}</h3>
+                              <p className="text-sm text-gray-500">
+                                {selectedBranch.isCopied ? 'Copied Branch' : 'Clean Branch'} •
+                                Created {new Date(selectedBranch.branched_at || selectedBranch.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
 
-                    {/* Branch Status Filter */}
-                    <div className="flex items-center space-x-2 border-b border-gray-200">
+                        {/* Branch details content */}
+                        <div className="space-y-4">
+                          {/* Branch Info */}
+                          <Card className="p-4">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Branch Details</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Status</span>
+                                <div className="mt-1">
+                                  <Badge
+                                    className={selectedBranch.status === 'active'
+                                      ? 'bg-green-100 text-green-700 border-green-300'
+                                      : 'bg-gray-100 text-gray-600 border-gray-300'
+                                    }
+                                  >
+                                    {selectedBranch.status === 'active' ? (
+                                      <>
+                                        <Activity className="w-3 h-3 mr-1" />
+                                        Active
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Inactive
+                                      </>
+                                    )}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              {selectedBranch.branch_suffix && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-500">Suffix</span>
+                                  <p className="text-sm text-gray-900 mt-1">{selectedBranch.branch_suffix}</p>
+                                </div>
+                              )}
+
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Template Version</span>
+                                <p className="text-sm text-gray-900 mt-1">
+                                  v{selectedBranch.template_version_number || 'N/A'}
+                                </p>
+                              </div>
+
+                              {selectedBranch.branched_at && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-500">Created</span>
+                                  <p className="text-sm text-gray-900 mt-1">
+                                    {new Date(selectedBranch.branched_at).toLocaleString()}
+                                  </p>
+                                </div>
+                              )}
+
+                              {selectedBranch.ended_at && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-500">Ended</span>
+                                  <p className="text-sm text-gray-900 mt-1">
+                                    {new Date(selectedBranch.ended_at).toLocaleString()}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </Card>
+
+                          {/* Asset Statistics */}
+                          <Card className="p-4">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Asset Progress</h4>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                                <div className="text-3xl font-bold text-gray-900">{selectedBranch.totalAssets || 0}</div>
+                                <div className="text-sm font-medium text-gray-600 mt-1">Total Assets</div>
+                              </div>
+                              <div className="text-center p-4 bg-green-50 rounded-lg">
+                                <div className="text-3xl font-bold text-green-700">{selectedBranch.activeAssets || 0}</div>
+                                <div className="text-sm font-medium text-green-700 mt-1">Active</div>
+                              </div>
+                              <div className="text-center p-4 bg-blue-50 rounded-lg">
+                                <div className="text-3xl font-bold text-blue-700">{selectedBranch.completedAssets || 0}</div>
+                                <div className="text-sm font-medium text-blue-700 mt-1">Completed</div>
+                              </div>
+                            </div>
+                          </Card>
+
+                          {/* Asset Lists */}
+                          {console.log('📊 Selected Branch Assets in UI:', selectedBranchAssets)}
+                          {selectedBranchAssets && (
+                            <Card className="p-4">
+                              <h4 className="text-lg font-semibold text-gray-900 mb-4">Assets</h4>
+                              <div className="space-y-2">
+                                {/* Inherited Assets (from parent workflow) */}
+                                <div className="border border-gray-200 rounded-lg">
+                                  <button
+                                    onClick={() => setCollapsedAssetGroups(prev => ({ ...prev, inherited: !prev.inherited }))}
+                                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {collapsedAssetGroups.inherited ? (
+                                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                      )}
+                                      <Target className="w-4 h-4 text-blue-600" />
+                                      <h5 className="text-sm font-semibold text-gray-900">
+                                        Inherited Assets
+                                      </h5>
+                                    </div>
+                                    <Badge className="bg-blue-100 text-blue-700 border-blue-300">
+                                      {selectedBranchAssets.original.length}
+                                    </Badge>
+                                  </button>
+                                  {!collapsedAssetGroups.inherited && (
+                                    <div className="px-3 pb-3">
+                                      {selectedBranchAssets.original.length > 0 ? (
+                                        <div className="bg-blue-50 rounded-lg p-3 space-y-2">
+                                          {selectedBranchAssets.original.map((progress: any) => (
+                                            <div key={progress.id} className="flex items-center justify-between text-sm">
+                                              <div className="flex items-center space-x-2">
+                                                <span className="font-medium text-gray-900">
+                                                  {progress.assets?.symbol || 'N/A'}
+                                                </span>
+                                                <span className="text-gray-600">
+                                                  {progress.assets?.company_name || 'Unknown'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-gray-500 text-center py-4">No inherited assets</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Rule-Based Assets (from universe rules) */}
+                                <div className="border border-gray-200 rounded-lg">
+                                  <button
+                                    onClick={() => setCollapsedAssetGroups(prev => ({ ...prev, ruleBased: !prev.ruleBased }))}
+                                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {collapsedAssetGroups.ruleBased ? (
+                                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                      )}
+                                      <Target className="w-4 h-4 text-indigo-600" />
+                                      <h5 className="text-sm font-semibold text-gray-900">
+                                        Rule-Based Assets
+                                      </h5>
+                                    </div>
+                                    <Badge className="bg-indigo-100 text-indigo-700 border-indigo-300">
+                                      {selectedBranchAssets.ruleBased?.length || 0}
+                                    </Badge>
+                                  </button>
+                                  {!collapsedAssetGroups.ruleBased && (
+                                    <div className="px-3 pb-3">
+                                      {selectedBranchAssets.ruleBased && selectedBranchAssets.ruleBased.length > 0 ? (
+                                        <div className="bg-indigo-50 rounded-lg p-3 space-y-2">
+                                          {selectedBranchAssets.ruleBased.map((progress: any) => (
+                                            <div key={progress.id} className="flex items-center justify-between text-sm">
+                                              <div className="flex items-center space-x-2">
+                                                <span className="font-medium text-gray-900">
+                                                  {progress.assets?.symbol || 'N/A'}
+                                                </span>
+                                                <span className="text-gray-600">
+                                                  {progress.assets?.company_name || 'Unknown'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-gray-500 text-center py-4">No rule-based assets</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Added Assets */}
+                                <div className="border border-gray-200 rounded-lg">
+                                  <button
+                                    onClick={() => setCollapsedAssetGroups(prev => ({ ...prev, added: !prev.added }))}
+                                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {collapsedAssetGroups.added ? (
+                                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                      )}
+                                      <Plus className="w-4 h-4 text-purple-600" />
+                                      <h5 className="text-sm font-semibold text-gray-900">
+                                        Manually Added Assets
+                                      </h5>
+                                    </div>
+                                    <Badge className="bg-purple-100 text-purple-700 border-purple-300">
+                                      {selectedBranchAssets.added.length}
+                                    </Badge>
+                                  </button>
+                                  {!collapsedAssetGroups.added && (
+                                    <div className="px-3 pb-3">
+                                      {selectedBranchAssets.added.length > 0 ? (
+                                        <div className="bg-purple-50 rounded-lg p-3 space-y-2">
+                                          {selectedBranchAssets.added.map((progress: any) => (
+                                            <div key={progress.id} className="flex items-center justify-between text-sm">
+                                              <div className="flex items-center space-x-2">
+                                                <span className="font-medium text-gray-900">
+                                                  {progress.assets?.symbol || 'N/A'}
+                                                </span>
+                                                <span className="text-gray-600">
+                                                  {progress.assets?.company_name || 'Unknown'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-gray-500 text-center py-4">No manually added assets</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Deleted/Removed Assets */}
+                                <div className="border border-gray-200 rounded-lg">
+                                  <button
+                                    onClick={() => setCollapsedAssetGroups(prev => ({ ...prev, deleted: !prev.deleted }))}
+                                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {collapsedAssetGroups.deleted ? (
+                                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                      )}
+                                      <Trash2 className="w-4 h-4 text-red-600" />
+                                      <h5 className="text-sm font-semibold text-gray-900">
+                                        Removed Assets
+                                      </h5>
+                                    </div>
+                                    <Badge className="bg-red-100 text-red-700 border-red-300">
+                                      {selectedBranchAssets.deleted.length}
+                                    </Badge>
+                                  </button>
+                                  {!collapsedAssetGroups.deleted && (
+                                    <div className="px-3 pb-3">
+                                      {selectedBranchAssets.deleted.length > 0 ? (
+                                        <div className="bg-red-50 rounded-lg p-3 space-y-2">
+                                          {selectedBranchAssets.deleted.map((progress: any) => (
+                                            <div key={progress.id} className="flex items-center justify-between text-sm">
+                                              <div className="flex items-center space-x-2">
+                                                <span className="font-medium text-gray-900">
+                                                  {progress.assets?.symbol || 'N/A'}
+                                                </span>
+                                                <span className="text-gray-600">
+                                                  {progress.assets?.company_name || 'Unknown'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-gray-500 text-center py-4">No removed assets</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          )}
+
+                          {/* Branch Description */}
+                          {selectedBranch.description && (
+                            <Card className="p-4">
+                              <h4 className="text-lg font-semibold text-gray-900 mb-2">Description</h4>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedBranch.description}</p>
+                            </Card>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
+
+                        {/* Branch Status Filter */}
+                        <div className="flex items-center space-x-2 border-b border-gray-200">
                       <button
                         onClick={() => setBranchStatusFilter('all')}
                         className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
@@ -5562,90 +6250,134 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <p className="text-sm text-gray-500">Loading branches...</p>
                         </div>
                       </Card>
-                    ) : !workflowBranches || workflowBranches.length === 0 ? (
-                      <Card>
-                        <div className="text-center py-8">
-                          <Network className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h3 className="text-base font-medium text-gray-900 mb-2">No workflow branches yet</h3>
-                          <p className="text-sm text-gray-500">
-                            When workflow branches are created, they will appear here in a timeline view
-                          </p>
-                        </div>
-                      </Card>
                     ) : (
                       <Card>
                         <div className="p-4">
                           <div className="space-y-2">
 
-                            {/* Workflow Template - Only show for 'all' filter */}
-                            {branchStatusFilter === 'all' && (
-                              <div className="mb-3">
-                                <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-2 flex-1">
-                                      {/* Collapse/Expand Toggle for Template */}
-                                      <button
-                                        onClick={() => setIsTemplateCollapsed(!isTemplateCollapsed)}
-                                        className="flex-shrink-0 p-1 hover:bg-indigo-200 rounded transition-colors"
-                                        title={isTemplateCollapsed ? 'Expand template branches' : 'Collapse template branches'}
-                                      >
-                                        {isTemplateCollapsed ? (
-                                          <ChevronRight className="w-4 h-4 text-indigo-600" />
-                                        ) : (
-                                          <ChevronDown className="w-4 h-4 text-indigo-600" />
-                                        )}
-                                      </button>
-                                      <Orbit className="w-5 h-5 text-indigo-600" />
-                                      <h3 className="text-base font-semibold text-indigo-900">{selectedWorkflow.name}</h3>
-                                      <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-200 text-indigo-800">
-                                        Template
-                                      </span>
-                                      {(() => {
-                                        const activeVersion = templateVersions?.find(v => v.is_active)
-                                        if (activeVersion) {
-                                          return (
-                                            <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
-                                              {formatVersion(activeVersion.version_number, activeVersion.major_version, activeVersion.minor_version)}
-                                            </span>
-                                          )
-                                        }
-                                        return null
-                                      })()}
-                                      {isTemplateCollapsed && (
-                                        <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-300">
-                                          {workflowBranches.length} {workflowBranches.length === 1 ? 'branch' : 'branches'}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {!isTemplateCollapsed && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setShowCreateBranchModal(true)
-                                          setPreselectedSourceBranch(null)
-                                        }}
-                                        className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
-                                      >
-                                        <GitBranch className="w-3 h-3 mr-1" />
-                                        Branch
-                                      </Button>
-                                    )}
-                                  </div>
-                                  {!isTemplateCollapsed && (
-                                    <p className="text-xs text-indigo-700 mt-2 ml-11">
-                                      Original workflow template • {workflowBranches.length} {workflowBranches.length === 1 ? 'branch' : 'branches'} created
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            )}
+                            {/* Template Versions with Branches - Only show for 'all' filter */}
+                            {console.log('🎛️ Branch Status Filter:', branchStatusFilter)}
+                            {branchStatusFilter === 'all' ? (
+                              <>
+                                {console.log('✅ Filter is ALL - Rendering template versions')}
+                                {console.log('🔍 Template Versions:', templateVersions)}
+                                {console.log('🔍 Root Branches:', rootBranches)}
+                                {console.log('🔍 Template Versions Check:', templateVersions && templateVersions.length > 0)}
+                                {/* Show all template versions with their branches */}
+                                {templateVersions && templateVersions.length > 0 && templateVersions
+                                  .sort((a, b) => (b.version_number || 0) - (a.version_number || 0))
+                                  .map(version => {
+                                    console.log('🎨 Rendering template version:', version.version_name, version.version_number)
+                                    // Get branches for this version
+                                    const versionBranches = rootBranches.filter(b =>
+                                      (b.template_version_number || 1) === version.version_number
+                                    )
+                                    console.log(`📦 Version ${version.version_number} has ${versionBranches.length} branches`)
+                                    const isVersionCollapsed = collapsedBranches.has(`version-${version.id}`)
 
-                            {/* Branch Tree - Only show if template not collapsed */}
-                            {(!isTemplateCollapsed || branchStatusFilter !== 'all') && (
-                              <div className={branchStatusFilter === 'all' ? 'ml-4' : ''}>
-                                {rootBranches.map((node, idx) =>
-                                  renderBranchNode(node, idx === rootBranches.length - 1, [])
+                                    return (
+                                      <div key={version.id} className="mb-3">
+                                        <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center space-x-2 flex-1">
+                                              {/* Collapse/Expand Toggle */}
+                                              <button
+                                                onClick={() => {
+                                                  const versionKey = `version-${version.id}`
+                                                  setCollapsedBranches(prev => {
+                                                    const next = new Set(prev)
+                                                    if (next.has(versionKey)) {
+                                                      next.delete(versionKey)
+                                                    } else {
+                                                      next.add(versionKey)
+                                                    }
+                                                    return next
+                                                  })
+                                                }}
+                                                className="flex-shrink-0 p-1 hover:bg-indigo-200 rounded transition-colors"
+                                              >
+                                                {isVersionCollapsed ? (
+                                                  <ChevronRight className="w-4 h-4 text-indigo-600" />
+                                                ) : (
+                                                  <ChevronDown className="w-4 h-4 text-indigo-600" />
+                                                )}
+                                              </button>
+                                              <Orbit className="w-5 h-5 text-indigo-600" />
+                                              <h3 className="text-base font-semibold text-indigo-900">{selectedWorkflow.name}</h3>
+                                              <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-200 text-indigo-800">
+                                                Template {formatVersion(version.version_number, version.major_version, version.minor_version)}
+                                              </span>
+                                              {version.is_active && (
+                                                <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
+                                                  Active
+                                                </span>
+                                              )}
+                                              {isVersionCollapsed && versionBranches.length > 0 && (
+                                                <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-300">
+                                                  {versionBranches.length} {versionBranches.length === 1 ? 'branch' : 'branches'}
+                                                </span>
+                                              )}
+                                            </div>
+                                            {!isVersionCollapsed && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                  setShowCreateBranchModal(true)
+                                                  setPreselectedSourceBranch(null)
+                                                }}
+                                                className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                                              >
+                                                <GitBranch className="w-3 h-3 mr-1" />
+                                                Branch
+                                              </Button>
+                                            )}
+                                          </div>
+                                          {!isVersionCollapsed && (
+                                            <p className="text-xs text-indigo-700 mt-2 ml-11">
+                                              Template version • {versionBranches.length} {versionBranches.length === 1 ? 'branch' : 'branches'}
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* Branches for this version */}
+                                        {!isVersionCollapsed && versionBranches.length > 0 && (
+                                          <div className="ml-4 mt-2">
+                                            {versionBranches.map((node, idx) =>
+                                              renderBranchNode(node, idx === versionBranches.length - 1, [])
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+
+                                {/* Empty state if no template versions */}
+                                {(!templateVersions || templateVersions.length === 0) && (
+                                  <div className="text-center py-8">
+                                    <Orbit className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                    <h3 className="text-base font-medium text-gray-900 mb-2">No template versions yet</h3>
+                                    <p className="text-sm text-gray-500">
+                                      Template versions will appear here once you create them
+                                    </p>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              /* Archived/Deleted filter - show flat list without version grouping */
+                              <div>
+                                {rootBranches.length > 0 ? (
+                                  rootBranches.map((node, idx) =>
+                                    renderBranchNode(node, idx === rootBranches.length - 1, [])
+                                  )
+                                ) : (
+                                  <div className="text-center py-8">
+                                    <Network className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                    <h3 className="text-base font-medium text-gray-900 mb-2">No {branchStatusFilter} branches yet</h3>
+                                    <p className="text-sm text-gray-500">
+                                      When workflow branches with this status are created, they will appear here
+                                    </p>
+                                  </div>
                                 )}
                               </div>
                             )}
@@ -5653,6 +6385,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         </div>
                       </Card>
                     )}
+                  </>
+                )}
                   </div>
                 )
               })()}
@@ -6253,20 +6987,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         />
       )}
 
-      {/* Branch Hierarchy Modal */}
-      {showBranchHierarchy && selectedWorkflow && (() => {
-        console.log('Passing to BranchMapModal:', allWorkflowBranches)
-        return (
-          <BranchMapModal
-            isOpen={showBranchHierarchy}
-            onClose={() => setShowBranchHierarchy(false)}
-            workflowName={selectedWorkflow.name}
-            workflowId={selectedWorkflow.id}
-            branches={allWorkflowBranches || []}
-          />
-        )
-      })()}
-
       {/* Template Versions Modal */}
       {selectedWorkflow && (
         <TemplateVersionsModal
@@ -6731,6 +7451,48 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   disabled={deleteWorkflowMutation.isPending}
                 >
                   {deleteWorkflowMutation.isPending ? 'Removing...' : selectedWorkflow?.archived ? 'Yes, Remove' : 'Yes, Delete'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* Unarchive Workflow Confirmation Modal */}
+      {showUnarchiveModal && workflowToUnarchive && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
+                  <CheckCircle className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Restore Workflow</h3>
+                  <p className="text-sm text-gray-500">Move workflow back to active list</p>
+                </div>
+              </div>
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to restore <span className="font-semibold">{selectedWorkflow?.name}</span>?
+                This workflow will be moved back to your active workflows list and will be available for use.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowUnarchiveModal(false)
+                    setWorkflowToUnarchive(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => unarchiveWorkflowMutation.mutate(workflowToUnarchive)}
+                  disabled={unarchiveWorkflowMutation.isPending}
+                >
+                  {unarchiveWorkflowMutation.isPending ? 'Restoring...' : 'Yes, Restore'}
                 </Button>
               </div>
             </div>

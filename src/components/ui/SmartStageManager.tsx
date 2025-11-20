@@ -135,6 +135,44 @@ export function SmartStageManager({
         return stages as WorkflowStage[]
       }
 
+      // Check if this is a workflow branch (has parent_workflow_id)
+      const { data: workflow } = await supabase
+        .from('workflows')
+        .select('template_version_id, parent_workflow_id')
+        .eq('id', workflowId)
+        .single()
+
+      // If it's a branch (has parent_workflow_id), get stages from template version
+      if (workflow?.parent_workflow_id && workflow?.template_version_id) {
+        const { data: templateVersion, error } = await supabase
+          .from('workflow_template_versions')
+          .select('stages')
+          .eq('id', workflow.template_version_id)
+          .single()
+
+        if (error) {
+          console.error('Error fetching template version stages:', error)
+          throw error
+        }
+
+        // Convert template version stages to WorkflowStage format
+        const stages = (templateVersion.stages || []).map((stage: any, index: number) => ({
+          id: stage.id || `stage-${index}`,
+          stage_key: stage.stage_key,
+          stage_label: stage.stage_label,
+          stage_description: stage.stage_description,
+          stage_color: stage.stage_color,
+          stage_icon: stage.stage_icon,
+          sort_order: stage.sort_order || index,
+          standard_deadline_days: stage.standard_deadline_days || 7,
+          suggested_priorities: stage.suggested_priorities || []
+        }))
+
+        console.log('📋 SmartStageManager: Loaded stages from template version:', stages)
+        return stages as WorkflowStage[]
+      }
+
+      // Otherwise, it's a template - get stages from workflow_stages table
       const { data: stages, error } = await supabase
         .from('workflow_stages')
         .select('*')
@@ -142,6 +180,7 @@ export function SmartStageManager({
         .order('sort_order')
 
       if (error) throw error
+      console.log('📋 SmartStageManager: Loaded stages from workflow_stages table:', stages)
       return stages as WorkflowStage[]
     },
     staleTime: 5 * 60 * 1000, // 5 minutes

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, TrendingUp, Search } from 'lucide-react'
+import { X, TrendingUp, Search, UserPlus, UserMinus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -203,8 +203,54 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
     }
   })
 
-  const matchingAssets = previewData?.assets || []
-  const totalCount = previewData?.totalCount || 0
+  // Fetch universe overrides
+  const { data: overrides = [] } = useQuery({
+    queryKey: ['workflow-universe-overrides', workflowId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('workflow_universe_overrides')
+        .select(`
+          *,
+          assets (
+            id,
+            symbol,
+            company_name,
+            sector,
+            priority
+          )
+        `)
+        .eq('workflow_id', workflowId)
+
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  // Apply overrides to the preview results
+  let matchingAssets = [...(previewData?.assets || [])]
+  const addedOverrides = overrides.filter((o: any) => o.override_type === 'add')
+  const removedOverrides = overrides.filter((o: any) => o.override_type === 'remove')
+
+  // Add manually added assets
+  addedOverrides.forEach((override: any) => {
+    if (!matchingAssets.find((a: any) => a.id === override.asset_id)) {
+      matchingAssets.push({
+        ...override.assets,
+        _manuallyAdded: true
+      })
+    }
+  })
+
+  // Remove manually removed assets
+  const removedAssetIds = new Set(removedOverrides.map((o: any) => o.asset_id))
+  matchingAssets = matchingAssets.filter((asset: any) => {
+    if (removedAssetIds.has(asset.id)) {
+      return false
+    }
+    return true
+  })
+
+  const totalCount = matchingAssets.length
   const diagnostics = previewData?.diagnostics || null
 
   // Filter assets based on search term
@@ -255,16 +301,36 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             </div>
           ) : matchingAssets && matchingAssets.length > 0 ? (
             <div>
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-                <div className="flex items-center space-x-2">
-                  <TrendingUp className="w-4 h-4 text-green-600" />
-                  <span className="text-sm font-semibold text-green-900">
-                    {totalCount === matchingAssets.length
-                      ? `${totalCount} asset${totalCount === 1 ? '' : 's'} match your universe rules`
-                      : `Showing ${matchingAssets.length} of ${totalCount} matching assets`
-                    }
-                  </span>
+              <div className="space-y-2 mb-4">
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <TrendingUp className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-semibold text-green-900">
+                      {totalCount === matchingAssets.length
+                        ? `${totalCount} asset${totalCount === 1 ? '' : 's'} in this workflow's universe`
+                        : `Showing ${matchingAssets.length} of ${totalCount} assets`
+                      }
+                    </span>
+                  </div>
                 </div>
+                {(addedOverrides.length > 0 || removedOverrides.length > 0) && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center space-x-3 text-sm text-blue-900">
+                      {addedOverrides.length > 0 && (
+                        <div className="flex items-center space-x-1">
+                          <UserPlus className="w-4 h-4 text-blue-600" />
+                          <span className="font-medium">{addedOverrides.length} manually added</span>
+                        </div>
+                      )}
+                      {removedOverrides.length > 0 && (
+                        <div className="flex items-center space-x-1">
+                          <UserMinus className="w-4 h-4 text-red-600" />
+                          <span className="font-medium">{removedOverrides.length} manually removed</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Search Bar */}
@@ -296,15 +362,38 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {filteredAssets.map((asset: any) => (
-                  <div key={asset.id} className="p-4 border border-gray-200 rounded-lg hover:bg-blue-50 transition-colors">
+                  <div
+                    key={asset.id}
+                    className={`p-4 border rounded-lg transition-colors ${
+                      asset._manuallyAdded
+                        ? 'border-green-300 bg-green-50 hover:bg-green-100'
+                        : 'border-gray-200 hover:bg-blue-50'
+                    }`}
+                  >
                     <div className="flex items-start space-x-3">
-                      <div className="flex items-center justify-center w-10 h-10 rounded bg-blue-100 text-blue-700 font-bold text-sm flex-shrink-0">
+                      <div className={`flex items-center justify-center w-10 h-10 rounded font-bold text-sm flex-shrink-0 ${
+                        asset._manuallyAdded
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
                         {asset.symbol.substring(0, 2)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-gray-900">{asset.symbol}</div>
+                        <div className="flex items-center space-x-2">
+                          <div className="font-semibold text-sm text-gray-900">{asset.symbol}</div>
+                          {asset._manuallyAdded && (
+                            <div className="flex items-center space-x-1" title="Manually added override">
+                              <UserPlus className="w-3 h-3 text-green-600" />
+                            </div>
+                          )}
+                        </div>
                         <div className="text-xs text-gray-600 truncate">{asset.company_name}</div>
-                        <div className="flex items-center space-x-2 mt-1">
+                        <div className="flex items-center space-x-2 mt-1 flex-wrap gap-1">
+                          {asset._manuallyAdded && (
+                            <Badge variant="success" size="xs" className="text-xs">
+                              Manual Override
+                            </Badge>
+                          )}
                           {asset.sector && (
                             <Badge variant="outline" size="xs" className="text-xs">
                               {asset.sector}

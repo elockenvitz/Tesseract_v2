@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, Trash2, Edit2, Eye, X, Search } from 'lucide-react'
+import { Plus, Trash2, Edit2, Eye, X, Search, UserPlus, UserMinus, ExternalLink } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -13,6 +13,8 @@ import {
 } from '../../lib/universeFilters'
 import { UniversePreviewModal } from '../modals/UniversePreviewModal'
 import { supabase } from '../../lib/supabase'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 
 interface FilterRule {
   id: string
@@ -55,6 +57,69 @@ export function SimplifiedUniverseBuilder({
   const [currentValues, setCurrentValues] = useState<any>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
+
+  const queryClient = useQueryClient()
+
+  // Fetch universe overrides for this workflow
+  const { data: universeOverrides = [] } = useQuery({
+    queryKey: ['workflow-universe-overrides', workflowId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('workflow_universe_overrides')
+        .select(`
+          *,
+          assets (
+            id,
+            symbol,
+            company_name
+          )
+        `)
+        .eq('workflow_id', workflowId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    },
+    staleTime: 30 * 1000, // 30 seconds
+  })
+
+  // Mutation to delete an override
+  const deleteOverrideMutation = useMutation({
+    mutationFn: async (override: any) => {
+      // First, get the override details to know what action to reverse
+      const overrideType = override.override_type
+      const assetId = override.asset_id
+
+      // Delete the override record
+      const { error: deleteError } = await supabase
+        .from('workflow_universe_overrides')
+        .delete()
+        .eq('id', override.id)
+
+      if (deleteError) throw deleteError
+
+      // If this was an 'add' override, remove the asset from the workflow
+      if (overrideType === 'add') {
+        const { error: removeError } = await supabase
+          .from('asset_workflow_progress')
+          .delete()
+          .eq('asset_id', assetId)
+          .eq('workflow_id', workflowId)
+
+        if (removeError) throw removeError
+      }
+
+      // If this was a 'remove' override, we would re-add the asset to the workflow
+      // only if it matches the universe rules. For now, we'll just remove the override
+      // and let the user manually re-add if needed.
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-universe-overrides', workflowId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-all-workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow'] })
+    }
+  })
 
   // Debug: log rules prop changes
   React.useEffect(() => {
@@ -716,6 +781,79 @@ export function SimplifiedUniverseBuilder({
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Universe Overrides Section */}
+      {universeOverrides.length > 0 && (
+        <div className="mt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Manual Overrides</h3>
+              <p className="text-sm text-gray-500">Assets manually added or removed from this workflow</p>
+            </div>
+            <Badge variant="outline" size="md">
+              {universeOverrides.length} {universeOverrides.length === 1 ? 'override' : 'overrides'}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {universeOverrides.map((override: any) => (
+              <Card key={override.id} className="p-4 hover:shadow-md transition-shadow group">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-3 flex-1 min-w-0">
+                    {override.override_type === 'add' ? (
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <UserPlus className="w-4 h-4 text-green-600" />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <UserMinus className="w-4 h-4 text-red-600" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <Link
+                          to={`/assets/${override.assets.id}`}
+                          className="font-semibold text-gray-900 hover:text-blue-600 transition-colors truncate"
+                        >
+                          {override.assets.symbol}
+                        </Link>
+                        <ExternalLink className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      </div>
+                      <p className="text-sm text-gray-600 truncate">{override.assets.company_name}</p>
+                      <div className="flex items-center space-x-2 mt-2">
+                        <Badge
+                          variant={override.override_type === 'add' ? 'success' : 'destructive'}
+                          size="xs"
+                        >
+                          {override.override_type === 'add' ? 'Manually Added' : 'Manually Removed'}
+                        </Badge>
+                        <span className="text-xs text-gray-500">
+                          {new Date(override.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      {override.notes && (
+                        <p className="text-xs text-gray-500 mt-1 italic">{override.notes}</p>
+                      )}
+                    </div>
+                  </div>
+                  {isEditable && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => deleteOverrideMutation.mutate(override)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
+                      title="Remove override"
+                      disabled={deleteOverrideMutation.isPending}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 

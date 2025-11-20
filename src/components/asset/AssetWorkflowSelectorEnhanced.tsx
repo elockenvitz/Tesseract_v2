@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { Check, ChevronDown, Clock, GitBranch, Play, CheckCircle, Plus } from 'lucide-react'
+import { Check, ChevronDown, Clock, GitBranch, Play, CheckCircle, Plus, CalendarClock, XCircle } from 'lucide-react'
 import { formatVersion } from '../../lib/versionUtils'
+import { formatDistanceToNow } from 'date-fns'
 
 interface WorkflowProgress {
   id: string
@@ -16,25 +17,36 @@ interface WorkflowProgress {
   workflows: {
     id: string
     name: string
+    branch_suffix: string | null
     description: string | null
     status: 'active' | 'ended'
     template_version_id: string | null
     template_version_number: number | null
     created_at: string
-    is_archived: boolean
+    archived: boolean
+    deleted?: boolean
   } | null
 }
 
 interface AvailableWorkflow {
   id: string
   name: string
+  branch_suffix: string | null
   description: string | null
   status: 'active' | 'ended'
   template_version_id: string | null
   template_version_number: number | null
   created_by: string
   is_public: boolean
-  is_archived: boolean
+  archived: boolean
+}
+
+interface UpcomingBranch {
+  workflowId: string
+  workflowName: string
+  estimatedStartDate: Date
+  branchName: string
+  versionNumber: number | null
 }
 
 interface AssetWorkflowSelectorEnhancedProps {
@@ -42,8 +54,10 @@ interface AssetWorkflowSelectorEnhancedProps {
   selectedWorkflowId: string | null
   allAssetWorkflows: WorkflowProgress[]
   availableWorkflows: AvailableWorkflow[]
+  upcomingBranches?: UpcomingBranch[]
   onSelectWorkflow: (workflowId: string) => void
   onJoinWorkflow?: (workflowId: string) => void
+  onRemoveWorkflow?: (workflowId: string) => void
   className?: string
 }
 
@@ -52,8 +66,10 @@ export function AssetWorkflowSelectorEnhanced({
   selectedWorkflowId,
   allAssetWorkflows,
   availableWorkflows,
+  upcomingBranches = [],
   onSelectWorkflow,
   onJoinWorkflow,
+  onRemoveWorkflow,
   className = ''
 }: AssetWorkflowSelectorEnhancedProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -105,6 +121,12 @@ export function AssetWorkflowSelectorEnhanced({
     setIsOpen(false)
   }
 
+  const handleRemove = (workflowId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    onRemoveWorkflow?.(workflowId)
+    setIsOpen(false)
+  }
+
   return (
     <div className={`relative ${className}`}>
       {/* Trigger Button */}
@@ -115,11 +137,13 @@ export function AssetWorkflowSelectorEnhanced({
         <GitBranch className="w-4 h-4 text-gray-500" />
         <span className="font-medium text-gray-900">
           {mode === 'header'
-            ? (selectedWorkflowData?.name || 'Active Workflows')
-            : (selectedWorkflowData?.name || 'Select Workflow')
+            ? `Active Workflows (${activeWorkflows.length})`
+            : selectedWorkflowData
+              ? `${selectedWorkflowData.name}${selectedWorkflowData.branch_suffix ? ` (${selectedWorkflowData.branch_suffix})` : ''}`
+              : 'Select Workflow'
           }
         </span>
-        {selectedWorkflow && selectedWorkflowData && (
+        {mode !== 'header' && selectedWorkflow && selectedWorkflowData && (
           <span className="text-xs text-gray-500">
             {formatVersion(
               selectedWorkflowData.template_version_number || 1,
@@ -153,33 +177,43 @@ export function AssetWorkflowSelectorEnhanced({
                   </div>
                 ) : (
                   activeWorkflows.map(aw => (
-                    <button
+                    <div
                       key={aw.id}
-                      onClick={() => handleSelect(aw.workflow_id)}
-                      className="w-full text-left px-3 py-2 rounded hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-colors group"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-900 truncate">
-                              {aw.workflows?.name}
-                            </span>
-                            {aw.workflow_id === selectedWorkflowId && (
-                              <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <span className="text-xs text-gray-500">
-                              {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
-                            </span>
-                            <span className="text-xs text-gray-500">•</span>
-                            <span className="text-xs text-gray-500">
-                              {calculateProgress(aw)}% complete
-                            </span>
-                          </div>
+                      <button
+                        onClick={() => handleSelect(aw.workflow_id)}
+                        className="flex-1 text-left min-w-0"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium text-gray-900 truncate text-sm">
+                            {aw.workflows?.name}
+                            {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
+                          </span>
+                          {aw.workflow_id === selectedWorkflowId && (
+                            <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                          )}
                         </div>
-                      </div>
-                    </button>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-xs text-gray-500">
+                            {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
+                          </span>
+                          <span className="text-xs text-gray-500">•</span>
+                          <span className="text-xs text-gray-500">
+                            {calculateProgress(aw)}% complete
+                          </span>
+                        </div>
+                      </button>
+                      {!aw.is_completed && (
+                        <button
+                          onClick={(e) => handleRemove(aw.workflow_id, e)}
+                          className="ml-2 p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                          title="Remove from workflow"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   ))
                 )}
               </div>
@@ -194,34 +228,44 @@ export function AssetWorkflowSelectorEnhanced({
                     </div>
                     <div className="space-y-1">
                       {activeWorkflows.map(aw => (
-                        <button
+                        <div
                           key={aw.id}
-                          onClick={() => handleSelect(aw.workflow_id)}
-                          className="w-full text-left px-3 py-2 rounded hover:bg-gray-50 transition-colors"
+                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-colors group"
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
-                                <span className="font-medium text-gray-900 truncate text-sm">
-                                  {aw.workflows?.name}
-                                </span>
-                                {aw.workflow_id === selectedWorkflowId && (
-                                  <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                                )}
-                              </div>
-                              <div className="flex items-center space-x-2 mt-1 ml-5">
-                                <span className="text-xs text-gray-500">
-                                  {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
-                                </span>
-                                <span className="text-xs text-gray-500">•</span>
-                                <span className="text-xs text-gray-500">
-                                  {calculateProgress(aw)}% complete
-                                </span>
-                              </div>
+                          <button
+                            onClick={() => handleSelect(aw.workflow_id)}
+                            className="flex-1 text-left min-w-0"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
+                              <span className="font-medium text-gray-900 truncate text-sm">
+                                {aw.workflows?.name}
+                                {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
+                              </span>
+                              {aw.workflow_id === selectedWorkflowId && (
+                                <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              )}
                             </div>
-                          </div>
-                        </button>
+                            <div className="flex items-center space-x-2 mt-1 ml-5">
+                              <span className="text-xs text-gray-500">
+                                {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
+                              </span>
+                              <span className="text-xs text-gray-500">•</span>
+                              <span className="text-xs text-gray-500">
+                                {calculateProgress(aw)}% complete
+                              </span>
+                            </div>
+                          </button>
+                          {!aw.is_completed && (
+                            <button
+                              onClick={(e) => handleRemove(aw.workflow_id, e)}
+                              className="ml-2 p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                              title="Remove from workflow"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -246,6 +290,7 @@ export function AssetWorkflowSelectorEnhanced({
                                 <CheckCircle className="w-3 h-3 text-gray-400 flex-shrink-0" />
                                 <span className="font-medium text-gray-700 truncate text-sm">
                                   {aw.workflows?.name}
+                                  {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
                                 </span>
                                 {aw.workflow_id === selectedWorkflowId && (
                                   <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
@@ -285,6 +330,7 @@ export function AssetWorkflowSelectorEnhanced({
                                 <Clock className="w-3 h-3 text-gray-400 flex-shrink-0" />
                                 <span className="font-medium text-gray-700 truncate text-sm">
                                   {aw.workflows?.name}
+                                  {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
                                 </span>
                                 {aw.workflow_id === selectedWorkflowId && (
                                   <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
@@ -305,11 +351,11 @@ export function AssetWorkflowSelectorEnhanced({
                   </div>
                 )}
 
-                {/* Available to Join */}
+                {/* Available to Add */}
                 {availableWorkflows.length > 0 && (
                   <div className="p-3">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                      Available to Join ({availableWorkflows.length})
+                      Available to Add ({availableWorkflows.length})
                     </div>
                     <div className="space-y-1">
                       {availableWorkflows.map(workflow => (
@@ -322,6 +368,7 @@ export function AssetWorkflowSelectorEnhanced({
                               <Plus className="w-3 h-3 text-blue-600 flex-shrink-0" />
                               <span className="font-medium text-gray-900 truncate text-sm">
                                 {workflow.name}
+                                {workflow.branch_suffix && ` (${workflow.branch_suffix})`}
                               </span>
                             </div>
                             <div className="flex items-center space-x-2 mt-1 ml-5">
@@ -334,7 +381,7 @@ export function AssetWorkflowSelectorEnhanced({
                             onClick={(e) => handleJoin(workflow.id, e)}
                             className="ml-2 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
                           >
-                            Join
+                            Add
                           </button>
                         </div>
                       ))}
@@ -342,8 +389,43 @@ export function AssetWorkflowSelectorEnhanced({
                   </div>
                 )}
 
+                {/* Upcoming Branches */}
+                {upcomingBranches.length > 0 && (
+                  <div className="p-3">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      Upcoming Branches ({upcomingBranches.length})
+                    </div>
+                    <div className="space-y-1">
+                      {upcomingBranches.map((branch, idx) => (
+                        <div
+                          key={`${branch.workflowId}-${idx}`}
+                          className="px-3 py-2 rounded bg-purple-50 border border-purple-200"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <CalendarClock className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                              <span className="font-medium text-purple-900 truncate text-sm">
+                                {branch.branchName}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2 mt-1 ml-5">
+                              <span className="text-xs text-purple-600">
+                                {formatVersion(branch.versionNumber || 1, null, null)}
+                              </span>
+                              <span className="text-xs text-purple-600">•</span>
+                              <span className="text-xs text-purple-600">
+                                Starting {formatDistanceToNow(branch.estimatedStartDate, { addSuffix: true })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Empty State */}
-                {displayWorkflows.length === 0 && availableWorkflows.length === 0 && (
+                {displayWorkflows.length === 0 && availableWorkflows.length === 0 && upcomingBranches.length === 0 && (
                   <div className="px-3 py-8 text-center text-gray-500 text-sm">
                     No workflows available
                   </div>
