@@ -876,6 +876,7 @@ export function InvestmentTimeline({
   }
 
   const getStageColor = (status: string, stageIndex: number) => {
+    if (status === 'completed') return 'bg-green-600'
     if (status === 'future') return 'bg-gray-300'
 
     // Progressive color scheme reflecting stage progression
@@ -1738,7 +1739,7 @@ export function InvestmentTimeline({
 
 
   // Show message when no workflow is assigned OR when workflow has no stages (archived/ended)
-  if (!workflowId || (workflowStages && timelineStages.length === 0)) {
+  if (!workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null' || (workflowStages && timelineStages.length === 0)) {
     return (
       <div className={`space-y-6 ${className}`}>
         <div className="bg-white border border-gray-200 rounded-lg p-12">
@@ -1878,8 +1879,8 @@ export function InvestmentTimeline({
 
         {/* Desktop Chevron Timeline - Executive Design */}
         <div className="hidden md:block">
-          <div className="relative overflow-x-auto py-6">
-            <div className="flex items-center gap-0.5 min-w-max mx-auto px-8" style={{ maxWidth: 'fit-content' }}>
+          <div className="relative py-6 px-8">
+            <div className="flex items-center gap-0.5 w-full">
               {timelineStages.map((stage, index) => {
                 const status = getStageStatus(index)
                 const isLast = index === timelineStages.length - 1
@@ -1925,24 +1926,25 @@ export function InvestmentTimeline({
                 const colors = colorSchemes[status] || colorSchemes.future
                 const isSelected = lastClickedStageId === stage.id
 
-                // Fixed sizing for chevrons
-                const chevronWidth = '240px'
+                // Responsive sizing for chevrons
                 const chevronArrowSize = '34px'
 
                 return (
                   <div
                     key={stage.id}
-                    className="relative flex items-center transition-all duration-300"
-                    style={{
-                      minWidth: chevronWidth,
-                      maxWidth: chevronWidth
-                    }}
+                    className="relative flex items-center transition-all duration-300 flex-1 min-w-0"
+                    style={{ flexBasis: 0 }}
                   >
-                    {/* Border wrapper for selected state */}
+                    {/* Blue glow border for selected state */}
                     {isSelected && (
                       <div
-                        className="absolute inset-0 bg-gradient-to-br from-blue-400 via-blue-300 to-blue-200 z-20"
+                        className="absolute pointer-events-none z-20"
                         style={{
+                          top: '-5px',
+                          left: '-5px',
+                          right: '-5px',
+                          bottom: '-5px',
+                          background: 'linear-gradient(135deg, rgba(147, 197, 253, 0.9), rgba(96, 165, 250, 0.7))',
                           clipPath: isLast
                             ? isFirst
                               ? 'none'
@@ -1950,17 +1952,18 @@ export function InvestmentTimeline({
                             : isFirst
                               ? `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%)`
                               : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`,
+                          filter: 'blur(3px)'
                         }}
                       />
                     )}
                     <button
                       onClick={() => handleStageClick(stage, index)}
                       className={`
-                        relative w-full py-5 px-6 transition-all duration-300
+                        relative w-full py-5 px-6 transition-all duration-300 min-w-0
                         ${colors.bg} ${colors.text}
                         ${isSelected
-                          ? 'z-30 m-[5px]'
-                          : 'shadow-lg hover:shadow-xl hover:scale-[1.01] hover:z-20'
+                          ? 'z-30'
+                          : 'shadow-lg hover:shadow-xl hover:z-20'
                         }
                         ${isFirst ? 'rounded-l-xl' : ''}
                         ${isLast ? 'rounded-r-xl' : ''}
@@ -1972,27 +1975,32 @@ export function InvestmentTimeline({
                             : `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, ${chevronArrowSize} 50%)`
                           : isFirst
                             ? `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%)`
-                            : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`,
+                            : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`
                       }}
                     >
                       {/* Content */}
-                      <div className="relative z-10 space-y-2.5 min-h-[85px] flex flex-col justify-center" style={{ marginLeft: isFirst ? '0' : '16px' }}>
+                      <div className="relative z-10 space-y-2.5 min-h-[85px] flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
+
+
                         {/* Header */}
-                        <div className="flex items-center">
+                        <div className="flex items-center min-w-0 relative">
                           {/* Stage Number - Fixed width container */}
-                          <div className="flex items-center justify-center w-6 h-6 rounded-md bg-black/15 text-[10px] font-bold flex-shrink-0 mr-1.5">
+                          <div className="flex items-center justify-center w-7 h-7 rounded-md bg-black/15 text-sm font-bold flex-shrink-0 mr-2">
                             {index + 1}
                           </div>
                           {/* Stage Name - Left aligned */}
-                          <h4 className="text-sm font-semibold leading-tight flex-1 truncate">
+                          <h4 className="text-base font-semibold leading-tight truncate min-w-0">
                             {stage.label}
                           </h4>
-                          {status === 'completed' && (
-                            <Check className="w-4 h-4 flex-shrink-0" strokeWidth={2.5} />
-                          )}
-                          {status === 'current' && (
-                            <div className="flex-shrink-0 w-2 h-2 bg-white rounded-full animate-pulse" />
-                          )}
+                          {/* Status Indicator */}
+                          <div className="absolute flex-shrink-0" style={{ right: '20px' }}>
+                            {status === 'completed' && (
+                              <Check className="w-5 h-5" strokeWidth={2.5} />
+                            )}
+                            {status === 'current' && (
+                              <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
+                            )}
+                          </div>
                         </div>
 
                         {/* Progress */}
@@ -2004,7 +2012,7 @@ export function InvestmentTimeline({
                                 style={{ width: `${progressPercent}%` }}
                               />
                             </div>
-                            <div className={`flex items-center justify-between text-[10px] font-semibold ${colors.accent}`}>
+                            <div className={`flex items-center justify-between text-xs font-semibold ${colors.accent}`}>
                               <span>{completedTasks}/{totalTasks} tasks</span>
                               <span>{Math.round(progressPercent)}%</span>
                             </div>
@@ -2041,7 +2049,7 @@ export function InvestmentTimeline({
                           }
 
                           return (
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ${badgeStyles[deadlineStatus]} text-[10px] font-semibold`}>
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ${badgeStyles[deadlineStatus]} text-xs font-semibold`}>
                               <Calendar className="w-3 h-3" strokeWidth={2} />
                               <span>{statusText}</span>
                             </div>
