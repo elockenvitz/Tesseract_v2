@@ -225,7 +225,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
             id: notification.context_id,
             title: notification.context_data?.asset_symbol || 'Asset',
             type: 'asset',
-            data: { 
+            data: {
               id: notification.context_id,
               symbol: notification.context_data?.asset_symbol,
               company_name: notification.context_data?.asset_name
@@ -237,9 +237,44 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
             id: notification.context_id,
             title: notification.title.split(': ')[1] || 'Note',
             type: 'note',
-            data: { 
+            data: {
               id: notification.context_id,
               title: notification.title.split(': ')[1] || 'Note'
+            }
+          }
+          break
+        case 'workflow':
+          // For task assignments, navigate to the asset
+          if (notification.type === 'task_assigned' && notification.context_data?.asset_symbol) {
+            navigationData = {
+              id: notification.context_data.asset_id || notification.context_data.asset_symbol,
+              title: notification.context_data.asset_symbol,
+              type: 'asset',
+              data: {
+                id: notification.context_data.asset_id,
+                symbol: notification.context_data.asset_symbol,
+                taskId: notification.context_id,
+                workflowId: notification.context_data?.workflow_id,
+                workflowName: notification.context_data?.workflow_name,
+                stageId: notification.context_data?.stage_id
+              }
+            }
+          }
+          break
+        case 'task':
+          // Navigate to the asset with the task, and open the workflow stage
+          navigationData = {
+            id: notification.context_data?.asset_id,
+            title: notification.context_data?.asset_symbol || 'Task',
+            type: 'asset',
+            data: {
+              id: notification.context_data?.asset_id,
+              symbol: notification.context_data?.asset_symbol,
+              company_name: notification.context_data?.asset_name,
+              // Include task-specific data for focusing on the task
+              taskId: notification.context_id,
+              workflowId: notification.context_data?.workflow_id,
+              stageId: notification.context_data?.stage_id
             }
           }
           break

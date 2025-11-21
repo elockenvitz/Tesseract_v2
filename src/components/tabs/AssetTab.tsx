@@ -88,6 +88,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [assetPriority, setAssetPriority] = useState(asset.priority || 'none')
   const [workflowPriorityState, setWorkflowPriorityState] = useState('none')
 
+  // Extract navigation data if it was passed from notification
+  const navigationWorkflowId = asset.data?.workflowId
+  const navigationStageId = asset.data?.stageId
+  const navigationTaskId = asset.data?.taskId
+
+  // Query to fetch task details if we have taskId but missing workflow/stage data
+  const { data: taskDetails } = useQuery({
+    queryKey: ['task-details', navigationTaskId],
+    queryFn: async () => {
+      console.log('📋 AssetTab: Fetching task details for taskId:', navigationTaskId)
+      if (!navigationTaskId) return null
+
+      const { data, error } = await supabase
+        .from('asset_checklist_items')
+        .select('workflow_id, stage_id')
+        .eq('id', navigationTaskId)
+        .single()
+
+      if (error) {
+        console.error('❌ Error fetching task details:', error)
+        return null
+      }
+
+      console.log('✅ Fetched task details:', data)
+      return data
+    },
+    enabled: !!navigationTaskId && (!navigationWorkflowId || !navigationStageId)
+  })
+
   // Handle component citation in focus mode
   const handleComponentClick = useCallback((content: string, fieldName: string) => {
     if (isFocusMode && onCite) {
@@ -138,6 +167,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.viewingStageId || null
   })
+  const [pendingWorkflowSwitch, setPendingWorkflowSwitch] = useState<{workflowId: string, stageId: string | null} | null>(null)
   const [showHoldingsHistory, setShowHoldingsHistory] = useState(false)
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [showTemplatesView, setShowTemplatesView] = useState(false)
@@ -255,6 +285,45 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       setSelectedNoteId(asset.noteId)
     }
   }, [asset.id, asset.noteId, selectedNoteId])
+
+  // Handle task assignment navigation from notifications
+  useEffect(() => {
+    // Use fetched task details as fallback if navigation data is missing
+    const effectiveWorkflowId = navigationWorkflowId || taskDetails?.workflow_id
+    const effectiveStageId = navigationStageId || taskDetails?.stage_id
+
+    console.log('📋 AssetTab: Navigation data check:', {
+      navigationWorkflowId,
+      navigationStageId,
+      navigationTaskId,
+      taskDetails,
+      effectiveWorkflowId,
+      effectiveStageId,
+      assetWorkflowId: asset.workflow_id,
+      effectiveAssetWorkflowId: effectiveWorkflowId,
+      assetData: asset.data
+    })
+
+    if (effectiveWorkflowId || navigationTaskId) {
+      console.log('📋 AssetTab: Opening task from notification - switching to stages tab')
+
+      // If the notification has a workflow ID and it's different from current asset workflow,
+      // mark it for switching
+      if (effectiveWorkflowId && asset.workflow_id !== effectiveWorkflowId) {
+        console.log('📋 AssetTab: Marking workflow for switch to:', effectiveWorkflowId)
+        setPendingWorkflowSwitch({ workflowId: effectiveWorkflowId, stageId: effectiveStageId || null })
+      } else {
+        // If workflow matches or no workflow specified, just set stage and switch tab
+        if (effectiveStageId) {
+          console.log('📋 AssetTab: Setting viewing stage to:', effectiveStageId)
+          setViewingStageId(effectiveStageId)
+        }
+      }
+
+      // Switch to stages tab
+      setActiveTab('stage')
+    }
+  }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
@@ -425,7 +494,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Query to determine the effective workflow ID for this asset
   // Fetch all workflow relationships for this asset
   const { data: allAssetWorkflows, refetch: refetchAllWorkflows } = useQuery({
-    queryKey: ['asset-all-workflows', asset.id],
+    queryKey: ['asset-all-workflows', effectiveAsset.id],
     queryFn: async () => {
       // Get all workflow progress records for this asset
       const { data: progressData, error: progressError } = await supabase
@@ -446,8 +515,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             deleted
           )
         `)
-        .eq('asset_id', asset.id)
-        .order('updated_at', { ascending: false })
+        .eq('asset_id', effectiveAsset.id)
+        .order('created_at', { ascending: false })
 
       if (progressError) {
         console.error('Error fetching asset workflows:', progressError)
@@ -455,27 +524,86 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
 
       // Filter to only show workflow branches (not templates), and exclude deleted/archived
-      return progressData?.filter(p =>
+      const filtered = progressData?.filter(p =>
         p.workflows &&
         !p.workflows.deleted &&
         !p.workflows.archived &&
         p.workflows.parent_workflow_id !== null  // Only branches, not templates
       ) || []
+
+      // Enhance each workflow with progress statistics
+      const enhancedWorkflows = await Promise.all(filtered.map(async (workflow) => {
+        // Get task completion stats for this workflow
+        const { data: taskStats } = await supabase
+          .from('asset_checklist_items')
+          .select('id, completed')
+          .eq('asset_id', effectiveAsset.id)
+          .eq('workflow_id', workflow.workflow_id)
+
+        const total_tasks = taskStats?.length || 0
+        const completed_tasks = taskStats?.filter(t => t.completed).length || 0
+
+        // Get stage information for this workflow
+        const { data: stageData } = await supabase
+          .from('workflow_stages')
+          .select('id, sort_order')
+          .eq('workflow_id', workflow.workflow_id)
+          .order('sort_order', { ascending: true })
+
+        const total_stages = stageData?.length || 0
+        const current_stage_index = workflow.current_stage_key
+          ? (stageData?.findIndex(s => s.id === workflow.current_stage_key) ?? 0)
+          : 0
+
+        return {
+          ...workflow,
+          total_tasks,
+          completed_tasks,
+          total_stages,
+          current_stage_index
+        }
+      }))
+
+      console.log('📋 AssetTab: Fetched asset workflows:', {
+        assetId: effectiveAsset.id,
+        assetSymbol: asset.symbol,
+        totalProgress: progressData?.length || 0,
+        filteredBranches: filtered.length,
+        allProgress: progressData,
+        filtered: enhancedWorkflows
+      })
+
+      return enhancedWorkflows
     },
-    enabled: !!asset.id
+    enabled: !!effectiveAsset.id
   })
 
   // Fetch available active workflow branches that asset can join
   const { data: availableWorkflows } = useQuery({
-    queryKey: ['asset-available-workflows', asset.id, user?.id],
+    queryKey: ['asset-available-workflows', effectiveAsset.id, user?.id],
     queryFn: async () => {
-      if (!user?.id) return []
+      if (!user?.id) {
+        return []
+      }
 
-      // Get IDs of workflows the asset is already in
-      const assetWorkflowIds = allAssetWorkflows?.map(aw => aw.workflow_id) || []
+      // Get IDs of workflows the asset is already in - fetch directly from DB to avoid stale cache
+      const { data: assetProgressRecords } = await supabase
+        .from('asset_workflow_progress')
+        .select('workflow_id')
+        .eq('asset_id', effectiveAsset.id)
 
-      // Fetch active workflow branches user has access to (not templates)
-      const { data: workflows, error } = await supabase
+      const assetWorkflowIds = assetProgressRecords?.map(ap => ap.workflow_id) || []
+
+      // Get workflow IDs where user is admin (creator) or stakeholder
+      const { data: stakeholderWorkflows } = await supabase
+        .from('workflow_stakeholders')
+        .select('workflow_id')
+        .eq('user_id', user.id)
+
+      const stakeholderWorkflowIds = new Set(stakeholderWorkflows?.map(sw => sw.workflow_id) || [])
+
+      // Fetch ALL active workflow branches (not templates)
+      const { data: allBranches, error } = await supabase
         .from('workflows')
         .select(`
           id,
@@ -488,13 +616,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           created_by,
           is_public,
           archived,
-          parent_workflow_id
+          parent_workflow_id,
+          created_at
         `)
         .eq('status', 'active')
         .eq('archived', false)
         .eq('deleted', false)
         .not('parent_workflow_id', 'is', null)  // Only branches, not templates
-        .or(`is_public.eq.true,created_by.eq.${user.id}`)
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -502,11 +630,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         return []
       }
 
+      // Filter to only workflows where user has access:
+      // 1. User created the workflow (admin)
+      // 2. User is a stakeholder on the branch itself
+      // 3. User is a stakeholder on the parent template workflow
+      const accessibleWorkflows = allBranches?.filter(w => {
+        // User is admin (creator) of the workflow
+        if (w.created_by === user.id) return true
+
+        // User is stakeholder on the branch itself
+        if (stakeholderWorkflowIds.has(w.id)) return true
+
+        // User is stakeholder on the parent template
+        if (w.parent_workflow_id && stakeholderWorkflowIds.has(w.parent_workflow_id)) return true
+
+        return false
+      }) || []
+
       // Filter out workflows asset is already in
-      return workflows?.filter(w => !assetWorkflowIds.includes(w.id)) || []
+      const available = accessibleWorkflows.filter(w => !assetWorkflowIds.includes(w.id))
+
+      return available
     },
-    enabled: !!asset.id && !!user?.id && !!allAssetWorkflows
+    enabled: !!asset.id && !!user?.id
   })
+
 
   // Fetch workflows with cadence settings for upcoming branches calculation
   const { data: upcomingBranches } = useQuery({
@@ -554,13 +702,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   const { data: effectiveWorkflowId, isLoading: workflowIdLoading } = useQuery({
     queryKey: ['asset-effective-workflow', asset.id],
+    staleTime: 0,  // Always refetch to ensure we get the latest data
     queryFn: async () => {
       console.log(`🔍 AssetTab: Determining effective workflow for ${asset.symbol}:`, {
         assetWorkflowId: asset.workflow_id,
         hasExplicitWorkflowId: !!asset.workflow_id
       })
 
-      // If asset has explicit workflow_id, verify it's not archived/ended before using it
+      // If asset has explicit workflow_id, verify it's active before using it
       if (asset.workflow_id) {
         const { data: workflowCheck, error: checkError } = await supabase
           .from('workflows')
@@ -568,9 +717,52 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           .eq('id', asset.workflow_id)
           .single()
 
-        if (checkError || !workflowCheck || workflowCheck.archived || workflowCheck.status === 'ended' || workflowCheck.deleted) {
-          console.log(`⚠️ AssetTab: Explicit workflow_id ${asset.workflow_id} is archived/ended/deleted, ignoring`)
-          // Don't use this workflow, fall through to check progress records
+        if (checkError || !workflowCheck || workflowCheck.archived || workflowCheck.status !== 'active' || workflowCheck.deleted) {
+          console.log(`⚠️ AssetTab: Explicit workflow_id ${asset.workflow_id} is not active (status: ${workflowCheck?.status}), auto-selecting next workflow`)
+
+          // The selected workflow has ended, find the next active workflow
+          const { data: nextWorkflow } = await supabase
+            .from('asset_workflow_progress')
+            .select(`
+              workflow_id,
+              workflows!inner (
+                id,
+                status,
+                archived,
+                deleted,
+                parent_workflow_id,
+                created_at
+              )
+            `)
+            .eq('asset_id', asset.id)
+            .eq('is_started', true)
+            .eq('workflows.status', 'active')
+            .eq('workflows.archived', false)
+            .is('workflows.deleted', null)
+            .not('workflows.parent_workflow_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          const nextWorkflowId = nextWorkflow?.workflow_id || null
+
+          // Update the asset's workflow_id to the next active workflow or null
+          const { error: updateError } = await supabase
+            .from('assets')
+            .update({ workflow_id: nextWorkflowId })
+            .eq('id', asset.id)
+
+          if (!updateError) {
+            asset.workflow_id = nextWorkflowId
+          }
+
+          if (nextWorkflowId) {
+            console.log(`✅ AssetTab: Auto-selected next workflow: ${nextWorkflowId}`)
+            return nextWorkflowId
+          } else {
+            console.log(`❌ AssetTab: No other active workflows available`)
+            return null
+          }
         } else {
           console.log(`✅ AssetTab: Using explicit workflow_id: ${asset.workflow_id}`)
           return asset.workflow_id
@@ -578,7 +770,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
 
       // Otherwise, check if there's an active workflow progress record
-      // Exclude archived and ended workflows
+      // Only look for workflow BRANCHES (not templates) that are active
       const { data: workflowProgress, error } = await supabase
         .from('asset_workflow_progress')
         .select(`
@@ -587,7 +779,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             id,
             status,
             archived,
-            deleted
+            deleted,
+            parent_workflow_id
           )
         `)
         .eq('asset_id', asset.id)
@@ -595,46 +788,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('workflows.archived', false)
         .eq('workflows.status', 'active')
         .is('workflows.deleted', null)
+        .not('workflows.parent_workflow_id', 'is', null)  // Only branches, not templates
         .order('updated_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()  // Use maybeSingle instead of single to avoid error when no rows found
 
       if (error || !workflowProgress) {
-        console.log(`🔍 AssetTab: No active workflow progress, fetching most recent workflow`)
-        // No active workflow progress, fetch and return the most recently worked on workflow
-        // Exclude archived and ended workflows
-        const { data: recentWorkflow, error: recentError } = await supabase
-          .from('asset_workflow_progress')
-          .select(`
-            workflow_id,
-            workflows!inner (
-              id,
-              status,
-              archived,
-              deleted
-            )
-          `)
-          .eq('asset_id', asset.id)
-          .eq('workflows.archived', false)
-          .eq('workflows.status', 'active')
-          .is('workflows.deleted', null)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        if (recentError || !recentWorkflow) {
-          console.log(`❌ AssetTab: No workflow history found for this asset`)
-          return null
-        }
-
-        console.log(`✅ AssetTab: Using most recent workflow: ${recentWorkflow.workflow_id}`)
-        return recentWorkflow.workflow_id
+        console.log(`❌ AssetTab: No active workflow found for this asset`)
+        return null
       }
 
       console.log(`✅ AssetTab: Using active workflow progress: ${workflowProgress.workflow_id}`)
       return workflowProgress.workflow_id
     },
-    staleTime: 30 * 1000, // Cache for 30 seconds
+    staleTime: 0, // Don't cache - always check for ended workflows
     gcTime: 0, // Don't keep cache when component unmounts - prevents showing wrong workflow when switching assets
   })
 
@@ -827,18 +994,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Workflow action mutations
   const joinWorkflowMutation = useMutation({
     mutationFn: async ({ workflowId, startImmediately }: { workflowId: string; startImmediately: boolean }) => {
-      // Add asset to workflow
-      const { error } = await supabase
-        .from('asset_workflow_progress')
-        .insert({
-          asset_id: asset.id,
-          workflow_id: workflowId,
-          is_started: startImmediately,
-          started_at: startImmediately ? new Date().toISOString() : null
-        })
-      if (error) throw error
+      console.log('🔵 Joining workflow:', { workflowId, assetId: asset.id, userId: user?.id })
 
-      // Record as an 'add' override (upsert to handle re-adding after removal)
+      // Check session state before inserting
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      console.log('📋 Session check:', {
+        hasSession: !!session,
+        userId: session?.user?.id,
+        accessToken: session?.access_token ? 'present' : 'missing',
+        sessionError
+      })
+
+      // Record as an 'add' override - the trigger will handle creating asset_workflow_progress
+      // and auto-starting the workflow if it's an active branch
       const { error: overrideError } = await supabase
         .from('workflow_universe_overrides')
         .upsert({
@@ -849,14 +1017,122 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         }, {
           onConflict: 'workflow_id,asset_id'
         })
-      if (overrideError) console.error('Error recording override:', overrideError)
+
+      console.log('📊 Upsert result:', { error: overrideError })
+
+      if (overrideError) {
+        console.error('❌ Error joining workflow:', overrideError)
+        throw overrideError
+      }
+
+      console.log('✅ Successfully joined workflow')
+
+      // If asset has no workflow selected, automatically select the newly added workflow
+      if (!asset.workflow_id) {
+        const { error: updateError } = await supabase
+          .from('assets')
+          .update({ workflow_id: workflowId })
+          .eq('id', asset.id)
+        if (updateError) console.error('Error auto-selecting workflow:', updateError)
+        else asset.workflow_id = workflowId
+      }
+
+      return workflowId
     },
-    onSuccess: () => {
+    onMutate: async ({ workflowId }) => {
+      // Cancel any outgoing refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      await queryClient.cancelQueries({ queryKey: ['asset-available-workflows', asset.id, user?.id] })
+
+      // Snapshot the previous values
+      const previousAllWorkflows = queryClient.getQueryData(['asset-all-workflows', asset.id])
+      const previousAvailableWorkflows = queryClient.getQueryData(['asset-available-workflows', asset.id, user?.id])
+
+      // Find the workflow being added from availableWorkflows
+      const availableWorkflows = queryClient.getQueryData<typeof allAvailableWorkflows>(['asset-available-workflows', asset.id, user?.id]) || []
+      const workflowToAdd = availableWorkflows.find((w: any) => w.id === workflowId)
+
+      if (workflowToAdd) {
+        // Optimistically add to allAssetWorkflows
+        const currentAllWorkflows = queryClient.getQueryData<typeof allAssetWorkflows>(['asset-all-workflows', asset.id]) || []
+        const now = new Date().toISOString()
+        const optimisticWorkflow: any = {
+          id: `temp-${Date.now()}`,
+          asset_id: asset.id,
+          workflow_id: workflowId,
+          current_stage_key: null,
+          is_started: true,
+          is_completed: false,
+          started_at: now,
+          completed_at: null,
+          created_at: now,
+          updated_at: now,
+          workflows: {
+            id: workflowToAdd.id,
+            name: workflowToAdd.name,
+            branch_suffix: workflowToAdd.branch_suffix,
+            description: workflowToAdd.description,
+            status: workflowToAdd.status,
+            template_version_id: workflowToAdd.template_version_id,
+            template_version_number: workflowToAdd.template_version_number,
+            created_at: workflowToAdd.created_at || now,
+            archived: workflowToAdd.archived,
+            parent_workflow_id: workflowToAdd.parent_workflow_id
+          }
+        }
+
+        // Find the correct insertion index (sorted by created_at descending)
+        // Use workflow's created_at, not the progress record's created_at
+        const optimisticCreatedAt = new Date(optimisticWorkflow.workflows.created_at).getTime()
+        let insertIndex = currentAllWorkflows.length
+
+        for (let i = 0; i < currentAllWorkflows.length; i++) {
+          const currentCreatedAt = new Date((currentAllWorkflows[i] as any).workflows?.created_at || 0).getTime()
+          if (optimisticCreatedAt > currentCreatedAt) {
+            insertIndex = i
+            break
+          }
+        }
+
+        // Insert at the correct position without resorting
+        const newAllWorkflows = [
+          ...currentAllWorkflows.slice(0, insertIndex),
+          optimisticWorkflow,
+          ...currentAllWorkflows.slice(insertIndex)
+        ]
+
+        queryClient.setQueryData(['asset-all-workflows', asset.id], newAllWorkflows)
+
+        // Optimistically remove from availableWorkflows
+        queryClient.setQueryData(
+          ['asset-available-workflows', asset.id, user?.id],
+          availableWorkflows.filter((w: any) => w.id !== workflowId)
+        )
+      }
+
+      return { previousAllWorkflows, previousAvailableWorkflows }
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      console.error('❌ Join workflow mutation error:', err)
+      if (context?.previousAllWorkflows) {
+        queryClient.setQueryData(['asset-all-workflows', asset.id], context.previousAllWorkflows)
+      }
+      if (context?.previousAvailableWorkflows) {
+        queryClient.setQueryData(['asset-available-workflows', asset.id, user?.id], context.previousAvailableWorkflows)
+      }
+    },
+    onSettled: async () => {
+      // Wait a tick to ensure optimistic update is rendered before refetching
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      // Refetch to ensure consistency with server
+      console.log('🔄 Refetching queries after joining workflow')
       queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
-      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows', asset.id, user?.id] })
       queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
       queryClient.invalidateQueries({ queryKey: ['workflow-universe-overrides'] })
-      refetchAllWorkflows()
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
     }
   })
 
@@ -872,8 +1148,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('workflow_id', workflowId)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, workflowId) => {
       queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id, workflowId] })
       refetchAllWorkflows()
     }
   })
@@ -888,13 +1165,44 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('workflow_id', workflowId)
       if (error) throw error
 
-      // Also clear the workflow_id field on the asset if it matches
+      // If we're removing the currently selected workflow, select the next one
       if (asset.workflow_id === workflowId) {
+        // Get all active workflows except the one being removed
+        const { data: remainingWorkflows } = await supabase
+          .from('asset_workflow_progress')
+          .select(`
+            workflow_id,
+            created_at,
+            workflows!inner (
+              id,
+              status,
+              archived,
+              deleted,
+              parent_workflow_id,
+              created_at
+            )
+          `)
+          .eq('asset_id', asset.id)
+          .neq('workflow_id', workflowId)
+          .eq('is_started', true)
+          .eq('workflows.status', 'active')
+          .eq('workflows.archived', false)
+          .is('workflows.deleted', null)
+          .not('workflows.parent_workflow_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        const nextWorkflowId = remainingWorkflows?.workflow_id || null
+
         const { error: updateError } = await supabase
           .from('assets')
-          .update({ workflow_id: null })
+          .update({ workflow_id: nextWorkflowId })
           .eq('id', asset.id)
         if (updateError) throw updateError
+
+        // Update local state
+        asset.workflow_id = nextWorkflowId
       }
 
       // Record as a 'remove' override (upsert to handle removing after manual add)
@@ -909,13 +1217,106 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           onConflict: 'workflow_id,asset_id'
         })
       if (overrideError) console.error('Error recording override:', overrideError)
+      return workflowId
     },
-    onSuccess: () => {
+    onMutate: async (workflowId: string) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      await queryClient.cancelQueries({ queryKey: ['asset-available-workflows', asset.id, user?.id] })
+
+      // Snapshot the previous values
+      const previousAllWorkflows = queryClient.getQueryData(['asset-all-workflows', asset.id])
+      const previousAvailableWorkflows = queryClient.getQueryData(['asset-available-workflows', asset.id, user?.id])
+
+      // Find the workflow being removed
+      const currentAllWorkflows = queryClient.getQueryData<typeof allAssetWorkflows>(['asset-all-workflows', asset.id]) || []
+      const workflowToRemove = currentAllWorkflows.find((w: any) => w.workflow_id === workflowId)
+
+      if (workflowToRemove && workflowToRemove.workflows) {
+        // Optimistically remove from allAssetWorkflows
+        queryClient.setQueryData(
+          ['asset-all-workflows', asset.id],
+          currentAllWorkflows.filter((w: any) => w.workflow_id !== workflowId)
+        )
+
+        // Optimistically add back to availableWorkflows in the correct sorted position
+        const currentAvailableWorkflows = queryClient.getQueryData<typeof allAvailableWorkflows>(['asset-available-workflows', asset.id, user?.id]) || []
+        const workflowToAdd: any = {
+          id: workflowToRemove.workflows.id,
+          name: workflowToRemove.workflows.name,
+          branch_suffix: workflowToRemove.workflows.branch_suffix,
+          description: workflowToRemove.workflows.description,
+          status: workflowToRemove.workflows.status,
+          template_version_id: workflowToRemove.workflows.template_version_id,
+          template_version_number: workflowToRemove.workflows.template_version_number,
+          created_by: user?.id || '',
+          is_public: false,
+          archived: workflowToRemove.workflows.archived,
+          created_at: workflowToRemove.workflows.created_at,
+          parent_workflow_id: null // Add this field for consistency
+        }
+
+        // Find the correct insertion index (sorted by created_at descending)
+        const workflowCreatedAt = new Date(workflowToAdd.created_at || 0).getTime()
+        let insertIndex = currentAvailableWorkflows.length
+
+        console.log('🔍 Finding insertion index for workflow:', {
+          name: workflowToAdd.name,
+          created_at: workflowToAdd.created_at,
+          timestamp: workflowCreatedAt
+        })
+
+        for (let i = 0; i < currentAvailableWorkflows.length; i++) {
+          const currentCreatedAt = new Date((currentAvailableWorkflows[i] as any).created_at || 0).getTime()
+          console.log(`  Comparing with [${i}]:`, {
+            name: (currentAvailableWorkflows[i] as any).name,
+            created_at: (currentAvailableWorkflows[i] as any).created_at,
+            timestamp: currentCreatedAt,
+            isNewer: workflowCreatedAt > currentCreatedAt
+          })
+          if (workflowCreatedAt > currentCreatedAt) {
+            insertIndex = i
+            break
+          }
+        }
+
+        console.log(`✅ Inserting at index ${insertIndex}`)
+
+        // Insert at the correct position without resorting
+        const newAvailableWorkflows = [
+          ...currentAvailableWorkflows.slice(0, insertIndex),
+          workflowToAdd,
+          ...currentAvailableWorkflows.slice(insertIndex)
+        ]
+
+        queryClient.setQueryData(
+          ['asset-available-workflows', asset.id, user?.id],
+          newAvailableWorkflows
+        )
+      }
+
+      return { previousAllWorkflows, previousAvailableWorkflows }
+    },
+    onError: (err, workflowId, context) => {
+      // Rollback on error
+      console.error('❌ Remove workflow mutation error:', err)
+      if (context?.previousAllWorkflows) {
+        queryClient.setQueryData(['asset-all-workflows', asset.id], context.previousAllWorkflows)
+      }
+      if (context?.previousAvailableWorkflows) {
+        queryClient.setQueryData(['asset-available-workflows', asset.id, user?.id], context.previousAvailableWorkflows)
+      }
+    },
+    onSettled: async () => {
+      // Wait a tick to ensure optimistic update is rendered before refetching
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      // Refetch to ensure consistency with server
       queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
-      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-available-workflows', asset.id, user?.id] })
       queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
       queryClient.invalidateQueries({ queryKey: ['workflow-universe-overrides'] })
-      refetchAllWorkflows()
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
     }
   })
 
@@ -951,8 +1352,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('workflow_id', workflowId)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, workflowId) => {
       queryClient.invalidateQueries({ queryKey: ['asset-all-workflows', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-workflow-progress', asset.id, workflowId] })
       refetchAllWorkflows()
     }
   })
@@ -1055,12 +1457,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       const firstStageKey = workflowStagesResult.data?.[0]?.stage_key || 'prioritized'
 
-      // Determine which stage to show: current active stage if workflow is started, otherwise first stage
+      // Determine which stage to show: use current_stage_key if available, otherwise first stage
       const workflowProgress = workflowProgressResult.data
       const isWorkflowStarted = workflowProgress?.is_started || false
-      const effectiveCurrentStage = isWorkflowStarted && workflowProgress?.current_stage_key
-        ? workflowProgress.current_stage_key
-        : firstStageKey
+      const effectiveCurrentStage = workflowProgress?.current_stage_key || firstStageKey
 
       console.log(`📊 Workflow status for ${asset.symbol}:`, {
         workflowId,
@@ -1096,6 +1496,48 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
     }
   }
+
+  // Execute pending workflow switch once handleWorkflowChange is available
+  useEffect(() => {
+    console.log('📋 AssetTab: Pending workflow switch check:', {
+      hasPending: !!pendingWorkflowSwitch,
+      pendingWorkflowSwitch,
+      hasAllAssetWorkflows: !!allAssetWorkflows,
+      allAssetWorkflowsCount: allAssetWorkflows?.length || 0,
+      hasAvailableWorkflows: !!availableWorkflows,
+      availableWorkflowsCount: availableWorkflows?.length || 0
+    })
+
+    if (pendingWorkflowSwitch) {
+      // Check if the workflow exists in either allAssetWorkflows or availableWorkflows
+      const workflowExists =
+        allAssetWorkflows?.some(w => w.workflow_id === pendingWorkflowSwitch.workflowId) ||
+        availableWorkflows?.some(w => w.id === pendingWorkflowSwitch.workflowId)
+
+      console.log('📋 AssetTab: Workflow exists check:', {
+        workflowId: pendingWorkflowSwitch.workflowId,
+        workflowExists,
+        inAssetWorkflows: allAssetWorkflows?.some(w => w.workflow_id === pendingWorkflowSwitch.workflowId),
+        inAvailableWorkflows: availableWorkflows?.some(w => w.id === pendingWorkflowSwitch.workflowId)
+      })
+
+      if (workflowExists || (allAssetWorkflows !== undefined && availableWorkflows !== undefined)) {
+        console.log('📋 AssetTab: Executing pending workflow switch:', pendingWorkflowSwitch)
+        handleWorkflowChange(pendingWorkflowSwitch.workflowId)
+
+        // After switching, set the stage if provided
+        if (pendingWorkflowSwitch.stageId) {
+          setTimeout(() => {
+            console.log('📋 AssetTab: Setting viewing stage after workflow switch:', pendingWorkflowSwitch.stageId)
+            setViewingStageId(pendingWorkflowSwitch.stageId)
+          }, 200) // Delay to ensure workflow data is loaded
+        }
+
+        // Clear the pending switch
+        setPendingWorkflowSwitch(null)
+      }
+    }
+  }, [pendingWorkflowSwitch, allAssetWorkflows, availableWorkflows])
 
   const handleWorkflowStart = async (workflowId: string) => {
     console.log(`🔴 AssetTab: handleWorkflowStart called for asset ${asset.symbol} (${effectiveAsset.id}) in workflow ${workflowId}`)
@@ -1461,7 +1903,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             mode="header"
             selectedWorkflowId={effectiveWorkflowId || null}
             allAssetWorkflows={allAssetWorkflows || []}
-            availableWorkflows={[]}
+            availableWorkflows={availableWorkflows || []}
             onSelectWorkflow={handleWorkflowChange}
             onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
             onRemoveWorkflow={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
@@ -2118,6 +2560,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     <div className="w-16 h-16 rounded-full bg-gray-200"></div>
                     <div className="h-4 w-48 bg-gray-200 rounded"></div>
                     <div className="h-3 w-64 bg-gray-100 rounded"></div>
+                  </div>
+                </div>
+              ) : !effectiveWorkflowId ? (
+                <div className="bg-white border border-gray-200 rounded-lg p-12">
+                  <div className="flex flex-col items-center justify-center text-center space-y-4">
+                    <Activity className="w-16 h-16 text-gray-300" />
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900">No Active Workflows</h3>
+                      <p className="text-sm text-gray-500 mt-1">Add this asset to a workflow to start tracking progress</p>
+                    </div>
                   </div>
                 </div>
               ) : (

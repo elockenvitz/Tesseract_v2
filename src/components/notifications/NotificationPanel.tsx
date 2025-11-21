@@ -118,6 +118,25 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
       markAsReadMutation.mutate(notification.id)
     }
 
+    // Handle task assignment notifications
+    if (notification.type === 'task_assigned' && (notification.context_type === 'task' || notification.context_type === 'workflow') && onNavigate) {
+      onNavigate({
+        id: notification.context_data?.asset_symbol || notification.context_data?.asset_id,
+        title: notification.context_data?.asset_symbol || 'Task',
+        type: 'asset',
+        data: {
+          id: notification.context_data?.asset_id,
+          symbol: notification.context_data?.asset_symbol,
+          company_name: notification.context_data?.asset_name,
+          taskId: notification.context_id,
+          workflowId: notification.context_data?.workflow_id,
+          stageId: notification.context_data?.stage_id
+        }
+      })
+      onClose()
+      return
+    }
+
     // Navigate to related item if available
     if (notification.related_id && notification.related_type && onNavigate) {
       if (notification.related_type === 'list') {

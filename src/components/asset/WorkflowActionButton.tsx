@@ -58,7 +58,7 @@ export function WorkflowActionButton({
   // Determine the primary action based on workflow state
   const renderPrimaryAction = () => {
     if (is_completed) {
-      // Completed workflow - offer restart
+      // Completed workflow - offer resume
       return (
         <Button
           onClick={() => onRestart(workflowId)}
@@ -66,27 +66,14 @@ export function WorkflowActionButton({
           variant="outline"
           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-300"
         >
-          <RotateCcw className="w-4 h-4 mr-2" />
-          Restart Workflow
-        </Button>
-      )
-    }
-
-    if (!is_started) {
-      // Not started - offer to start
-      return (
-        <Button
-          onClick={() => onStart(workflowId)}
-          size={size}
-          className="bg-green-600 hover:bg-green-700 text-white"
-        >
           <Play className="w-4 h-4 mr-2" />
-          Start Workflow
+          Resume Workflow
         </Button>
       )
     }
 
-    // Started but not completed - offer to complete
+    // Active workflows are automatically started when assets are added to branches
+    // Only show "Mark Complete" button (removed "Start Workflow" button)
     return (
       <Button
         onClick={() => onComplete(workflowId)}
