@@ -43,7 +43,7 @@ interface WorkflowWithStats {
   creator_name?: string
   is_favorited?: boolean
   stages?: WorkflowStage[]
-  user_permission?: 'read' | 'write' | 'admin' | 'owner'
+  user_permission?: 'read' | 'admin'
   usage_stats?: any[]
   active_version_number?: number
   archived?: boolean
@@ -970,7 +970,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       return data || []
     },
-    enabled: !!selectedWorkflow?.id && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'),
+    enabled: !!selectedWorkflow?.id && (selectedWorkflow.user_permission === 'admin'),
     staleTime: 1 * 60 * 1000,
     gcTime: 3 * 60 * 1000
   })
@@ -1305,16 +1305,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         const creator = workflow.users
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
 
-        // Determine user permission
-        let userPermission: 'read' | 'write' | 'admin' | 'owner' = 'read'
+        // Determine user permission (simplified to admin or read)
+        let userPermission: 'read' | 'admin' = 'read'
         if (workflow.created_by === userId) {
-          userPermission = 'owner'
+          // Owner = admin
+          userPermission = 'admin'
+        } else if (collaborationMap.has(workflow.id)) {
+          // User is a collaborator - use their permission level (takes precedence over stakeholder)
+          const collabPermission = collaborationMap.get(workflow.id)
+          // Map write/admin/owner to admin, everything else to read
+          userPermission = (collabPermission === 'admin' || collabPermission === 'write' || collabPermission === 'owner') ? 'admin' : 'read'
         } else if (stakeholderWorkflowIds.has(workflow.id)) {
           // User is a stakeholder - read-only access
           userPermission = 'read'
-        } else if (collaborationMap.has(workflow.id)) {
-          // User is a collaborator - use their permission level
-          userPermission = collaborationMap.get(workflow.id) as 'read' | 'write' | 'admin'
         } else if (workflow.name === 'Research Workflow') {
           // For Research Workflow, all logged-in users can be admin
           userPermission = 'admin'
@@ -3940,7 +3943,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         </div>
                       </div>
                       <div className="flex items-center space-x-3">
-                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                        {(selectedWorkflow.user_permission === 'admin') && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -4279,7 +4282,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                           <h4 className="text-lg font-medium text-gray-900 mb-2">No stages configured</h4>
                           <p className="text-gray-500 mb-4">Add stages to define your workflow process and track progress effectively.</p>
-                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          {(selectedWorkflow.user_permission === 'admin') && (
                             <Button size="sm" onClick={() => handleTabChange('stages')}>
                               <Plus className="w-4 h-4 mr-2" />
                               Configure Stages
@@ -4307,7 +4310,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             <Eye className="w-4 h-4 mr-2" />
                             View All
                           </Button>
-                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                          {(selectedWorkflow.user_permission === 'admin') && (
                             <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
                               <Plus className="w-4 h-4 mr-2" />
                               Create Branch
@@ -4323,7 +4326,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <p className="text-gray-500 mb-4">
                             Create branches to run this workflow for specific time periods or contexts
                           </p>
-                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                          {(selectedWorkflow.user_permission === 'admin') && (
                             <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
                               <Plus className="w-4 h-4 mr-2" />
                               Create First Branch
@@ -4421,7 +4424,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   </Card>
 
                   {/* Workflow Actions Section */}
-                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                  {(selectedWorkflow.user_permission === 'admin') && (
                     <Card>
                       <div className="p-6">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">Workflow Actions</h3>
@@ -4505,7 +4508,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
-                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') &&
+                    {(selectedWorkflow.user_permission === 'admin') &&
                      (selectedWorkflow?.stages || []).length > 0 && isTemplateEditMode && (
                       <Button size="sm" onClick={() => setShowAddStage(true)}>
                         <Plus className="w-4 h-4 mr-2" />
@@ -4513,7 +4516,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       </Button>
                     )}
                   </div>
-                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
                       <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
                       <p className="text-sm text-blue-800">
@@ -4529,7 +4532,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           <Target className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                           <h3 className="text-base font-medium text-gray-900 mb-2">No stages configured</h3>
                           <p className="text-sm text-gray-500 mb-3">Add stages to organize your workflow process.</p>
-                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                          {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                             <Button size="sm" onClick={() => setShowAddStage(true)}>
                               <Plus className="w-4 h-4 mr-2" />
                               Add First Stage
@@ -4565,7 +4568,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     </div>
                                   </div>
                                 </div>
-                                {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                                {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                                   <div className="flex items-center space-x-2">
                                     <Button size="xs" variant="outline" title="Move Up" disabled={index === 0}
                                       onClick={() => {
@@ -4632,7 +4635,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   <h5 className="text-sm font-medium text-gray-700">
                                     Checklist Template ({stageChecklistTemplates.length})
                                   </h5>
-                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                                  {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                                     <button
                                       onClick={() => setShowAddChecklistItem(stage.stage_key)}
                                       className="text-xs font-medium text-gray-700 hover:text-gray-900 flex items-center transition-colors"
@@ -4647,7 +4650,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   <div className="text-center py-4 bg-gray-50 rounded-lg">
                                     <CheckSquare className="w-6 h-6 text-gray-400 mx-auto mb-2" />
                                     <p className="text-sm text-gray-500">No checklist template items</p>
-                                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                    {(selectedWorkflow.user_permission === 'admin') && (
                                       <p className="text-xs text-gray-400 mt-1">Add template items that will appear for all assets using this workflow</p>
                                     )}
                                   </div>
@@ -4656,7 +4659,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     {stageChecklistTemplates.map((template, itemIndex) => (
                                       <div
                                         key={template.id}
-                                        draggable={(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode}
+                                        draggable={(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode}
                                         onDragStart={(e) => handleDragStart(e, template.id)}
                                         onDragOver={handleDragOver}
                                         onDragEnter={(e) => handleDragEnter(e, template.id)}
@@ -4668,10 +4671,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                           dragOverItem === template.id ? 'bg-blue-200 border-2 border-blue-400' :
                                           'bg-gray-50 hover:bg-gray-100'
                                         } ${
-                                          (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode ? 'cursor-move' : ''
+                                          (selectedWorkflow.user_permission === 'admin') && isTemplateEditMode ? 'cursor-move' : ''
                                         }`}
                                       >
-                                        {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                                        {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                                           <div className="flex items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-600">
                                             <GripVertical className="w-4 h-4" />
                                           </div>
@@ -4699,7 +4702,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                           </div>
                                         </div>
                                         <div className="flex items-center space-x-2">
-                                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                                          {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                                             <div className="flex items-center space-x-1">
                                               <Button size="xs" variant="outline" title="Edit Item"
                                                 onClick={(e) => {
@@ -4769,7 +4772,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   <div className="space-y-6">
 
                     {/* Pending Access Requests */}
-                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && pendingAccessRequests && pendingAccessRequests.length > 0 && (
+                    {(selectedWorkflow.user_permission === 'admin') && pendingAccessRequests && pendingAccessRequests.length > 0 && (
                       <Card>
                         <div className="p-3">
                           <div className="flex items-center justify-between mb-2">
@@ -4887,7 +4890,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
                               Admins ({(workflowCollaborators?.filter((c: any) => c.permission === 'admin').length || 0) + 1})
                             </h5>
-                            {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                            {(selectedWorkflow.user_permission === 'admin') && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -4921,7 +4924,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 ? `${user.first_name} ${user.last_name}`
                                 : user?.email || 'Unknown User'
                               const userInitial = userName.charAt(0).toUpperCase()
-                              const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'
+                              const canEdit = selectedWorkflow.user_permission === 'admin'
 
                               return (
                                 <div key={collab.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
@@ -4967,7 +4970,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   ? `${user.first_name} ${user.last_name}`
                                   : user?.email || 'Unknown User'
                                 const userInitial = userName.charAt(0).toUpperCase()
-                                const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'
+                                const canEdit = selectedWorkflow.user_permission === 'admin'
 
                                 return (
                                   <div key={collab.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
@@ -5028,7 +5031,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
                                 Stakeholders ({workflowStakeholders.length})
                               </h5>
-                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                              {(selectedWorkflow.user_permission === 'admin') && (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -5046,7 +5049,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   ? `${user.first_name} ${user.last_name}`
                                   : user?.email || 'Unknown User'
                                 const userInitial = userName.charAt(0).toUpperCase()
-                                const canEdit = selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write'
+                                const canEdit = selectedWorkflow.user_permission === 'admin'
 
                                 return (
                                   <div key={stakeholder.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:border-green-300 transition-colors">
@@ -5085,7 +5088,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {activeView === 'universe' && (
                 <div className="space-y-6">
-                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
                       <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
                       <p className="text-sm text-blue-800">
@@ -5110,7 +5113,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {activeView === 'cadence' && (
                 <div className="space-y-6">
-                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
                       <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
                       <p className="text-sm text-blue-800">
@@ -5183,7 +5186,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         </select>
                       </div>
 
-                      {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                      {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                         <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
                           <Plus className="w-4 h-4 mr-2" />
                           Add Rule
@@ -5203,7 +5206,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                               <h3 className="text-lg font-medium text-gray-900 mb-2">No automation rules</h3>
                               <p className="text-gray-500 mb-4">Set up automated workflows to trigger actions based on conditions.</p>
-                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                              {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                                 <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
                                   <Plus className="w-4 h-4 mr-2" />
                                   Create First Rule
@@ -5229,7 +5232,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   </Badge>
                                 </div>
                               </div>
-                              {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && isTemplateEditMode && (
+                              {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
                                 <div className="flex items-center space-x-1">
                                   <Button
                                     size="sm"
@@ -5764,7 +5767,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                           <span className="text-xs text-gray-500 font-normal">
                                             ({node.branch_suffix})
                                           </span>
-                                          {!node.deleted && !node.archived && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                          {!node.deleted && !node.archived && (selectedWorkflow.user_permission === 'admin') && (
                                             <button
                                               onClick={() => {
                                                 setEditingBranchSuffix({ id: node.id, currentSuffix: node.branch_suffix })
@@ -5837,7 +5840,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               </div>
                               <div className="flex items-center space-x-1">
                                 {/* Only show Branch button if not deleted or archived */}
-                                {!node.deleted && !node.archived && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                {!node.deleted && !node.archived && (selectedWorkflow.user_permission === 'admin') && (
                                   <button
                                     onClick={() => {
                                       setShowCreateBranchModal(true)
@@ -5850,7 +5853,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   </button>
                                 )}
                                 {/* Only show End button if active and not deleted or archived */}
-                                {!node.deleted && !node.archived && node.status === 'active' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                {!node.deleted && !node.archived && node.status === 'active' && (selectedWorkflow.user_permission === 'admin') && (
                                   <button
                                     onClick={() => setBranchToEnd({ id: node.id, name: node.name })}
                                     className="p-1.5 hover:bg-orange-100 rounded transition-colors"
@@ -5860,7 +5863,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   </button>
                                 )}
                                 {/* Only show Continue button if inactive and not deleted or archived */}
-                                {!node.deleted && !node.archived && node.status === 'inactive' && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                {!node.deleted && !node.archived && node.status === 'inactive' && (selectedWorkflow.user_permission === 'admin') && (
                                   <button
                                     onClick={() => setBranchToContinue({ id: node.id, name: node.name })}
                                     className="p-1.5 hover:bg-green-100 rounded transition-colors"
@@ -5869,7 +5872,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                     <Play className="w-4 h-4 text-green-600" />
                                   </button>
                                 )}
-                                {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                {(selectedWorkflow.user_permission === 'admin') && (
                                   <>
                                     {!node.archived && !node.deleted && (
                                       <>
@@ -6359,7 +6362,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                                 </span>
                                               )}
                                             </div>
-                                            {!isVersionCollapsed && (selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner' || selectedWorkflow.user_permission === 'write') && (
+                                            {!isVersionCollapsed && (selectedWorkflow.user_permission === 'admin') && (
                                               <Button
                                                 size="sm"
                                                 variant="outline"
@@ -6437,7 +6440,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Document Models</h3>
-                    {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                    {(selectedWorkflow.user_permission === 'admin') && (
                       <Button size="sm" onClick={() => setShowUploadTemplateModal(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Upload Model
@@ -6484,7 +6487,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   >
                                     <Download className="w-4 h-4" />
                                   </button>
-                                  {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                                  {(selectedWorkflow.user_permission === 'admin') && (
                                     <button
                                       onClick={() => {
                                         if (confirm(`Are you sure you want to delete "${template.name}"?`)) {
@@ -6508,7 +6511,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         <div className="p-8 text-center">
                           <Copy className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                           <p className="text-sm text-gray-500 font-medium">No models uploaded yet</p>
-                          {(selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner') && (
+                          {(selectedWorkflow.user_permission === 'admin') && (
                             <p className="text-xs text-gray-400 mt-2">Click "Upload Model" to add document models for your team</p>
                           )}
                         </div>
@@ -7019,7 +7022,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
           versions={templateVersions || []}
-          canCreateVersion={selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'}
+          canCreateVersion={selectedWorkflow.user_permission === 'admin'}
           onCreateVersion={() => setShowCreateVersion(true)}
           onViewVersion={(versionId) => {
             setSelectedVersionId(versionId)
@@ -7030,7 +7033,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               activateVersionMutation.mutate(versionId)
             }
           }}
-          canActivateVersion={selectedWorkflow.user_permission === 'admin' || selectedWorkflow.user_permission === 'owner'}
+          canActivateVersion={selectedWorkflow.user_permission === 'admin'}
         />
       )}
 
