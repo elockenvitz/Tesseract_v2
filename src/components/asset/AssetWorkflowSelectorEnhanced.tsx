@@ -26,6 +26,11 @@ interface WorkflowProgress {
     archived: boolean
     deleted?: boolean
   } | null
+  // Optional stats for progress calculation
+  total_tasks?: number
+  completed_tasks?: number
+  total_stages?: number
+  current_stage_index?: number
 }
 
 interface AvailableWorkflow {
@@ -75,8 +80,9 @@ export function AssetWorkflowSelectorEnhanced({
   const [isOpen, setIsOpen] = useState(false)
 
   // Categorize workflows
+  // Active workflows are all workflows in active branches that aren't completed
+  // (is_started is automatically true when added to active branch via trigger)
   const activeWorkflows = allAssetWorkflows.filter(aw =>
-    aw.is_started &&
     !aw.is_completed &&
     aw.workflows?.status === 'active'
   )
@@ -106,8 +112,26 @@ export function AssetWorkflowSelectorEnhanced({
   const calculateProgress = (workflow: WorkflowProgress): number => {
     if (workflow.is_completed) return 100
     if (!workflow.is_started) return 0
-    // TODO: Calculate based on checklist completion
-    return 50 // Placeholder
+
+    // Hybrid approach: 60% weight on task completion, 40% weight on stage advancement
+    let taskProgress = 0
+    let stageProgress = 0
+
+    // Calculate task-based progress
+    if (workflow.total_tasks && workflow.total_tasks > 0) {
+      taskProgress = (workflow.completed_tasks || 0) / workflow.total_tasks
+    }
+
+    // Calculate stage-based progress
+    if (workflow.total_stages && workflow.total_stages > 0 && workflow.current_stage_index !== undefined) {
+      stageProgress = workflow.current_stage_index / workflow.total_stages
+    }
+
+    // Combine with weighting (60% tasks, 40% stages)
+    const combinedProgress = (taskProgress * 0.6) + (stageProgress * 0.4)
+
+    // Return as percentage, rounded to nearest integer
+    return Math.round(combinedProgress * 100)
   }
 
   const handleSelect = (workflowId: string) => {
@@ -116,15 +140,17 @@ export function AssetWorkflowSelectorEnhanced({
   }
 
   const handleJoin = (workflowId: string, e: React.MouseEvent) => {
+    console.log('🔘 Add button clicked!', { workflowId, hasOnJoinWorkflow: !!onJoinWorkflow })
     e.stopPropagation()
     onJoinWorkflow?.(workflowId)
-    setIsOpen(false)
+    console.log('✅ onJoinWorkflow called')
+    // Don't close dropdown - let user add multiple workflows
   }
 
   const handleRemove = (workflowId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     onRemoveWorkflow?.(workflowId)
-    setIsOpen(false)
+    // Don't close dropdown - let user see the workflow move to "Available to Add"
   }
 
   return (
@@ -179,7 +205,7 @@ export function AssetWorkflowSelectorEnhanced({
                   activeWorkflows.map(aw => (
                     <div
                       key={aw.id}
-                      className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-colors group"
+                      className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2"
                     >
                       <button
                         onClick={() => handleSelect(aw.workflow_id)}
@@ -230,7 +256,7 @@ export function AssetWorkflowSelectorEnhanced({
                       {activeWorkflows.map(aw => (
                         <div
                           key={aw.id}
-                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-colors group"
+                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2"
                         >
                           <button
                             onClick={() => handleSelect(aw.workflow_id)}
@@ -311,45 +337,7 @@ export function AssetWorkflowSelectorEnhanced({
                   </div>
                 )}
 
-                {/* Inactive Workflows */}
-                {inactiveWorkflows.length > 0 && (
-                  <div className="p-3">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                      Not Started ({inactiveWorkflows.length})
-                    </div>
-                    <div className="space-y-1">
-                      {inactiveWorkflows.map(aw => (
-                        <button
-                          key={aw.id}
-                          onClick={() => handleSelect(aw.workflow_id)}
-                          className="w-full text-left px-3 py-2 rounded hover:bg-gray-50 transition-colors"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <Clock className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                <span className="font-medium text-gray-700 truncate text-sm">
-                                  {aw.workflows?.name}
-                                  {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
-                                </span>
-                                {aw.workflow_id === selectedWorkflowId && (
-                                  <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                                )}
-                              </div>
-                              <div className="flex items-center space-x-2 mt-1 ml-5">
-                                <span className="text-xs text-gray-500">
-                                  {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
-                                </span>
-                                <span className="text-xs text-gray-500">•</span>
-                                <span className="text-xs text-gray-500">Not started</span>
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Inactive Workflows section removed - Assets added to active branches are automatically started */}
 
                 {/* Available to Add */}
                 {availableWorkflows.length > 0 && (
@@ -361,7 +349,7 @@ export function AssetWorkflowSelectorEnhanced({
                       {availableWorkflows.map(workflow => (
                         <div
                           key={workflow.id}
-                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-colors"
+                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out animate-in fade-in slide-in-from-top-2"
                         >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">

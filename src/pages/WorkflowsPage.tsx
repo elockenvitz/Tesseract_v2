@@ -5028,7 +5028,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         )}
 
                         {/* Stakeholders Section */}
-                        {workflowStakeholders && workflowStakeholders.length > 0 && (
+                        {workflowStakeholders && (
                           <div>
                             <div className="flex items-center justify-between mb-3">
                               <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
@@ -5045,8 +5045,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 </Button>
                               )}
                             </div>
-                            <div className="space-y-2">
-                              {workflowStakeholders.map((stakeholder: any) => {
+                            {workflowStakeholders.length > 0 ? (
+                              <div className="space-y-2">
+                                {workflowStakeholders.map((stakeholder: any) => {
                                 const user = stakeholder.user
                                 const userName = user?.first_name && user?.last_name
                                   ? `${user.first_name} ${user.last_name}`
@@ -5080,7 +5081,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                   </div>
                                 )
                               })}
-                            </div>
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-500 italic p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                No stakeholders added yet. Click "Add Stakeholder" to add one.
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -7736,7 +7742,6 @@ function AddChecklistItemModal({ workflowId, stageId, existingItems, onClose, on
   onSave: (item: any) => void
 }) {
   const [formData, setFormData] = useState({
-    item_id: '',
     item_text: '',
     sort_order: existingItems.length + 1,
     is_required: false
@@ -7744,7 +7749,12 @@ function AddChecklistItemModal({ workflowId, stageId, existingItems, onClose, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
+    // Auto-generate a unique item_id based on timestamp and random string
+    const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    onSave({
+      ...formData,
+      item_id: itemId
+    })
   }
 
   return (
@@ -7753,18 +7763,7 @@ function AddChecklistItemModal({ workflowId, stageId, existingItems, onClose, on
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Checklist Item</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Item ID</label>
-            <input
-              type="text"
-              value={formData.item_id}
-              onChange={(e) => setFormData({ ...formData, item_id: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="e.g., new_item_001"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Item Text</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
             <input
               type="text"
               value={formData.item_text}

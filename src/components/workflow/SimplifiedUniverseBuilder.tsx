@@ -119,6 +119,7 @@ export function SimplifiedUniverseBuilder({
       queryClient.invalidateQueries({ queryKey: ['asset-all-workflows'] })
       queryClient.invalidateQueries({ queryKey: ['asset-available-workflows'] })
       queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow'] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] }) // Invalidate assets cache so workflow_id updates
     }
   })
 

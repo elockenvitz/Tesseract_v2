@@ -102,7 +102,9 @@ export function Layout({
   }
 
   const handleNotificationClick = useCallback((notification: any) => {
-    console.log('Notification clicked:', notification)
+    console.log('🔔 Notification clicked:', notification)
+    console.log('🔔 Notification type:', notification.type)
+    console.log('🔔 Notification data:', notification.data)
 
     // Handle coverage_manager_requests type
     if (notification.type === 'coverage_manager_requests') {
@@ -133,6 +135,10 @@ export function Layout({
     // Handle other notification types...
     if (notification.type === 'asset') {
       onSearchResult(notification)
+      // Close the comm pane
+      if (isCommPaneOpen) {
+        toggleCommPane()
+      }
     }
   }, [isCommPaneOpen, toggleCommPane, onSearchResult])
 

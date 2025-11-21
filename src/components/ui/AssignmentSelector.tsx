@@ -142,11 +142,21 @@ export function AssignmentSelector({
             notes: notes || null
           }))
 
-          const { error: assignmentError } = await supabase
-            .from('checklist_task_assignments')
-            .insert(assignments)
+          console.log('🔄 AssignmentSelector: Attempting to upsert task assignments:', assignments)
 
-          if (assignmentError) throw assignmentError
+          const { data: upsertData, error: assignmentError } = await supabase
+            .from('checklist_task_assignments')
+            .upsert(assignments, {
+              onConflict: 'checklist_item_id,assigned_user_id',
+              ignoreDuplicates: false
+            })
+
+          if (assignmentError) {
+            console.error('❌ AssignmentSelector: Task assignment upsert error:', assignmentError)
+            throw assignmentError
+          }
+
+          console.log('✅ AssignmentSelector: Task assignments upserted successfully:', upsertData)
 
           // Create notifications for all assigned users
           if (assetId) {
@@ -177,11 +187,21 @@ export function AssignmentSelector({
             notes: notes || null
           }))
 
-          const { error: assignmentError } = await supabase
-            .from('stage_assignments')
-            .insert(assignments)
+          console.log('🔄 AssignmentSelector: Attempting to upsert stage assignments:', assignments)
 
-          if (assignmentError) throw assignmentError
+          const { data: upsertData, error: assignmentError } = await supabase
+            .from('stage_assignments')
+            .upsert(assignments, {
+              onConflict: 'asset_id,workflow_id,stage_id,assigned_user_id',
+              ignoreDuplicates: false
+            })
+
+          if (assignmentError) {
+            console.error('❌ AssignmentSelector: Stage assignment upsert error:', assignmentError)
+            throw assignmentError
+          }
+
+          console.log('✅ AssignmentSelector: Stage assignments upserted successfully:', upsertData)
 
           // Create notifications for all assigned users
           const notifications = selectedUserIds.map(userId => ({
@@ -205,7 +225,7 @@ export function AssignmentSelector({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: type === 'task' ? ['task-assignments'] : ['stage-assignments'] })
       setShowAssignModal(false)
-      setSelectedUserId('')
+      setSelectedUserIds([])
       setUserSearchQuery('')
       setDueDate('')
       setNotes('')

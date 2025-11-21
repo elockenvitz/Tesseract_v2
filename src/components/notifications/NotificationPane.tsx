@@ -198,6 +198,43 @@ export function NotificationPane({
             }
           }
           break
+        case 'workflow':
+          // For task assignments, navigate to the asset
+          if (notification.type === 'task_assigned' && notification.context_data?.asset_symbol) {
+            console.log('📋 NotificationPane: Task assignment notification context_data:', notification.context_data)
+            navigationData = {
+              id: notification.context_data.asset_id || notification.context_data.asset_symbol,
+              title: notification.context_data.asset_symbol,
+              type: 'asset',
+              data: {
+                id: notification.context_data.asset_id,
+                symbol: notification.context_data.asset_symbol,
+                taskId: notification.context_id,
+                workflowId: notification.context_data?.workflow_id,
+                workflowName: notification.context_data?.workflow_name,
+                stageId: notification.context_data?.stage_id
+              }
+            }
+            console.log('📋 NotificationPane: Navigation data:', navigationData)
+          }
+          break
+        case 'task':
+          // Navigate to the asset with the task, and open the workflow stage
+          navigationData = {
+            id: notification.context_data?.asset_id,
+            title: notification.context_data?.asset_symbol || 'Task',
+            type: 'asset',
+            data: {
+              id: notification.context_data?.asset_id,
+              symbol: notification.context_data?.asset_symbol,
+              company_name: notification.context_data?.asset_name,
+              // Include task-specific data for focusing on the task
+              taskId: notification.context_id,
+              workflowId: notification.context_data?.workflow_id,
+              stageId: notification.context_data?.stage_id
+            }
+          }
+          break
         // Add other context types as needed
       }
 

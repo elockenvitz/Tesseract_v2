@@ -16,8 +16,16 @@ interface ChecklistItem {
   id: string
   text: string
   completed: boolean
+  status?: 'unchecked' | 'completed' | 'na'
   comment?: string
   completedAt?: string
+  completedBy?: string
+  completedByUser?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
   isCustom?: boolean
   sortOrder?: number
   attachments?: ChecklistAttachment[]
@@ -159,6 +167,7 @@ export function InvestmentTimeline({
   const { user } = useAuth()
   const [showStageDetails, setShowStageDetails] = useState<string | null>(null)
   const [lastClickedStageId, setLastClickedStageId] = useState<string | null>(null) // Track clicked stage for focus ring
+  const [hasAutoSelected, setHasAutoSelected] = useState(false) // Track if we've auto-selected on mount
   const [stageChecklists, setStageChecklists] = useState<Record<string, ChecklistItem[]>>({})
   const [commentingItem, setCommentingItem] = useState<{stageId: string, itemId: string} | null>(null)
   const [commentText, setCommentText] = useState('')
@@ -552,10 +561,8 @@ export function InvestmentTimeline({
   // Check if this specific workflow is started for this asset
   const isWorkflowStarted = workflowProgress?.is_started || false
 
-  // Use workflow-specific current stage if workflow is started, otherwise use first stage
-  const effectiveCurrentStage = isWorkflowStarted && workflowProgress?.current_stage_key
-    ? workflowProgress.current_stage_key
-    : timelineStages?.[0]?.id || 'outdated'
+  // Use workflow-specific current stage if available, otherwise use first stage
+  const effectiveCurrentStage = workflowProgress?.current_stage_key || timelineStages?.[0]?.id || 'outdated'
 
   // Mutation to manage workflow progress
   const manageWorkflowProgressMutation = useMutation({
@@ -626,7 +633,10 @@ export function InvestmentTimeline({
       if (!assetId || !workflowId) return []
       const { data, error } = await supabase
         .from('asset_checklist_items')
-        .select('*')
+        .select(`
+          *,
+          completed_by_user:users!asset_checklist_items_completed_by_fkey(id, email, first_name, last_name)
+        `)
         .eq('asset_id', assetId)
         .eq('workflow_id', workflowId)
         .order('sort_order', { ascending: true })
@@ -695,13 +705,15 @@ export function InvestmentTimeline({
 
   // Mutation to save checklist item changes
   const saveChecklistItemMutation = useMutation({
-    mutationFn: async ({ assetId, stageId, itemId, completed, comment, completedAt }: {
+    mutationFn: async ({ assetId, stageId, itemId, completed, status, comment, completedAt, completedBy }: {
       assetId: string
       stageId: string
       itemId: string
       completed: boolean
+      status?: 'unchecked' | 'completed' | 'na'
       comment?: string
       completedAt?: string
+      completedBy?: string
     }) => {
       const { error } = await supabase
         .from('asset_checklist_items')
@@ -711,8 +723,10 @@ export function InvestmentTimeline({
           stage_id: stageId,
           item_id: itemId,
           completed,
+          status: status || 'unchecked',
           comment: comment || null,
-          completed_at: completedAt || null
+          completed_at: completedAt || null,
+          completed_by: completedBy || null
         }, {
           onConflict: 'asset_id,workflow_id,stage_id,item_id'
         })
@@ -755,8 +769,11 @@ export function InvestmentTimeline({
           return {
             ...item,
             completed: savedItem.completed,
+            status: savedItem.status || (savedItem.completed ? 'completed' : 'unchecked'),
             comment: savedItem.comment || undefined,
             completedAt: savedItem.completed_at || undefined,
+            completedBy: savedItem.completed_by || undefined,
+            completedByUser: savedItem.completed_by_user || undefined,
             sortOrder: index,
             dbId: existingItem?.id,
             attachments: checklistAttachments?.filter(
@@ -788,8 +805,11 @@ export function InvestmentTimeline({
           id: saved.item_id,
           text: saved.item_text || saved.item_id,
           completed: saved.completed,
+          status: saved.status || (saved.completed ? 'completed' : 'unchecked'),
           comment: saved.comment || undefined,
           completedAt: saved.completed_at || undefined,
+          completedBy: saved.completed_by || undefined,
+          completedByUser: saved.completed_by_user || undefined,
           isCustom: true,
           sortOrder: saved.sort_order || 999,
           dbId: existingItem?.id,
@@ -818,13 +838,28 @@ export function InvestmentTimeline({
     // Don't auto-select if workflow data is still loading
     if (!workflowId) return
     if (workflowId && !workflowStages) return // Wait for workflowStages to load
+    if (!timelineStages.length) return // Wait for timeline stages to be ready
+    if (hasAutoSelected) return // Already auto-selected for this mount
 
-    if (effectiveCurrentStage && !showStageDetails) {
-      console.log(`🎬 Auto-selecting initial stage: ${effectiveCurrentStage}`)
-      setShowStageDetails(effectiveCurrentStage)
-      onStageClick(effectiveCurrentStage)
+    // Auto-select current stage or first stage
+    const stageToSelect = effectiveCurrentStage || timelineStages[0]?.id
+    if (stageToSelect) {
+      console.log(`🎬 Auto-selecting initial stage: ${stageToSelect}`, {
+        workflowProgress,
+        effectiveCurrentStage,
+        timelineStagesCount: timelineStages.length,
+        showStageDetails,
+        lastClickedStageId
+      })
+      // Batch all state updates together using React.startTransition for consistency
+      React.startTransition(() => {
+        setShowStageDetails(stageToSelect)
+        setLastClickedStageId(stageToSelect) // Set for blue ring styling
+        setHasAutoSelected(true) // Mark as auto-selected
+      })
+      onStageClick(stageToSelect)
     }
-  }, [effectiveCurrentStage, showStageDetails, onStageClick, workflowId, workflowStages])
+  }, [effectiveCurrentStage, workflowId, workflowStages, timelineStages, workflowProgress, hasAutoSelected, showStageDetails, lastClickedStageId, onStageClick])
 
   // Only force current stage when workflow first starts (not on every render)
   const [hasInitialized, setHasInitialized] = React.useState(false)
@@ -841,6 +876,7 @@ export function InvestmentTimeline({
     if (viewingStageId && viewingStageId !== showStageDetails) {
       console.log(`🔄 External request to view stage: ${viewingStageId}`)
       setShowStageDetails(viewingStageId)
+      setLastClickedStageId(viewingStageId) // Set for blue ring styling
       onStageClick(viewingStageId)
       // Clear the viewing stage ID after setting it to allow normal clicking
       if (onViewingStageChange) {
@@ -869,6 +905,9 @@ export function InvestmentTimeline({
   }
 
   const getStageStatus = (stageIndex: number) => {
+    // If workflow is completed, all stages should show as completed
+    if (workflowProgress?.is_completed) return 'completed'
+
     const currentIndex = getCurrentStageIndex()
     if (stageIndex < currentIndex) return 'completed'
     if (stageIndex === currentIndex) return 'current'
@@ -915,6 +954,12 @@ export function InvestmentTimeline({
     }
   }
 
+  // Helper function to check if a checklist item is "done" (completed or N/A)
+  const isItemDone = (item: ChecklistItem) => {
+    const status = item.status || (item.completed ? 'completed' : 'unchecked')
+    return status === 'completed' || status === 'na'
+  }
+
   const isCurrentStageCompleted = () => {
     const currentIndex = getCurrentStageIndex()
     const currentStageId = TIMELINE_STAGES[currentIndex]?.id
@@ -925,10 +970,14 @@ export function InvestmentTimeline({
 
     if (!stageChecklists[currentStageId]) return false
 
-    return stageChecklists[currentStageId].every(item => item.completed)
+    return stageChecklists[currentStageId].every(item => isItemDone(item))
   }
 
   const isStageEditable = (stageId: string) => {
+    // If workflow is marked as completed, lock all editing until resumed
+    if (workflowProgress?.is_completed) {
+      return false
+    }
     // Allow editing any stage to enable flexible workflow
     return true
   }
@@ -945,18 +994,20 @@ export function InvestmentTimeline({
       const currentStageId = timelineStages[currentIndex].id
       const currentTime = new Date().toISOString()
 
-      // Update completion timestamps for all completed items in current stage
+      // Update completion timestamps for all completed items in current stage (including N/A items)
       const currentStageItems = stageChecklists[currentStageId] || []
       const updatePromises = currentStageItems
-        .filter(item => item.completed && !item.completedAt)
+        .filter(item => isItemDone(item) && !item.completedAt)
         .map(item =>
           saveChecklistItemMutation.mutateAsync({
             assetId,
             stageId: currentStageId,
             itemId: item.id,
             completed: item.completed,
+            status: item.status,
             comment: item.comment,
-            completedAt: currentTime
+            completedAt: currentTime,
+            completedBy: user?.id
           })
         )
 
@@ -1067,7 +1118,11 @@ export function InvestmentTimeline({
 
   const handleChecklistToggle = (stageId: string, itemId: string) => {
     if (!isStageEditable(stageId)) {
-      alert('This checklist is locked. You can only edit items from the current stage.')
+      if (workflowProgress?.is_completed) {
+        alert('This workflow has been marked complete. Click "Resume Workflow" to continue working on it.')
+      } else {
+        alert('This checklist is locked. You can only edit items from the current stage.')
+      }
       return
     }
 
@@ -1079,8 +1134,28 @@ export function InvestmentTimeline({
     const currentItem = stageChecklists[stageId]?.find(item => item.id === itemId)
     if (!currentItem) return
 
-    const newCompleted = !currentItem.completed
-    const newCompletedAt = newCompleted ? new Date().toISOString() : undefined
+    // Cycle through states: unchecked -> completed -> na -> unchecked
+    const currentStatus = currentItem.status || (currentItem.completed ? 'completed' : 'unchecked')
+    let newStatus: 'unchecked' | 'completed' | 'na'
+
+    if (currentStatus === 'unchecked') {
+      newStatus = 'completed'
+    } else if (currentStatus === 'completed') {
+      newStatus = 'na'
+    } else {
+      newStatus = 'unchecked'
+    }
+
+    const newCompleted = newStatus === 'completed'
+    const isDone = newStatus === 'completed' || newStatus === 'na'
+    const newCompletedAt = isDone ? new Date().toISOString() : undefined
+    const newCompletedBy = isDone ? user?.id : undefined
+    const newCompletedByUser = isDone && user ? {
+      id: user.id,
+      email: user.email || '',
+      first_name: (user as any).first_name || null,
+      last_name: (user as any).last_name || null
+    } : undefined
 
     // Update local state immediately for responsiveness
     setStageChecklists(prev => ({
@@ -1089,7 +1164,10 @@ export function InvestmentTimeline({
         item.id === itemId ? {
           ...item,
           completed: newCompleted,
-          completedAt: newCompletedAt
+          status: newStatus,
+          completedAt: newCompletedAt,
+          completedBy: newCompletedBy,
+          completedByUser: newCompletedByUser
         } : item
       ) || []
     }))
@@ -1100,8 +1178,10 @@ export function InvestmentTimeline({
       stageId,
       itemId,
       completed: newCompleted,
+      status: newStatus,
       comment: currentItem.comment,
-      completedAt: newCompletedAt
+      completedAt: newCompletedAt,
+      completedBy: newCompletedBy
     })
   }
 
@@ -1888,7 +1968,7 @@ export function InvestmentTimeline({
 
                 // Get task progress for this stage
                 const stageChecklistItems = stageChecklists[stage.id] || []
-                const completedTasks = stageChecklistItems.filter(item => item.completed).length
+                const completedTasks = stageChecklistItems.filter(item => isItemDone(item)).length
                 const totalTasks = stageChecklistItems.length
                 const progressPercent = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0
 
@@ -1938,7 +2018,7 @@ export function InvestmentTimeline({
                     {/* Blue glow border for selected state */}
                     {isSelected && (
                       <div
-                        className="absolute pointer-events-none z-20"
+                        className="absolute pointer-events-none z-[2]"
                         style={{
                           top: '-5px',
                           left: '-5px',
@@ -1962,8 +2042,8 @@ export function InvestmentTimeline({
                         relative w-full py-5 px-6 transition-all duration-300 min-w-0
                         ${colors.bg} ${colors.text}
                         ${isSelected
-                          ? 'z-30'
-                          : 'shadow-lg hover:shadow-xl hover:z-20'
+                          ? 'z-[3]'
+                          : 'shadow-lg hover:shadow-xl hover:z-[2]'
                         }
                         ${isFirst ? 'rounded-l-xl' : ''}
                         ${isLast ? 'rounded-r-xl' : ''}
@@ -2005,7 +2085,7 @@ export function InvestmentTimeline({
 
                         {/* Progress */}
                         {totalTasks > 0 ? (
-                          <div className="space-y-1.5">
+                          <div className="space-y-1.5 pr-8">
                             <div className={`h-1.5 ${colors.progressTrack} rounded-full overflow-hidden`}>
                               <div
                                 className={`h-full ${colors.progressFill} rounded-full transition-all duration-500`}
@@ -2013,8 +2093,8 @@ export function InvestmentTimeline({
                               />
                             </div>
                             <div className={`flex items-center justify-between text-xs font-semibold ${colors.accent}`}>
-                              <span>{completedTasks}/{totalTasks} tasks</span>
-                              <span>{Math.round(progressPercent)}%</span>
+                              <span className="truncate mr-2">{completedTasks}/{totalTasks} tasks</span>
+                              <span className="flex-shrink-0">{Math.round(progressPercent)}%</span>
                             </div>
                           </div>
                         ) : (
@@ -2238,7 +2318,7 @@ export function InvestmentTimeline({
                     <Calendar className="w-4 h-4 mr-2" />
                     Checklist
                     <span className="ml-2 text-xs text-gray-500">
-                      ({stageChecklists[showStageDetails].filter(item => item.completed).length}/{stageChecklists[showStageDetails].length} completed)
+                      ({stageChecklists[showStageDetails].filter(item => isItemDone(item)).length}/{stageChecklists[showStageDetails].length} completed)
                     </span>
                   </h5>
                 </div>
@@ -2250,7 +2330,7 @@ export function InvestmentTimeline({
                     return (
                       <div key={item.id}>
                         <div
-                          className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${
+                          className={`flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
                             isEditable
                               ? 'border-gray-200 hover:bg-gray-50'
                               : 'border-gray-100 bg-gray-50'
@@ -2260,24 +2340,29 @@ export function InvestmentTimeline({
                         >
                           <button
                             onClick={() => handleChecklistToggle(showStageDetails, item.id)}
-                            disabled={!isEditable || saveChecklistItemMutation.isPending}
-                            className={`flex-shrink-0 w-5 h-5 rounded border-2 transition-colors ${
-                              item.completed
+                            disabled={!isEditable}
+                            className={`flex-shrink-0 w-5 h-5 rounded border-2 transition-colors flex items-center justify-center ${
+                              (item.status || (item.completed ? 'completed' : 'unchecked')) === 'completed'
                                 ? 'bg-green-500 border-green-500 text-white'
-                                : isEditable && !saveChecklistItemMutation.isPending
+                                : (item.status || (item.completed ? 'completed' : 'unchecked')) === 'na'
+                                ? 'bg-gray-400 border-gray-400 text-white'
+                                : isEditable
                                 ? 'border-gray-300 hover:border-gray-400'
                                 : 'border-gray-200'
                             } ${
-                              !isEditable || saveChecklistItemMutation.isPending ? 'cursor-not-allowed' : 'cursor-pointer'
+                              !isEditable ? 'cursor-not-allowed' : 'cursor-pointer'
                             }`}
                           >
-                            {item.completed && (
-                              <Check className="w-3 h-3 m-0.5" />
+                            {(item.status || (item.completed ? 'completed' : 'unchecked')) === 'completed' && (
+                              <Check className="w-3 h-3" />
+                            )}
+                            {(item.status || (item.completed ? 'completed' : 'unchecked')) === 'na' && (
+                              <X className="w-3 h-3" />
                             )}
                           </button>
 
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
+                          <div className="flex-1 flex items-center">
+                            <div className="flex items-center justify-between flex-1">
                               <span className={`text-sm ${
                                 item.completed
                                   ? 'text-gray-600 font-medium'
@@ -2286,19 +2371,31 @@ export function InvestmentTimeline({
                                 {item.text}
                               </span>
 
-                              <div className="flex items-center space-x-2">
+                              <div className="flex items-center space-x-2 ml-4">
 
-                                {item.completedAt && (
-                                  <span className="text-xs text-gray-400">
-                                    {new Date(item.completedAt).toLocaleString(undefined, {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      year: 'numeric',
-                                      hour: 'numeric',
-                                      minute: '2-digit'
-                                    })}
-                                  </span>
-                                )}
+                                <div className="text-xs text-gray-400 text-right min-w-[140px] h-[32px] flex flex-col justify-center">
+                                  {item.completedAt && (
+                                    <>
+                                      <div className="leading-tight">
+                                        {new Date(item.completedAt).toLocaleString(undefined, {
+                                          month: 'short',
+                                          day: 'numeric',
+                                          year: 'numeric',
+                                          hour: 'numeric',
+                                          minute: '2-digit'
+                                        })}
+                                      </div>
+                                      {item.completedByUser && (
+                                        <div className="leading-tight">
+                                          by {item.completedByUser.first_name && item.completedByUser.last_name
+                                            ? `${item.completedByUser.first_name} ${item.completedByUser.last_name}`
+                                            : item.completedByUser.email.split('@')[0]
+                                          }
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
 
                                 {(() => {
                                   const comments = itemComments?.[`${showStageDetails}-${item.id}`] || []
@@ -2399,7 +2496,7 @@ export function InvestmentTimeline({
                                   </div>
                                 )}
 
-                                {item.isCustom && (
+                                {item.isCustom && isEditable && (
                                   <button
                                     onClick={() => handleRemoveCustomItem(showStageDetails, item.id)}
                                     className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
@@ -2650,7 +2747,7 @@ export function InvestmentTimeline({
                   })}
 
                   {/* Add Custom Item Section */}
-                  {showStageDetails && showStageDetails !== 'outdated' && (
+                  {showStageDetails && showStageDetails !== 'outdated' && !workflowProgress?.is_completed && (
                     <div className="mt-3">
                       {addingItemToStage === showStageDetails ? (
                         <div className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
@@ -2743,7 +2840,7 @@ export function InvestmentTimeline({
                   <div className="text-xs mt-1 text-blue-600">
                     {effectiveCurrentStage === 'outdated'
                       ? '✓ Portfolio review stage - ready to prioritize'
-                      : `${stageChecklists[effectiveCurrentStage]?.filter(item => item.completed).length || 0} of ${stageChecklists[effectiveCurrentStage]?.length || 0} items completed`
+                      : `${stageChecklists[effectiveCurrentStage]?.filter(item => isItemDone(item)).length || 0} of ${stageChecklists[effectiveCurrentStage]?.length || 0} items completed`
                     }
                   </div>
                 )}
@@ -2751,7 +2848,7 @@ export function InvestmentTimeline({
 
               {/* Stage Action Buttons */}
               <div className="flex items-center space-x-2">
-                {currentIndex > 0 && isWorkflowStarted && (
+                {currentIndex > 0 && isWorkflowStarted && !workflowProgress?.is_completed && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -2762,7 +2859,7 @@ export function InvestmentTimeline({
                   </Button>
                 )}
 
-                {currentIndex < timelineStages.length - 1 && isWorkflowStarted && (
+                {currentIndex < timelineStages.length - 1 && isWorkflowStarted && !workflowProgress?.is_completed && (
                   <Button
                     size="sm"
                     onClick={handleAdvanceStage}

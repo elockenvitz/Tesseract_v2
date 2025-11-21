@@ -347,26 +347,60 @@ export function DashboardPage() {
     }
   }
 
-  const handleSearchResult = (result: any) => {
+  const handleSearchResult = async (result: any) => {
     console.log(`🎯 DashboardPage: handleSearchResult called with:`, {
       resultId: result.id,
       resultType: result.type,
       hasData: !!result.data,
-      dataWorkflowId: result.data?.workflow_id
+      dataWorkflowId: result.data?.workflow_id,
+      dataSymbol: result.data?.symbol,
+      dataId: result.data?.id
     })
 
-    // Check if a tab with this ID already exists
-    const existingTab = tabs.find(tab => tab.id === result.id)
+    // For asset type, if we don't have an ID but have a symbol, fetch the asset by symbol
+    if (result.type === 'asset' && !result.data?.id && result.data?.symbol) {
+      console.log('🔍 DashboardPage: Fetching asset by symbol:', result.data.symbol)
+      const { data: assetData, error } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('symbol', result.data.symbol)
+        .single()
+
+      if (!error && assetData) {
+        console.log('✅ DashboardPage: Found asset by symbol:', assetData.id)
+        // Merge the fetched asset data with the navigation data
+        result.data = { ...assetData, ...result.data }
+        result.id = assetData.id
+      } else {
+        console.error('❌ DashboardPage: Failed to fetch asset by symbol:', error)
+      }
+    }
+
+    // Check if a tab with this ID or symbol already exists (for asset tabs)
+    const existingTab = tabs.find(tab => {
+      if (tab.id === result.id) return true
+      // For asset tabs, also check by symbol
+      if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
+      if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
+      return false
+    })
+
     if (existingTab) {
-      console.log(`🔄 DashboardPage: Existing tab found, updating data and activating`)
-      // If tab exists, update its data and activate it
+      console.log(`🔄 DashboardPage: Existing tab found, updating data and activating`, {
+        existingTabId: existingTab.id,
+        resultId: result.id,
+        mergedData: { ...existingTab.data, ...result.data }
+      })
+      // If tab exists, update its data (merge with existing) and activate it
       setTabs(tabs.map(tab => ({
         ...tab,
-        isActive: tab.id === result.id,
-        // Update the data if this is the matching tab
-        ...(tab.id === result.id && result.data ? { data: result.data } : {})
+        isActive: tab.id === existingTab.id,
+        // Merge the new data with existing data if this is the matching tab
+        ...(tab.id === existingTab.id && result.data ? {
+          data: { ...tab.data, ...result.data }
+        } : {})
       })))
-      setActiveTabId(result.id)
+      setActiveTabId(existingTab.id)
       return
     }
     
