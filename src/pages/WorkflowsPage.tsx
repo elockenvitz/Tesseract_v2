@@ -2129,11 +2129,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     // Now handled by ConfirmDialog modal
     setIsTemplateEditMode(false)
     setTemplateChanges([])
+    // Reset universe rules to initial state
+    setUniverseRulesState(initialUniverseRules)
     // Refetch data to reset any optimistic updates
     queryClient.invalidateQueries({ queryKey: ['workflows'] })
     queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
     queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
     queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+    queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', selectedWorkflow?.id] })
   }
 
   // Save changes and create version
@@ -5103,7 +5106,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     onRulesChange={handleUniverseRulesChange}
                     onSave={saveUniverseRules}
                     isEditable={isTemplateEditMode}
-                    analysts={analysts.map(a => ({ value: a.value, label: a.label }))}
+                    analysts={analysts?.map(a => ({ value: a.user_id, label: a.analyst_name })) || []}
                     lists={assetLists.map(l => ({ value: l.id, label: l.name }))}
                     themes={themes.map(t => ({ value: t.id, label: t.name }))}
                     portfolios={[]} // Add portfolios when available

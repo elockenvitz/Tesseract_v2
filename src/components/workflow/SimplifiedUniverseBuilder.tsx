@@ -49,6 +49,7 @@ export function SimplifiedUniverseBuilder({
   themes = [],
   portfolios = []
 }: SimplifiedUniverseBuilderProps) {
+  console.log('SimplifiedUniverseBuilder analysts prop:', analysts)
   const [showAddFilter, setShowAddFilter] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [editingRule, setEditingRule] = useState<FilterRule | null>(null)
@@ -203,6 +204,31 @@ export function SimplifiedUniverseBuilder({
       }
     }
 
+    // If editing an analyst filter, fetch the full details for selected analysts
+    if (rule.type === 'analyst' && Array.isArray(rule.values) && rule.values.length > 0) {
+      const { data } = await supabase
+        .from('coverage')
+        .select('user_id, analyst_name')
+        .in('user_id', rule.values)
+
+      if (data) {
+        // Get unique analysts
+        const uniqueAnalysts = data.reduce((acc: any[], curr) => {
+          if (!acc.find(a => a.user_id === curr.user_id)) {
+            acc.push(curr)
+          }
+          return acc
+        }, [])
+
+        setSelectedAnalystsCache(
+          uniqueAnalysts.map(analyst => ({
+            value: analyst.user_id,
+            label: analyst.analyst_name
+          }))
+        )
+      }
+    }
+
     setShowAddFilter(true)
   }
 
@@ -258,6 +284,7 @@ export function SimplifiedUniverseBuilder({
     setFilterSearch('')
     setShowSelectedOnly(false)
     setSelectedSymbolsCache([])
+    setSelectedAnalystsCache([])
   }
 
   // State for symbol typeahead
@@ -265,6 +292,10 @@ export function SimplifiedUniverseBuilder({
   const [symbolSuggestions, setSymbolSuggestions] = React.useState<Array<{ value: string; label: string }>>([])
   const [showSelectedOnly, setShowSelectedOnly] = React.useState(false)
   const [selectedSymbolsCache, setSelectedSymbolsCache] = React.useState<Array<{ value: string; label: string }>>([])
+
+  // State for analyst typeahead
+  const [analystSuggestions, setAnalystSuggestions] = React.useState<Array<{ value: string; label: string }>>([])
+  const [selectedAnalystsCache, setSelectedAnalystsCache] = React.useState<Array<{ value: string; label: string }>>([])
 
   // Fetch symbol suggestions
   const fetchSymbolSuggestions = React.useCallback(async (query: string) => {
@@ -287,6 +318,38 @@ export function SimplifiedUniverseBuilder({
     )
   }, [])
 
+  // Fetch analyst suggestions
+  const fetchAnalystSuggestions = React.useCallback(async (query: string) => {
+    if (query.length < 1) {
+      setAnalystSuggestions([])
+      return
+    }
+
+    const { data } = await supabase
+      .from('coverage')
+      .select('user_id, analyst_name')
+      .ilike('analyst_name', `%${query}%`)
+      .order('analyst_name')
+      .limit(20)
+
+    if (data) {
+      // Get unique analysts
+      const uniqueAnalysts = data.reduce((acc: any[], curr) => {
+        if (!acc.find(a => a.user_id === curr.user_id)) {
+          acc.push(curr)
+        }
+        return acc
+      }, [])
+
+      setAnalystSuggestions(
+        uniqueAnalysts.map(analyst => ({
+          value: analyst.user_id,
+          label: analyst.analyst_name
+        }))
+      )
+    }
+  }, [])
+
   // Get options for multi-select filters
   const getOptionsForFilter = (filterType: string): Array<{ value: string; label: string }> => {
     switch (filterType) {
@@ -300,6 +363,20 @@ export function SimplifiedUniverseBuilder({
         })
         return allSymbolOptions
       case 'analyst':
+        // When in edit mode (modal is open), use typeahead results
+        // Otherwise, use full analysts list for display
+        if (showAddFilter && (selectedAnalystsCache.length > 0 || analystSuggestions.length > 0)) {
+          const allAnalystOptions = [...selectedAnalystsCache]
+          analystSuggestions.forEach(suggestion => {
+            if (!allAnalystOptions.find(opt => opt.value === suggestion.value)) {
+              allAnalystOptions.push(suggestion)
+            }
+          })
+          console.log('Returning cached analysts (edit mode):', allAnalystOptions)
+          return allAnalystOptions
+        }
+        // Use full analysts list for display of saved rules
+        console.log('Returning full analysts list:', analysts)
         return analysts
       case 'list':
         return lists
@@ -347,20 +424,28 @@ export function SimplifiedUniverseBuilder({
             return currentValues?.includes(opt.value)
           }
           // Otherwise, apply search filter
-          return opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+          return opt.label?.toLowerCase().includes(searchTerm.toLowerCase())
         })
 
         return (
           <div className="space-y-3">
             <input
               type="text"
-              placeholder={definition.id === 'symbol' ? 'Type to search tickers...' : 'Search...'}
+              placeholder={
+                definition.id === 'symbol'
+                  ? 'Type to search tickers...'
+                  : definition.id === 'analyst'
+                  ? 'Type to search analysts...'
+                  : 'Search...'
+              }
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value)
                 setShowSelectedOnly(false) // Reset when user types
                 if (definition.id === 'symbol') {
                   fetchSymbolSuggestions(e.target.value)
+                } else if (definition.id === 'analyst') {
+                  fetchAnalystSuggestions(e.target.value)
                 }
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
@@ -388,11 +473,19 @@ export function SimplifiedUniverseBuilder({
                             if (definition.id === 'symbol' && !selectedSymbolsCache.find(s => s.value === option.value)) {
                               setSelectedSymbolsCache([...selectedSymbolsCache, option])
                             }
+                            // Cache analyst information for later display
+                            if (definition.id === 'analyst' && !selectedAnalystsCache.find(a => a.value === option.value)) {
+                              setSelectedAnalystsCache([...selectedAnalystsCache, option])
+                            }
                           } else {
                             setCurrentValues(newValues.filter((v: string) => v !== option.value))
                             // Remove from cache when unchecked
                             if (definition.id === 'symbol') {
                               setSelectedSymbolsCache(selectedSymbolsCache.filter(s => s.value !== option.value))
+                            }
+                            // Remove from cache when unchecked
+                            if (definition.id === 'analyst') {
+                              setSelectedAnalystsCache(selectedAnalystsCache.filter(a => a.value !== option.value))
                             }
                           }
                         } else {
@@ -720,8 +813,10 @@ export function SimplifiedUniverseBuilder({
                           if (Array.isArray(rule.values)) {
                             // Get the options for this filter type to look up labels
                             const options = getOptionsForFilter(rule.type)
+                            console.log('Display rule:', { type: rule.type, values: rule.values, options })
                             const labels = rule.values.map(val => {
                               const option = options.find(opt => opt.value === val)
+                              console.log('Looking up:', { val, option, found: !!option })
                               return option ? option.label : val
                             })
 
