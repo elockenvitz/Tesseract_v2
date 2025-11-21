@@ -45,6 +45,7 @@ interface WorkflowWithStats {
   stages?: WorkflowStage[]
   user_permission?: 'read' | 'write' | 'admin' | 'owner'
   usage_stats?: any[]
+  active_version_number?: number
   archived?: boolean
   archived_at?: string
   archived_by?: string
@@ -1261,6 +1262,39 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       const favoritedWorkflowIds = new Set(userFavorites?.map(f => f.workflow_id) || [])
 
+      // Get active template versions for all workflows
+      const { data: activeVersions } = await supabase
+        .from('workflow_template_versions')
+        .select('workflow_id, version_number, id')
+        .eq('is_active', true)
+
+      // Create a map of workflow_id to active version number
+      const activeVersionMap = new Map(
+        (activeVersions || []).map(v => [v.workflow_id, v.version_number])
+      )
+
+      // Get user's collaborations with permissions
+      const { data: collaborations } = await supabase
+        .from('workflow_collaborations')
+        .select('workflow_id, permission')
+        .eq('user_id', userId)
+
+      // Create a map of workflow_id to collaboration permission
+      const collaborationMap = new Map(
+        (collaborations || []).map(c => [c.workflow_id, c.permission])
+      )
+
+      // Get workflows where user is a stakeholder
+      const { data: stakeholderWorkflows } = await supabase
+        .from('workflow_stakeholders')
+        .select('workflow_id')
+        .eq('user_id', userId)
+
+      // Create a set of workflow IDs where user is stakeholder
+      const stakeholderWorkflowIds = new Set(
+        (stakeholderWorkflows || []).map(s => s.workflow_id)
+      )
+
       // Calculate statistics for each workflow
       const workflowsWithStats: WorkflowWithStats[] = (workflowData || []).map(workflow => {
         const workflowUsage = usageStats?.filter(stat => stat.workflow_id === workflow.id) || []
@@ -1275,6 +1309,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         let userPermission: 'read' | 'write' | 'admin' | 'owner' = 'read'
         if (workflow.created_by === userId) {
           userPermission = 'owner'
+        } else if (stakeholderWorkflowIds.has(workflow.id)) {
+          // User is a stakeholder - read-only access
+          userPermission = 'read'
+        } else if (collaborationMap.has(workflow.id)) {
+          // User is a collaborator - use their permission level
+          userPermission = collaborationMap.get(workflow.id) as 'read' | 'write' | 'admin'
         } else if (workflow.name === 'Research Workflow') {
           // For Research Workflow, all logged-in users can be admin
           userPermission = 'admin'
@@ -1295,7 +1335,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           is_favorited: favoritedWorkflowIds.has(workflow.id),
           stages: workflowStagesData,
           user_permission: userPermission,
-          usage_stats: workflowUsage // Include detailed usage stats for progress calculation
+          usage_stats: workflowUsage, // Include detailed usage stats for progress calculation
+          active_version_number: activeVersionMap.get(workflow.id) // Add active version number
         }
       })
 
@@ -6620,7 +6661,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                 <div key={category} className="space-y-3">
                                   {/* Category Header */}
                                   <div className="flex items-center space-x-2 mb-4">
-                                    <div className={`w-3 h-3 rounded-full ${categoryColor}`}></div>
                                     <h4 className="text-sm font-semibold text-gray-700">{category}</h4>
                                     <span className="text-xs text-gray-500">({workflows.length} workflow{workflows.length !== 1 ? 's' : ''})</span>
                                   </div>
@@ -6634,7 +6674,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                         onClick={() => handleSelectWorkflow(workflow)}
                                       >
                                         {/* Workflow Header */}
-                                        <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center justify-between">
                                           <div className="flex items-center space-x-3">
                                             <div
                                               className="w-3 h-3 rounded-full flex-shrink-0"
@@ -6643,47 +6683,31 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                                             <div>
                                               <div className="flex items-center space-x-2">
                                                 <h5 className="text-sm font-semibold text-gray-900">{workflow.name}</h5>
+                                                {workflow.active_version_number && (
+                                                  <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                                                    {formatVersion(workflow.active_version_number)}
+                                                  </span>
+                                                )}
                                               </div>
                                             </div>
                                           </div>
 
                                           {/* Activity Stats */}
                                           <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                            <div className="flex items-center space-x-1">
+                                            <div className="flex items-center space-x-1" title="Active assets in progress">
                                               <Activity className="w-3 h-3 text-green-500" />
                                               <span>{workflow.active_assets}</span>
                                             </div>
-                                            <div className="flex items-center space-x-1">
+                                            <div className="flex items-center space-x-1" title="Total usage count">
                                               <Target className="w-3 h-3 text-blue-500" />
                                               <span>{workflow.usage_count}</span>
                                             </div>
-                                            <div className="flex items-center space-x-1">
+                                            <div className="flex items-center space-x-1" title="Completed assets">
                                               <CheckSquare className="w-3 h-3 text-gray-500" />
                                               <span>{workflow.completed_assets}</span>
                                             </div>
                                           </div>
                                         </div>
-
-                                        {/* Stages Preview */}
-                                        {workflow.stages && Array.isArray(workflow.stages) && workflow.stages.length > 0 ? (
-                                          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center space-x-2">
-                                            <span className="text-xs text-gray-500">Stages:</span>
-                                            <div className="flex items-center space-x-1">
-                                              {workflow.stages.filter(s => s).map((stage, idx) => (
-                                                <div
-                                                  key={stage?.id || `stage-${idx}`}
-                                                  className="w-2 h-2 rounded-full"
-                                                  style={{ backgroundColor: workflow.color || '#94a3b8' }}
-                                                  title={stage?.stage_label || `Stage ${idx + 1}`}
-                                                />
-                                              ))}
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div className="mt-3 pt-3 border-t border-gray-100">
-                                            <span className="text-xs text-gray-400 italic">No stages configured</span>
-                                          </div>
-                                        )}
                                       </div>
                                     )
                                   })}

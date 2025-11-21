@@ -651,12 +651,14 @@ export function SimplifiedUniverseBuilder({
           </div>
           <h4 className="text-lg font-medium text-gray-900 mb-2">No Filters Defined</h4>
           <p className="text-sm text-gray-500 mb-4">
-            Add filters to define your universe of assets
+            {isEditable ? 'Add filters to define your universe of assets' : 'No universe filters have been defined for this workflow'}
           </p>
-          <Button onClick={openAddFilterModal}>
-            <Plus className="w-4 h-4 mr-1" />
-            Add First Filter
-          </Button>
+          {isEditable && (
+            <Button onClick={openAddFilterModal}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add First Filter
+            </Button>
+          )}
         </Card>
       ) : (
         <div className="space-y-2">
