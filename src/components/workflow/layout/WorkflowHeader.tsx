@@ -14,13 +14,13 @@ import { Pencil, Save, X, AlertCircle, ChevronDown, BarChart3, UserCog, Globe, T
 import { Button } from '../../ui/Button'
 import { WorkflowWithStats } from '../../../types/workflow/workflow.types'
 
-interface TemplateChange {
+export interface TemplateChange {
   type: string
   description: string
   timestamp: number
 }
 
-interface WorkflowHeaderProps {
+export interface WorkflowHeaderProps {
   workflow: WorkflowWithStats
   activeView: 'overview' | 'admins' | 'universe' | 'stages' | 'cadence' | 'branches' | 'models'
   onTabChange: (view: 'overview' | 'admins' | 'universe' | 'stages' | 'cadence' | 'branches' | 'models') => void

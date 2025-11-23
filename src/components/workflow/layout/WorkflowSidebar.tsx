@@ -12,7 +12,7 @@ import { Plus, Search, Star, ChevronDown, Home } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { WorkflowWithStats } from '../../../types/workflow/workflow.types'
 
-interface WorkflowSidebarProps {
+export interface WorkflowSidebarProps {
   // Search and filter
   searchTerm: string
   setSearchTerm: (value: string) => void
