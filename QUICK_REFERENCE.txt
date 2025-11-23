@@ -1,0 +1,238 @@
+WorkflowsPage.tsx REFACTORING - QUICK REFERENCE
+================================================
+
+CURRENT PROBLEM
+===============
+- 11,212 lines in ONE file
+- 47 state variables scattered everywhere  
+- 17 query hooks duplicated logic
+- 14+ modal dialogs inline
+- 7 different views using same state
+- 0% test coverage (file too big)
+- HARD to maintain, debug, or test
+
+KEY METRICS
+===========
+Lines of Code:      11,212 (way too big)
+State Variables:    47 (explosion!)
+Hooks:              32+ (17 queries + 15 mutations)
+Modals:             14+ (very tangled)
+Conditional Views:  7 (complex routing)
+
+SOLUTION: Extract into 30+ Components
+======================================
+
+MAIN COMPONENTS (10 files)
+- WorkflowsPage (200 lines) - main container
+- WorkflowsSidebar (280 lines) - left panel
+- WorkflowHeader (170 lines) - top bar
+- WorkflowTabNavigation (80 lines) - tabs
+
+VIEW COMPONENTS (7 files)
+- WorkflowOverviewView (510 lines)
+- WorkflowStagesView (244 lines)
+- WorkflowAdminsView (344 lines)
+- WorkflowUniverseView (25 lines)
+- WorkflowCadenceView (413 lines)
+- WorkflowBranchesView (913 lines) **LARGEST
+- WorkflowModelsView (200 lines)
+
+MODAL COMPONENTS (14 files)
+- AddStageModal (150 lines)
+- AddChecklistItemModal (120 lines)
+- InviteTeamModal (200 lines)
+- AddStakeholderModal (100 lines)
+- CreateBranchModal (200 lines)
+- UniversePreviewModal (150 lines)
+- TemplateVersionsModal (180 lines)
+- CreateVersionModal (150 lines)
+- VersionCreatedModal (100 lines)
+- VersionDetailModal (180 lines)
+- AccessRequestModal (200 lines)
+- AddRuleModal (350 lines) **MOST COMPLEX
+- ConfirmationModal (100 lines)
+- DeleteStageModal (80 lines)
+
+CUSTOM HOOKS (5 files)
+- useWorkflowQueries (400 lines) - all 17 queries
+- useWorkflowState (150 lines) - all UI state
+- useWorkflowMutations (450 lines) - all 15+ mutations
+- useTemplateEditMode (200 lines) - version logic
+- useBranchManagement (200 lines) - branch logic
+
+UTILITIES (4 files)
+- suffixHelpers.ts (100 lines)
+- workflowHelpers.ts (150 lines)
+- dragDropHelpers.ts (100 lines)
+- assetCategorization.ts (100 lines)
+
+FORMS (3 files)
+- CreateWorkflowForm (300 lines)
+- EditWorkflowForm (200 lines)
+- BranchSuffixForm (150 lines)
+
+TYPES (3 files)
+- workflow.ts (50 lines)
+- branch.ts (50 lines)
+- forms.ts (50 lines)
+
+CONTEXT (3 files)
+- WorkflowContext.ts (100 lines)
+- WorkflowStateProvider.tsx (200 lines)
+- useWorkflowContext.ts (50 lines)
+
+TOTAL: 35 files, ~7,500 lines
+(vs 1 file with 11,212 lines)
+
+EXTRACTION TIMELINE
+===================
+
+WEEK 1: FOUNDATION (Low Risk)
+- Types, constants, utilities
+- Query hooks
+- State hooks
+Effort: 20 hours
+
+WEEK 2: LAYOUT (Low-Medium Risk)  
+- Sidebar, Header, Tabs
+- Mutation hooks
+Effort: 12 hours
+
+WEEK 3: VIEWS (Medium-High Risk)
+- 7 view components
+- Simple views first, complex last
+Effort: 40 hours
+
+WEEK 4: MODALS & FORMS (Medium Risk)
+- All 14 modals
+- All 3 forms
+Effort: 15 hours
+
+WEEK 5: INTEGRATION (Medium Risk)
+- Context/Provider
+- Connect components
+- Full testing
+Effort: 10 hours
+
+TOTAL: ~95 hours = 2.5 weeks
+
+BEFORE vs AFTER
+===============
+
+BEFORE (Current)
+- Max file: 11,212 lines
+- Avg complexity: EXTREME
+- Test coverage: 0%
+- Setup time: 1+ weeks
+- Debug time: Hours
+- Maintainability: HARD
+
+AFTER (Refactored)
+- Max file: 600 lines
+- Avg complexity: LOW
+- Test coverage: 80%+
+- Setup time: 1-2 days
+- Debug time: 30 min
+- Maintainability: EASY
+
+TOP RISKS & HOW TO HANDLE
+==========================
+
+1. BREAKING EXISTING FEATURES
+   Risk: HIGH
+   Mitigation: Comprehensive testing, keep original file as backup
+   
+2. STATE MANAGEMENT COMPLEXITY
+   Risk: MEDIUM
+   Mitigation: Use Context API (simple), not Redux
+   
+3. PROP DRILLING
+   Risk: MEDIUM
+   Mitigation: Use context for deep dependencies
+   
+4. BUNDLE SIZE INCREASE
+   Risk: LOW
+   Mitigation: No new code, just reorganized
+   
+5. PERFORMANCE REGRESSION
+   Risk: LOW
+   Mitigation: Benchmark before/after
+
+EXTRACTION DIFFICULTY
+======================
+
+EASIEST (Extract First)
+- Types/Constants
+- Utilities
+- Tab Navigation
+
+MEDIUM (Extract Second)
+- Sidebar
+- Header
+- Simple Views (Universe, Models)
+- Basic Modals
+
+HARD (Extract Last)
+- Branches View (asset logic is complex)
+- AddRuleModal (complex rule builder)
+- Integration (wiring everything together)
+
+SUCCESS METRICS
+===============
+
+Code Quality:
+✓ Max file size < 600 lines
+✓ Cyclomatic complexity < 5 per file
+✓ 80%+ test coverage
+
+Performance:
+✓ Initial load: No regression
+✓ Re-render: Improved
+✓ Bundle: Same or smaller
+
+Developer Experience:
+✓ Setup time: 1-2 days (vs 1+ weeks)
+✓ Debug time: 30 min (vs hours)
+✓ Feature velocity: 2x faster
+
+CRITICAL SUCCESS FACTORS
+========================
+
+1. Extract in right order
+   - Start with foundation (types, utilities)
+   - Then layout (sidebar, header)
+   - Then views (one at a time)
+   - Then modals (in parallel)
+   - Finally integration
+
+2. Keep original file as backup
+   - Don't delete old WorkflowsPage.tsx
+   - Keep for 1 sprint as safety net
+   - Compare behavior before/after
+
+3. Test thoroughly
+   - Unit tests for utilities/hooks
+   - Component tests for views/modals
+   - Integration tests for flows
+   - E2E tests for critical paths
+
+4. Maintain functionality
+   - All features must work after
+   - No behavior changes
+   - Performance should improve
+
+5. Document as you go
+   - Add prop interfaces
+   - Document hook contracts
+   - Add JSDoc comments
+
+EXPECTED OUTCOME
+================
+
+30+ manageable components (vs 1 massive file)
+Each component: ~250 lines average
+Easy to test, debug, modify
+Clear separation of concerns
+Faster onboarding for new developers
+Lower risk of regressions
+Much better developer experience

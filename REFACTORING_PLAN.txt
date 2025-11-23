@@ -1,0 +1,312 @@
+WORKFLOWSPAGE.TSX REFACTORING PLAN
+===================================
+
+FILE STATISTICS
+- Total Lines: 11,212
+- useState Calls: 47
+- useQuery Calls: 17  
+- useMutation Calls: 15+
+- Modal Dialogs: 14+
+- Conditional Views: 7
+
+MAJOR SECTIONS IDENTIFIED
+=========================
+
+1. SIDEBAR (3451-3690, 240 lines)
+   - Workflow list with search/filter
+   - Persistent/Cadence/Archived sections
+   - Extract to: WorkflowsSidebar.tsx
+
+2. HEADER (3800-3965, 165 lines)
+   - Title/description display
+   - Color picker
+   - Template edit mode
+   - Changes counter
+   - Extract to: WorkflowHeader.tsx
+
+3. TAB NAVIGATION (3967-3996, 30 lines)
+   - 7 tabs: Overview, Team, Universe, Stages, Cadence, Branches, Models
+   - Extract to: WorkflowTabNavigation.tsx
+
+4. VIEWS (3999-6860, 2900 lines)
+   
+   Overview (4000-4509, 510 lines)
+   - Stats cards (usage, active, completed, stages)
+   - Performance metrics
+   - Timeline
+   - Version info
+   - Extract to: WorkflowOverviewView.tsx
+   
+   Stages (4510-4753, 244 lines)
+   - Stage CRUD
+   - Checklist management
+   - Drag-drop
+   - Extract to: WorkflowStagesView.tsx
+   
+   Admins (4754-5097, 344 lines)
+   - Collaborators
+   - Stakeholders
+   - Access requests
+   - Extract to: WorkflowAdminsView.tsx
+   
+   Universe (5098-5122, 25 lines)
+   - Simple wrapper around rule builder
+   - Extract to: WorkflowUniverseView.tsx
+   
+   Cadence (5123-5535, 413 lines)
+   - Frequency settings
+   - Kickoff timing
+   - Auto-branch config
+   - Extract to: WorkflowCadenceView.tsx
+   
+   Branches (5536-6448, 913 lines) **LARGEST**
+   - Branch hierarchy
+   - Asset breakdown
+   - Status filtering
+   - Branch actions
+   - Extract to: WorkflowBranchesView.tsx
+   
+   Models (6448+, 200 lines)
+   - Version management
+   - Extract to: WorkflowModelsView.tsx
+
+5. MODALS (6861-7540+, 1500+ lines)
+   14 different modals:
+   - AddStageModal
+   - AddChecklistItemModal
+   - InviteTeamModal
+   - AddStakeholderModal
+   - CreateBranchModal
+   - UniversePreviewModal
+   - TemplateVersionsModal
+   - CreateVersionModal
+   - VersionCreatedModal
+   - VersionDetailModal
+   - AccessRequestModal
+   - AddRuleModal (350 lines, complex)
+   - ConfirmDeleteModal (3 variants, consolidate)
+   - DeleteStageModal
+   
+   Extract each to: modals/*.tsx
+
+6. UTILITIES (80-3363, 3283 lines)
+   - Dynamic suffix helpers
+   - Workflow editing helpers
+   - Checklist handlers
+   - 40+ mutation handlers
+   - Extract to utils/*.ts
+
+7. INLINE CREATOR (3694-3796, 102 lines)
+   - Workflow creation form
+   - Extract to forms/CreateWorkflowForm.tsx
+
+CUSTOM HOOKS TO CREATE
+======================
+
+1. useWorkflowQueries.ts (400 lines)
+   Consolidate 17 useQuery hooks
+   
+2. useWorkflowState.ts (150 lines)
+   All modal/UI state
+   
+3. useWorkflowMutations.ts (450 lines)
+   All 15+ mutations and handlers
+   
+4. useTemplateEditMode.ts (200 lines)
+   Template editing logic
+   
+5. useBranchManagement.ts (200 lines)
+   Branch-specific logic
+
+EXTRACTION PHASES
+=================
+
+PHASE 1: Foundation (Week 1)
+- Extract types/constants
+- Extract utility functions
+- Create query hooks
+- Create state hooks
+RISK: MINIMAL-LOW
+
+PHASE 2: Layout (Week 2)
+- Extract Sidebar
+- Extract Header
+- Extract Tab Navigation
+RISK: LOW-MEDIUM
+
+PHASE 3: Views (Week 2-3)
+- Extract simple views first (Universe, Models)
+- Then complex views (Overview, Stages, Admins)
+- Finally Branches (highest complexity)
+RISK: MEDIUM-HIGH
+
+PHASE 4: Modals (Week 3)
+- Extract each independently
+- Consolidate similar dialogs
+RISK: LOW-MEDIUM
+
+PHASE 5: Integration (Week 4)
+- Create context/provider
+- Connect components
+- Test full workflows
+RISK: MEDIUM
+
+STATE DEPENDENCIES
+==================
+
+HIGH COUPLING (Extract first):
+- Modal visibility (20+ booleans)
+- View management (activeView)
+- Form data (10+ objects)
+- Query results (17 queries)
+
+MODERATE:
+- Search/filter/sort state
+- Workflow/branch selection
+
+LOW:
+- UI toggles
+- Color picker state
+- Drag-drop state
+
+COMPLEXITY ASSESSMENT
+====================
+
+Sidebar:              MEDIUM (list rendering, selection)
+Header:              MEDIUM (color picker, form)
+Tabs:                LOW (presentation only)
+Overview View:       MEDIUM (many cards, minimal logic)
+Stages View:         MEDIUM-HIGH (drag-drop, forms)
+Admins View:         MEDIUM (team management)
+Universe View:       MEDIUM (delegates to builder)
+Cadence View:        MEDIUM-HIGH (complex config)
+Branches View:       HIGH (asset categorization, hierarchy)
+Models View:         LOW-MEDIUM (simple list)
+
+Modals Overall:      LOW-MEDIUM (mostly forms)
+AddRuleModal:        HIGH (complex rule builder)
+
+ESTIMATED EFFORT
+================
+
+Phase 1: 20 hours
+Phase 2: 12 hours  
+Phase 3: 40 hours
+Phase 4: 15 hours
+Phase 5: 10 hours
+
+TOTAL: ~95-110 hours (~2.5 weeks for 1 developer)
+
+EXPECTED IMPROVEMENTS
+====================
+
+Code Size:
+- 11,212 lines in 1 file -> ~7,500 lines across 30+ files
+- Max file size: 600 lines (vs 11,212)
+
+Test Coverage:
+- 0% -> 80%+ coverage possible
+
+Performance:
+- Tree-shaking opportunities
+- Faster re-renders (granular updates)
+
+Maintainability:
+- Average file: 300 lines (easily understood)
+- Clear responsibilities
+- Easy to test
+
+Developer Experience:
+- Faster onboarding
+- Easier debugging
+- Lower risk modifications
+
+KEY RISKS & MITIGATIONS
+=======================
+
+Risk: State management gets complicated
+Mitigation: Use Context API + custom hooks (simple)
+
+Risk: Prop drilling in views
+Mitigation: Use context consumer components for deep nesting
+
+Risk: Breaking existing functionality
+Mitigation: Parallel development, thorough testing, keep original as backup
+
+Risk: Bundle size increase
+Mitigation: Code is being refactored, not expanded. No net increase.
+
+Risk: Performance regression
+Mitigation: Benchmark before/after, optimize re-renders
+
+RECOMMENDED ORDER
+================
+
+Week 1:
+1. Types/Constants
+2. Utility functions (with unit tests)
+3. Query hooks
+4. State hooks
+
+Week 2:
+5. Mutation hooks
+6. Sidebar component
+7. Header component
+8. Tab navigation
+
+Week 3:
+9. Overview view
+10. Stages view
+11. Admins view
+12. Universe view
+13. Cadence view
+
+Week 4:
+14. Branches view
+15. Models view
+16. Extract modals (parallel possible)
+17. Extract forms
+
+Week 5:
+18. Create context/provider
+19. Refactor main page
+20. Integration testing
+21. Performance testing
+
+TESTING STRATEGY
+================
+
+Unit Tests:
+- All utility functions
+- Hook logic (mock queries)
+- Type validation
+
+Component Tests:
+- Each view with mock data
+- Modal open/close behavior
+- Form validation
+- Drag-drop logic
+
+Integration Tests:
+- Workflow selection -> view update
+- Tab change -> persistence
+- Modal -> mutation -> state
+
+E2E Tests:
+- Full workflow lifecycle
+- Branch creation
+- Team collaboration
+- Version management
+
+SUCCESS CRITERIA
+================
+
+1. All functionality preserved
+2. No performance regression
+3. 80%+ test coverage
+4. All files under 600 lines
+5. Each component has single responsibility
+6. Code review approval
+7. Manual testing pass
+8. Bundle size same or smaller
+
