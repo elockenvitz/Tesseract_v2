@@ -20,6 +20,7 @@
     "@hookform/resolvers": "^3.3.2",
     "@supabase/supabase-js": "^2.39.0",
     "@tanstack/react-query": "^5.17.0",
+    "@tanstack/react-virtual": "^3.13.12",
     "@types/d3-array": "^3.2.2",
     "@types/d3-scale": "^4.0.9",
     "@types/d3-time": "^3.0.4",

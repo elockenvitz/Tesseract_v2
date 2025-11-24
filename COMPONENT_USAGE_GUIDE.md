@@ -8,6 +8,7 @@ This guide demonstrates how to use the new common components throughout the appl
 3. [Loading States](#loading-states)
 4. [Empty States](#empty-states)
 5. [Query Error Display](#query-error-display)
+6. [Virtual Scrolling](#virtual-scrolling)
 
 ---
 
@@ -610,6 +611,74 @@ error('Failed to save', err.message)
 
 ---
 
+---
+
+## Virtual Scrolling
+
+### VirtualList Component
+
+Use the `VirtualList` component for efficiently rendering large lists (100+ items).
+
+```typescript
+import { VirtualList } from '../components/common'
+
+function WorkflowList({ workflows }) {
+  return (
+    <VirtualList
+      items={workflows}
+      height={600}
+      estimateSize={100}
+      renderItem={(workflow, index) => (
+        <WorkflowCard workflow={workflow} />
+      )}
+      getItemKey={(workflow) => workflow.id}
+      emptyState={
+        <EmptyState
+          title="No workflows"
+          description="Create your first workflow"
+        />
+      }
+    />
+  )
+}
+```
+
+### VirtualGrid Component
+
+Use the `VirtualGrid` component for grid layouts with many items.
+
+```typescript
+import { VirtualGrid } from '../components/common'
+
+function AssetGallery({ assets }) {
+  return (
+    <VirtualGrid
+      items={assets}
+      height={600}
+      estimateSize={250}
+      columns={3}
+      gap={16}
+      renderItem={(asset, index) => (
+        <AssetCard asset={asset} />
+      )}
+      getItemKey={(asset) => asset.id}
+    />
+  )
+}
+```
+
+### When to Use Virtual Scrolling
+
+- ✅ Lists with 100+ items
+- ✅ Smooth scrolling performance needed
+- ✅ Consistent item heights (or estimatable)
+- ❌ Lists with <50 items (overhead not worth it)
+- ❌ Highly variable item heights
+
+For complete documentation, see [Virtual Scrolling Guide](./VIRTUAL_SCROLLING_GUIDE.md)
+
+---
+
 ## Additional Resources
 
 - [ErrorBoundary Source](./src/components/common/ErrorBoundary.tsx)
@@ -617,3 +686,5 @@ error('Failed to save', err.message)
 - [LoadingSkeleton Source](./src/components/common/LoadingSkeleton.tsx)
 - [EmptyState Source](./src/components/common/EmptyState.tsx)
 - [QueryErrorDisplay Source](./src/components/common/QueryErrorDisplay.tsx)
+- [VirtualList Source](./src/components/common/VirtualList.tsx)
+- [Virtual Scrolling Guide](./VIRTUAL_SCROLLING_GUIDE.md)
