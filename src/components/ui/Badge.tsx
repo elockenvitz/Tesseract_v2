@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { clsx } from 'clsx'
 
 interface BadgeProps {
@@ -8,44 +8,49 @@ interface BadgeProps {
   className?: string
 }
 
-export function Badge({
+// Move static objects outside component
+const VARIANTS = {
+  default: 'bg-gray-100 text-gray-800',
+  primary: 'bg-primary-100 text-primary-800',
+  secondary: 'bg-blue-100 text-blue-800',
+  success: 'bg-success-100 text-success-800',
+  warning: 'bg-warning-100 text-warning-800',
+  error: 'bg-error-100 text-error-800',
+  purple: 'bg-purple-100 text-purple-800',
+  blue: 'bg-blue-50 text-blue-700 border border-blue-200',
+  green: 'bg-green-50 text-green-700 border border-green-200',
+  gray: 'bg-gray-50 text-gray-600 border border-gray-200',
+  orange: 'bg-amber-50 text-amber-700 border border-amber-200',
+  slate: 'bg-slate-50 text-slate-700 border border-slate-300',
+} as const
+
+const SIZES = {
+  sm: 'px-2 py-0.5 text-xs',
+  md: 'px-2.5 py-1 text-sm',
+} as const
+
+const BASE_CLASSES = 'inline-flex items-center font-medium rounded-full'
+
+export const Badge = React.memo(function Badge({
   children,
   variant = 'default',
   size = 'md',
   className
 }: BadgeProps) {
-  const baseClasses = 'inline-flex items-center font-medium rounded-full'
-
-  const variants = {
-    default: 'bg-gray-100 text-gray-800',
-    primary: 'bg-primary-100 text-primary-800',
-    secondary: 'bg-blue-100 text-blue-800',
-    success: 'bg-success-100 text-success-800',
-    warning: 'bg-warning-100 text-warning-800',
-    error: 'bg-error-100 text-error-800',
-    purple: 'bg-purple-100 text-purple-800',
-    blue: 'bg-blue-50 text-blue-700 border border-blue-200',
-    green: 'bg-green-50 text-green-700 border border-green-200',
-    gray: 'bg-gray-50 text-gray-600 border border-gray-200',
-    orange: 'bg-amber-50 text-amber-700 border border-amber-200',
-    slate: 'bg-slate-50 text-slate-700 border border-slate-300',
-  }
-  
-  const sizes = {
-    sm: 'px-2 py-0.5 text-xs',
-    md: 'px-2.5 py-1 text-sm',
-  }
+  // Memoize className computation
+  const badgeClassName = useMemo(() =>
+    clsx(
+      BASE_CLASSES,
+      VARIANTS[variant],
+      SIZES[size],
+      className
+    ),
+    [variant, size, className]
+  )
 
   return (
-    <span
-      className={clsx(
-        baseClasses,
-        variants[variant],
-        sizes[size],
-        className
-      )}
-    >
+    <span className={badgeClassName}>
       {children}
     </span>
   )
-}
+})

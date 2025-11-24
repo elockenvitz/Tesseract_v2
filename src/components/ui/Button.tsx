@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { clsx } from 'clsx'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -8,7 +8,24 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode
 }
 
-export function Button({
+// Move static objects outside component to prevent recreating on each render
+const VARIANTS = {
+  primary: 'bg-gradient-to-r from-primary-600 to-primary-700 text-white hover:from-primary-700 hover:to-primary-800 focus:ring-primary-500 shadow-sm',
+  secondary: 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500 shadow-sm',
+  outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 focus:ring-primary-500',
+  ghost: 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:ring-primary-500',
+  danger: 'bg-error-600 text-white hover:bg-error-700 focus:ring-error-500 shadow-sm',
+} as const
+
+const SIZES = {
+  sm: 'px-3 py-1.5 text-sm',
+  md: 'px-4 py-2 text-sm',
+  lg: 'px-6 py-3 text-base',
+} as const
+
+const BASE_CLASSES = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
+
+export const Button = React.memo(function Button({
   variant = 'primary',
   size = 'md',
   loading = false,
@@ -17,30 +34,20 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
-  
-  const variants = {
-    primary: 'bg-gradient-to-r from-primary-600 to-primary-700 text-white hover:from-primary-700 hover:to-primary-800 focus:ring-primary-500 shadow-sm',
-    secondary: 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500 shadow-sm',
-    outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 focus:ring-primary-500',
-    ghost: 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:ring-primary-500',
-    danger: 'bg-error-600 text-white hover:bg-error-700 focus:ring-error-500 shadow-sm',
-  }
-  
-  const sizes = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2 text-sm',
-    lg: 'px-6 py-3 text-base',
-  }
+  // Memoize className computation
+  const buttonClassName = useMemo(() =>
+    clsx(
+      BASE_CLASSES,
+      VARIANTS[variant],
+      SIZES[size],
+      className
+    ),
+    [variant, size, className]
+  )
 
   return (
     <button
-      className={clsx(
-        baseClasses,
-        variants[variant],
-        sizes[size],
-        className
-      )}
+      className={buttonClassName}
       disabled={disabled || loading}
       {...props}
     >
@@ -53,4 +60,4 @@ export function Button({
       {children}
     </button>
   )
-}
+})
