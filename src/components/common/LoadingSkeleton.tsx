@@ -16,7 +16,12 @@ interface SkeletonProps {
  */
 export function Skeleton({ className = '' }: SkeletonProps) {
   return (
-    <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
+    <div
+      className={`animate-pulse bg-gray-200 rounded ${className}`}
+      role="status"
+      aria-label="Loading"
+      aria-busy="true"
+    />
   )
 }
 
@@ -25,9 +30,9 @@ export function Skeleton({ className = '' }: SkeletonProps) {
  */
 export function CardSkeleton({ count = 1 }: { count?: number }) {
   return (
-    <>
+    <div role="status" aria-label="Loading cards" aria-busy="true">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3" aria-hidden="true">
           <div className="flex items-center space-x-3">
             <Skeleton className="w-10 h-10 rounded-full" />
             <div className="flex-1 space-y-2">
@@ -42,7 +47,7 @@ export function CardSkeleton({ count = 1 }: { count?: number }) {
           </div>
         </div>
       ))}
-    </>
+    </div>
   )
 }
 
@@ -51,9 +56,14 @@ export function CardSkeleton({ count = 1 }: { count?: number }) {
  */
 export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; columns?: number }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div
+      className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+      role="status"
+      aria-label="Loading table"
+      aria-busy="true"
+    >
       {/* Header */}
-      <div className="border-b border-gray-200 p-4">
+      <div className="border-b border-gray-200 p-4" aria-hidden="true">
         <div className="flex space-x-4">
           {Array.from({ length: columns }).map((_, i) => (
             <Skeleton key={i} className="h-4 flex-1" />
@@ -62,7 +72,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-gray-200">
+      <div className="divide-y divide-gray-200" aria-hidden="true">
         {Array.from({ length: rows }).map((_, rowIndex) => (
           <div key={rowIndex} className="p-4">
             <div className="flex space-x-4">
@@ -82,9 +92,9 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
  */
 export function ListSkeleton({ count = 5 }: { count?: number }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" role="status" aria-label="Loading list" aria-busy="true">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex items-center space-x-3 p-3 bg-white border border-gray-200 rounded-lg">
+        <div key={i} className="flex items-center space-x-3 p-3 bg-white border border-gray-200 rounded-lg" aria-hidden="true">
           <Skeleton className="w-8 h-8 rounded-full" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-3/4" />
@@ -101,9 +111,9 @@ export function ListSkeleton({ count = 5 }: { count?: number }) {
  */
 export function WorkflowOverviewSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" role="status" aria-label="Loading workflow overview" aria-busy="true">
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" aria-hidden="true">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
             <Skeleton className="h-4 w-20" />
@@ -114,7 +124,7 @@ export function WorkflowOverviewSkeleton() {
       </div>
 
       {/* Performance Card */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-hidden="true">
         <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-32 w-full" />
@@ -137,9 +147,9 @@ export function WorkflowOverviewSkeleton() {
  */
 export function WorkflowStagesSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="status" aria-label="Loading workflow stages" aria-busy="true">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+        <div key={i} className="bg-white border border-gray-200 rounded-lg p-6 space-y-4" aria-hidden="true">
           <div className="flex items-center justify-between">
             <Skeleton className="h-6 w-40" />
             <Skeleton className="h-8 w-24" />
@@ -163,9 +173,9 @@ export function WorkflowStagesSkeleton({ count = 3 }: { count?: number }) {
  */
 export function WorkflowBranchesSkeleton() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="status" aria-label="Loading workflow branches" aria-busy="true">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="space-y-2">
+        <div key={i} className="space-y-2" aria-hidden="true">
           {/* Template Version Header */}
           <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
@@ -201,9 +211,9 @@ export function WorkflowBranchesSkeleton() {
  */
 export function SidebarSkeleton() {
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4" role="status" aria-label="Loading sidebar" aria-busy="true">
       <Skeleton className="h-10 w-full" />
-      <div className="space-y-2">
+      <div className="space-y-2" aria-hidden="true">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-12 w-full rounded-lg" />
         ))}

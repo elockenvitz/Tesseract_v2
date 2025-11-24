@@ -112,6 +112,8 @@ export function VirtualList<T>({
       ref={parentRef}
       className={`${className} custom-scrollbar`}
       style={{ height, overflow: 'auto' }}
+      role="list"
+      aria-label="Scrollable list"
     >
       <div
         style={{
@@ -119,6 +121,8 @@ export function VirtualList<T>({
           width: '100%',
           position: 'relative'
         }}
+        aria-live="polite"
+        aria-atomic="false"
       >
         {virtualizer.getVirtualItems().map((virtualItem) => {
           const item = items[virtualItem.index]
@@ -138,6 +142,7 @@ export function VirtualList<T>({
                 width: '100%',
                 transform: `translateY(${virtualItem.start}px)`
               }}
+              role="listitem"
             >
               {renderItem(item, virtualItem.index)}
             </div>
@@ -223,6 +228,8 @@ export function VirtualGrid<T>({
       ref={parentRef}
       className={`${className} custom-scrollbar`}
       style={{ height, overflow: 'auto' }}
+      role="grid"
+      aria-label="Scrollable grid"
     >
       <div
         style={{
@@ -230,6 +237,8 @@ export function VirtualGrid<T>({
           width: '100%',
           position: 'relative'
         }}
+        aria-live="polite"
+        aria-atomic="false"
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const startIndex = virtualRow.index * columns
@@ -251,6 +260,7 @@ export function VirtualGrid<T>({
                 gridTemplateColumns: `repeat(${columns}, 1fr)`,
                 gap: `${gap}px`
               }}
+              role="row"
             >
               {rowItems.map((item, colIndex) => {
                 const itemIndex = startIndex + colIndex
@@ -259,7 +269,7 @@ export function VirtualGrid<T>({
                   : itemIndex
 
                 return (
-                  <div key={key}>
+                  <div key={key} role="gridcell">
                     {renderItem(item, itemIndex)}
                   </div>
                 )

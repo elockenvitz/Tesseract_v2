@@ -108,7 +108,13 @@ function ToastContainer({ toasts, onClose }: ToastContainerProps) {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
+    <div
+      className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none"
+      aria-live="polite"
+      aria-atomic="false"
+      role="region"
+      aria-label="Notifications"
+    >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onClose={onClose} />
       ))}
@@ -131,6 +137,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
       borderColor: 'border-green-200',
       iconColor: 'text-green-600',
       textColor: 'text-green-900',
+      ariaLabel: 'Success',
     },
     error: {
       icon: XCircle,
@@ -138,6 +145,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
       borderColor: 'border-red-200',
       iconColor: 'text-red-600',
       textColor: 'text-red-900',
+      ariaLabel: 'Error',
     },
     info: {
       icon: Info,
@@ -145,6 +153,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
       borderColor: 'border-blue-200',
       iconColor: 'text-blue-600',
       textColor: 'text-blue-900',
+      ariaLabel: 'Information',
     },
     warning: {
       icon: AlertTriangle,
@@ -152,17 +161,32 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
       borderColor: 'border-yellow-200',
       iconColor: 'text-yellow-600',
       textColor: 'text-yellow-900',
+      ariaLabel: 'Warning',
     },
   }
 
-  const { icon: Icon, bgColor, borderColor, iconColor, textColor } = config[type]
+  const { icon: Icon, bgColor, borderColor, iconColor, textColor, ariaLabel } = config[type]
+
+  // Handle Escape key to close toast
+  React.useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose(id)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [id, onClose])
 
   return (
     <div
       className={`${bgColor} ${borderColor} border rounded-lg shadow-lg p-4 min-w-[320px] max-w-md pointer-events-auto animate-slide-in-right`}
+      role="alert"
+      aria-label={`${ariaLabel}: ${message}`}
     >
       <div className="flex items-start space-x-3">
-        <Icon className={`w-5 h-5 ${iconColor} flex-shrink-0 mt-0.5`} />
+        <Icon className={`w-5 h-5 ${iconColor} flex-shrink-0 mt-0.5`} aria-hidden="true" />
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-medium ${textColor}`}>{message}</p>
           {description && (
@@ -171,7 +195,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
         </div>
         <button
           onClick={() => onClose(id)}
-          className={`flex-shrink-0 ${textColor} hover:opacity-70 transition-opacity`}
+          className={`flex-shrink-0 ${textColor} hover:opacity-70 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-${type === 'error' ? 'red' : type === 'success' ? 'green' : type === 'warning' ? 'yellow' : 'blue'}-500 rounded`}
           aria-label="Close notification"
         >
           <X className="w-4 h-4" />

@@ -42,13 +42,13 @@ export function EmptyState({
   const maxWidth = compact ? 'max-w-sm' : 'max-w-md'
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} role="status" aria-live="polite">
       <div className={`${maxWidth} w-full text-center`}>
         {/* Icon or Illustration */}
         {illustration ? (
-          <div className="mb-6">{illustration}</div>
+          <div className="mb-6" aria-hidden="true">{illustration}</div>
         ) : Icon ? (
-          <div className="flex justify-center mb-6">
+          <div className="flex justify-center mb-6" aria-hidden="true">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
               <Icon className="w-8 h-8 text-gray-400" />
             </div>
@@ -67,10 +67,10 @@ export function EmptyState({
 
         {/* Actions */}
         {(action || secondaryAction) && (
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <div className="flex flex-col sm:flex-row gap-3 justify-center" role="group" aria-label="Available actions">
             {action && (
-              <Button onClick={action.onClick} size={compact ? 'sm' : 'md'}>
-                {action.icon && <action.icon className="w-4 h-4 mr-2" />}
+              <Button onClick={action.onClick} size={compact ? 'sm' : 'md'} aria-label={action.label}>
+                {action.icon && <action.icon className="w-4 h-4 mr-2" aria-hidden="true" />}
                 {action.label}
               </Button>
             )}
@@ -79,6 +79,7 @@ export function EmptyState({
                 onClick={secondaryAction.onClick}
                 variant="outline"
                 size={compact ? 'sm' : 'md'}
+                aria-label={secondaryAction.label}
               >
                 {secondaryAction.label}
               </Button>

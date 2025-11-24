@@ -30,14 +30,18 @@ export function QueryErrorDisplay({
 
   if (compact) {
     return (
-      <div className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg">
+      <div
+        className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg"
+        role="alert"
+        aria-live="assertive"
+      >
         <div className="flex items-center space-x-2">
-          <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+          <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" aria-hidden="true" />
           <p className="text-sm text-red-900">{errorMessage}</p>
         </div>
         {onRetry && (
-          <Button size="sm" variant="outline" onClick={onRetry}>
-            <RefreshCw className="w-3 h-3 mr-1" />
+          <Button size="sm" variant="outline" onClick={onRetry} aria-label="Retry loading data">
+            <RefreshCw className="w-3 h-3 mr-1" aria-hidden="true" />
             Retry
           </Button>
         )}
@@ -46,10 +50,10 @@ export function QueryErrorDisplay({
   }
 
   return (
-    <div className="flex items-center justify-center py-12">
+    <div className="flex items-center justify-center py-12" role="alert" aria-live="assertive">
       <div className="max-w-md w-full bg-red-50 border border-red-200 rounded-lg p-6">
         <div className="flex items-center space-x-3 mb-4">
-          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0" aria-hidden="true">
             <AlertCircle className="w-5 h-5 text-red-600" />
           </div>
           <div className="flex-1">
@@ -60,8 +64,8 @@ export function QueryErrorDisplay({
 
         {onRetry && (
           <div className="mt-4">
-            <Button onClick={onRetry} className="w-full">
-              <RefreshCw className="w-4 h-4 mr-2" />
+            <Button onClick={onRetry} className="w-full" aria-label="Try loading data again">
+              <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
               Try Again
             </Button>
           </div>
@@ -70,10 +74,10 @@ export function QueryErrorDisplay({
         {/* Development details */}
         {process.env.NODE_ENV === 'development' && error.stack && (
           <details className="mt-4">
-            <summary className="text-xs text-red-700 cursor-pointer font-medium">
+            <summary className="text-xs text-red-700 cursor-pointer font-medium focus:outline-none focus:ring-2 focus:ring-red-500 rounded">
               Error Details (Development Only)
             </summary>
-            <pre className="mt-2 text-xs text-red-600 bg-red-100 p-2 rounded overflow-auto max-h-32">
+            <pre className="mt-2 text-xs text-red-600 bg-red-100 p-2 rounded overflow-auto max-h-32" aria-label="Error stack trace">
               {error.stack}
             </pre>
           </details>
@@ -88,8 +92,8 @@ export function QueryErrorDisplay({
  */
 export function InlineError({ message }: { message: string }) {
   return (
-    <div className="flex items-center space-x-2 text-red-600">
-      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+    <div className="flex items-center space-x-2 text-red-600" role="alert" aria-live="polite">
+      <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
       <span className="text-sm">{message}</span>
     </div>
   )
