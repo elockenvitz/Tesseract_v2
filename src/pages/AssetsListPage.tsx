@@ -8,7 +8,7 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Select } from '../components/ui/Select'
-import { LoadingSkeleton } from '../components/common/LoadingSkeleton'
+import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
@@ -221,7 +221,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
       <Card padding="none">
         {assetsLoading ? (
           <div className="p-6">
-            <LoadingSkeleton variant="list" count={5} />
+            <ListSkeleton count={5} />
           </div>
         ) : filteredAssets.length > 0 ? (
           <div className="divide-y divide-gray-200">
