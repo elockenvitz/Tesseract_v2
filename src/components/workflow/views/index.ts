@@ -43,3 +43,10 @@ export type {
   CadenceTimeframe,
   AutomationRule
 } from './CadenceView'
+
+export { BranchesView } from './BranchesView'
+export type {
+  BranchesViewProps,
+  BranchStatus,
+  WorkflowBranch
+} from './BranchesView'
