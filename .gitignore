@@ -16,3 +16,6 @@ Thumbs.db
 
 # MCP configuration (contains sensitive tokens)
 .mcp.json
+
+*storybook.log
+storybook-static
