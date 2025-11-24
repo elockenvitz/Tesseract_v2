@@ -19,3 +19,6 @@ export type { WorkflowTemplateVersionCardProps, TemplateVersion } from './Workfl
 
 export { OverviewView } from './OverviewView'
 export type { OverviewViewProps } from './OverviewView'
+
+export { StagesView } from './StagesView'
+export type { StagesViewProps } from './StagesView'

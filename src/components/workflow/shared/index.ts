@@ -13,3 +13,9 @@ export type { ProgressBarProps } from './ProgressBar'
 
 export { StageCard } from './StageCard'
 export type { StageCardProps } from './StageCard'
+
+export { ChecklistItemCard } from './ChecklistItemCard'
+export type { ChecklistItemCardProps, ChecklistItem } from './ChecklistItemCard'
+
+export { StageWithChecklists } from './StageWithChecklists'
+export type { StageWithChecklistsProps } from './StageWithChecklists'
