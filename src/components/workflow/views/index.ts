@@ -28,3 +28,11 @@ export type { UniverseViewProps, FilterRule, DropdownOption } from './UniverseVi
 
 export { ModelsView } from './ModelsView'
 export type { ModelsViewProps, WorkflowTemplate } from './ModelsView'
+
+export { AdminsView } from './AdminsView'
+export type {
+  AdminsViewProps,
+  WorkflowCollaborator,
+  WorkflowStakeholder,
+  AccessRequest
+} from './AdminsView'
