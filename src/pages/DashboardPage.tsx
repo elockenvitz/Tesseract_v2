@@ -21,10 +21,11 @@ import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
+import { NoDataAvailable } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { ProfilePage } from './ProfilePage'
 import { SettingsPage } from './SettingsPage'
-import { IdeaGeneratorPage } from './IdeaGeneratorPage'
+import { IdeaGeneratorPage} from './IdeaGeneratorPage'
 import { WorkflowsPage } from './WorkflowsPage'
 
 export function DashboardPage() {
@@ -742,10 +743,7 @@ export function DashboardPage() {
                   </div>
                 ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Target className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm">No priority assets yet</p>
-              </div>
+              <NoDataAvailable message="No priority assets yet" compact />
             )}
           </div>
         </Card>
@@ -782,10 +780,7 @@ export function DashboardPage() {
                   </div>
                 ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Workflow className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm">No active workflows</p>
-              </div>
+              <NoDataAvailable message="No active workflows" compact />
             )}
           </div>
         </Card>
@@ -820,10 +815,7 @@ export function DashboardPage() {
                 </div>
               ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm">No recent notes</p>
-              </div>
+              <NoDataAvailable message="No recent notes" compact />
             )}
           </div>
         </Card>
