@@ -702,7 +702,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   const { data: effectiveWorkflowId, isLoading: workflowIdLoading } = useQuery({
     queryKey: ['asset-effective-workflow', asset.id],
-    staleTime: 0,  // Always refetch to ensure we get the latest data
     queryFn: async () => {
       console.log(`🔍 AssetTab: Determining effective workflow for ${asset.symbol}:`, {
         assetWorkflowId: asset.workflow_id,

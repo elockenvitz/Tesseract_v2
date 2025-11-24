@@ -647,7 +647,7 @@ export function WorkflowManager({
 
     // Filter by type
     if (filterType === 'my') {
-      return workflow.created_by === (async () => await supabase.auth.getUser())
+      return workflow.created_by === user?.id
     }
     if (filterType === 'public') {
       return workflow.is_public

@@ -279,7 +279,6 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       return messagesWithReplies as Message[]
     },
-    enabled: !!selectedConversationId,
     refetchInterval: 2000, // Real-time updates
   })
 
