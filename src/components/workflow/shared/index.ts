@@ -10,3 +10,6 @@ export type { StatCardProps } from './StatCard'
 
 export { ProgressBar } from './ProgressBar'
 export type { ProgressBarProps } from './ProgressBar'
+
+export { StageCard } from './StageCard'
+export type { StageCardProps } from './StageCard'
