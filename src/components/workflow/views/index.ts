@@ -36,3 +36,10 @@ export type {
   WorkflowStakeholder,
   AccessRequest
 } from './AdminsView'
+
+export { CadenceView } from './CadenceView'
+export type {
+  CadenceViewProps,
+  CadenceTimeframe,
+  AutomationRule
+} from './CadenceView'
