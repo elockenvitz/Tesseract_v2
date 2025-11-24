@@ -10,3 +10,9 @@ export type { WorkflowMetricsGridProps } from './WorkflowMetricsGrid'
 
 export { WorkflowPerformanceCard } from './WorkflowPerformanceCard'
 export type { WorkflowPerformanceCardProps } from './WorkflowPerformanceCard'
+
+export { WorkflowTimelineCard } from './WorkflowTimelineCard'
+export type { WorkflowTimelineCardProps } from './WorkflowTimelineCard'
+
+export { WorkflowTemplateVersionCard } from './WorkflowTemplateVersionCard'
+export type { WorkflowTemplateVersionCardProps, TemplateVersion } from './WorkflowTemplateVersionCard'
