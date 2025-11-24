@@ -16,3 +16,6 @@ export type { WorkflowTimelineCardProps } from './WorkflowTimelineCard'
 
 export { WorkflowTemplateVersionCard } from './WorkflowTemplateVersionCard'
 export type { WorkflowTemplateVersionCardProps, TemplateVersion } from './WorkflowTemplateVersionCard'
+
+export { OverviewView } from './OverviewView'
+export type { OverviewViewProps } from './OverviewView'
