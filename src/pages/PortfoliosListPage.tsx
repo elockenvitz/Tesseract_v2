@@ -6,6 +6,8 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Select } from '../components/ui/Select'
+import { ListSkeleton } from '../components/common/LoadingSkeleton'
+import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 
@@ -192,23 +194,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
       <Card padding="none">
         {isLoading ? (
           <div className="p-6">
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-16"></div>
-                      <div className="h-3 bg-gray-200 rounded w-12"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ListSkeleton count={5} />
           </div>
         ) : filteredPortfolios.length > 0 ? (
           <div className="divide-y divide-gray-200">
@@ -309,26 +295,27 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
               </div>
             ))}
           </div>
+        ) : portfolios?.length === 0 ? (
+          <EmptyState
+            icon={Briefcase}
+            title="No portfolios yet"
+            description="Start by creating your first portfolio to track your investments."
+            action={{
+              label: 'Add First Portfolio',
+              icon: Plus,
+              onClick: () => {}
+            }}
+          />
         ) : (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Briefcase className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {portfolios?.length === 0 ? 'No portfolios yet' : 'No portfolios match your filters'}
-            </h3>
-            <p className="text-gray-500 mb-4">
-              {portfolios?.length === 0
-                ? 'Start by creating your first portfolio to track your investments.'
-                : 'Try adjusting your search criteria or clearing filters.'}
-            </p>
-            {portfolios?.length === 0 && (
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Add First Portfolio
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            icon={Search}
+            title="No portfolios match your filters"
+            description="Try adjusting your search criteria or clearing filters."
+            action={{
+              label: 'Clear Filters',
+              onClick: clearFilters
+            }}
+          />
         )}
       </Card>
     </div>

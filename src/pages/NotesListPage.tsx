@@ -7,6 +7,8 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Select } from '../components/ui/Select'
+import { ListSkeleton } from '../components/common/LoadingSkeleton'
+import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 
@@ -488,23 +490,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       <Card padding="none">
         {isLoading ? (
           <div className="p-6">
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                      <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-16"></div>
-                      <div className="h-3 bg-gray-200 rounded w-12"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ListSkeleton count={5} />
           </div>
         ) : filteredNotes.length > 0 ? (
           <div className="divide-y divide-gray-200">
@@ -627,26 +613,27 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
               </div>
             ))}
           </div>
+        ) : notes?.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="No notes yet"
+            description="Start by creating your first note in an asset, portfolio, or theme."
+            action={{
+              label: 'Create First Note',
+              icon: Plus,
+              onClick: () => {}
+            }}
+          />
         ) : (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileText className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {notes?.length === 0 ? 'No notes yet' : 'No notes match your filters'}
-            </h3>
-            <p className="text-gray-500 mb-4">
-              {notes?.length === 0
-                ? 'Start by creating your first note in an asset, portfolio, or theme.'
-                : 'Try adjusting your search criteria or clearing filters.'}
-            </p>
-            {notes?.length === 0 && (
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Create First Note
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            icon={Search}
+            title="No notes match your filters"
+            description="Try adjusting your search criteria or clearing filters."
+            action={{
+              label: 'Clear Filters',
+              onClick: clearFilters
+            }}
+          />
         )}
       </Card>
     </div>

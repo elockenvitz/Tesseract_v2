@@ -6,6 +6,8 @@ import { useAuth } from '../hooks/useAuth'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
+import { ListSkeleton } from '../components/common/LoadingSkeleton'
+import { EmptyState } from '../components/common/EmptyState'
 import { AssetListManager } from '../components/lists/AssetListManager'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
@@ -462,21 +464,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
 
       {/* Lists Grid */}
       {!listsError && isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="animate-pulse">
-              <Card>
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-4 h-4 bg-gray-200 rounded-full"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded w-3/4"></div>
-                  <div className="h-3 bg-gray-200 rounded w-1/4"></div>
-                </div>
-              </Card>
-            </div>
-          ))}
+        <div className="p-6">
+          <ListSkeleton count={6} />
         </div>
       ) : filteredLists.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -552,29 +541,26 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
             </div>
           ))}
         </div>
+      ) : assetLists?.length === 0 ? (
+        <EmptyState
+          icon={List}
+          title="No lists yet"
+          description={user
+            ? "Create your first list to organize your assets and investment ideas."
+            : "Sign in to access your asset lists and create new ones."
+          }
+          action={user ? {
+            label: 'Create First List',
+            icon: Plus,
+            onClick: () => setShowListManager(true)
+          } : undefined}
+        />
       ) : (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <List className="h-8 w-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {assetLists?.length === 0 ? 'No lists yet' : 'No lists match your search'}
-          </h3>
-          <p className="text-gray-500 mb-4">
-            {assetLists?.length === 0
-              ? user
-                ? 'Create your first list to organize your assets and investment ideas.'
-                : 'Sign in to access your asset lists and create new ones.'
-              : 'Try adjusting your search criteria.'
-            }
-          </p>
-          {assetLists?.length === 0 && user && (
-            <Button onClick={() => setShowListManager(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create First List
-            </Button>
-          )}
-        </div>
+        <EmptyState
+          icon={Search}
+          title="No lists match your search"
+          description="Try adjusting your search criteria."
+        />
       )}
 
       {/* Edit List Modal */}
