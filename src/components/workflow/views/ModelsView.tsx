@@ -66,11 +66,8 @@ export function ModelsView({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Document Templates</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Upload and manage document templates for this workflow
-          </p>
         </div>
         {canEdit && onUpload && (
           <Button onClick={onUpload}>

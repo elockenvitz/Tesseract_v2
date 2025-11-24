@@ -63,8 +63,7 @@ export interface AdminsViewProps {
   isLoadingStakeholders?: boolean
   isLoadingRequests?: boolean
 
-  /** Callbacks for collaborator operations */
-  onInviteCollaborator?: () => void
+  /** Callbacks for admin operations */
   onChangePermission?: (userId: string, newPermission: 'admin' | 'write' | 'read') => void
   onRemoveCollaborator?: (userId: string, userName: string) => void
 
@@ -73,8 +72,7 @@ export interface AdminsViewProps {
   onRemoveStakeholder?: (stakeholderId: string, userName: string) => void
 
   /** Callbacks for access request operations */
-  onApproveRequest?: (requestId: string) => void
-  onRejectRequest?: (requestId: string) => void
+  onRequestAccess?: () => void
   onManageRequests?: () => void
 }
 
@@ -90,19 +88,15 @@ export function AdminsView({
   isLoadingCollaborators = false,
   isLoadingStakeholders = false,
   isLoadingRequests = false,
-  onInviteCollaborator,
   onChangePermission,
   onRemoveCollaborator,
   onAddStakeholder,
   onRemoveStakeholder,
-  onApproveRequest,
-  onRejectRequest,
+  onRequestAccess,
   onManageRequests
 }: AdminsViewProps) {
   // Separate collaborators by permission level
   const admins = collaborators.filter(c => c.permission === 'admin')
-  const writers = collaborators.filter(c => c.permission === 'write')
-  const readers = collaborators.filter(c => c.permission === 'read')
 
   const hasPendingRequests = accessRequests.length > 0
 
@@ -121,19 +115,16 @@ export function AdminsView({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Team & Access</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage collaborators, stakeholders, and access permissions
-          </p>
         </div>
-        {canEdit && onInviteCollaborator && (
-          <Button onClick={onInviteCollaborator}>
+        {!canEdit && onRequestAccess && (
+          <Button onClick={onRequestAccess}>
             <UserPlus className="w-4 h-4 mr-2" />
-            Invite Collaborator
+            Request Access
           </Button>
         )}
       </div>
@@ -166,14 +157,14 @@ export function AdminsView({
 
       {/* Workflow Creator */}
       <Card>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-gray-900">Workflow Creator</h4>
             <Shield className="w-4 h-4 text-blue-600" />
           </div>
           <div className="flex items-center space-x-3">
-            <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <Users className="w-5 h-5 text-blue-600" />
+            <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+              <Users className="w-4 h-4 text-blue-600" />
             </div>
             <div className="flex-1">
               <div className="flex items-center space-x-2">
@@ -190,118 +181,61 @@ export function AdminsView({
 
       {/* Admins */}
       <Card>
-        <div className="p-4">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">
+        <div className="p-3">
+          <h4 className="text-sm font-semibold text-gray-900 mb-2">
             Administrators ({admins.length})
           </h4>
           {isLoadingCollaborators ? (
-            <div className="text-center py-4">
-              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <div className="text-center py-3">
+              <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
             </div>
           ) : admins.length > 0 ? (
             <div className="space-y-2">
-              {admins.map((admin) => (
-                <div key={admin.user_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Users className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-gray-900">{admin.user_name}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs border ${getPermissionBadgeColor(admin.permission)}`}>
-                          Admin
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500">{admin.user_email}</p>
-                    </div>
-                  </div>
-                  {canEdit && admin.user_id !== currentUserId && admin.user_id !== creatorId && onRemoveCollaborator && (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => onRemoveCollaborator(admin.user_id, admin.user_name)}
-                      title="Remove Admin"
-                    >
-                      <Trash2 className="w-3 h-3 text-red-600" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500 text-center py-4">No additional admins</p>
-          )}
-        </div>
-      </Card>
+              {admins.map((admin) => {
+                const user = (admin as any).user
+                const userName = admin.user_name || (user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Unknown User')
+                const userEmail = admin.user_email || user?.email || ''
 
-      {/* Collaborators (Write/Read) */}
-      <Card>
-        <div className="p-4">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">
-            Collaborators ({writers.length + readers.length})
-          </h4>
-          {isLoadingCollaborators ? (
-            <div className="text-center py-4">
-              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-            </div>
-          ) : (writers.length + readers.length) > 0 ? (
-            <div className="space-y-2">
-              {[...writers, ...readers].map((collab) => (
-                <div key={collab.user_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <Users className="w-4 h-4 text-green-600" />
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-gray-900">{collab.user_name}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs border ${getPermissionBadgeColor(collab.permission)}`}>
-                          {collab.permission === 'write' ? 'Write' : 'Read'}
-                        </span>
+                return (
+                  <div key={admin.user_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-shrink-0 w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center">
+                        <Users className="w-3.5 h-3.5 text-blue-600" />
                       </div>
-                      <p className="text-xs text-gray-500">{collab.user_email}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    {canEdit && onChangePermission && (
-                      <div className="relative">
-                        <select
-                          value={collab.permission}
-                          onChange={(e) => onChangePermission(collab.user_id, e.target.value as 'admin' | 'write' | 'read')}
-                          className="text-xs border border-gray-300 rounded px-2 py-1 pr-6 appearance-none bg-white"
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="write">Write</option>
-                          <option value="read">Read</option>
-                        </select>
-                        <ChevronDown className="w-3 h-3 absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium text-gray-900">{userName}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs border ${getPermissionBadgeColor(admin.permission)}`}>
+                            Admin
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500">{userEmail}</p>
                       </div>
-                    )}
-                    {canEdit && onRemoveCollaborator && (
+                    </div>
+                    {canEdit && admin.user_id !== currentUserId && admin.user_id !== creatorId && onRemoveCollaborator && (
                       <Button
                         size="xs"
                         variant="outline"
-                        onClick={() => onRemoveCollaborator(collab.user_id, collab.user_name)}
-                        title="Remove Collaborator"
+                        onClick={() => onRemoveCollaborator(admin.user_id, userName)}
+                        title="Remove Admin"
                       >
                         <Trash2 className="w-3 h-3 text-red-600" />
                       </Button>
                     )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
-            <p className="text-sm text-gray-500 text-center py-4">No collaborators yet</p>
+            <p className="text-sm text-gray-500 text-center py-3">No additional admins</p>
           )}
         </div>
       </Card>
 
       {/* Stakeholders */}
       <Card>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-gray-900">
               Stakeholders ({stakeholders.length})
             </h4>
@@ -313,38 +247,44 @@ export function AdminsView({
             )}
           </div>
           {isLoadingStakeholders ? (
-            <div className="text-center py-4">
-              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <div className="text-center py-3">
+              <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
             </div>
           ) : stakeholders.length > 0 ? (
             <div className="space-y-2">
-              {stakeholders.map((stakeholder) => (
-                <div key={stakeholder.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                      <UserCheck className="w-4 h-4 text-purple-600" />
+              {stakeholders.map((stakeholder) => {
+                const user = (stakeholder as any).user
+                const userName = stakeholder.user_name || (user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Unknown User')
+                const userEmail = stakeholder.user_email || user?.email || ''
+
+                return (
+                  <div key={stakeholder.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-shrink-0 w-7 h-7 bg-purple-100 rounded-full flex items-center justify-center">
+                        <UserCheck className="w-3.5 h-3.5 text-purple-600" />
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{userName}</span>
+                        <p className="text-xs text-gray-500">{userEmail}</p>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-900">{stakeholder.user_name}</span>
-                      <p className="text-xs text-gray-500">{stakeholder.user_email}</p>
-                    </div>
+                    {canEdit && onRemoveStakeholder && (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => onRemoveStakeholder(stakeholder.id, userName)}
+                        title="Remove Stakeholder"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-600" />
+                      </Button>
+                    )}
                   </div>
-                  {canEdit && onRemoveStakeholder && (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => onRemoveStakeholder(stakeholder.id, stakeholder.user_name)}
-                      title="Remove Stakeholder"
-                    >
-                      <Trash2 className="w-3 h-3 text-red-600" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
-            <div className="text-center py-4">
-              <p className="text-sm text-gray-500 mb-2">No stakeholders yet</p>
+            <div className="text-center py-3">
+              <p className="text-sm text-gray-500 mb-1">No stakeholders yet</p>
               <p className="text-xs text-gray-400">Stakeholders receive notifications but cannot edit</p>
             </div>
           )}

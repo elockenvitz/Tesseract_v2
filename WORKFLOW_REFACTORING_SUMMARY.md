@@ -304,14 +304,57 @@ All 10 inline modal function components extracted from WorkflowsPage.tsx:
 
 WorkflowsPage.tsx has been reduced by **MORE THAN HALF!** 🎉
 
+### Phase 6: Code Quality & Testing
+
+#### 6.1 Code Cleanup (✅ COMPLETE!)
+**Completed:** All cleanup tasks finished
+
+**Tasks Completed:**
+1. ✅ **Removed 81 console.log statements** - All debug logging removed from WorkflowsPage.tsx
+   - Kept console.error statements for proper error handling
+   - Removed commented-out console.log statement
+2. ✅ **Deleted unused Universe Builder files** - 2 files removed
+   - Deleted `UniverseRuleBuilder.tsx` (not imported)
+   - Deleted `EnhancedUniverseBuilder.tsx` (not imported)
+   - Kept `SimplifiedUniverseBuilder.tsx` (actively used)
+3. ✅ **Removed commented-out code** - No commented code blocks found
+4. ✅ **Cleaned up temporary comments** - Removed "Temporarily disabled" comment
+
+**Result:** Cleaner, production-ready codebase with zero compilation errors
+
+#### 6.2 Testing Infrastructure (✅ COMPLETE!)
+**Completed:** Test infrastructure set up with Vitest and initial hook tests
+
+**Tasks Completed:**
+1. ✅ **Installed Vitest and React Testing Library**
+   - Added `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`
+   - Configured Vitest with `vitest.config.ts`
+   - Set up test environment with jsdom and React support
+2. ✅ **Created test utilities**
+   - `src/test/setup.ts` - Test setup with cleanup
+   - `src/test/utils.tsx` - Test helpers (QueryClient, mock Supabase, render utilities)
+3. ✅ **Added test scripts** to package.json
+   - `npm test` - Run tests
+   - `npm test:ui` - Run tests with UI
+   - `npm test:coverage` - Run tests with coverage report
+4. ✅ **Created useWorkflowState hook tests**
+   - `useWorkflowState.test.ts` - 10 comprehensive tests
+   - Tests state initialization, updates, modal visibility, branch filters, expansions
+   - **All tests passing** ✅
+
+**Result:** Solid testing foundation for ongoing development
+
 ## Remaining Work
 
-### Additional Improvements
-- Remove 81 debug `console.log` statements
-- Delete unused Universe Builder files
-- Add unit tests for extracted hooks
+### Phase 6.3: Additional Hook Tests (Next)
+- Test useWorkflowQueries hook
+- Test useWorkflowMutations hook
+- Add component tests for extracted views
+
+### Phase 7: Enhancement (Future)
 - Add Storybook stories for components
 - Add pagination for large datasets
+- Add E2E tests with Playwright
 
 ## Usage
 

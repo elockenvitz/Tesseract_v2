@@ -25,6 +25,18 @@ import { TemplateVersionsModal } from '../components/modals/TemplateVersionsModa
 import { CreateVersionModal } from '../components/modals/CreateVersionModal'
 import { VersionCreatedModal } from '../components/modals/VersionCreatedModal'
 import { VersionDetailModal } from '../components/modals/VersionDetailModal'
+import {
+  AddStageModal,
+  EditStageModal,
+  AddChecklistItemModal,
+  EditChecklistItemModal,
+  InviteUserModal,
+  AddStakeholderModal,
+  AddAdminModal,
+  AccessRequestModal,
+  AddRuleModal,
+  EditRuleModal
+} from '../components/workflow/modals'
 import { TabStateManager } from '../lib/tabStateManager'
 import { FILTER_TYPE_REGISTRY } from '../lib/universeFilters'
 import { formatVersion } from '../lib/versionUtils'
@@ -252,6 +264,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [editingBranchSuffix, setEditingBranchSuffix] = useState<{ id: string, currentSuffix: string } | null>(null)
   const [branchSuffixValue, setBranchSuffixValue] = useState('')
   const [collapsedBranches, setCollapsedBranches] = useState<Set<string>>(new Set())
+  const [collapsedTemplateVersions, setCollapsedTemplateVersions] = useState<Set<string>>(new Set())
   const [isTemplateCollapsed, setIsTemplateCollapsed] = useState(false)
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -368,6 +381,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
+      // First, get all template versions for this workflow to show in the UI
+      const { data: templateVersions } = await supabase
+        .from('workflow_template_versions')
+        .select('id, version_number, is_active')
+        .eq('workflow_id', selectedWorkflow.id)
+        .order('version_number', { ascending: false })
+
+      // Then get all direct branches of this workflow
       let branchQuery = supabase
         .from('workflows')
         .select(`
@@ -409,6 +430,34 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         throw error
       }
 
+      // Create a map to calculate branch levels
+      const branchMap = new Map((data || []).map(b => [b.id, b]))
+
+      const calculateBranchLevel = (branch: any): number => {
+        if (!branch.source_branch_id) return 0
+        const parent = branchMap.get(branch.source_branch_id)
+        if (!parent) return 1 // Parent is outside this set, assume level 1
+        return calculateBranchLevel(parent) + 1
+      }
+
+      // Helper to convert integer version to string format (preserves .0)
+      const formatVersionNumber = (version: number | null | undefined): string | undefined => {
+        if (!version) return undefined
+
+        // Handle different storage formats:
+        // Single digit (1, 2, 3) -> 1.0, 2.0, 3.0 (major versions)
+        // Three digits (101, 102, 103) -> 1.1, 1.2, 1.3 (minor versions)
+        if (version < 100) {
+          // Single or double digit: treat as major.0
+          return `${version}.0`
+        } else {
+          // Three digits: first digit is major, last two digits are minor
+          const major = Math.floor(version / 100)
+          const minor = version % 100
+          return `${major}.${minor}`
+        }
+      }
+
       // For each branch, get asset progress stats
       const branchesWithStats = await Promise.all((data || []).map(async (branch) => {
         const { data: progressData } = await supabase
@@ -420,16 +469,90 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         const activeAssets = progressData?.filter(p => !p.completed_at).length || 0
         const completedAssets = progressData?.filter(p => p.completed_at).length || 0
 
+        // Map to BranchesView expected format
         return {
-          ...branch,
-          totalAssets,
-          activeAssets,
-          completedAssets,
-          status: branch.status || 'active'
+          id: branch.id,
+          workflow_id: selectedWorkflow.id,
+          branch_name: branch.name,
+          branch_suffix: branch.branch_suffix || undefined,
+          parent_branch_id: branch.source_branch_id || undefined,
+          branch_level: calculateBranchLevel(branch),
+          is_active: branch.status === 'active',
+          is_clean: !activeAssets || activeAssets === 0,
+          is_archived: branch.archived || false,
+          is_deleted: branch.deleted || false,
+          created_at: branch.branched_at || branch.created_at,
+          created_by: '', // Not fetched in this query
+          archived_at: branch.archived_at || undefined,
+          archived_by: undefined,
+          deleted_at: branch.deleted_at || undefined,
+          deleted_by: undefined,
+          template_version_number: formatVersionNumber(branch.template_version_number),
+          total_assets: totalAssets,
+          active_assets: activeAssets,
+          completed_assets: completedAssets
         }
       }))
 
-      return branchesWithStats
+      // Get all unique template versions that have branches in the current filter
+      const branchVersions = new Set<string>()
+      branchesWithStats.forEach(b => {
+        if (b.template_version_number) {
+          branchVersions.add(b.template_version_number.toString())
+        }
+      })
+
+      // Create placeholder entries for template tiles
+      // These allow the UI to group branches by template version
+      const placeholderBranches = Array.from(branchVersions).map(versionStr => ({
+        id: `placeholder-${versionStr}`,
+        workflow_id: selectedWorkflow.id,
+        branch_name: selectedWorkflow.name,
+        branch_suffix: undefined,
+        parent_branch_id: undefined,
+        branch_level: 0,
+        is_active: false,
+        is_clean: true,
+        is_archived: false,
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        created_by: '',
+        template_version_number: versionStr,
+        total_assets: 0,
+        active_assets: 0,
+        completed_assets: 0,
+        is_placeholder: true
+      }))
+
+      // For "all" filter, also add placeholders for template versions with no branches
+      if (branchStatusFilter === 'all' && templateVersions) {
+        templateVersions.forEach(tv => {
+          const formattedVersion = formatVersionNumber(tv.version_number)?.toString()
+          if (formattedVersion && !branchVersions.has(formattedVersion)) {
+            placeholderBranches.push({
+              id: `placeholder-${tv.id}`,
+              workflow_id: selectedWorkflow.id,
+              branch_name: selectedWorkflow.name,
+              branch_suffix: undefined,
+              parent_branch_id: undefined,
+              branch_level: 0,
+              is_active: tv.is_active || false,
+              is_clean: true,
+              is_archived: false,
+              is_deleted: false,
+              created_at: new Date().toISOString(),
+              created_by: '',
+              template_version_number: formattedVersion,
+              total_assets: 0,
+              active_assets: 0,
+              completed_assets: 0,
+              is_placeholder: true
+            })
+          }
+        })
+      }
+
+      return [...branchesWithStats, ...placeholderBranches]
     },
     enabled: !!selectedWorkflow?.id,
     staleTime: 2 * 60 * 1000,
@@ -443,8 +566,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       if (!selectedBranch?.id) return null
 
       // Get all asset progress records for this branch
-      console.log('🔍 Fetching assets for branch:', selectedBranch.id)
-
       const { data: progressRecords, error: progressError } = await supabase
         .from('asset_workflow_progress')
         .select('*')
@@ -455,59 +576,37 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         return null
       }
 
-      console.log('🔍 Progress records fetched:', progressRecords?.length || 0)
-
       // Fetch all unique asset IDs in a single query using OR conditions
       const assetIds = [...new Set((progressRecords || []).map(p => p.asset_id))]
 
       let currentAssets = progressRecords || []
 
       if (assetIds.length > 0) {
-        console.log('🔍 DEBUG: About to fetch asset details for', assetIds.length, 'asset IDs')
-        console.log('🔍 DEBUG: First 3 asset IDs:', assetIds.slice(0, 3))
-
         // Build OR query for assets
         const orQuery = assetIds.map(id => `id.eq.${id}`).join(',')
-        console.log('🔍 DEBUG: OR query length:', orQuery.length, 'characters')
-        console.log('🔍 DEBUG: OR query preview:', orQuery.substring(0, 200) + '...')
 
         const { data: assetsData, error: assetsError } = await supabase
           .from('assets')
           .select('id, symbol, company_name')
           .or(orQuery)
 
-        console.log('🔍 DEBUG: Assets query completed')
-        console.log('🔍 Assets fetched:', assetsData?.length || 0, 'Error:', assetsError)
-
         if (assetsError) {
           console.error('🚨 ASSET FETCH ERROR:', assetsError)
-        }
-
-        if (assetsData) {
-          console.log('🔍 DEBUG: Sample asset data:', assetsData.slice(0, 2))
         }
 
         if (!assetsError && assetsData) {
           // Create a map for quick lookup
           const assetsMap = Object.fromEntries(assetsData.map(a => [a.id, a]))
-          console.log('🔍 DEBUG: Assets map created with', Object.keys(assetsMap).length, 'entries')
 
           // Attach asset data to progress records
           currentAssets = progressRecords.map(p => ({
             ...p,
             assets: assetsMap[p.asset_id] || null
           }))
-
-          console.log('🔍 DEBUG: After join, sample with asset data:', currentAssets.slice(0, 2))
         } else {
           console.error('🚨 DEBUG: Skipping join - assetsError:', assetsError, 'assetsData:', assetsData)
         }
-      } else {
-        console.log('🔍 DEBUG: No asset IDs to fetch')
       }
-
-      console.log('🔍 Current assets with joined data:', currentAssets?.length || 0)
-      console.log('🔍 Sample:', currentAssets?.slice(0, 2))
 
       // Get parent workflow assets if this is a branched workflow
       let parentAssets: any[] = []
@@ -536,16 +635,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             }))
           }
         }
-
-        console.log('🔍 Parent assets fetched:', parentAssets.length, 'assets')
       }
 
       // Fetch universe rules from the PARENT WORKFLOW's workflow_universe_rules table
       // These rules determine which assets are "rule-based" (vs inherited or manually added)
       let universeRules: any[] = []
       let ruleBasedAssetIds = new Set<string>()
-
-      console.log('🔍 Fetching universe rules from parent workflow:', selectedWorkflow?.id)
 
       if (selectedWorkflow?.id) {
         // Fetch universe rules from the workflow_universe_rules table
@@ -556,41 +651,30 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           .eq('is_active', true)
           .order('sort_order')
 
-        console.log('🔍 Universe rules from workflow_universe_rules table:', workflowRules, 'Error:', rulesError)
-
         if (workflowRules && workflowRules.length > 0) {
           universeRules = workflowRules
-          console.log('🔍 Found', universeRules.length, 'active universe rules')
 
           // Fetch assets that match these universe rules
           for (const rule of universeRules) {
-            console.log('🔍 Processing rule:', rule.rule_type, rule.rule_config)
-
             if (rule.rule_type === 'sector' && rule.rule_config?.sectors) {
-              console.log('🔍 Fetching sector assets for sectors:', rule.rule_config.sectors)
               const { data: sectorAssets, error: sectorError } = await supabase
                 .from('assets')
                 .select('id')
                 .in('sector', rule.rule_config.sectors)
 
-              console.log('🔍 Sector assets found:', sectorAssets?.length, 'Error:', sectorError)
               sectorAssets?.forEach(a => ruleBasedAssetIds.add(a.id))
             } else if (rule.rule_type === 'theme' && rule.rule_config?.theme_ids) {
-              console.log('🔍 Fetching theme assets for themes:', rule.rule_config.theme_ids)
               // Fetch assets from theme relationships
               const { data: themeAssets, error: themeError } = await supabase
                 .from('theme_assets')
                 .select('asset_id')
                 .in('theme_id', rule.rule_config.theme_ids)
 
-              console.log('🔍 Theme assets found:', themeAssets?.length, 'Error:', themeError)
               themeAssets?.forEach(a => ruleBasedAssetIds.add(a.asset_id))
             }
           }
         }
       }
-
-      console.log('🔍 Rule-based asset IDs:', ruleBasedAssetIds.size, 'assets', Array.from(ruleBasedAssetIds).slice(0, 3))
 
       // Categorize assets
       const parentAssetIds = new Set(parentAssets.map(a => a.asset_id))
@@ -626,26 +710,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         deleted: deletedAssets
       }
 
-      console.log('🔍 Branch Assets Query Result:', {
-        branchId: selectedBranch.id,
-        currentAssetsCount: currentAssets?.length || 0,
-        parentAssetsCount: parentAssets.length,
-        categorized: {
-          all: result.all.length,
-          active: result.active.length,
-          completed: result.completed.length,
-          original: result.original.length,
-          ruleBased: result.ruleBased.length,
-          added: result.added.length,
-          deleted: result.deleted.length
-        },
-        sampleData: result.all.slice(0, 2)
-      })
-
       return result
     },
     enabled: !!selectedBranch?.id && showBranchOverviewModal,
-    staleTime: 0, // Temporarily disabled to test asset join fix
+    staleTime: 0,
     gcTime: 5 * 60 * 1000
   })
 
@@ -734,11 +802,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     queryKey: ['template-versions', selectedWorkflow?.id],
     queryFn: async () => {
       if (!selectedWorkflow?.id) {
-        console.log('🔍 Template Versions Query: No workflow selected')
         return []
       }
-
-      console.log('🔍 Template Versions Query: Fetching for workflow ID:', selectedWorkflow.id)
 
       const { data, error } = await supabase
         .from('workflow_template_versions')
@@ -750,9 +815,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         console.error('❌ Error fetching template versions:', error)
         throw error
       }
-
-      console.log('✅ Template Versions Query Result:', data)
-      console.log('📊 Template Versions Count:', data?.length || 0)
 
       return data || []
     },
@@ -1165,14 +1227,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     queryKey: ['workflows-full', filterBy, sortBy, workflowStages],
     // Remove dependency - run immediately for faster loading
     queryFn: async () => {
-      console.log('Fetching workflows...', { filterBy, sortBy })
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
 
-      console.log('Current user:', userId)
-
       if (!userId) {
-        console.log('No user found, returning empty array')
         return []
       }
 
@@ -1247,8 +1305,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       const { data: workflowData, error } = await workflowQuery
 
-      console.log('Raw workflow data:', workflowData)
-
       if (error) {
         console.error('Error fetching workflows:', error)
         throw error
@@ -1309,6 +1365,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         const creator = workflow.users
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
+        const creatorEmail = creator?.email || ''
 
         // Determine user permission (simplified to admin or read)
         let userPermission: 'read' | 'admin' = 'read'
@@ -1340,6 +1397,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           active_assets: activeAssets,
           completed_assets: completedAssets,
           creator_name: creatorName,
+          creator_email: creatorEmail,
           is_favorited: favoritedWorkflowIds.has(workflow.id),
           stages: workflowStagesData,
           user_permission: userPermission,
@@ -1347,8 +1405,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           active_version_number: activeVersionMap.get(workflow.id) // Add active version number
         }
       })
-
-      console.log('Workflows with stats:', workflowsWithStats)
 
       // Sort workflows (favorites always first)
       workflowsWithStats.sort((a, b) => {
@@ -1371,7 +1427,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         }
       })
 
-      console.log('Final workflows to return:', workflowsWithStats)
       return workflowsWithStats
     },
     staleTime: 2 * 60 * 1000, // 2 minutes for main data
@@ -1385,9 +1440,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
-
-      console.log('🗄️ Fetching archived workflows for user:', userId)
-      console.log('🗄️ workflowStages available:', workflowStages?.length || 0, 'stages')
 
       if (!userId) return []
 
@@ -1425,8 +1477,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         .is('parent_workflow_id', null) // Only show workflow templates, not branches
         .or(`created_by.eq.${userId}${sharedFilter}`)
         .order('archived_at', { ascending: false })
-
-      console.log('🗄️ Archived workflows result:', { data: workflowData, error, count: workflowData?.length })
 
       if (error) {
         console.error('🗄️ Error fetching archived workflows:', error)
@@ -1528,9 +1578,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const cadenceWorkflows = filteredWorkflows.filter(w =>
     w.cadence_timeframe !== 'persistent'
   )
-
-  // Debug logs can be removed in production
-  // console.log('Filtered workflows for display:', filteredWorkflows)
 
   const handleCreateWorkflow = () => {
     setSelectedWorkflow(null) // Clear any selected workflow
@@ -2208,8 +2255,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         workflow_id: workflowId
       }
 
-      console.log('Inserting stage:', stageData)
-
       const { data, error } = await supabase
         .from('workflow_stages')
         .insert(stageData)
@@ -2220,7 +2265,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         throw error
       }
 
-      console.log('Stage created successfully:', data)
       return { data, workflowId }
     },
     onSuccess: (result) => {
@@ -2431,17 +2475,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   // Mutations for automation rules management
   const addRuleMutation = useMutation({
     mutationFn: async ({ workflowId, rule }: { workflowId: string, rule: any }) => {
-      console.log('Adding automation rule with data:', {
-        workflow_id: workflowId,
-        rule_name: rule.name,
-        rule_type: rule.type,
-        condition_type: rule.conditionType,
-        condition_value: rule.conditionValue,
-        action_type: rule.actionType,
-        action_value: rule.actionValue,
-        is_active: rule.isActive || true
-      })
-
       const { data, error } = await supabase
         .from('workflow_automation_rules')
         .insert([{
@@ -2611,13 +2644,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           }
         })
 
-        const result = await addAssetsToWorkflowByUniverse(
+        await addAssetsToWorkflowByUniverse(
           newWorkflow.id,
           rules,
           'OR' // Default to OR operator for combining rules
         )
-
-        console.log(`✅ Added ${result.added} assets to workflow branch, ${result.errors} errors`)
       }
 
       return newWorkflow
@@ -2719,8 +2750,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     mutationFn: async (branchId: string) => {
       const { data: { user } } = await supabase.auth.getUser()
 
-      console.log('Deleting branch:', branchId)
-
       const { data, error } = await supabase
         .from('workflows')
         .update({
@@ -2731,8 +2760,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         })
         .eq('id', branchId)
         .select()
-
-      console.log('Delete branch result:', { data, error })
 
       if (error) {
         console.error('Error deleting branch:', error)
@@ -2834,22 +2861,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const deleteRuleMutation = useMutation({
     mutationFn: async (ruleId: string) => {
-      console.log('🗑️ Attempting to delete rule:', ruleId)
-
       const { data, error } = await supabase
         .from('workflow_automation_rules')
         .delete()
         .eq('id', ruleId)
         .select()
 
-      console.log('🗑️ Delete result:', { data, error })
-
       if (error) throw error
 
       return data
     },
     onSuccess: (data) => {
-      console.log('✅ Rule deleted successfully:', data)
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setShowDeleteRuleModal(false)
       setRuleToDelete(null)
@@ -3155,8 +3177,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       return data
     },
     onSuccess: async (createdWorkflow) => {
-      console.log('✅ Workflow created:', createdWorkflow)
-
       // Create initial Version 1 for the new workflow
       try {
         const { error: versionError } = await supabase
@@ -3166,8 +3186,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         if (versionError) {
           console.error('Error creating initial version:', versionError)
-        } else {
-          console.log('✅ Initial version created for workflow')
         }
       } catch (error) {
         console.error('Error creating initial version:', error)
@@ -3190,10 +3208,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           const workflows = queries[0].state.data as WorkflowWithStats[] | undefined
           const newWorkflow = workflows?.find(w => w.id === createdWorkflow.id)
           if (newWorkflow) {
-            console.log('📍 Selecting newly created workflow:', newWorkflow)
             setSelectedWorkflow(newWorkflow)
-          } else {
-            console.log('⚠️ Could not find newly created workflow in list')
           }
         }
       }, 200)
@@ -4121,12 +4136,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       })
                     }
                   }}
-                  onRemoveCollaborator={(collabId, userName) => {
-                    if (confirm(`Remove ${userName} from this workflow?`)) {
-                      removeCollaboratorMutation.mutate(collabId)
-                    }
-                  }}
-                  onRemoveAdmin={(adminId, adminName) => setRemoveAdminConfirm({ id: adminId, name: adminName })}
+                  onRemoveCollaborator={(userId, userName) => setRemoveAdminConfirm({ id: userId, name: userName })}
                   onAddStakeholder={() => setShowAddStakeholderModal(true)}
                   onRemoveStakeholder={(stakeholderId, stakeholderName) => setRemoveStakeholderConfirm({ id: stakeholderId, name: stakeholderName })}
                   onApproveAccessRequest={(requestId, userId, permission, workflowId) => {
@@ -4152,20 +4162,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               )}
 
               {activeView === 'cadence' && (
-                <>
-                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2 mb-6">
-                      <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                      <p className="text-sm text-blue-800">
-                        Click <strong>"Edit Template"</strong> in the header to make changes to cadence and automation rules
-                      </p>
-                    </div>
-                  )}
-                  <CadenceView
-                    cadenceTimeframe={selectedWorkflow.cadence_timeframe || 'annually'}
-                    cadenceDays={selectedWorkflow.cadence_days ? [selectedWorkflow.cadence_days] : undefined}
-                    automationRules={automationRules?.filter(rule => rule.workflow_id === selectedWorkflow.id)}
-                    canEdit={selectedWorkflow.user_permission === 'admin' && isTemplateEditMode}
+                <CadenceView
+                  cadenceTimeframe={selectedWorkflow.cadence_timeframe || 'annually'}
+                  cadenceDays={selectedWorkflow.cadence_days ? [selectedWorkflow.cadence_days] : undefined}
+                  automationRules={automationRules?.filter(rule => rule.workflow_id === selectedWorkflow.id)}
+                  canEdit={selectedWorkflow.user_permission === 'admin'}
+                  isEditMode={isTemplateEditMode}
                     onChangeCadence={async (timeframe) => {
                       const daysMap = {
                         'daily': 1,
@@ -4205,7 +4207,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                       setShowDeleteRuleModal(true)
                     }}
                   />
-                </>
               )}
 
               {/* Branches View */}
@@ -4214,6 +4215,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   branches={workflowBranches}
                   statusFilter={branchStatusFilter}
                   collapsedBranches={collapsedBranches}
+                  collapsedTemplateVersions={collapsedTemplateVersions}
                   canEdit={selectedWorkflow.user_permission === 'admin'}
                   isLoading={isLoadingBranches}
                   onStatusFilterChange={setBranchStatusFilter}
@@ -4226,7 +4228,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                     }
                     setCollapsedBranches(newCollapsed)
                   }}
-                  onCreateBranch={(parentBranchId) => {
+                  onToggleTemplateCollapse={(versionNumber) => {
+                    const newCollapsed = new Set(collapsedTemplateVersions)
+                    if (newCollapsed.has(versionNumber)) {
+                      newCollapsed.delete(versionNumber)
+                    } else {
+                      newCollapsed.add(versionNumber)
+                    }
+                    setCollapsedTemplateVersions(newCollapsed)
+                  }}
+                  onCreateBranch={(parentBranchId, templateVersion) => {
                     if (parentBranchId) {
                       setParentBranchForNew(parentBranchId)
                     }
@@ -4399,7 +4410,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         <div className="space-y-6">
                           {/* Workflows grouped by frequency */}
                           {(() => {
-                            console.log('Grouping workflows by frequency category...')
                             // Group workflows by frequency category based on cadence_timeframe if available
                             const groups = {
                               'Persistent': filteredWorkflows.filter(w => w.cadence_timeframe === 'persistent' || (!w.cadence_timeframe && w.cadence_days === 0)),
@@ -4899,16 +4909,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       <ConfirmDialog
         isOpen={showDeleteRuleModal}
         onClose={() => {
-          console.log('🚪 ConfirmDialog onClose called, isPending:', deleteRuleMutation.isPending)
           if (!deleteRuleMutation.isPending) {
             setShowDeleteRuleModal(false)
             setRuleToDelete(null)
           }
         }}
         onConfirm={() => {
-          console.log('✔️ ConfirmDialog onConfirm called, ruleToDelete:', ruleToDelete)
           if (ruleToDelete) {
-            console.log('🚀 Calling deleteRuleMutation.mutate with:', ruleToDelete.id)
             deleteRuleMutation.mutate(ruleToDelete.id)
           }
         }}
@@ -4989,13 +4996,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         }}
         onConfirm={() => {
           if (removeAdminConfirm) {
-            removeCollaboratorMutation.mutate(removeAdminConfirm.id)
+            const collab = workflowCollaborators?.find((c: any) => c.user_id === removeAdminConfirm.id)
+            if (collab) {
+              removeCollaboratorMutation.mutate(collab.id)
+            }
             setRemoveAdminConfirm(null)
           }
         }}
-        title="Remove Admin?"
-        message={`Are you sure you want to remove ${removeAdminConfirm?.name} as an admin from this workflow? They will lose all administrative privileges.`}
-        confirmText="Remove Admin"
+        title="Remove Administrator?"
+        message={`Are you sure you want to remove ${removeAdminConfirm?.name} as an administrator from this workflow? They will no longer have access to view this workflow.`}
+        confirmText="Remove Administrator"
         cancelText="Cancel"
         variant="danger"
         isLoading={removeCollaboratorMutation.isPending}

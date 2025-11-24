@@ -91,14 +91,17 @@ export function StagesView({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Define the stages and checklist items for this workflow template
-          </p>
+          {canEdit && !isEditMode && (
+            <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Click <strong>"Edit Template"</strong> in the header to make changes to stages and checklists</span>
+            </div>
+          )}
         </div>
         {showControls && hasStages && onAddStage && (
           <Button onClick={onAddStage}>
@@ -108,22 +111,9 @@ export function StagesView({
         )}
       </div>
 
-      {/* Info Banner - Show if not in edit mode but user can edit */}
-      {canEdit && !isEditMode && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm text-blue-900 font-medium">Template Edit Mode</p>
-            <p className="text-sm text-blue-700 mt-1">
-              To modify stages and checklists, enable Template Edit Mode using the "Edit Template" button above.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Stages List */}
       {hasStages ? (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {stages.map((stage, index) => {
             const stageChecklists = getChecklistItemsForStage(stage.stage_key)
 

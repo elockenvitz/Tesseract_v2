@@ -8,7 +8,7 @@
  */
 
 import React from 'react'
-import { Calendar, Plus, Clock, Zap, Edit3, Trash2, Power, PowerOff } from 'lucide-react'
+import { Calendar, Plus, Clock, Zap, Edit3, Trash2, Power, PowerOff, AlertCircle } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 
@@ -39,6 +39,9 @@ export interface CadenceViewProps {
   /** Whether user has admin permission */
   canEdit?: boolean
 
+  /** Whether in template edit mode */
+  isEditMode?: boolean
+
   /** Whether automation rules are loading */
   isLoadingRules?: boolean
 
@@ -57,6 +60,7 @@ export function CadenceView({
   cadenceDays,
   automationRules = [],
   canEdit = false,
+  isEditMode = false,
   isLoadingRules = false,
   onChangeCadence,
   onAddRule,
@@ -128,64 +132,38 @@ export function CadenceView({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Cadence & Automation</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Configure workflow schedule and automation rules
-          </p>
+          {canEdit && !isEditMode && (
+            <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Click <strong>"Edit Template"</strong> in the header to make changes to cadence and automation rules</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-600">Cadence:</span>
+          {canEdit && isEditMode && onChangeCadence ? (
+            <select
+              value={cadenceTimeframe}
+              onChange={(e) => onChangeCadence(e.target.value as CadenceTimeframe)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="semi-annually">Semi-Annually</option>
+              <option value="annually">Annually</option>
+              <option value="persistent">Persistent (No Cadence)</option>
+            </select>
+          ) : (
+            <span className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900">
+              {getCadenceLabel(cadenceTimeframe)}
+            </span>
+          )}
         </div>
       </div>
-
-      {/* Cadence Configuration */}
-      <Card>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <Calendar className="w-5 h-5 text-indigo-600" />
-              <h4 className="text-sm font-semibold text-gray-900">Workflow Cadence</h4>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-2">
-                Timeframe
-              </label>
-              {canEdit && onChangeCadence ? (
-                <select
-                  value={cadenceTimeframe}
-                  onChange={(e) => onChangeCadence(e.target.value as CadenceTimeframe)}
-                  className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="semi-annually">Semi-Annually</option>
-                  <option value="annually">Annually</option>
-                  <option value="persistent">Persistent (No Cadence)</option>
-                </select>
-              ) : (
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 w-full md:w-64">
-                  {getCadenceLabel(cadenceTimeframe)}
-                </div>
-              )}
-            </div>
-
-            {cadenceTimeframe !== 'persistent' && (
-              <div className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p>
-                  <strong>Note:</strong> This workflow runs on a{' '}
-                  <span className="font-medium">{getCadenceLabel(cadenceTimeframe).toLowerCase()}</span> schedule.
-                  {cadenceDays && cadenceDays.length > 0 && (
-                    <> Configured for specific days: {cadenceDays.join(', ')}</>
-                  )}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
 
       {/* Automation Rules */}
       <Card>
@@ -197,7 +175,7 @@ export function CadenceView({
                 Automation Rules ({automationRules.length})
               </h4>
             </div>
-            {canEdit && onAddRule && (
+            {canEdit && isEditMode && onAddRule && (
               <Button size="sm" onClick={onAddRule}>
                 <Plus className="w-4 h-4 mr-1" />
                 Add Rule
@@ -311,7 +289,7 @@ export function CadenceView({
                   Create automation rules to trigger actions based on time, events, or activity.
                   For example, automatically reset workflow branches or send notifications.
                 </p>
-                {canEdit && onAddRule && (
+                {canEdit && isEditMode && onAddRule && (
                   <Button size="sm" onClick={onAddRule}>
                     <Plus className="w-4 h-4 mr-1" />
                     Add First Rule

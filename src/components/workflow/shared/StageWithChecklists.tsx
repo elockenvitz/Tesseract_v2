@@ -92,33 +92,23 @@ export function StageWithChecklists({
 
   return (
     <Card>
-      <div className="p-4">
+      <div className="p-3">
         {/* Stage Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3">
             {/* Stage Number */}
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 text-gray-600 font-medium">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm">
               {index + 1}
             </div>
 
             {/* Stage Info */}
             <div>
-              <h4 className="font-medium text-gray-900 text-lg">{stage.stage_label}</h4>
+              <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
               <p className="text-sm text-gray-500">{stage.stage_description}</p>
-              <div className="flex items-center space-x-4 mt-1">
+              <div className="mt-0.5">
                 <span className="text-xs text-gray-400">
                   Deadline: {stage.standard_deadline_days} days
                 </span>
-                <div
-                  className="w-4 h-4 rounded-full border border-gray-300"
-                  style={{ backgroundColor: stage.stage_color }}
-                  title={`Color: ${stage.stage_color}`}
-                />
-                {checklistItems.length > 0 && (
-                  <span className="text-xs text-gray-400">
-                    {checklistItems.length} checklist item{checklistItems.length !== 1 ? 's' : ''}
-                  </span>
-                )}
               </div>
             </div>
           </div>
@@ -173,8 +163,8 @@ export function StageWithChecklists({
         </div>
 
         {/* Checklist Items Section */}
-        <div className="mt-4 border-t pt-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="mt-3 border-t pt-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
               <ListChecks className="w-4 h-4 text-gray-500" />
               <h5 className="text-sm font-medium text-gray-700">
@@ -235,27 +225,8 @@ export function StageWithChecklists({
 
         {/* Content Tiles Section (if provided) */}
         {contentTilesComponent && (
-          <div className="mt-4 border-t pt-4">
+          <div className="mt-3 border-t pt-3">
             {contentTilesComponent}
-          </div>
-        )}
-
-        {/* Suggested Priorities */}
-        {stage.suggested_priorities && stage.suggested_priorities.length > 0 && (
-          <div className="mt-4 border-t pt-4">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-gray-500">Suggested priorities:</span>
-              <div className="flex flex-wrap gap-1">
-                {stage.suggested_priorities.map((priority, i) => (
-                  <span
-                    key={i}
-                    className="px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-700 border border-blue-200"
-                  >
-                    {priority}
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
         )}
       </div>

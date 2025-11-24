@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, Trash2, Edit2, Eye, X, Search, UserPlus, UserMinus, ExternalLink } from 'lucide-react'
+import { Plus, Trash2, Edit2, Eye, X, Search, UserPlus, UserMinus, ExternalLink, AlertCircle } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -30,6 +30,8 @@ interface SimplifiedUniverseBuilderProps {
   onRulesChange: (rules: FilterRule[]) => void
   onSave?: () => void
   isEditable?: boolean
+  canEdit?: boolean
+  isEditMode?: boolean
 
   // Data for dropdowns
   analysts?: Array<{ value: string; label: string }>
@@ -44,6 +46,8 @@ export function SimplifiedUniverseBuilder({
   onRulesChange,
   onSave,
   isEditable = true,
+  canEdit = false,
+  isEditMode = false,
   analysts = [],
   lists = [],
   themes = [],
@@ -709,9 +713,14 @@ export function SimplifiedUniverseBuilder({
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Universe Filters</h3>
-          <p className="text-sm text-gray-500">Define which assets should be included in this workflow</p>
+          {canEdit && !isEditMode && (
+            <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Click <strong>"Edit Template"</strong> in the header to make changes to universe rules</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <Button

@@ -9,7 +9,6 @@
  */
 
 import React from 'react'
-import { AlertCircle } from 'lucide-react'
 import { SimplifiedUniverseBuilder } from '../SimplifiedUniverseBuilder'
 
 export interface FilterRule {
@@ -71,19 +70,6 @@ export function UniverseView({
 }: UniverseViewProps) {
   return (
     <div className="space-y-6">
-      {/* Info Banner - Show if not in edit mode but user can edit */}
-      {canEdit && !isEditMode && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm text-blue-900 font-medium">Template Edit Mode</p>
-            <p className="text-sm text-blue-700 mt-1">
-              Click <strong>"Edit Template"</strong> in the header to modify universe rules that determine which assets are eligible for this workflow.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Simplified Universe Builder */}
       <SimplifiedUniverseBuilder
         workflowId={workflowId}
@@ -91,6 +77,8 @@ export function UniverseView({
         onRulesChange={onRulesChange || (() => {})}
         onSave={onSave || (() => {})}
         isEditable={isEditMode}
+        canEdit={canEdit}
+        isEditMode={isEditMode}
         analysts={analysts}
         lists={lists}
         themes={themes}

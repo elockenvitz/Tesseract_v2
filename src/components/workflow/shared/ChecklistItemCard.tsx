@@ -145,24 +145,22 @@ export function ChecklistItemCard({
             {showControls && (
               <div className="flex items-center space-x-1 ml-2">
                 {onEdit && (
-                  <Button
-                    size="xs"
-                    variant="outline"
+                  <button
                     title="Edit Item"
                     onClick={onEdit}
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
                   >
-                    <Edit3 className="w-3 h-3" />
-                  </Button>
+                    <Edit3 className="w-4 h-4" />
+                  </button>
                 )}
                 {onDelete && (
-                  <Button
-                    size="xs"
-                    variant="outline"
+                  <button
                     title="Delete Item"
                     onClick={onDelete}
+                    className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
                   >
-                    <Trash2 className="w-3 h-3 text-red-600" />
-                  </Button>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 )}
               </div>
             )}
