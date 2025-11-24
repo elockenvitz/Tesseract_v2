@@ -10,6 +10,15 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { WorkflowManager } from '../components/ui/WorkflowManager'
 import { ContentTileManager } from '../components/ui/ContentTileManager'
 import { SimplifiedUniverseBuilder } from '../components/workflow/SimplifiedUniverseBuilder'
+import {
+  OverviewView,
+  StagesView,
+  UniverseView,
+  ModelsView,
+  AdminsView,
+  CadenceView,
+  BranchesView
+} from '../components/workflow/views'
 import { CreateBranchModal } from '../components/modals/CreateBranchModal'
 import { UniversePreviewModal } from '../components/modals/UniversePreviewModal'
 import { TemplateVersionsModal } from '../components/modals/TemplateVersionsModal'
@@ -394,9 +403,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       branchQuery = branchQuery.order('branched_at', { ascending: false })
 
       const { data, error } = await branchQuery
-
-      console.log('Branch query filter:', branchStatusFilter)
-      console.log('Branch query result:', { data, error, count: data?.length })
 
       if (error) {
         console.error('Error fetching workflow branches:', error)
@@ -3997,1538 +4003,209 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             {/* Tab Content */}
             <div className="flex-1 p-6 bg-gray-50 overflow-y-auto">
               {activeView === 'overview' && (
-                <div className="space-y-6">
-                  {/* Enhanced Stats Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <TrendingUp className="w-6 h-6 text-blue-600" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-2xl font-bold text-gray-900">{selectedWorkflow.usage_count}</div>
-                            <div className="text-sm text-gray-500">Total Uses</div>
-                          </div>
-                        </div>
-                        <div className="mt-4 text-xs text-gray-400">
-                          Times this workflow has been applied
-                        </div>
-                      </div>
-                    </Card>
-
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-orange-100 rounded-lg">
-                            <Clock className="w-6 h-6 text-orange-600" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-2xl font-bold text-gray-900">{selectedWorkflow.active_assets}</div>
-                            <div className="text-sm text-gray-500">Active Assets</div>
-                          </div>
-                        </div>
-                        <div className="mt-4 text-xs text-gray-400">
-                          Assets currently in progress
-                        </div>
-                      </div>
-                    </Card>
-
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-green-100 rounded-lg">
-                            <CheckSquare className="w-6 h-6 text-green-600" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-2xl font-bold text-gray-900">{selectedWorkflow.completed_assets}</div>
-                            <div className="text-sm text-gray-500">Completed</div>
-                          </div>
-                        </div>
-                        <div className="mt-4 text-xs text-gray-400">
-                          Assets that finished this workflow
-                        </div>
-                      </div>
-                    </Card>
-
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-purple-100 rounded-lg">
-                            <Target className="w-6 h-6 text-purple-600" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-2xl font-bold text-gray-900">{selectedWorkflow.stages?.length || 0}</div>
-                            <div className="text-sm text-gray-500">Total Stages</div>
-                          </div>
-                        </div>
-                        <div className="mt-4 text-xs text-gray-400">
-                          Steps in this workflow process
-                        </div>
-                      </div>
-                    </Card>
-                  </div>
-
-                  {/* Workflow Performance Insights */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Success Rate Card */}
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-900">Performance Metrics</h3>
-                          <BarChart3 className="w-5 h-5 text-gray-400" />
-                        </div>
-                        <div className="space-y-4">
-                          <div>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-gray-600">Completion Rate</span>
-                              <span className="font-medium">
-                                {selectedWorkflow.usage_count > 0
-                                  ? Math.round((selectedWorkflow.completed_assets / selectedWorkflow.usage_count) * 100)
-                                  : 0}%
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                                style={{
-                                  width: selectedWorkflow.usage_count > 0
-                                    ? `${Math.round((selectedWorkflow.completed_assets / selectedWorkflow.usage_count) * 100)}%`
-                                    : '0%'
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-gray-600">Active Progress</span>
-                              <span className="font-medium">
-                                {selectedWorkflow.usage_count > 0
-                                  ? Math.round((selectedWorkflow.active_assets / selectedWorkflow.usage_count) * 100)
-                                  : 0}%
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-orange-500 h-2 rounded-full transition-all duration-300"
-                                style={{
-                                  width: selectedWorkflow.usage_count > 0
-                                    ? `${Math.round((selectedWorkflow.active_assets / selectedWorkflow.usage_count) * 100)}%`
-                                    : '0%'
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        {selectedWorkflow.usage_count === 0 && (
-                          <div className="text-center py-4">
-                            <div className="text-sm text-gray-500">No usage data yet</div>
-                            <div className="text-xs text-gray-400 mt-1">Apply this workflow to see performance metrics</div>
-                          </div>
-                        )}
-                      </div>
-                    </Card>
-
-                    {/* Workflow Timeline */}
-                    <Card>
-                      <div className="p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-900">Workflow Timeline</h3>
-                          <Calendar className="w-5 h-5 text-gray-400" />
-                        </div>
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">Created</div>
-                              <div className="text-xs text-gray-500">{new Date(selectedWorkflow.created_at).toLocaleDateString()}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">Last Updated</div>
-                              <div className="text-xs text-gray-500">{new Date(selectedWorkflow.updated_at).toLocaleDateString()}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">Created by</div>
-                              <div className="text-xs text-gray-500">{selectedWorkflow.creator_name}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  </div>
-
-                  {/* Template Version Information */}
-                  <Card>
-                    <div className="p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center space-x-2">
-                          <GitBranch className="w-5 h-5 text-indigo-600" />
-                          <h3 className="text-lg font-semibold text-gray-900">Template Version</h3>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setShowTemplateVersions(true)}
-                        >
-                          <Eye className="w-4 h-4 mr-2" />
-                          View All Versions
-                        </Button>
-                      </div>
-
-                      {templateVersions && templateVersions.length > 0 ? (
-                        <div className="space-y-3">
-                          {(() => {
-                            const activeVersion = templateVersions.find(v => v.is_active)
-                            return activeVersion ? (
-                              <>
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="flex items-center space-x-2">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        {formatVersion(activeVersion.version_number, activeVersion.major_version, activeVersion.minor_version)}
-                                      </span>
-                                      <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
-                                        Active
-                                      </span>
-                                    </div>
-                                    {activeVersion.description && (
-                                      <p className="text-xs text-gray-500 mt-1">{activeVersion.description}</p>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-4 text-xs text-gray-500 pt-2 border-t">
-                                  <span>{activeVersion.stages?.length || 0} stages</span>
-                                  <span>•</span>
-                                  <span>{activeVersion.checklist_templates?.length || 0} checklists</span>
-                                  <span>•</span>
-                                  <span>{activeVersion.automation_rules?.length || 0} rules</span>
-                                  <span>•</span>
-                                  <span>Created {new Date(activeVersion.created_at).toLocaleDateString()}</span>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-center py-4">
-                                <p className="text-sm text-gray-500">No active version</p>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      ) : (
-                        <div className="text-center py-4">
-                          <p className="text-sm text-gray-500 mb-2">No versions created yet</p>
-                          <p className="text-xs text-gray-400">Create a version to track template changes over time</p>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-
-                  {/* Workflow Stages Overview */}
-                  <Card>
-                    <div className="p-6">
-                      <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-gray-900">Workflow Stages Overview</h3>
-                        <Button size="sm" variant="outline" onClick={() => handleTabChange('stages')}>
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Details
-                        </Button>
-                      </div>
-
-                      {selectedWorkflow.stages && selectedWorkflow.stages.length > 0 ? (
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-                            <span>Stage Flow</span>
-                            <span>Est. Duration</span>
-                          </div>
-                          <div className="space-y-3">
-                            {selectedWorkflow.stages.map((stage, index) => (
-                              <div key={stage.stage_key} className="flex items-center space-x-4">
-                                <div className="flex items-center space-x-3 flex-1">
-                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm">
-                                    {index + 1}
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className="text-sm font-medium text-gray-900">{stage.stage_label}</div>
-                                    <div className="text-xs text-gray-500 truncate">{stage.stage_description}</div>
-                                  </div>
-                                </div>
-                                <div className="text-sm text-gray-500 min-w-0">
-                                  {stage.standard_deadline_days} days
-                                </div>
-                                <div
-                                  className="w-3 h-3 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: stage.stage_color }}
-                                />
-                                {index < selectedWorkflow.stages!.length - 1 && (
-                                  <div className="w-4 h-px bg-gray-300 flex-shrink-0"></div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="mt-4 pt-4 border-t border-gray-200">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Total estimated duration:</span>
-                              <span className="font-medium text-gray-900">
-                                {selectedWorkflow.stages.reduce((total, stage) => total + stage.standard_deadline_days, 0)} days
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h4 className="text-lg font-medium text-gray-900 mb-2">No stages configured</h4>
-                          <p className="text-gray-500 mb-4">Add stages to define your workflow process and track progress effectively.</p>
-                          {(selectedWorkflow.user_permission === 'admin') && (
-                            <Button size="sm" onClick={() => handleTabChange('stages')}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Configure Stages
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-
-                  {/* Workflow Branches Overview */}
-                  <Card>
-                    <div className="p-6">
-                      <div className="flex items-center justify-between mb-6">
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">Workflow Branches</h3>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {workflowBranches?.length || 0} total branches
-                            {' '}({workflowBranches?.filter(b => b.status === 'active').length || 0} active,{' '}
-                            {workflowBranches?.filter(b => b.status === 'inactive').length || 0} ended)
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => handleTabChange('branches')}>
-                            <Eye className="w-4 h-4 mr-2" />
-                            View All
-                          </Button>
-                          {(selectedWorkflow.user_permission === 'admin') && (
-                            <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Create Branch
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {!workflowBranches || workflowBranches.length === 0 ? (
-                        <div className="text-center py-8">
-                          <Orbit className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h4 className="text-lg font-medium text-gray-900 mb-2">No workflow branches yet</h4>
-                          <p className="text-gray-500 mb-4">
-                            Create branches to run this workflow for specific time periods or contexts
-                          </p>
-                          {(selectedWorkflow.user_permission === 'admin') && (
-                            <Button size="sm" onClick={() => setShowCreateBranchModal(true)}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Create First Branch
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {/* Show only first 5 instances in overview */}
-                          {workflowBranches.slice(0, 5).map((branch: any) => {
-                            const statusColors = {
-                              active: 'bg-green-100 text-green-700 border-green-300',
-                              inactive: 'bg-gray-100 text-gray-600 border-gray-300'
-                            }
-                            const statusIcons = {
-                              active: Activity,
-                              inactive: CheckCircle
-                            }
-                            const StatusIcon = statusIcons[branch.status as keyof typeof statusIcons]
-
-                            // Construct full branch name with suffix
-                            const fullBranchName = branch.branch_suffix ? `${branch.name} ${branch.branch_suffix}` : branch.name
-
-                            // Determine if this is a clean branch or a copy
-                            const isCleanBranch = !branch.source_branch_id
-                            const BranchIcon = isCleanBranch ? Network : Copy
-
-                            // Format version number as v1.02 (major.minor)
-                            const formatVersion = (versionNumber: number) => {
-                              if (!versionNumber) return ''
-                              const major = Math.floor(versionNumber / 100)
-                              const minor = versionNumber % 100
-                              return `v${major}.${minor.toString().padStart(2, '0')}`
-                            }
-
-                            return (
-                              <div key={branch.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center space-x-3 flex-1">
-                                  <div className="relative">
-                                    <BranchIcon
-                                      className={`w-4 h-4 flex-shrink-0 ${isCleanBranch ? 'text-indigo-600' : 'text-amber-600'}`}
-                                      title={isCleanBranch ? 'Clean branch' : 'Copied branch'}
-                                    />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center space-x-2">
-                                      <button
-                                        onClick={() => {
-                                          setSelectedBranch(branch)
-                                          setShowBranchOverviewModal(true)
-                                        }}
-                                        className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate text-left"
-                                      >
-                                        {fullBranchName}
-                                      </button>
-                                      <Badge
-                                        size="sm"
-                                        className={`text-xs flex items-center space-x-1 ${statusColors[branch.status as keyof typeof statusColors]}`}
-                                      >
-                                        {StatusIcon && <StatusIcon className="w-3 h-3" />}
-                                        <span className="capitalize">{branch.status}</span>
-                                      </Badge>
-                                    </div>
-                                    <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
-                                      {branch.template_version_number && (
-                                        <span className="text-purple-600 font-medium">{formatVersion(branch.template_version_number)}</span>
-                                      )}
-                                      {branch.totalAssets > 0 && (
-                                        <>
-                                          <span>{branch.totalAssets} assets</span>
-                                          <span className="text-green-600">{branch.activeAssets} active</span>
-                                          <span className="text-blue-600">{branch.completedAssets} completed</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-xs text-gray-500 ml-4">
-                                  {new Date(branch.branched_at || branch.created_at).toLocaleDateString()}
-                                </div>
-                              </div>
-                            )
-                          })}
-
-                          {workflowBranches.length > 5 && (
-                            <div className="text-center pt-2">
-                              <Button size="sm" variant="ghost" onClick={() => handleTabChange('cadence')}>
-                                View all {workflowBranches.length} branches
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-
-                  {/* Workflow Actions Section */}
-                  {(selectedWorkflow.user_permission === 'admin') && (
-                    <Card>
-                      <div className="p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Workflow Actions</h3>
-
-                        {/* Archive Action */}
-                        {!selectedWorkflow.deleted && (
-                          <div className="flex items-center justify-between mb-6 pb-6 border-b border-gray-200">
-                            <div>
-                              <h4 className="text-base font-medium text-gray-900 mb-1">
-                                {selectedWorkflow.archived ? 'Restore from Archive' : 'Archive Workflow'}
-                              </h4>
-                              <p className="text-sm text-gray-600">
-                                {selectedWorkflow.archived
-                                  ? 'Unarchive this workflow to make it active and visible in the interface again.'
-                                  : 'Archive this workflow to hide it from the interface while preserving all data.'
-                                }
-                              </p>
-                            </div>
-                            {selectedWorkflow.archived ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 ml-4 min-w-[120px]"
-                                onClick={() => {
-                                  setWorkflowToUnarchive(selectedWorkflow.id)
-                                  setShowUnarchiveModal(true)
-                                }}
-                              >
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                Unarchive
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400 ml-4 min-w-[120px]"
-                                onClick={() => {
-                                  setWorkflowToDelete(selectedWorkflow.id)
-                                  setShowDeleteConfirmModal(true)
-                                }}
-                              >
-                                <Archive className="w-4 h-4 mr-2" />
-                                Archive
-                              </Button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Permanent Delete Action (only for archived workflows) */}
-                        {selectedWorkflow.archived && (
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h4 className="text-base font-medium text-gray-900 mb-1">
-                                Remove Workflow
-                              </h4>
-                              <p className="text-sm text-gray-600">
-                                Remove this workflow from the archived section. All data will be preserved and can be recovered by the application team if needed.
-                              </p>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-red-500 text-red-700 hover:bg-red-100 hover:border-red-600 ml-4 min-w-[160px]"
-                              onClick={() => {
-                                setWorkflowToPermanentlyDelete(selectedWorkflow.id)
-                                setShowPermanentDeleteModal(true)
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Remove from Archive
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </Card>
-                  )}
-                </div>
+                <OverviewView
+                  workflow={selectedWorkflow}
+                  templateVersions={templateVersions}
+                  onViewAllVersions={() => setShowTemplateVersions(true)}
+                  onViewStages={() => handleTabChange('stages')}
+                />
               )}
 
               {activeView === 'stages' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
-                    {(selectedWorkflow.user_permission === 'admin') &&
-                     (selectedWorkflow?.stages || []).length > 0 && isTemplateEditMode && (
-                      <Button size="sm" onClick={() => setShowAddStage(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Stage
-                      </Button>
-                    )}
-                  </div>
-                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
-                      <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                      <p className="text-sm text-blue-800">
-                        Click <strong>"Edit Template"</strong> in the header to make changes to stages and checklists
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    {(selectedWorkflow?.stages || []).length === 0 ? (
-                      <Card>
-                        <div className="text-center py-6">
-                          <Target className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                          <h3 className="text-base font-medium text-gray-900 mb-2">No stages configured</h3>
-                          <p className="text-sm text-gray-500 mb-3">Add stages to organize your workflow process.</p>
-                          {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                            <Button size="sm" onClick={() => setShowAddStage(true)}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Add First Stage
-                            </Button>
-                          )}
-                        </div>
-                      </Card>
-                    ) : (
-                      (selectedWorkflow?.stages || []).map((stage, index) => {
-                        // Get workflow checklist templates for this stage
-                        const stageChecklistTemplates = workflowChecklistTemplates?.filter(
-                          template => template.workflow_id === selectedWorkflow.id && template.stage_id === stage.stage_key
-                        ) || []
-
-                        return (
-                          <Card key={stage.stage_key}>
-                            <div className="p-3">
-                              {/* Stage Header */}
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center space-x-4">
-                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm">
-                                    {index + 1}
-                                  </div>
-                                  <div>
-                                    <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
-                                    <p className="text-sm text-gray-500">{stage.stage_description}</p>
-                                    <div className="flex items-center space-x-4 mt-1">
-                                      <span className="text-xs text-gray-400">Deadline: {stage.standard_deadline_days} days</span>
-                                      <div
-                                        className="w-3 h-3 rounded-full"
-                                        style={{ backgroundColor: stage.stage_color }}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                                {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                                  <div className="flex items-center space-x-2">
-                                    <Button size="xs" variant="outline" title="Move Up" disabled={index === 0}
-                                      onClick={() => {
-                                        if (index > 0) {
-                                          const stages = selectedWorkflow.stages!
-                                          const reorderedStages = [...stages]
-                                          const stageToMove = reorderedStages[index]
-                                          const stageAbove = reorderedStages[index - 1]
-
-                                          reorderStagesMutation.mutate({
-                                            stages: [
-                                              { id: stageToMove.id, sort_order: stageAbove.sort_order },
-                                              { id: stageAbove.id, sort_order: stageToMove.sort_order }
-                                            ],
-                                            movedStageName: stageToMove.name,
-                                            direction: 'up'
-                                          })
-                                        }
-                                      }}>
-                                      <ArrowUp className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="xs" variant="outline" title="Move Down" disabled={index === (selectedWorkflow.stages!.length - 1)}
-                                      onClick={() => {
-                                        if (index < selectedWorkflow.stages!.length - 1) {
-                                          const stages = selectedWorkflow.stages!
-                                          const reorderedStages = [...stages]
-                                          const stageToMove = reorderedStages[index]
-                                          const stageBelow = reorderedStages[index + 1]
-
-                                          reorderStagesMutation.mutate({
-                                            stages: [
-                                              { id: stageToMove.id, sort_order: stageBelow.sort_order },
-                                              { id: stageBelow.id, sort_order: stageToMove.sort_order }
-                                            ],
-                                            movedStageName: stageToMove.name,
-                                            direction: 'down'
-                                          })
-                                        }
-                                      }}>
-                                      <ArrowDown className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="xs" variant="outline" title="Edit Stage"
-                                      onClick={() => setEditingStage(stage.id)}>
-                                      <Edit3 className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="xs" variant="outline" title="Delete Stage"
-                                      onClick={() => {
-                                        setStageToDelete({
-                                          id: stage.id,
-                                          key: stage.stage_key,
-                                          label: stage.stage_label
-                                        })
-                                        setShowDeleteStageModal(true)
-                                      }}>
-                                      <Trash2 className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Checklist Items */}
-                              <div className="border-t pt-3">
-                                <div className="flex items-center justify-between mb-2">
-                                  <h5 className="text-sm font-medium text-gray-700">
-                                    Checklist Template ({stageChecklistTemplates.length})
-                                  </h5>
-                                  {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                                    <button
-                                      onClick={() => setShowAddChecklistItem(stage.stage_key)}
-                                      className="text-xs font-medium text-gray-700 hover:text-gray-900 flex items-center transition-colors"
-                                    >
-                                      <Plus className="w-3 h-3 mr-1" />
-                                      Add Item
-                                    </button>
-                                  )}
-                                </div>
-
-                                {stageChecklistTemplates.length === 0 ? (
-                                  <div className="text-center py-4 bg-gray-50 rounded-lg">
-                                    <CheckSquare className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                                    <p className="text-sm text-gray-500">No checklist template items</p>
-                                    {(selectedWorkflow.user_permission === 'admin') && (
-                                      <p className="text-xs text-gray-400 mt-1">Add template items that will appear for all assets using this workflow</p>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1.5">
-                                    {stageChecklistTemplates.map((template, itemIndex) => (
-                                      <div
-                                        key={template.id}
-                                        draggable={(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode}
-                                        onDragStart={(e) => handleDragStart(e, template.id)}
-                                        onDragOver={handleDragOver}
-                                        onDragEnter={(e) => handleDragEnter(e, template.id)}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={(e) => handleDrop(e, template.id, stageChecklistTemplates)}
-                                        onDragEnd={handleDragEnd}
-                                        className={`flex items-center space-x-2 p-2 rounded-lg transition-all duration-200 ${
-                                          draggedChecklistItem === template.id ? 'opacity-50 bg-blue-100' :
-                                          dragOverItem === template.id ? 'bg-blue-200 border-2 border-blue-400' :
-                                          'bg-gray-50 hover:bg-gray-100'
-                                        } ${
-                                          (selectedWorkflow.user_permission === 'admin') && isTemplateEditMode ? 'cursor-move' : ''
-                                        }`}
-                                      >
-                                        {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                                          <div className="flex items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-600">
-                                            <GripVertical className="w-4 h-4" />
-                                          </div>
-                                        )}
-                                        <div className="flex items-center justify-center w-5 h-5 rounded bg-white border border-gray-300">
-                                          <span className="text-xs text-gray-500">{itemIndex + 1}</span>
-                                        </div>
-                                        <div className="flex-1">
-                                          <div className="flex items-center space-x-2">
-                                            <span className="text-sm font-medium text-gray-900">{template.item_text}</span>
-                                            {template.is_required && (
-                                              <Badge variant="destructive" size="xs">Required</Badge>
-                                            )}
-                                          </div>
-                                          {template.description && (
-                                            <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
-                                          )}
-                                          <div className="flex items-center space-x-3 mt-1">
-                                            {template.estimated_hours && (
-                                              <span className="text-xs text-gray-400">~{template.estimated_hours}h</span>
-                                            )}
-                                            {template.tags && (
-                                              <span className="text-xs text-gray-400">{template.tags.join(', ')}</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                          {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                                            <div className="flex items-center space-x-1">
-                                              <Button size="xs" variant="outline" title="Edit Item"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  setEditingChecklistItem(template.id)
-                                                }}>
-                                                <Edit3 className="w-3 h-3" />
-                                              </Button>
-                                              <Button size="xs" variant="outline" title="Delete Item"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  if (confirm(`Are you sure you want to delete "${template.item_text}"?`)) {
-                                                    deleteChecklistItemMutation.mutate(template.id)
-                                                  }
-                                                }}>
-                                                <Trash2 className="w-3 h-3" />
-                                              </Button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Content Tiles */}
-                              <div className="border-t pt-3 mt-3">
-                                <ContentTileManager
-                                  workflowId={selectedWorkflow.id}
-                                  stageId={stage.stage_key}
-                                  isEditable={isTemplateEditMode}
-                                  onTileChange={(description) => trackChange('checklist_edited', description)}
-                                />
-                              </div>
-                            </div>
-                          </Card>
-                        )
+                <StagesView
+                  workflow={selectedWorkflow}
+                  checklistItems={workflowChecklistTemplates}
+                  isEditMode={isTemplateEditMode}
+                  canEdit={selectedWorkflow.user_permission === 'admin'}
+                  draggedItemId={draggedChecklistItem}
+                  dragOverItemId={dragOverItem}
+                  onAddStage={() => setShowAddStage(true)}
+                  onMoveStageUp={(stageId) => {
+                    const index = selectedWorkflow.stages?.findIndex(s => s.id === stageId)
+                    if (index !== undefined && index > 0 && selectedWorkflow.stages) {
+                      const stages = selectedWorkflow.stages
+                      const stageToMove = stages[index]
+                      const stageAbove = stages[index - 1]
+                      reorderStagesMutation.mutate({
+                        stages: [
+                          { id: stageToMove.id, sort_order: stageAbove.sort_order },
+                          { id: stageAbove.id, sort_order: stageToMove.sort_order }
+                        ],
+                        movedStageName: stageToMove.name,
+                        direction: 'up'
                       })
-                    )}
-                  </div>
-                </div>
+                    }
+                  }}
+                  onMoveStageDown={(stageId) => {
+                    const index = selectedWorkflow.stages?.findIndex(s => s.id === stageId)
+                    if (index !== undefined && selectedWorkflow.stages && index < selectedWorkflow.stages.length - 1) {
+                      const stages = selectedWorkflow.stages
+                      const stageToMove = stages[index]
+                      const stageBelow = stages[index + 1]
+                      reorderStagesMutation.mutate({
+                        stages: [
+                          { id: stageToMove.id, sort_order: stageBelow.sort_order },
+                          { id: stageBelow.id, sort_order: stageToMove.sort_order }
+                        ],
+                        movedStageName: stageToMove.name,
+                        direction: 'down'
+                      })
+                    }
+                  }}
+                  onEditStage={(stageId) => setEditingStage(stageId)}
+                  onDeleteStage={(stageId) => {
+                    const stage = selectedWorkflow.stages?.find(s => s.id === stageId)
+                    if (stage) {
+                      setStageToDelete({
+                        id: stage.id,
+                        key: stage.stage_key,
+                        label: stage.stage_label
+                      })
+                      setShowDeleteStageModal(true)
+                    }
+                  }}
+                  onAddChecklistItem={(stageId) => setShowAddChecklistItem(stageId)}
+                  onEditChecklistItem={(itemId) => setEditingChecklistItem(itemId)}
+                  onDeleteChecklistItem={(itemId) => {
+                    const item = workflowChecklistTemplates?.find(t => t.id === itemId)
+                    if (item && confirm(`Are you sure you want to delete "${item.item_text}"?`)) {
+                      deleteChecklistItemMutation.mutate(itemId)
+                    }
+                  }}
+                  onDragStart={(itemId) => setDraggedChecklistItem(itemId)}
+                  onDragEnd={() => setDraggedChecklistItem(null)}
+                  onDragOver={(e) => handleDragOver(e)}
+                  onDragEnter={(itemId) => setDragOverItem(itemId)}
+                  onDragLeave={() => setDragOverItem(null)}
+                  onDrop={(draggedId, targetId) => {
+                    const stageChecklistTemplates = workflowChecklistTemplates?.filter(
+                      template => {
+                        const draggedTemplate = workflowChecklistTemplates.find(t => t.id === draggedId)
+                        return draggedTemplate && template.stage_id === draggedTemplate.stage_id
+                      }
+                    ) || []
+                    const fakeEvent = { preventDefault: () => {} } as React.DragEvent
+                    handleDrop(fakeEvent, targetId, stageChecklistTemplates)
+                  }}
+                  renderContentTiles={(stageId) => (
+                    <ContentTileManager
+                      workflowId={selectedWorkflow.id}
+                      stageId={stageId}
+                      isEditable={isTemplateEditMode}
+                      onTileChange={(description) => trackChange('checklist_edited', description)}
+                    />
+                  )}
+                />
               )}
 
 
               {activeView === 'admins' && (
-                <div className="space-y-6">
-                  {/* Header with Actions */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Team & Access Management</h3>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Manage admins, users, and stakeholders for this workflow
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      {/* Allow read and write users to request elevated permissions */}
-                      {(selectedWorkflow.user_permission === 'read' || selectedWorkflow.user_permission === 'write') && (
-                        <Button size="sm" variant="outline" onClick={() => setShowAccessRequestModal(true)}>
-                          <UserCog className="w-4 h-4 mr-2" />
-                          Request Access
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-
-                    {/* Pending Access Requests */}
-                    {(selectedWorkflow.user_permission === 'admin') && pendingAccessRequests && pendingAccessRequests.length > 0 && (
-                      <Card>
-                        <div className="p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-semibold text-gray-900">Pending Access Requests</h4>
-                            <span className="text-xs text-gray-500 bg-orange-100 px-2 py-1 rounded-full">
-                              {pendingAccessRequests.length} pending
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {pendingAccessRequests.map((request: any) => {
-                              const user = request.user
-                              const userName = user?.first_name && user?.last_name
-                                ? `${user.first_name} ${user.last_name}`
-                                : user?.email || 'Unknown User'
-                              const userInitial = userName.charAt(0).toUpperCase()
-                              const permissionLabel = request.requested_permission === 'admin' ? 'Admin' : request.requested_permission === 'write' ? 'Write' : 'Read'
-                              const permissionColor = request.requested_permission === 'admin' ? 'blue' : request.requested_permission === 'write' ? 'green' : 'gray'
-
-                              return (
-                                <div key={request.id} className="flex items-start justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
-                                  <div className="flex items-start space-x-3 flex-1 min-w-0">
-                                    <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                                      <span className="text-white font-semibold text-xs">{userInitial}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-sm font-medium text-gray-900">{userName}</span>
-                                        <Badge
-                                          variant="default"
-                                          size="sm"
-                                          className={`${
-                                            permissionColor === 'blue' ? 'bg-blue-100 text-blue-700' :
-                                            permissionColor === 'green' ? 'bg-green-100 text-green-700' :
-                                            'bg-gray-100 text-gray-700'
-                                          }`}
-                                        >
-                                          Requesting {permissionLabel}
-                                        </Badge>
-                                      </div>
-                                      {request.reason && (
-                                        <p className="text-xs text-gray-600 mb-2">"{request.reason}"</p>
-                                      )}
-                                      <p className="text-xs text-gray-500">
-                                        {request.current_permission ? `Current: ${request.current_permission}` : 'No current access'} •
-                                        Requested {new Date(request.created_at).toLocaleDateString()}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center space-x-2 ml-3">
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      className="border-green-300 text-green-600 hover:bg-green-50"
-                                      onClick={() => approveAccessRequestMutation.mutate({
-                                        requestId: request.id,
-                                        userId: request.user_id,
-                                        permission: request.requested_permission,
-                                        workflowId: request.workflow_id
-                                      })}
-                                      disabled={approveAccessRequestMutation.isPending}
-                                    >
-                                      <Check className="w-3 h-3 mr-1" />
-                                      Approve
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      className="border-red-300 text-red-600 hover:bg-red-50"
-                                      onClick={() => rejectAccessRequestMutation.mutate(request.id)}
-                                      disabled={rejectAccessRequestMutation.isPending}
-                                    >
-                                      <X className="w-3 h-3 mr-1" />
-                                      Decline
-                                    </Button>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      </Card>
-                    )}
-
-                    {/* Team & Access Control */}
-                    <Card>
-                      <div className="p-4">
-                        <h4 className="text-base font-semibold text-gray-900 mb-4">Team & Access Control</h4>
-
-                        {/* Created By Section */}
-                        <div className="mb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Created By</h5>
-                          </div>
-                          <div className="flex items-center p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                <span className="text-white font-semibold text-sm">
-                                  {selectedWorkflow.creator_name?.charAt(0).toUpperCase() || '?'}
-                                </span>
-                              </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {selectedWorkflow.creator_name || 'Unknown User'}
-                                </div>
-                                <div className="text-xs text-gray-500">Workflow creator</div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Admins Section */}
-                        <div className="mb-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                              Admins ({(workflowCollaborators?.filter((c: any) => c.permission === 'admin').length || 0) + 1})
-                            </h5>
-                            {(selectedWorkflow.user_permission === 'admin') && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setShowInviteModal(true)}
-                              >
-                                <Plus className="w-3 h-3 mr-1" />
-                                Add Admin
-                              </Button>
-                            )}
-                          </div>
-                          <div className="space-y-2">
-                            {/* Creator as first admin (always) */}
-                            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                              <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-                                  <span className="text-white font-semibold text-sm">
-                                    {selectedWorkflow.creator_name?.charAt(0).toUpperCase() || '?'}
-                                  </span>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-medium text-gray-900 truncate">{selectedWorkflow.creator_name || 'Unknown User'}</div>
-                                  <div className="text-xs text-gray-500 truncate">Creator</div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Other admins */}
-                            {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission === 'admin').map((collab: any) => {
-                              const user = collab.user
-                              const userName = user?.first_name && user?.last_name
-                                ? `${user.first_name} ${user.last_name}`
-                                : user?.email || 'Unknown User'
-                              const userInitial = userName.charAt(0).toUpperCase()
-                              const canEdit = selectedWorkflow.user_permission === 'admin'
-
-                              return (
-                                <div key={collab.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
-                                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-                                      <span className="text-white font-semibold text-sm">{userInitial}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
-                                      <div className="text-xs text-gray-500 truncate">{user?.email}</div>
-                                    </div>
-                                  </div>
-
-                                  {canEdit && (
-                                    <div className="flex items-center space-x-2 ml-2">
-                                      <button
-                                        onClick={() => setRemoveAdminConfirm({ id: collab.id, name: userName })}
-                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                        title="Remove admin"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Users Section (Write and Read permissions) */}
-                        {workflowCollaborators && workflowCollaborators.filter((c: any) => c.permission !== 'admin').length > 0 && (
-                          <div className="mb-6">
-                            <div className="flex items-center justify-between mb-3">
-                              <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                                Users ({workflowCollaborators.filter((c: any) => c.permission !== 'admin').length})
-                              </h5>
-                            </div>
-                            <div className="space-y-2">
-                              {workflowCollaborators.filter((c: any) => c.permission !== 'admin').map((collab: any) => {
-                                const user = collab.user
-                                const userName = user?.first_name && user?.last_name
-                                  ? `${user.first_name} ${user.last_name}`
-                                  : user?.email || 'Unknown User'
-                                const userInitial = userName.charAt(0).toUpperCase()
-                                const canEdit = selectedWorkflow.user_permission === 'admin'
-
-                                return (
-                                  <div key={collab.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-                                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                        collab.permission === 'write' ? 'bg-green-500' : 'bg-gray-400'
-                                      }`}>
-                                        <span className="text-white font-semibold text-sm">{userInitial}</span>
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
-                                        <div className="text-xs text-gray-500 truncate">{user?.email}</div>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center space-x-2 ml-2">
-                                      {canEdit ? (
-                                        <>
-                                          <select
-                                            value={collab.permission}
-                                            onChange={(e) => {
-                                              updateCollaboratorMutation.mutate({
-                                                collaborationId: collab.id,
-                                                permission: e.target.value
-                                              })
-                                            }}
-                                            className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                          >
-                                            <option value="admin">Admin</option>
-                                            <option value="write">Write</option>
-                                            <option value="read">Read</option>
-                                          </select>
-                                          <button
-                                            onClick={() => {
-                                              if (confirm(`Remove ${userName} from this workflow?`)) {
-                                                removeCollaboratorMutation.mutate(collab.id)
-                                              }
-                                            }}
-                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                            title="Remove user"
-                                          >
-                                            <Trash2 className="w-4 h-4" />
-                                          </button>
-                                        </>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Stakeholders Section */}
-                        {workflowStakeholders && (
-                          <div>
-                            <div className="flex items-center justify-between mb-3">
-                              <h5 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                                Stakeholders ({workflowStakeholders.length})
-                              </h5>
-                              {(selectedWorkflow.user_permission === 'admin') && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setShowAddStakeholderModal(true)}
-                                >
-                                  <Plus className="w-3 h-3 mr-1" />
-                                  Add Stakeholder
-                                </Button>
-                              )}
-                            </div>
-                            {workflowStakeholders.length > 0 ? (
-                              <div className="space-y-2">
-                                {workflowStakeholders.map((stakeholder: any) => {
-                                const user = stakeholder.user
-                                const userName = user?.first_name && user?.last_name
-                                  ? `${user.first_name} ${user.last_name}`
-                                  : user?.email || 'Unknown User'
-                                const userInitial = userName.charAt(0).toUpperCase()
-                                const canEdit = selectedWorkflow.user_permission === 'admin'
-
-                                return (
-                                  <div key={stakeholder.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:border-green-300 transition-colors">
-                                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                      <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                                        <span className="text-white font-semibold text-sm">{userInitial}</span>
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
-                                        <div className="text-xs text-gray-500 truncate">{user?.email}</div>
-                                      </div>
-                                    </div>
-
-                                    {canEdit && (
-                                      <div className="flex items-center space-x-2 ml-2">
-                                        <button
-                                          onClick={() => setRemoveStakeholderConfirm({ id: stakeholder.id, name: userName })}
-                                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                          title="Remove stakeholder"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                              </div>
-                            ) : (
-                              <div className="text-sm text-gray-500 italic p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                No stakeholders added yet. Click "Add Stakeholder" to add one.
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </Card>
-                  </div>
-                </div>
+                <AdminsView
+                  creatorId={selectedWorkflow.created_by}
+                  creatorName={selectedWorkflow.creator_name || 'Unknown User'}
+                  creatorEmail={selectedWorkflow.creator_email || ''}
+                  currentUserId={user?.id}
+                  collaborators={workflowCollaborators}
+                  stakeholders={workflowStakeholders}
+                  accessRequests={pendingAccessRequests}
+                  canEdit={selectedWorkflow.user_permission === 'admin'}
+                  canRequestAccess={selectedWorkflow.user_permission === 'read' || selectedWorkflow.user_permission === 'write'}
+                  onRequestAccess={() => setShowAccessRequestModal(true)}
+                  onInviteCollaborator={() => setShowInviteModal(true)}
+                  onChangePermission={(userId, newPermission) => {
+                    const collab = workflowCollaborators?.find((c: any) => c.user_id === userId)
+                    if (collab) {
+                      updateCollaboratorMutation.mutate({
+                        collaborationId: collab.id,
+                        permission: newPermission
+                      })
+                    }
+                  }}
+                  onRemoveCollaborator={(collabId, userName) => {
+                    if (confirm(`Remove ${userName} from this workflow?`)) {
+                      removeCollaboratorMutation.mutate(collabId)
+                    }
+                  }}
+                  onRemoveAdmin={(adminId, adminName) => setRemoveAdminConfirm({ id: adminId, name: adminName })}
+                  onAddStakeholder={() => setShowAddStakeholderModal(true)}
+                  onRemoveStakeholder={(stakeholderId, stakeholderName) => setRemoveStakeholderConfirm({ id: stakeholderId, name: stakeholderName })}
+                  onApproveAccessRequest={(requestId, userId, permission, workflowId) => {
+                    approveAccessRequestMutation.mutate({ requestId, userId, permission, workflowId })
+                  }}
+                  onRejectAccessRequest={(requestId) => rejectAccessRequestMutation.mutate(requestId)}
+                />
               )}
 
               {activeView === 'universe' && (
-                <div className="space-y-6">
-                  {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
-                      <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                      <p className="text-sm text-blue-800">
-                        Click <strong>"Edit Template"</strong> in the header to make changes to universe rules
-                      </p>
-                    </div>
-                  )}
-                  {/* Simplified Universe Builder */}
-                  <SimplifiedUniverseBuilder
-                    workflowId={selectedWorkflow.id}
-                    rules={universeRulesState}
-                    onRulesChange={handleUniverseRulesChange}
-                    onSave={saveUniverseRules}
-                    isEditable={isTemplateEditMode}
-                    analysts={analysts?.map(a => ({ value: a.user_id, label: a.analyst_name })) || []}
-                    lists={assetLists.map(l => ({ value: l.id, label: l.name }))}
-                    themes={themes.map(t => ({ value: t.id, label: t.name }))}
-                    portfolios={[]} // Add portfolios when available
-                  />
-                </div>
+                <UniverseView
+                  workflowId={selectedWorkflow.id}
+                  rules={universeRulesState}
+                  isEditMode={isTemplateEditMode}
+                  canEdit={selectedWorkflow.user_permission === 'admin'}
+                  analysts={analysts?.map(a => ({ value: a.user_id, label: a.analyst_name })) || []}
+                  lists={assetLists.map(l => ({ value: l.id, label: l.name }))}
+                  themes={themes.map(t => ({ value: t.id, label: t.name }))}
+                  portfolios={[]}
+                  onRulesChange={handleUniverseRulesChange}
+                  onSave={saveUniverseRules}
+                />
               )}
 
               {activeView === 'cadence' && (
-                <div className="space-y-6">
+                <>
                   {!isTemplateEditMode && (selectedWorkflow.user_permission === 'admin') && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center space-x-2 mb-6">
                       <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
                       <p className="text-sm text-blue-800">
                         Click <strong>"Edit Template"</strong> in the header to make changes to cadence and automation rules
                       </p>
                     </div>
                   )}
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900">Cadence & Automation</h3>
-                      <p className="text-sm text-gray-500 mt-1">Configure workflow timing and automated rules</p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                          Cadence Group:
-                        </label>
-                        <select
-                          value={selectedWorkflow.cadence_timeframe || 'annually'}
-                          onChange={async (e) => {
-                            const timeframe = e.target.value as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
-                            const daysMap = {
-                              'daily': 1,
-                              'weekly': 7,
-                              'monthly': 30,
-                              'quarterly': 90,
-                              'semi-annually': 180,
-                              'annually': 365,
-                              'persistent': 0
-                            }
-
-                            console.log('Updating workflow cadence group to:', timeframe, 'for workflow:', selectedWorkflow.id)
-
-                            const { data, error } = await supabase
-                              .from('workflows')
-                              .update({
-                                cadence_timeframe: timeframe,
-                                cadence_days: daysMap[timeframe]
-                              })
-                              .eq('id', selectedWorkflow.id)
-                              .select()
-
-                            if (error) {
-                              console.error('Error updating workflow cadence group:', error)
-                              console.error('Error details:', JSON.stringify(error, null, 2))
-                              alert(`Failed to update cadence group: ${error.message || error.code || 'Unknown error'}`)
-                            } else {
-                              console.log('Successfully updated workflow:', data)
-                              queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-                              // Also update the local state
-                              setSelectedWorkflow({
-                                ...selectedWorkflow,
-                                cadence_timeframe: timeframe,
-                                cadence_days: daysMap[timeframe]
-                              })
-                              trackChange('cadence_updated', `Updated cadence to: ${timeframe}`)
-                            }
-                          }}
-                          disabled={selectedWorkflow.user_permission === 'read' || !isTemplateEditMode}
-                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-                        >
-                          <option value="daily">Daily</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="monthly">Monthly</option>
-                          <option value="quarterly">Quarterly</option>
-                          <option value="semi-annually">Semi-Annually</option>
-                          <option value="annually">Annually</option>
-                          <option value="persistent">Persistent (No Reset)</option>
-                        </select>
-                      </div>
-
-                      {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                        <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add Rule
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    {(() => {
-                      const workflowRules = automationRules?.filter(rule => rule.workflow_id === selectedWorkflow.id) || []
-
-                      if (workflowRules.length === 0) {
-                        return (
-                          <Card>
-                            <div className="text-center py-8">
-                              <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                              <h3 className="text-lg font-medium text-gray-900 mb-2">No automation rules</h3>
-                              <p className="text-gray-500 mb-4">Set up automated workflows to trigger actions based on conditions.</p>
-                              {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                                <Button size="sm" onClick={() => setShowAddRuleModal(true)}>
-                                  <Plus className="w-4 h-4 mr-2" />
-                                  Create First Rule
-                                </Button>
-                              )}
-                            </div>
-                          </Card>
-                        )
+                  <CadenceView
+                    cadenceTimeframe={selectedWorkflow.cadence_timeframe || 'annually'}
+                    cadenceDays={selectedWorkflow.cadence_days ? [selectedWorkflow.cadence_days] : undefined}
+                    automationRules={automationRules?.filter(rule => rule.workflow_id === selectedWorkflow.id)}
+                    canEdit={selectedWorkflow.user_permission === 'admin' && isTemplateEditMode}
+                    onChangeCadence={async (timeframe) => {
+                      const daysMap = {
+                        'daily': 1,
+                        'weekly': 7,
+                        'monthly': 30,
+                        'quarterly': 90,
+                        'semi-annually': 180,
+                        'annually': 365,
+                        'persistent': 0
                       }
 
-                      return workflowRules.map((rule) => (
-                        <Card key={rule.id} className="hover:shadow-md transition-shadow">
-                          <div className="p-4">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2 mb-1">
-                                  <h4 className="text-base font-semibold text-gray-900">{rule.rule_name}</h4>
-                                  <Badge variant={rule.is_active ? "success" : "secondary"} size="sm">
-                                    {rule.is_active ? "Active" : "Inactive"}
-                                  </Badge>
-                                  <Badge variant="outline" size="sm" className="capitalize">
-                                    {rule.rule_type.replace('_', ' ')}
-                                  </Badge>
-                                </div>
-                              </div>
-                              {(selectedWorkflow.user_permission === 'admin') && isTemplateEditMode && (
-                                <div className="flex items-center space-x-1">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setEditingRule(rule.id)}
-                                    title="Edit rule"
-                                    className="p-2"
-                                  >
-                                    <Edit3 className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setRuleToDelete({
-                                        id: rule.id,
-                                        name: rule.rule_name,
-                                        type: rule.rule_type
-                                      })
-                                      setShowDeleteRuleModal(true)
-                                    }}
-                                    title="Delete rule"
-                                    className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
+                      const { data, error } = await supabase
+                        .from('workflows')
+                        .update({
+                          cadence_timeframe: timeframe,
+                          cadence_days: daysMap[timeframe]
+                        })
+                        .eq('id', selectedWorkflow.id)
+                        .select()
 
-                            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                              <div className="grid grid-cols-2 gap-3">
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-1 mb-1">
-                                    <Clock className="w-3.5 h-3.5 text-blue-600" />
-                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">When</span>
-                                  </div>
-                                  <div className="text-sm text-gray-900 ml-4.5">
-                                    {/* Time-based triggers */}
-                                    {(rule.condition_type === 'time_based' || rule.condition_type === 'time_interval') && (
-                                      <>
-                                        {/* Daily patterns */}
-                                        {rule.condition_value?.pattern_type === 'daily' && (
-                                          <>
-                                            {rule.condition_value?.daily_type === 'every_x_days' && (
-                                              <span>Every {rule.condition_value.interval || 1} day{rule.condition_value.interval !== 1 ? 's' : ''}</span>
-                                            )}
-                                            {rule.condition_value?.daily_type === 'every_weekday' && (
-                                              <span>Every weekday</span>
-                                            )}
-                                          </>
-                                        )}
-
-                                        {/* Weekly patterns */}
-                                        {rule.condition_value?.pattern_type === 'weekly' && (
-                                          <span>
-                                            Every {rule.condition_value.interval || 1} week{rule.condition_value.interval !== 1 ? 's' : ''} on {
-                                              (rule.condition_value.days_of_week || []).map((day: string) =>
-                                                day.charAt(0).toUpperCase() + day.slice(1)
-                                              ).join(', ')
-                                            }
-                                          </span>
-                                        )}
-
-                                        {/* Monthly patterns */}
-                                        {rule.condition_value?.pattern_type === 'monthly' && (
-                                          <>
-                                            {rule.condition_value?.monthly_type === 'day_of_month' && (
-                                              <span>Day {rule.condition_value.day_number} of every {rule.condition_value.interval || 1} month{rule.condition_value.interval !== 1 ? 's' : ''}</span>
-                                            )}
-                                            {rule.condition_value?.monthly_type === 'position_of_month' && (
-                                              <span>
-                                                The {rule.condition_value.position} {rule.condition_value.day_name} of every {rule.condition_value.interval || 1} month{rule.condition_value.interval !== 1 ? 's' : ''}
-                                              </span>
-                                            )}
-                                          </>
-                                        )}
-
-                                        {/* Quarterly patterns */}
-                                        {rule.condition_value?.pattern_type === 'quarterly' && (
-                                          <>
-                                            {rule.condition_value?.quarterly_type === 'day_of_quarter' && (
-                                              <span>Day {rule.condition_value.day_number} of every {rule.condition_value.interval || 1} quarter{rule.condition_value.interval !== 1 ? 's' : ''}</span>
-                                            )}
-                                            {rule.condition_value?.quarterly_type === 'position_of_quarter' && (
-                                              <span>
-                                                The {rule.condition_value.position} {rule.condition_value.day_name} of every {rule.condition_value.interval || 1} quarter{rule.condition_value.interval !== 1 ? 's' : ''}
-                                              </span>
-                                            )}
-                                          </>
-                                        )}
-
-                                        {/* Yearly patterns */}
-                                        {rule.condition_value?.pattern_type === 'yearly' && (
-                                          <>
-                                            {rule.condition_value?.yearly_type === 'day_of_year' && (
-                                              <span>
-                                                {rule.condition_value.month} {rule.condition_value.day_number} of every {rule.condition_value.interval || 1} year{rule.condition_value.interval !== 1 ? 's' : ''}
-                                              </span>
-                                            )}
-                                            {rule.condition_value?.yearly_type === 'position_of_year' && (
-                                              <span>
-                                                The {rule.condition_value.position} {rule.condition_value.day_name} of {rule.condition_value.month} every {rule.condition_value.interval || 1} year{rule.condition_value.interval !== 1 ? 's' : ''}
-                                              </span>
-                                            )}
-                                          </>
-                                        )}
-
-                                        {/* Legacy patterns */}
-                                        {rule.condition_value?.pattern === 'interval' && rule.condition_value?.interval_days && (
-                                          <span>Every {rule.condition_value.interval_days} days</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'first_of_month' && (
-                                          <span>First day of each month</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'last_of_month' && (
-                                          <span>Last day of each month</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'first_of_quarter' && (
-                                          <span>First day of each quarter</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'last_of_quarter' && (
-                                          <span>Last day of each quarter</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'first_of_year' && (
-                                          <span>First day of each year</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'last_of_year' && (
-                                          <span>Last day of each year</span>
-                                        )}
-                                        {rule.condition_value?.pattern === 'specific_day_of_month' && rule.condition_value?.day_of_month && (
-                                          <span>Day {rule.condition_value.day_of_month} of each month</span>
-                                        )}
-                                        {/* Legacy support - no pattern specified but has interval_days */}
-                                        {!rule.condition_value?.pattern && !rule.condition_value?.pattern_type && rule.condition_value?.interval_days && (
-                                          <span>Every {rule.condition_value.interval_days} days</span>
-                                        )}
-
-                                        {/* Show start and end dates if specified */}
-                                        {rule.condition_value?.start_date && (
-                                          <div className="text-xs text-gray-500 mt-1">
-                                            Starting: {new Date(rule.condition_value.start_date).toLocaleDateString()}
-                                          </div>
-                                        )}
-                                        {rule.condition_value?.end_type === 'on_date' && rule.condition_value?.end_date && (
-                                          <div className="text-xs text-gray-500 mt-1">
-                                            Ending: {new Date(rule.condition_value.end_date).toLocaleDateString()}
-                                          </div>
-                                        )}
-                                        {rule.condition_value?.end_type === 'after_occurrences' && rule.condition_value?.occurrences && (
-                                          <div className="text-xs text-gray-500 mt-1">
-                                            For {rule.condition_value.occurrences} occurrence{rule.condition_value.occurrences !== 1 ? 's' : ''}
-                                          </div>
-                                        )}
-                                      </>
-                                    )}
-
-                                    {/* Event-based triggers */}
-                                    {rule.condition_type === 'earnings_date' && (
-                                      <span>
-                                        {rule.condition_value?.days_offset || 0} days {rule.condition_value?.timing || 'before'} earnings
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'price_change' && (
-                                      <span>
-                                        Price changes {rule.condition_value?.direction === 'up' ? 'up' : rule.condition_value?.direction === 'down' ? 'down' : ''} by {rule.condition_value?.percentage || 0}%
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'volume_spike' && (
-                                      <span>
-                                        Volume is {rule.condition_value?.multiplier || 1}× average
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'dividend_date' && (
-                                      <span>
-                                        {rule.condition_value?.days_offset || 0} days {rule.condition_value?.timing || 'before'} dividend date
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'conference' && (
-                                      <span>
-                                        {rule.condition_value?.days_offset || 0} days {rule.condition_value?.timing || 'before'} conference
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'investor_relations_call' && (
-                                      <span>
-                                        {rule.condition_value?.days_offset || 0} days {rule.condition_value?.timing || 'before'} investor relations call
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'analyst_call' && (
-                                      <span>
-                                        {rule.condition_value?.days_offset || 0} days {rule.condition_value?.timing || 'before'} sell-side analyst call
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'roadshow' && (
-                                      <span>
-                                        {rule.condition_value?.days_offset || 0} days {rule.condition_value?.timing || 'before'} roadshow
-                                      </span>
-                                    )}
-
-                                    {/* Activity-based triggers */}
-                                    {rule.condition_type === 'stage_completion' && (
-                                      <span>
-                                        Stage {rule.condition_value?.stage_key ? `"${rule.condition_value.stage_key}"` : 'any'} completed
-                                      </span>
-                                    )}
-                                    {rule.condition_type === 'note_added' && (
-                                      <span>Note is added</span>
-                                    )}
-                                    {rule.condition_type === 'list_assignment' && (
-                                      <span>Asset added to list</span>
-                                    )}
-                                    {rule.condition_type === 'workflow_start' && (
-                                      <span>Workflow is started</span>
-                                    )}
-
-                                    {/* Perpetual */}
-                                    {rule.condition_type === 'always_available' && (
-                                      <span>Always available</span>
-                                    )}
-
-                                    {/* Fallback for old or unknown types */}
-                                    {!rule.condition_value && !['always_available', 'note_added', 'list_assignment', 'workflow_start'].includes(rule.condition_type) && (
-                                      <span className="capitalize">{rule.condition_type.replace('_', ' ')}</span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-1 mb-1">
-                                    <Target className="w-3.5 h-3.5 text-green-600" />
-                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Then</span>
-                                  </div>
-                                  <div className="text-sm text-gray-900 ml-4.5">
-                                    {/* New action types */}
-                                    {rule.action_type === 'reset_complete' && (
-                                      <span>
-                                        Reset completely to {rule.action_value?.target_stage || 'first stage'}
-                                      </span>
-                                    )}
-                                    {rule.action_type === 'branch_copy' && (
-                                      <span>
-                                        Copy and append "{rule.action_value?.branch_suffix || 'new branch'}"
-                                      </span>
-                                    )}
-                                    {rule.action_type === 'branch_nocopy' && (
-                                      <span>
-                                        Create new branch and append "{rule.action_value?.branch_suffix || 'new branch'}"
-                                      </span>
-                                    )}
-                                    {rule.action_type === 'move_stage' && (
-                                      <span>
-                                        Move to {rule.action_value?.target_stage || 'first stage'}
-                                      </span>
-                                    )}
-                                    {rule.action_type === 'notify_only' && (
-                                      <span>Send notification only</span>
-                                    )}
-
-                                    {/* Legacy action types */}
-                                    {rule.action_type === 'reset_workflow' && (
-                                      <span>
-                                        Reset to {rule.action_value?.reset_to_stage || rule.action_value?.target_stage || 'first stage'}
-                                      </span>
-                                    )}
-                                    {rule.action_type === 'start_workflow' && (
-                                      <span>
-                                        Start at {rule.action_value?.target_stage || 'first stage'}
-                                      </span>
-                                    )}
-                                    {rule.action_type === 'notify_users' && (
-                                      <span>Notify users</span>
-                                    )}
-
-                                    {/* Fallback */}
-                                    {!['reset_complete', 'branch_copy', 'branch_nocopy', 'move_stage', 'notify_only', 'reset_workflow', 'start_workflow', 'notify_users'].includes(rule.action_type) && (
-                                      <span className="capitalize">{rule.action_type.replace('_', ' ')}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </Card>
-                      ))
-                    })()}
-                  </div>
-
-                </div>
+                      if (error) {
+                        alert(`Failed to update cadence group: ${error.message || error.code || 'Unknown error'}`)
+                      } else {
+                        queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+                        setSelectedWorkflow({
+                          ...selectedWorkflow,
+                          cadence_timeframe: timeframe,
+                          cadence_days: daysMap[timeframe]
+                        })
+                        trackChange('cadence_updated', `Updated cadence to: ${timeframe}`)
+                      }
+                    }}
+                    onAddRule={() => setShowAddRuleModal(true)}
+                    onEditRule={(rule) => setEditingRule(rule.id)}
+                    onDeleteRule={(ruleId, ruleName) => {
+                      setRuleToDelete({ id: ruleId, name: ruleName, type: 'automation' })
+                      setShowDeleteRuleModal(true)
+                    }}
+                  />
+                </>
               )}
 
               {/* Branches View */}
@@ -6445,88 +5122,27 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {/* Models View */}
               {activeView === 'models' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Document Models</h3>
-                    {(selectedWorkflow.user_permission === 'admin') && (
-                      <Button size="sm" onClick={() => setShowUploadTemplateModal(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Upload Model
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    {/* Models List */}
-                    {templatesLoading ? (
-                      <div className="text-center py-12">
-                        <p className="text-gray-500">Loading models...</p>
-                      </div>
-                    ) : workflowTemplates && workflowTemplates.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {workflowTemplates.map((template) => (
-                          <Card key={template.id} className="hover:shadow-md transition-shadow">
-                            <div className="p-4">
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center space-x-3">
-                                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                                    <FileText className="w-5 h-5 text-blue-600" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate">{template.name}</h4>
-                                    <p className="text-xs text-gray-500">{template.file_name}</p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {template.description && (
-                                <p className="text-xs text-gray-600 mb-3 line-clamp-2">{template.description}</p>
-                              )}
-
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                <span className="text-xs text-gray-400">
-                                  {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
-                                </span>
-                                <div className="flex items-center space-x-2">
-                                  <button
-                                    onClick={() => window.open(template.file_url, '_blank')}
-                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                    title="Download template"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                  </button>
-                                  {(selectedWorkflow.user_permission === 'admin') && (
-                                    <button
-                                      onClick={() => {
-                                        if (confirm(`Are you sure you want to delete "${template.name}"?`)) {
-                                          deleteTemplateMutation.mutate(template.id)
-                                        }
-                                      }}
-                                      className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                      title="Delete template"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
-                    ) : (
-                      <Card className="border-2 border-dashed border-gray-300">
-                        <div className="p-8 text-center">
-                          <Copy className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium">No models uploaded yet</p>
-                          {(selectedWorkflow.user_permission === 'admin') && (
-                            <p className="text-xs text-gray-400 mt-2">Click "Upload Model" to add document models for your team</p>
-                          )}
-                        </div>
-                      </Card>
-                    )}
-                  </div>
-                </div>
+                <ModelsView
+                  templates={workflowTemplates?.map(t => ({
+                    id: t.id,
+                    workflow_id: t.workflow_id,
+                    template_name: t.name,
+                    template_description: t.description,
+                    file_path: t.file_url,
+                    file_size: t.file_size,
+                    uploaded_by: t.uploaded_by || '',
+                    uploaded_at: t.uploaded_at || ''
+                  }))}
+                  isLoading={templatesLoading}
+                  canEdit={selectedWorkflow.user_permission === 'admin'}
+                  onUpload={() => setShowUploadTemplateModal(true)}
+                  onDownload={(template) => window.open(template.file_path, '_blank')}
+                  onDelete={(template) => {
+                    if (confirm(`Are you sure you want to delete "${template.template_name}"?`)) {
+                      deleteTemplateMutation.mutate(template.id)
+                    }
+                  }}
+                />
               )}
             </div>
           </div>
