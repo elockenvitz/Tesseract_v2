@@ -139,19 +139,50 @@ The Overview view can now be imported as:
 import { OverviewView } from '@/components/workflow/views'
 ```
 
-## Remaining Work (Deferred)
+### Phase 3: View Components (✅ 4/7 Complete!)
 
-### Phase 3: View Components
-Extract the 7 main view components:
-- OverviewView (stats, performance metrics)
-- StagesView (stage management, checklist templates)
-- UniverseView (universe rules, asset filtering)
-- AdminsView (team, collaborators, stakeholders)
-- CadenceView (workflow scheduling)
-- BranchesView (branch hierarchy, versioning)
-- ModelsView (templates, versions)
+#### 3.3 Stages View Components
+**Directory:** `src/components/workflow/shared/` and `src/components/workflow/views/`
+- `ChecklistItemCard.tsx` (173 lines): Individual checklist item with drag-and-drop
+- `StageWithChecklists.tsx` (235 lines): Stage card with checklist items list
+- `StagesView.tsx` (147 lines): **Complete Stages tab composition**
 
-Estimated effort: 8-12 hours
+**Total:** 3 components, ~555 lines
+
+Features:
+- Full drag-and-drop reordering for checklist items
+- Stage management (add, edit, delete, reorder)
+- Checklist operations (add, edit, delete items)
+- Edit mode toggle support
+
+#### 3.4 Universe View Component
+**Directory:** `src/components/workflow/views/`
+- `UniverseView.tsx` (104 lines): **Complete Universe tab wrapper**
+
+Wraps `SimplifiedUniverseBuilder` with consistent styling and info banner.
+
+#### 3.5 Models View Component
+**Directory:** `src/components/workflow/views/`
+- `ModelsView.tsx` (180 lines): **Complete Models/Templates tab**
+
+Features:
+- Grid layout for document templates
+- Upload, download, delete operations
+- File size formatting
+- Empty state with call-to-action
+
+**Phase 3 Progress: 4 views extracted (Overview, Stages, Universe, Models)**
+**Lines extracted: ~1,364 lines across 12 components**
+
+## Remaining Work
+
+### Phase 3: View Components (3 remaining)
+Extract the remaining 3 complex view components:
+- AdminsView (team, collaborators, stakeholders) - Medium complexity
+- CadenceView (workflow scheduling, automation rules) - Complex
+- BranchesView (branch hierarchy, versioning) - Most complex
+
+Estimated effort: 4-6 hours
 
 ### Phase 4: Modal Components
 Extract inline modals to separate files:
@@ -236,18 +267,27 @@ All new files compile successfully with zero errors. The refactored code maintai
 
 ## Git Commits
 
-1. `7882aaa` - Phase 1 (Foundation): Extract workflow types, utilities, and state hook
-2. `75335c1` - Phase 1: Add useWorkflowQueries hook - consolidate 17 data queries
+**Phase 1 - Foundation:**
+1. `7882aaa` - Extract workflow types, utilities, and state hook
+2. `75335c1` - Add useWorkflowQueries hook - consolidate 17 data queries
 3. `18422e3` - Add useWorkflowMutations hook - Phase 1 complete
-4. `de3beed` - Add layout components for WorkflowsPage - Phase 2
+
+**Phase 2 - Layout:**
+4. `de3beed` - Add layout components for WorkflowsPage
 5. `02eab6c` - Add index files for cleaner imports across workflow modules
 6. `827d5c8` - Remove unused Universe Builder imports from WorkflowsPage
 7. `3709b30` - Add comprehensive refactoring summary documentation
-8. `b1de3fc` - Add reusable shared workflow components - Phase 3 begins
-9. `0d5345c` - Add Overview view building blocks - Phase 3 continues
+
+**Phase 3 - View Components:**
+8. `b1de3fc` - Add reusable shared workflow components (StatCard, ProgressBar)
+9. `0d5345c` - Add Overview view building blocks (MetricsGrid, PerformanceCard)
 10. `590517f` - Update refactoring summary with Phase 3 progress
 11. `978bc83` - Add Timeline and Template Version cards
 12. `b27fb6d` - Add complete OverviewView component - Phase 3 major milestone
+13. `5a64ac7` - Add StageCard component - Stages view extraction begins
+14. `90382a8` - Add complete Stages view components (ChecklistItemCard, StageWithChecklists, StagesView)
+15. `067ba68` - Add UniverseView component
+16. `31c472a` - Add ModelsView component
 
 ## Contributors
 
@@ -256,4 +296,4 @@ All new files compile successfully with zero errors. The refactored code maintai
 
 ---
 
-*Last updated: 2025-11-23*
+*Last updated: 2025-11-24*
