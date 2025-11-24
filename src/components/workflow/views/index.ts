@@ -1,0 +1,12 @@
+/**
+ * Workflow View Components Index
+ *
+ * Components for different workflow views/tabs.
+ * Extracted from WorkflowsPage.tsx during Phase 3 refactoring.
+ */
+
+export { WorkflowMetricsGrid } from './WorkflowMetricsGrid'
+export type { WorkflowMetricsGridProps } from './WorkflowMetricsGrid'
+
+export { WorkflowPerformanceCard } from './WorkflowPerformanceCard'
+export type { WorkflowPerformanceCardProps } from './WorkflowPerformanceCard'
