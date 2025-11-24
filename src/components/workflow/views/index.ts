@@ -25,3 +25,6 @@ export type { StagesViewProps } from './StagesView'
 
 export { UniverseView } from './UniverseView'
 export type { UniverseViewProps, FilterRule, DropdownOption } from './UniverseView'
+
+export { ModelsView } from './ModelsView'
+export type { ModelsViewProps, WorkflowTemplate } from './ModelsView'
