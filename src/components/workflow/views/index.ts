@@ -22,3 +22,6 @@ export type { OverviewViewProps } from './OverviewView'
 
 export { StagesView } from './StagesView'
 export type { StagesViewProps } from './StagesView'
+
+export { UniverseView } from './UniverseView'
+export type { UniverseViewProps, FilterRule, DropdownOption } from './UniverseView'
