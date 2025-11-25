@@ -27,6 +27,7 @@ import { ProfilePage } from './ProfilePage'
 import { SettingsPage } from './SettingsPage'
 import { IdeaGeneratorPage} from './IdeaGeneratorPage'
 import { WorkflowsPage } from './WorkflowsPage'
+import { ProjectsPage } from './ProjectsPage'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -535,6 +536,8 @@ export function DashboardPage() {
         return <IdeaGeneratorPage onItemSelect={handleSearchResult} />
       case 'workflows':
         return <WorkflowsPage />
+      case 'projects-list':
+        return <ProjectsPage onProjectSelect={handleSearchResult} />
       case 'note':
         return <NotebookTab notebook={activeTab.data} />
       case 'theme':

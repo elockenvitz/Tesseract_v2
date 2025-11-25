@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Card } from '../ui/Card'
-import { Search, TrendingUp, FileText, Tag, Briefcase, List, Lightbulb } from 'lucide-react'
+import { Search, TrendingUp, FileText, Tag, Briefcase, List, Lightbulb, FolderKanban } from 'lucide-react'
 import { GlobalSearch } from '../search/GlobalSearch'
 
 interface BlankTabProps {
@@ -46,8 +46,8 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
-            <div 
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-4 text-sm">
+            <div
               className="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
               onClick={() => onSearchResult({
                 id: 'idea-generator',
@@ -61,6 +61,22 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
               </div>
               <span className="text-gray-700 font-medium">Ideas</span>
               <span className="text-gray-500 text-xs">Discover insights</span>
+            </div>
+
+            <div
+              className="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+              onClick={() => onSearchResult({
+                id: 'projects-list',
+                title: 'All Projects',
+                type: 'projects-list',
+                data: null
+              })}
+            >
+              <div className="w-10 h-10 bg-gradient-to-r from-violet-100 to-purple-100 rounded-lg flex items-center justify-center mb-2">
+                <FolderKanban className="h-5 w-5 text-violet-600" />
+              </div>
+              <span className="text-gray-700 font-medium">Projects</span>
+              <span className="text-gray-500 text-xs">One-off tasks</span>
             </div>
 
             <div 

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -288,6 +288,8 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       case 'theme': return <Tag className="h-3.5 w-3.5" />
       case 'note': return <FileText className="h-3.5 w-3.5" />
       case 'workflows': return <Orbit className="h-3.5 w-3.5" />
+      case 'projects-list': return <FolderKanban className="h-3.5 w-3.5" />
+      case 'project': return <FolderKanban className="h-3.5 w-3.5" />
       case 'dashboard': return <Home className="h-3.5 w-3.5" />
       case 'profile': return <User className="h-3.5 w-3.5" />
       case 'settings': return <Settings className="h-3.5 w-3.5" />
