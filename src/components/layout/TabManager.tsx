@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -26,6 +26,7 @@ export interface Tab {
   type: 'asset' | 'portfolio' | 'theme' | 'note' | 'dashboard' | 'assets-list'
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
   | 'idea-generator' | 'workflows' | 'projects-list' | 'project'
+  | 'trade-queue' | 'simulation' | 'trade-lab'
   data?: any
   isActive: boolean
   isBlank?: boolean
@@ -290,6 +291,9 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       case 'workflows': return <Orbit className="h-3.5 w-3.5" />
       case 'projects-list': return <FolderKanban className="h-3.5 w-3.5" />
       case 'project': return <FolderKanban className="h-3.5 w-3.5" />
+      case 'trade-queue': return <ListTodo className="h-3.5 w-3.5" />
+      case 'simulation': return <Beaker className="h-3.5 w-3.5" />
+      case 'trade-lab': return <Beaker className="h-3.5 w-3.5" />
       case 'dashboard': return <Home className="h-3.5 w-3.5" />
       case 'profile': return <User className="h-3.5 w-3.5" />
       case 'settings': return <Settings className="h-3.5 w-3.5" />

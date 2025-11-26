@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
@@ -33,6 +33,8 @@ import { ProjectOverviewWidget } from '../components/projects/ProjectOverviewWid
 import { ProjectStatusBreakdown } from '../components/projects/ProjectStatusBreakdown'
 import { UpcomingDeadlines } from '../components/projects/UpcomingDeadlines'
 import { RecentProjectActivity } from '../components/projects/RecentProjectActivity'
+import { TradeQueuePage } from './TradeQueuePage'
+import { SimulationPage } from './SimulationPage'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -545,6 +547,10 @@ export function DashboardPage() {
         return <ProjectsPage onProjectSelect={handleSearchResult} />
       case 'project':
         return activeTab.data ? <ProjectDetailTab project={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading project...</div>
+      case 'trade-queue':
+        return <TradeQueuePage />
+      case 'trade-lab':
+        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} />
       case 'note':
         return <NotebookTab notebook={activeTab.data} />
       case 'theme':
@@ -560,7 +566,7 @@ export function DashboardPage() {
     <>
       <div className="space-y-6">
       {/* Navigation Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
         <Card
           className="hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleSearchResult({
@@ -617,6 +623,46 @@ export function DashboardPage() {
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-900">Projects</div>
               <div className="text-xs text-gray-500">One-off tasks</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'trade-queue',
+            title: 'Trade Queue',
+            type: 'trade-queue',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-emerald-100 to-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <ListTodo className="h-6 w-6 text-emerald-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Trade Queue</div>
+              <div className="text-xs text-gray-500">Ideas & sizing</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'trade-lab',
+            title: 'Trade Lab',
+            type: 'trade-lab',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-amber-100 to-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Beaker className="h-6 w-6 text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Trade Lab</div>
+              <div className="text-xs text-gray-500">Model impact</div>
             </div>
           </div>
         </Card>

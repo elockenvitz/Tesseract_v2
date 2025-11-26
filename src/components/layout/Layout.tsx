@@ -22,6 +22,9 @@ interface LayoutProps {
   onFocusSearch?: () => void
 }
 
+// Tab types that should render full-width without padding
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'simulation', 'trade-queue']
+
 export function Layout({
   children,
   tabs,
@@ -327,11 +330,16 @@ export function Layout({
         onFocusSearch={onFocusSearch}
       />
       <main className="flex-1 h-[calc(100vh-8rem)]">
-        <div className={clsx(
-          "relative transition-all duration-300 h-full px-4 sm:px-6 lg:px-8 py-6",
-          isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
-          isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
-        )}>
+        {(() => {
+          const activeTab = tabs.find(tab => tab.id === activeTabId)
+          const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
+          return (
+            <div className={clsx(
+              "relative transition-all duration-300 h-full",
+              !isFullWidth && "px-4 sm:px-6 lg:px-8 py-6",
+              isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
+              isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
+            )}>
           {isFocusMode && (
             <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-primary-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center space-x-3">
               <Eye className="h-5 w-5" />
@@ -345,7 +353,9 @@ export function Layout({
             </div>
           )}
           {React.cloneElement(children as React.ReactElement, { onCite: cite, isFocusMode })}
-        </div>
+            </div>
+          )
+        })()}
       </main>
       
       <CommunicationPane

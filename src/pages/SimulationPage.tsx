@@ -1,0 +1,2702 @@
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  Plus,
+  Beaker,
+  Users,
+  RefreshCw,
+  X,
+  Edit2,
+  Check,
+  ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  Sparkles,
+  Layers,
+  Zap,
+  BarChart3,
+  Table2,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  Archive,
+  ArchiveRestore,
+  Briefcase,
+  Clock,
+  Search,
+  TrendingUp,
+  TrendingDown,
+  FolderOpen,
+  AlertCircle,
+  MessageSquare,
+  CheckCircle2,
+  DollarSign,
+  List
+} from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
+import { financialDataService } from '../lib/financial-data/browser-client'
+import { TabStateManager } from '../lib/tabStateManager'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { Badge } from '../components/ui/Badge'
+import { Input } from '../components/ui/Input'
+import { EmptyState } from '../components/common/EmptyState'
+import { ListSkeleton } from '../components/common/LoadingSkeleton'
+import { SectorExposureChart } from '../components/trading/SectorExposureChart'
+import { ConcentrationMetrics } from '../components/trading/ConcentrationMetrics'
+import { HoldingsComparison } from '../components/trading/HoldingsComparison'
+import { SimulationCollaboratorsModal } from '../components/trading/SimulationCollaboratorsModal'
+import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
+import type {
+  SimulationWithDetails,
+  SimulationTradeWithDetails,
+  SimulationMetrics,
+  SimulatedHolding,
+  BaselineHolding,
+  TradeAction,
+  TradeQueueItemWithDetails,
+  SimulationVisibility,
+  SimulationPermission,
+  SimulationCollaboratorWithUser
+} from '../types/trading'
+import { clsx } from 'clsx'
+
+interface SimulationPageProps {
+  simulationId?: string
+  tabId?: string
+  onClose?: () => void
+}
+
+// Load persisted state or use defaults
+function getInitialState(propSimulationId?: string, tabId?: string) {
+  if (tabId) {
+    const savedState = TabStateManager.loadTabState(tabId)
+    if (savedState) {
+      return {
+        selectedSimulationId: savedState.selectedSimulationId || propSimulationId || null,
+        showIdeasPanel: savedState.showIdeasPanel ?? true,
+        impactView: savedState.impactView || 'summary',
+      }
+    }
+  }
+  return {
+    selectedSimulationId: propSimulationId || null,
+    showIdeasPanel: true,
+    impactView: 'summary' as const,
+  }
+}
+
+export function SimulationPage({ simulationId: propSimulationId, tabId, onClose }: SimulationPageProps) {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  // Get initial state from persisted storage or props
+  const initialState = useRef(getInitialState(propSimulationId, tabId))
+
+  const [selectedSimulationId, setSelectedSimulationId] = useState<string | null>(initialState.current.selectedSimulationId)
+  const [showCreatePanel, setShowCreatePanel] = useState(false)
+  const [showIdeasPanel, setShowIdeasPanel] = useState(initialState.current.showIdeasPanel)
+  const [editingTradeId, setEditingTradeId] = useState<string | null>(null)
+  const [editingShares, setEditingShares] = useState<string>('')
+  const [editingWeight, setEditingWeight] = useState<string>('')
+  const [impactView, setImpactView] = useState<'summary' | 'holdings' | 'trades'>(initialState.current.impactView)
+
+  // New simulation form state
+  const [newSimName, setNewSimName] = useState('')
+  const [newSimPortfolioId, setNewSimPortfolioId] = useState('')
+  const [newSimIsCollab, setNewSimIsCollab] = useState(false)
+  const [showCollaboratorsModal, setShowCollaboratorsModal] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const [showAddTradeIdeaModal, setShowAddTradeIdeaModal] = useState(false)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
+  const [holdingsGroupBy, setHoldingsGroupBy] = useState<'none' | 'sector' | 'action' | 'change'>('none')
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+
+  // Quick trade state (for adding sandbox trades directly)
+  const [showQuickTrade, setShowQuickTrade] = useState(false)
+  const [quickTradeSearch, setQuickTradeSearch] = useState('')
+  const [quickTradeAsset, setQuickTradeAsset] = useState<{ id: string; symbol: string; company_name: string; sector: string | null } | null>(null)
+  const [quickTradeAction, setQuickTradeAction] = useState<TradeAction>('buy')
+  const [quickTradeShares, setQuickTradeShares] = useState('')
+  const [quickTradeWeight, setQuickTradeWeight] = useState('')
+
+  // Persist state when it changes
+  useEffect(() => {
+    if (tabId) {
+      TabStateManager.saveTabState(tabId, {
+        selectedSimulationId,
+        showIdeasPanel,
+        impactView,
+      })
+    }
+  }, [tabId, selectedSimulationId, showIdeasPanel, impactView])
+
+  // Listen for navigation events
+  useEffect(() => {
+    const handleNavigate = (e: CustomEvent<{ simulationId: string }>) => {
+      setSelectedSimulationId(e.detail.simulationId)
+    }
+    window.addEventListener('navigate-to-simulation', handleNavigate as EventListener)
+    return () => window.removeEventListener('navigate-to-simulation', handleNavigate as EventListener)
+  }, [])
+
+  // Fetch portfolios for filter
+  const { data: portfolios } = useQuery({
+    queryKey: ['portfolios-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolios')
+        .select('id, name, portfolio_id')
+        .order('name')
+
+      if (error) throw error
+      return data
+    },
+  })
+
+  // Fetch all simulations
+  const { data: simulations, isLoading: simulationsLoading } = useQuery({
+    queryKey: ['simulations'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('simulations')
+        .select(`
+          *,
+          portfolios (id, name, portfolio_id),
+          users:created_by (id, email, first_name, last_name)
+        `)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data as SimulationWithDetails[]
+    },
+  })
+
+  // Fetch selected simulation details
+  const { data: simulation, isLoading: simulationLoading } = useQuery({
+    queryKey: ['simulation', selectedSimulationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('simulations')
+        .select(`
+          *,
+          portfolios (id, name, portfolio_id),
+          users:created_by (id, email, first_name, last_name),
+          simulation_trades (
+            *,
+            assets (id, symbol, company_name, sector),
+            trade_queue_items (id, rationale, thesis_summary, proposed_shares, proposed_weight)
+          ),
+          simulation_collaborators (
+            *,
+            users:user_id (id, email, first_name, last_name)
+          )
+        `)
+        .eq('id', selectedSimulationId)
+        .single()
+
+      if (error) throw error
+      return data as SimulationWithDetails
+    },
+    enabled: !!selectedSimulationId,
+  })
+
+  // Fetch trade ideas from queue for the selected portfolio
+  const { data: tradeIdeas, refetch: refetchTradeIdeas } = useQuery({
+    queryKey: ['trade-queue-ideas', simulation?.portfolio_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('trade_queue_items')
+        .select(`
+          *,
+          assets (id, symbol, company_name, sector),
+          portfolios (id, name)
+        `)
+        .eq('portfolio_id', simulation?.portfolio_id)
+        .in('status', ['idea', 'discussing', 'approved'])
+        .order('priority', { ascending: false })
+
+      if (error) throw error
+      return data as TradeQueueItemWithDetails[]
+    },
+    enabled: !!simulation?.portfolio_id,
+    staleTime: 30000, // Consider data stale after 30 seconds
+    refetchOnWindowFocus: true, // Refetch when user comes back to tab
+  })
+
+  // Search assets for quick trade
+  const { data: quickTradeAssets } = useQuery({
+    queryKey: ['assets-search-quick', quickTradeSearch],
+    queryFn: async () => {
+      if (!quickTradeSearch || quickTradeSearch.length < 1) return []
+
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector')
+        .or(`symbol.ilike.%${quickTradeSearch}%,company_name.ilike.%${quickTradeSearch}%`)
+        .limit(8)
+
+      if (error) throw error
+      return data
+    },
+    enabled: showQuickTrade && quickTradeSearch.length >= 1,
+  })
+
+  // Fetch current prices for all assets in the simulation (for live calculations)
+  const { data: priceMap, isLoading: pricesLoading, refetch: refetchPrices } = useQuery({
+    queryKey: ['simulation-prices', selectedSimulationId],
+    queryFn: async () => {
+      if (!simulation) return {}
+
+      const prices: Record<string, number> = {}
+      const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+
+      // Collect all symbols we need prices for
+      const symbolsToFetch = new Map<string, string>() // asset_id -> symbol
+      baselineHoldings.forEach(h => symbolsToFetch.set(h.asset_id, h.symbol))
+      simulation.simulation_trades?.forEach(t => {
+        if (t.assets?.symbol) symbolsToFetch.set(t.asset_id, t.assets.symbol)
+      })
+
+      // Fetch prices in parallel
+      const fetchPromises = Array.from(symbolsToFetch.entries()).map(async ([assetId, symbol]) => {
+        try {
+          const quote = await financialDataService.getQuote(symbol)
+          if (quote?.price) {
+            return { assetId, price: quote.price }
+          }
+        } catch {
+          // Fallback to baseline price
+        }
+        const baseline = baselineHoldings.find(h => h.asset_id === assetId)
+        return { assetId, price: baseline?.price || 100 }
+      })
+
+      const results = await Promise.all(fetchPromises)
+      results.forEach(r => {
+        prices[r.assetId] = r.price
+      })
+
+      return prices
+    },
+    enabled: !!simulation,
+    staleTime: 60000, // Cache for 1 minute
+    refetchInterval: 60000, // Refetch every minute for updated prices
+  })
+
+  // Create simulation mutation
+  const createSimulationMutation = useMutation({
+    mutationFn: async () => {
+      if (!newSimPortfolioId) throw new Error('Portfolio required')
+
+      // Get portfolio holdings for baseline
+      const { data: holdings, error: holdingsError } = await supabase
+        .from('portfolio_holdings')
+        .select(`
+          asset_id,
+          shares,
+          price,
+          assets (id, symbol, company_name, sector)
+        `)
+        .eq('portfolio_id', newSimPortfolioId)
+
+      if (holdingsError) throw holdingsError
+
+      // Calculate baseline
+      const totalValue = (holdings || []).reduce((sum, h) => sum + (h.shares * h.price), 0)
+      const baselineHoldings: BaselineHolding[] = (holdings || []).map(h => ({
+        asset_id: h.asset_id,
+        symbol: (h.assets as any)?.symbol || '',
+        company_name: (h.assets as any)?.company_name || '',
+        sector: (h.assets as any)?.sector || null,
+        shares: h.shares,
+        price: h.price,
+        value: h.shares * h.price,
+        weight: totalValue > 0 ? ((h.shares * h.price) / totalValue) * 100 : 0,
+      }))
+
+      const { data, error } = await supabase
+        .from('simulations')
+        .insert({
+          portfolio_id: newSimPortfolioId,
+          name: newSimName || `Simulation ${new Date().toLocaleDateString()}`,
+          description: '',
+          status: 'draft',
+          baseline_holdings: baselineHoldings,
+          baseline_total_value: totalValue,
+          result_metrics: {},
+          is_collaborative: newSimIsCollab,
+          visibility: newSimIsCollab ? 'team' : 'private',
+          created_by: user?.id,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['simulations'] })
+      setSelectedSimulationId(data.id)
+      setShowCreatePanel(false)
+      setNewSimName('')
+      setNewSimPortfolioId('')
+      setNewSimIsCollab(false)
+    },
+  })
+
+  // Import trade idea to simulation
+  const importTradeMutation = useMutation({
+    mutationFn: async (tradeIdea: TradeQueueItemWithDetails) => {
+      if (!simulation) throw new Error('No simulation selected')
+
+      // Use priceMap price if available (keyed by asset_id), otherwise target_price
+      const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
+
+      console.log('📥 Importing trade idea:', tradeIdea.id, tradeIdea.assets?.symbol)
+
+      const { data, error } = await supabase
+        .from('simulation_trades')
+        .insert({
+          simulation_id: simulation.id,
+          trade_queue_item_id: tradeIdea.id,
+          asset_id: tradeIdea.asset_id,
+          action: tradeIdea.action,
+          shares: tradeIdea.proposed_shares,
+          weight: tradeIdea.proposed_weight,
+          price,
+          sort_order: (simulation.simulation_trades?.length || 0),
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ Import trade error:', error)
+        throw error
+      }
+      console.log('✅ Import trade success:', data)
+      return data
+    },
+    onMutate: async (tradeIdea) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
+
+      // Snapshot previous value
+      const previousSimulation = queryClient.getQueryData(['simulation', selectedSimulationId])
+
+      // Optimistically update - add a temporary trade
+      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
+        if (!old) return old
+        const tempTrade = {
+          id: `temp-${tradeIdea.id}`,
+          simulation_id: simulation?.id,
+          trade_queue_item_id: tradeIdea.id,
+          asset_id: tradeIdea.asset_id,
+          action: tradeIdea.action,
+          shares: tradeIdea.proposed_shares,
+          weight: tradeIdea.proposed_weight,
+          price: tradeIdea.target_price,
+          sort_order: (old.simulation_trades?.length || 0),
+          assets: tradeIdea.assets,
+        }
+        return {
+          ...old,
+          simulation_trades: [...(old.simulation_trades || []), tempTrade],
+        }
+      })
+
+      return { previousSimulation }
+    },
+    onError: (_err, _tradeIdea, context) => {
+      // Rollback on error
+      if (context?.previousSimulation) {
+        queryClient.setQueryData(['simulation', selectedSimulationId], context.previousSimulation)
+      }
+    },
+    onSettled: () => {
+      // Always refetch after mutation settles
+      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      refetchPrices()
+    },
+  })
+
+  // Update trade in simulation (sandbox edit - doesn't affect original idea)
+  const updateTradeMutation = useMutation({
+    mutationFn: async ({ tradeId, shares, weight }: { tradeId: string; shares?: number; weight?: number }) => {
+      const { error } = await supabase
+        .from('simulation_trades')
+        .update({
+          shares: shares ?? null,
+          weight: weight ?? null,
+        })
+        .eq('id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      setEditingTradeId(null)
+    },
+  })
+
+  // Remove trade from simulation
+  const removeTradeMutation = useMutation({
+    mutationFn: async (tradeId: string) => {
+      const { error } = await supabase
+        .from('simulation_trades')
+        .delete()
+        .eq('id', tradeId)
+
+      if (error) throw error
+    },
+    onMutate: async (tradeId) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
+
+      // Snapshot previous value
+      const previousSimulation = queryClient.getQueryData(['simulation', selectedSimulationId])
+
+      // Optimistically remove the trade
+      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
+        if (!old) return old
+        return {
+          ...old,
+          simulation_trades: (old.simulation_trades || []).filter((t: any) => t.id !== tradeId),
+        }
+      })
+
+      return { previousSimulation }
+    },
+    onError: (_err, _tradeId, context) => {
+      // Rollback on error
+      if (context?.previousSimulation) {
+        queryClient.setQueryData(['simulation', selectedSimulationId], context.previousSimulation)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+    },
+  })
+
+  // Calculate metrics dynamically based on current trades (LIVE!)
+  const liveMetrics = useMemo(() => {
+    if (!simulation || !priceMap || Object.keys(priceMap).length === 0) return null
+
+    const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+    const trades = simulation.simulation_trades || []
+
+    return calculateSimulationMetrics(baselineHoldings, trades, priceMap)
+  }, [simulation, priceMap])
+
+  // Archive/unarchive simulation
+  const archiveSimulationMutation = useMutation({
+    mutationFn: async ({ simId, archive }: { simId: string; archive: boolean }) => {
+      const { error } = await supabase
+        .from('simulations')
+        .update({ status: archive ? 'archived' : 'draft' })
+        .eq('id', simId)
+
+      if (error) throw error
+    },
+    onSuccess: (_, { archive }) => {
+      queryClient.invalidateQueries({ queryKey: ['simulations'] })
+      if (archive) {
+        setSelectedSimulationId(null)
+      }
+    },
+  })
+
+  // Add quick trade (sandbox-only, no trade idea created)
+  const addQuickTradeMutation = useMutation({
+    mutationFn: async ({ asset, action, shares, weight }: {
+      asset: { id: string; symbol: string; company_name: string; sector: string | null }
+      action: TradeAction
+      shares?: number
+      weight?: number
+    }) => {
+      if (!simulation) throw new Error('No simulation selected')
+
+      // Get current price for the asset
+      let price = 100
+      try {
+        const quote = await financialDataService.getQuote(asset.symbol)
+        if (quote?.price) price = quote.price
+      } catch {
+        // Use default price
+      }
+
+      const { data, error } = await supabase
+        .from('simulation_trades')
+        .insert({
+          simulation_id: simulation.id,
+          trade_queue_item_id: null, // No trade idea linked
+          asset_id: asset.id,
+          action,
+          shares: shares ?? null,
+          weight: weight ?? null,
+          price,
+          sort_order: (simulation.simulation_trades?.length || 0),
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      refetchPrices()
+      // Reset quick trade form
+      setShowQuickTrade(false)
+      setQuickTradeSearch('')
+      setQuickTradeAsset(null)
+      setQuickTradeAction('buy')
+      setQuickTradeShares('')
+      setQuickTradeWeight('')
+    },
+  })
+
+  // Use live metrics instead of stored result_metrics
+  const metrics = liveMetrics
+
+  // Permission helpers
+  const isOwner = simulation?.created_by === user?.id
+  const currentUserCollab = simulation?.simulation_collaborators?.find(c => c.user_id === user?.id)
+  const currentUserPermission = currentUserCollab?.permission as SimulationPermission | undefined
+  const canEdit = isOwner || currentUserPermission === 'edit' || currentUserPermission === 'admin'
+  const collaboratorCount = (simulation?.simulation_collaborators?.length || 0)
+
+  // Get all trade ideas with their "added" status
+  const tradeIdeasWithStatus = useMemo(() => {
+    if (!tradeIdeas) return []
+    const addedAssetIds = new Set(simulation?.simulation_trades?.map(t => t.asset_id) || [])
+    return tradeIdeas.map(idea => ({
+      ...idea,
+      isAdded: addedAssetIds.has(idea.asset_id)
+    }))
+  }, [tradeIdeas, simulation?.simulation_trades])
+
+  // Group trade ideas by status
+  const tradeIdeasByStatus = useMemo(() => {
+    const groups = {
+      idea: [] as typeof tradeIdeasWithStatus,
+      discussing: [] as typeof tradeIdeasWithStatus,
+      approved: [] as typeof tradeIdeasWithStatus
+    }
+    tradeIdeasWithStatus.forEach(idea => {
+      if (idea.status === 'idea') groups.idea.push(idea)
+      else if (idea.status === 'discussing') groups.discussing.push(idea)
+      else if (idea.status === 'approved') groups.approved.push(idea)
+    })
+    return groups
+  }, [tradeIdeasWithStatus])
+
+  // Count sandbox trade stats
+  const tradeStats = useMemo(() => {
+    const trades = simulation?.simulation_trades || []
+    const buys = trades.filter(t => t.action === 'buy' || t.action === 'add').length
+    const sells = trades.filter(t => t.action === 'sell' || t.action === 'trim').length
+    return { total: trades.length, buys, sells }
+  }, [simulation?.simulation_trades])
+
+  // Group trades by action with detailed metrics for Trades view
+  const tradesGroupedByAction = useMemo(() => {
+    if (!simulation?.simulation_trades || !priceMap) return null
+
+    const trades = simulation.simulation_trades
+    const baseline = simulation.baseline_holdings as BaselineHolding[] || []
+    const totalPortfolioValue = simulation.baseline_total_value || 0
+
+    // Group trades by action
+    const groups: Record<string, {
+      action: TradeAction
+      trades: Array<{
+        id: string
+        symbol: string
+        company_name: string
+        sector: string | null
+        shares: number
+        price: number
+        value: number
+        weight: number
+        currentHolding: number
+        currentWeight: number
+        cashImpact: number // positive = cash outflow (buy), negative = cash inflow (sell)
+      }>
+      totalValue: number
+      totalCashImpact: number
+      totalWeight: number
+      count: number
+    }> = {}
+
+    const actionLabels: Record<TradeAction, string> = {
+      buy: 'Buys',
+      add: 'Adds',
+      sell: 'Sells',
+      trim: 'Trims'
+    }
+
+    trades.forEach(trade => {
+      const action = trade.action
+      const price = priceMap[trade.asset_id] || trade.price || 100
+      const baselineHolding = baseline.find(h => h.asset_id === trade.asset_id)
+      const currentShares = baselineHolding?.shares || 0
+      const currentValue = currentShares * price
+      const currentWeight = totalPortfolioValue > 0 ? (currentValue / totalPortfolioValue) * 100 : 0
+
+      // Calculate trade value
+      let tradeShares = trade.shares || 0
+      let tradeWeight = trade.weight || 0
+
+      // If weight is specified, calculate shares
+      if (!tradeShares && tradeWeight && totalPortfolioValue > 0) {
+        tradeShares = (tradeWeight / 100 * totalPortfolioValue) / price
+      }
+      // If shares specified, calculate weight
+      if (tradeShares && !tradeWeight && totalPortfolioValue > 0) {
+        tradeWeight = (tradeShares * price / totalPortfolioValue) * 100
+      }
+
+      const tradeValue = tradeShares * price
+
+      // Cash impact: buys/adds are cash outflows (positive), sells/trims are inflows (negative)
+      const cashImpact = (action === 'buy' || action === 'add') ? tradeValue : -tradeValue
+
+      const label = actionLabels[action]
+      if (!groups[label]) {
+        groups[label] = {
+          action,
+          trades: [],
+          totalValue: 0,
+          totalCashImpact: 0,
+          totalWeight: 0,
+          count: 0
+        }
+      }
+
+      groups[label].trades.push({
+        id: trade.id,
+        symbol: trade.assets?.symbol || '',
+        company_name: trade.assets?.company_name || '',
+        sector: trade.assets?.sector || null,
+        shares: tradeShares,
+        price,
+        value: tradeValue,
+        weight: tradeWeight,
+        currentHolding: currentShares,
+        currentWeight,
+        cashImpact
+      })
+
+      groups[label].totalValue += tradeValue
+      groups[label].totalCashImpact += cashImpact
+      groups[label].totalWeight += tradeWeight
+      groups[label].count++
+    })
+
+    // Sort trades within each group by value (largest first)
+    Object.values(groups).forEach(group => {
+      group.trades.sort((a, b) => b.value - a.value)
+    })
+
+    // Calculate totals
+    const totalCashImpact = Object.values(groups).reduce((sum, g) => sum + g.totalCashImpact, 0)
+    const totalBuyValue = (groups['Buys']?.totalValue || 0) + (groups['Adds']?.totalValue || 0)
+    const totalSellValue = (groups['Sells']?.totalValue || 0) + (groups['Trims']?.totalValue || 0)
+
+    return {
+      groups: Object.values(groups).sort((a, b) => {
+        // Sort: Buys, Adds, Trims, Sells
+        const order: Record<string, number> = { 'Buys': 1, 'Adds': 2, 'Trims': 3, 'Sells': 4 }
+        return (order[actionLabels[a.action]] || 5) - (order[actionLabels[b.action]] || 5)
+      }),
+      totalCashImpact,
+      totalBuyValue,
+      totalSellValue,
+      netCashFlow: totalSellValue - totalBuyValue, // positive = net cash in, negative = net cash out
+      totalPortfolioValue
+    }
+  }, [simulation?.simulation_trades, simulation?.baseline_holdings, simulation?.baseline_total_value, priceMap])
+
+  // Group holdings based on selected grouping
+  const groupedHoldings = useMemo(() => {
+    if (!metrics?.holdings_after) return null
+    if (holdingsGroupBy === 'none') return null
+
+    const holdings = metrics.holdings_after
+    const baseline = simulation?.baseline_holdings as BaselineHolding[] || []
+    const groups: Record<string, typeof holdings> = {}
+
+    holdings.forEach(holding => {
+      let groupKey: string
+
+      switch (holdingsGroupBy) {
+        case 'sector':
+          groupKey = holding.sector || 'Other'
+          break
+        case 'action': {
+          const trade = simulation?.simulation_trades?.find(t => t.asset_id === holding.asset_id)
+          if (holding.is_removed) {
+            groupKey = 'Sold'
+          } else if (holding.is_new) {
+            groupKey = 'New Positions'
+          } else if (trade) {
+            groupKey = trade.action === 'buy' || trade.action === 'add' ? 'Adding' : 'Trimming'
+          } else {
+            groupKey = 'Unchanged'
+          }
+          break
+        }
+        case 'change': {
+          const baselineHolding = baseline.find(b => b.asset_id === holding.asset_id)
+          const baseWeight = baselineHolding?.weight || 0
+          const change = holding.weight - baseWeight
+          if (holding.is_removed || change < -1) {
+            groupKey = 'Decreasing (>1%)'
+          } else if (change < -0.1) {
+            groupKey = 'Slightly Decreasing'
+          } else if (change > 1) {
+            groupKey = 'Increasing (>1%)'
+          } else if (change > 0.1) {
+            groupKey = 'Slightly Increasing'
+          } else {
+            groupKey = 'No Change'
+          }
+          break
+        }
+        default:
+          groupKey = 'All'
+      }
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = []
+      }
+      groups[groupKey].push(holding)
+    })
+
+    // Sort groups by total weight
+    const sortedGroups = Object.entries(groups)
+      .map(([name, items]) => ({
+        name,
+        holdings: items,
+        totalWeight: items.reduce((sum, h) => sum + h.weight, 0),
+        count: items.length
+      }))
+      .sort((a, b) => b.totalWeight - a.totalWeight)
+
+    return sortedGroups
+  }, [metrics?.holdings_after, holdingsGroupBy, simulation?.baseline_holdings, simulation?.simulation_trades])
+
+  const toggleGroupCollapse = useCallback((groupName: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(groupName)) {
+        next.delete(groupName)
+      } else {
+        next.add(groupName)
+      }
+      return next
+    })
+  }, [])
+
+  // Group simulations by portfolio for dashboard view
+  const simulationsByPortfolio = useMemo(() => {
+    if (!simulations) return { active: [], archived: [] }
+
+    const active = simulations.filter(s => s.status !== 'archived')
+    const archived = simulations.filter(s => s.status === 'archived')
+
+    // Group active by portfolio
+    const activeByPortfolio = active.reduce((acc, sim) => {
+      const portfolioId = sim.portfolio_id
+      const portfolioName = sim.portfolios?.name || 'Unknown Portfolio'
+      if (!acc[portfolioId]) {
+        acc[portfolioId] = { name: portfolioName, simulations: [] }
+      }
+      acc[portfolioId].simulations.push(sim)
+      return acc
+    }, {} as Record<string, { name: string; simulations: SimulationWithDetails[] }>)
+
+    // Group archived by portfolio
+    const archivedByPortfolio = archived.reduce((acc, sim) => {
+      const portfolioId = sim.portfolio_id
+      const portfolioName = sim.portfolios?.name || 'Unknown Portfolio'
+      if (!acc[portfolioId]) {
+        acc[portfolioId] = { name: portfolioName, simulations: [] }
+      }
+      acc[portfolioId].simulations.push(sim)
+      return acc
+    }, {} as Record<string, { name: string; simulations: SimulationWithDetails[] }>)
+
+    return {
+      active: Object.entries(activeByPortfolio).sort((a, b) => a[1].name.localeCompare(b[1].name)),
+      archived: Object.entries(archivedByPortfolio).sort((a, b) => a[1].name.localeCompare(b[1].name)),
+      activeCount: active.length,
+      archivedCount: archived.length,
+    }
+  }, [simulations])
+
+  const startEditingTrade = (trade: SimulationTradeWithDetails) => {
+    setEditingTradeId(trade.id)
+    setEditingShares(trade.shares?.toString() || '')
+    setEditingWeight(trade.weight?.toString() || '')
+  }
+
+  const saveTradeEdit = () => {
+    if (!editingTradeId) return
+    updateTradeMutation.mutate({
+      tradeId: editingTradeId,
+      shares: editingShares ? parseFloat(editingShares) : undefined,
+      weight: editingWeight ? parseFloat(editingWeight) : undefined,
+    })
+  }
+
+  // Render a trade idea card (used in grouped sections)
+  const renderTradeIdeaCard = (idea: typeof tradeIdeasWithStatus[0]) => {
+    const sandboxTrade = idea.isAdded
+      ? simulation?.simulation_trades?.find(t => t.asset_id === idea.asset_id)
+      : null
+    const isEditingThis = sandboxTrade && editingTradeId === sandboxTrade.id
+
+    // Check if sandbox trade has been modified from original idea
+    const isModified = sandboxTrade && (
+      (sandboxTrade.shares !== idea.proposed_shares) ||
+      (sandboxTrade.weight !== idea.proposed_weight)
+    )
+
+    return (
+      <div
+        key={idea.id}
+        className={clsx(
+          "bg-white dark:bg-gray-800 rounded-lg p-3 border transition-colors relative",
+          isModified
+            ? "border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10"
+            : idea.isAdded
+              ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
+              : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
+        )}
+      >
+        {/* Modified badge in upper right */}
+        {isModified && (
+          <span className="absolute -top-2 -right-2 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-amber-500 text-white shadow-sm">
+            Modified
+          </span>
+        )}
+        <div className="flex items-start gap-2">
+          {/* Checkbox for added status */}
+          <button
+            onClick={() => {
+              console.log('🔘 Checkbox clicked for:', idea.assets?.symbol, 'isAdded:', idea.isAdded)
+              if (idea.isAdded) {
+                // Find and remove the trade
+                const trade = simulation?.simulation_trades?.find(t => t.asset_id === idea.asset_id)
+                console.log('🗑️ Removing trade:', trade?.id)
+                if (trade) removeTradeMutation.mutate(trade.id)
+              } else {
+                console.log('➕ Adding trade idea:', idea.id)
+                importTradeMutation.mutate(idea)
+              }
+            }}
+            disabled={importTradeMutation.isPending || removeTradeMutation.isPending}
+            className={clsx(
+              "flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors mt-0.5",
+              idea.isAdded
+                ? "bg-green-500 border-green-500 text-white"
+                : "border-gray-300 dark:border-gray-600 hover:border-primary-500"
+            )}
+          >
+            {idea.isAdded && <Check className="h-3 w-3" />}
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={clsx(
+                "text-xs font-medium uppercase px-1.5 py-0.5 rounded",
+                idea.action === 'buy' || idea.action === 'add'
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              )}>
+                {idea.action}
+              </span>
+              <span className={clsx(
+                "font-medium text-sm",
+                idea.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-900 dark:text-white"
+              )}>
+                {idea.assets?.symbol}
+              </span>
+            </div>
+
+            {/* Editable sandbox trade values */}
+            {idea.isAdded && sandboxTrade ? (
+              isEditingThis ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <Input
+                    type="number"
+                    value={editingShares}
+                    onChange={(e) => setEditingShares(e.target.value)}
+                    className="w-20 text-xs h-7"
+                    placeholder="Shares"
+                  />
+                  <Input
+                    type="number"
+                    value={editingWeight}
+                    onChange={(e) => setEditingWeight(e.target.value)}
+                    className="w-16 text-xs h-7"
+                    placeholder="%"
+                  />
+                  <button
+                    onClick={saveTradeEdit}
+                    className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                  >
+                    <Check className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => setEditingTradeId(null)}
+                    className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <button
+                    onClick={() => sandboxTrade && startEditingTrade(sandboxTrade)}
+                    className={clsx(
+                      "text-xs mt-1 truncate hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group",
+                      isModified ? "text-amber-700 dark:text-amber-400 font-medium" : "text-gray-500 dark:text-gray-400"
+                    )}
+                  >
+                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {sandboxTrade.weight ? `${sandboxTrade.weight}%` : ''}
+                    {sandboxTrade.weight && sandboxTrade.shares ? ' · ' : ''}
+                    {sandboxTrade.shares ? `${sandboxTrade.shares} shares` : ''}
+                    {!sandboxTrade.weight && !sandboxTrade.shares && (
+                      <span className="italic">Click to set shares/weight</span>
+                    )}
+                  </button>
+                  {isModified && (
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 line-through">
+                      Original: {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
+                      {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
+                      {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
+                    </div>
+                  )}
+                </div>
+              )
+            ) : (
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
+                {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
+                {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
+              </div>
+            )}
+
+            {idea.thesis_summary && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                {idea.thesis_summary}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (simulationsLoading) {
+    return (
+      <div className="p-6">
+        <ListSkeleton count={3} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Create Trade Lab Modal */}
+      {showCreatePanel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Beaker className="h-5 w-5" />
+                New Trade Lab
+              </h2>
+              <button
+                onClick={() => setShowCreatePanel(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Name
+                </label>
+                <Input
+                  placeholder="e.g., Q4 Rebalance Test"
+                  value={newSimName}
+                  onChange={(e) => setNewSimName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Portfolio
+                </label>
+                <select
+                  value={newSimPortfolioId}
+                  onChange={(e) => setNewSimPortfolioId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select portfolio...</option>
+                  {portfolios?.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <input
+                  type="checkbox"
+                  checked={newSimIsCollab}
+                  onChange={(e) => setNewSimIsCollab(e.target.checked)}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <Users className="h-4 w-4" />
+                <div>
+                  <div className="font-medium">Collaborative</div>
+                  <div className="text-xs text-gray-500">Allow team members to view and edit</div>
+                </div>
+              </label>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowCreatePanel(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => createSimulationMutation.mutate()}
+                  disabled={!newSimPortfolioId || createSimulationMutation.isPending}
+                  loading={createSimulationMutation.isPending}
+                  className="flex-1"
+                >
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Create
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header Bar */}
+      <div className="flex-shrink-0 px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {selectedSimulationId ? (
+              <>
+                {/* Back button when viewing a simulation */}
+                <button
+                  onClick={() => setSelectedSimulationId(null)}
+                  className="flex items-center gap-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <Beaker className="h-5 w-5 text-primary-600" />
+                <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {simulation?.name || 'Trade Lab'}
+                </h1>
+                {/* Inline info: portfolio, trades, collaborators */}
+                {simulation && (
+                  <>
+                    <span className="text-gray-300 dark:text-gray-600">|</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{simulation.portfolios?.name}</span>
+                    <span className="text-sm text-gray-400 dark:text-gray-500">•</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{simulation.simulation_trades?.length || 0} trades</span>
+                    {/* Collaborator avatars */}
+                    {(() => {
+                      const involvedUsers: Array<{ id: string; email: string; first_name: string | null; last_name: string | null }> = []
+                      if (simulation.users) involvedUsers.push(simulation.users)
+                      simulation.simulation_collaborators?.forEach(collab => {
+                        if (collab.users && !involvedUsers.find(u => u.id === collab.users.id)) {
+                          involvedUsers.push(collab.users)
+                        }
+                      })
+                      if (involvedUsers.length === 0) return null
+                      return (
+                        <>
+                          <span className="text-sm text-gray-400 dark:text-gray-500">•</span>
+                          <div className="flex -space-x-1.5">
+                            {involvedUsers.slice(0, 4).map((u, idx) => {
+                              const initials = u.first_name && u.last_name
+                                ? `${u.first_name[0]}${u.last_name[0]}`
+                                : u.email?.[0]?.toUpperCase() || '?'
+                              const name = u.first_name && u.last_name
+                                ? `${u.first_name} ${u.last_name}`
+                                : u.email
+                              const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-pink-500', 'bg-cyan-500']
+                              const colorIdx = u.id.charCodeAt(0) % colors.length
+                              return (
+                                <div
+                                  key={u.id}
+                                  className={clsx(
+                                    "w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-medium text-white ring-1 ring-white dark:ring-gray-800",
+                                    colors[colorIdx]
+                                  )}
+                                  title={name}
+                                  style={{ zIndex: 10 - idx }}
+                                >
+                                  {initials}
+                                </div>
+                              )
+                            })}
+                            {involvedUsers.length > 4 && (
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-medium bg-gray-400 text-white ring-1 ring-white dark:ring-gray-800">
+                                +{involvedUsers.length - 4}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <Beaker className="h-5 w-5 text-primary-600" />
+                <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Trade Lab</h1>
+                <Button
+                  size="sm"
+                  onClick={() => setShowCreatePanel(true)}
+                  title="Create new trade lab"
+                >
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  New
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Right side controls when simulation is selected */}
+          {simulation && (
+            <div className="flex items-center gap-2">
+              {/* Live indicator */}
+              <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+                <Zap className="h-3.5 w-3.5" />
+                <span className="font-medium text-xs">Live</span>
+              </div>
+              {/* Refresh Prices Button */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => refetchPrices()}
+                disabled={pricesLoading}
+                title="Refresh market prices"
+              >
+                <RefreshCw className={clsx("h-4 w-4", pricesLoading && "animate-spin")} />
+              </Button>
+              {/* Collaborators Button */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowCollaboratorsModal(true)}
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+              {/* Archive Button */}
+              {isOwner && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowArchiveConfirm(true)}
+                  title="Archive trade lab"
+                >
+                  <Archive className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {!selectedSimulationId ? (
+          /* Trade Lab Dashboard */
+          <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 p-6">
+            {simulationsByPortfolio.activeCount === 0 && simulationsByPortfolio.archivedCount === 0 ? (
+              /* Empty state - no trade labs yet */
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center max-w-md">
+                  <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Beaker className="h-8 w-8 text-primary-600 dark:text-primary-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Welcome to Trade Lab
+                  </h3>
+                  <p className="text-gray-500 dark:text-gray-400 mb-6">
+                    Play with trade ideas and see how they impact your portfolio in real-time.
+                    Changes here won't affect your actual positions or trade ideas.
+                  </p>
+                  <Button onClick={() => setShowCreatePanel(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Your First Trade Lab
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* Dashboard with active and archived trade labs */
+              <div className="max-w-4xl mx-auto space-y-8">
+                {/* Active Trade Labs */}
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <Beaker className="h-5 w-5 text-primary-600" />
+                    Active Trade Labs
+                    <Badge variant="default" className="text-xs ml-2">{simulationsByPortfolio.activeCount}</Badge>
+                  </h2>
+
+                  {simulationsByPortfolio.active.length === 0 ? (
+                    <Card className="p-6 text-center">
+                      <p className="text-gray-500 dark:text-gray-400">No active trade labs</p>
+                      <Button onClick={() => setShowCreatePanel(true)} className="mt-4" size="sm">
+                        <Plus className="h-4 w-4 mr-1.5" />
+                        Create New
+                      </Button>
+                    </Card>
+                  ) : (
+                    <div className="space-y-6">
+                      {simulationsByPortfolio.active.map(([portfolioId, { name: portfolioName, simulations: portfolioSims }]) => (
+                        <Card key={portfolioId} className="overflow-hidden">
+                          <div className="px-4 py-3 bg-gray-100 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                            <div className="flex items-center gap-2">
+                              <Briefcase className="h-4 w-4 text-gray-500" />
+                              <span className="font-medium text-gray-700 dark:text-gray-300">{portfolioName}</span>
+                              <Badge variant="secondary" className="text-xs">{portfolioSims.length}</Badge>
+                            </div>
+                          </div>
+                          <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            {portfolioSims.map(sim => (
+                              <button
+                                key={sim.id}
+                                onClick={() => setSelectedSimulationId(sim.id)}
+                                className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors text-left"
+                              >
+                                <div>
+                                  <div className="font-medium text-gray-900 dark:text-white">{sim.name}</div>
+                                  <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
+                                    <Clock className="h-3.5 w-3.5" />
+                                    {new Date(sim.created_at).toLocaleDateString()}
+                                    {sim.is_collaborative && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                          <Users className="h-3.5 w-3.5" />
+                                          Collaborative
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                                <ChevronRight className="h-5 w-5 text-gray-400" />
+                              </button>
+                            ))}
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Archived Trade Labs */}
+                {simulationsByPortfolio.archivedCount > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setShowArchived(!showArchived)}
+                      className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2 hover:text-primary-600 dark:hover:text-primary-400"
+                    >
+                      <Archive className="h-5 w-5 text-gray-400" />
+                      Archived
+                      <Badge variant="secondary" className="text-xs ml-2">{simulationsByPortfolio.archivedCount}</Badge>
+                      <ChevronRight className={clsx("h-5 w-5 text-gray-400 transition-transform", showArchived && "rotate-90")} />
+                    </button>
+
+                    {showArchived && (
+                      <div className="space-y-6">
+                        {simulationsByPortfolio.archived.map(([portfolioId, { name: portfolioName, simulations: portfolioSims }]) => (
+                          <Card key={portfolioId} className="overflow-hidden opacity-75">
+                            <div className="px-4 py-3 bg-gray-100 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                              <div className="flex items-center gap-2">
+                                <Briefcase className="h-4 w-4 text-gray-400" />
+                                <span className="font-medium text-gray-500 dark:text-gray-400">{portfolioName}</span>
+                                <Badge variant="secondary" className="text-xs">{portfolioSims.length}</Badge>
+                              </div>
+                            </div>
+                            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                              {portfolioSims.map(sim => (
+                                <div
+                                  key={sim.id}
+                                  className="w-full px-4 py-3 flex items-center justify-between"
+                                >
+                                  <div>
+                                    <div className="font-medium text-gray-600 dark:text-gray-400">{sim.name}</div>
+                                    <div className="text-sm text-gray-400 dark:text-gray-500 flex items-center gap-2 mt-0.5">
+                                      <Clock className="h-3.5 w-3.5" />
+                                      {new Date(sim.created_at).toLocaleDateString()}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => archiveSimulationMutation.mutate({ simId: sim.id, archive: false })}
+                                    title="Restore trade lab"
+                                  >
+                                    <ArchiveRestore className="h-4 w-4 mr-1.5" />
+                                    Restore
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : simulationLoading ? (
+          <div className="p-6">
+            <ListSkeleton count={3} />
+          </div>
+        ) : simulation ? (
+          <>
+              {/* Trade Ideas Panel */}
+              <div className={clsx(
+                "border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col transition-all",
+                showIdeasPanel ? "w-80" : "w-12"
+              )}>
+                <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => setShowIdeasPanel(!showIdeasPanel)}
+                    className="flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded px-1 -ml-1"
+                  >
+                    {showIdeasPanel ? (
+                      <>
+                        <span className="font-medium text-gray-900 dark:text-white text-sm flex items-center gap-2">
+                          <Layers className="h-4 w-4" />
+                          Trade Ideas
+                          {tradeIdeasWithStatus.length > 0 && (
+                            <Badge variant="default" className="text-xs">{tradeIdeasWithStatus.length}</Badge>
+                          )}
+                        </span>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <Layers className="h-4 w-4 text-gray-500" />
+                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                      </div>
+                    )}
+                  </button>
+                  {showIdeasPanel && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setShowAddTradeIdeaModal(true)}
+                        className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                        title="Add trade idea"
+                      >
+                        <Plus className="h-3.5 w-3.5 text-gray-500" />
+                      </button>
+                      <button
+                        onClick={() => setShowIdeasPanel(false)}
+                        className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        <ChevronRight className="h-4 w-4 text-gray-500 rotate-180" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {showIdeasPanel && (
+                  <div className="flex-1 overflow-y-auto p-3">
+                    {tradeIdeasWithStatus.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <p className="text-sm">No trade ideas available</p>
+                        <p className="text-xs mt-1">Add ideas from the Trade Queue</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* Approved Section */}
+                        {tradeIdeasByStatus.approved.length > 0 && (
+                          <div>
+                            <button
+                              onClick={() => {
+                                const newCollapsed = new Set(collapsedGroups)
+                                if (newCollapsed.has('ideas-approved')) {
+                                  newCollapsed.delete('ideas-approved')
+                                } else {
+                                  newCollapsed.add('ideas-approved')
+                                }
+                                setCollapsedGroups(newCollapsed)
+                              }}
+                              className="flex items-center gap-2 w-full text-left mb-2 group"
+                            >
+                              <ChevronDown className={clsx(
+                                "h-3 w-3 text-gray-400 transition-transform",
+                                collapsedGroups.has('ideas-approved') && "-rotate-90"
+                              )} />
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Approved</span>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.approved.length}</Badge>
+                            </button>
+                            {!collapsedGroups.has('ideas-approved') && (
+                              <div className="space-y-2 ml-5">
+                                {tradeIdeasByStatus.approved.map(idea => renderTradeIdeaCard(idea))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Discussing Section */}
+                        {tradeIdeasByStatus.discussing.length > 0 && (
+                          <div>
+                            <button
+                              onClick={() => {
+                                const newCollapsed = new Set(collapsedGroups)
+                                if (newCollapsed.has('ideas-discussing')) {
+                                  newCollapsed.delete('ideas-discussing')
+                                } else {
+                                  newCollapsed.add('ideas-discussing')
+                                }
+                                setCollapsedGroups(newCollapsed)
+                              }}
+                              className="flex items-center gap-2 w-full text-left mb-2 group"
+                            >
+                              <ChevronDown className={clsx(
+                                "h-3 w-3 text-gray-400 transition-transform",
+                                collapsedGroups.has('ideas-discussing') && "-rotate-90"
+                              )} />
+                              <MessageSquare className="h-3.5 w-3.5 text-yellow-500" />
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Discussing</span>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.discussing.length}</Badge>
+                            </button>
+                            {!collapsedGroups.has('ideas-discussing') && (
+                              <div className="space-y-2 ml-5">
+                                {tradeIdeasByStatus.discussing.map(idea => renderTradeIdeaCard(idea))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Ideas Section */}
+                        {tradeIdeasByStatus.idea.length > 0 && (
+                          <div>
+                            <button
+                              onClick={() => {
+                                const newCollapsed = new Set(collapsedGroups)
+                                if (newCollapsed.has('ideas-idea')) {
+                                  newCollapsed.delete('ideas-idea')
+                                } else {
+                                  newCollapsed.add('ideas-idea')
+                                }
+                                setCollapsedGroups(newCollapsed)
+                              }}
+                              className="flex items-center gap-2 w-full text-left mb-2 group"
+                            >
+                              <ChevronDown className={clsx(
+                                "h-3 w-3 text-gray-400 transition-transform",
+                                collapsedGroups.has('ideas-idea') && "-rotate-90"
+                              )} />
+                              <AlertCircle className="h-3.5 w-3.5 text-blue-500" />
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Ideas</span>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.idea.length}</Badge>
+                            </button>
+                            {!collapsedGroups.has('ideas-idea') && (
+                              <div className="space-y-2 ml-5">
+                                {tradeIdeasByStatus.idea.map(idea => renderTradeIdeaCard(idea))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Simulation Workspace */}
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {/* Impact Results Area */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {/* View Toggle - compact, with quick trade on left for holdings view */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      {impactView === 'holdings' && !showQuickTrade && (
+                        <button
+                          onClick={() => setShowQuickTrade(true)}
+                          className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add quick trade
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setImpactView('summary')}
+                        className={clsx(
+                          "flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                          impactView === 'summary'
+                            ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm"
+                            : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                        )}
+                      >
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        Summary
+                      </button>
+                      <button
+                        onClick={() => setImpactView('holdings')}
+                        className={clsx(
+                          "flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                          impactView === 'holdings'
+                            ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm"
+                            : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                        )}
+                      >
+                        <Table2 className="h-3.5 w-3.5" />
+                        Holdings
+                      </button>
+                      <button
+                        onClick={() => setImpactView('trades')}
+                        className={clsx(
+                          "flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                          impactView === 'trades'
+                            ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm"
+                            : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                        )}
+                      >
+                        <List className="h-3.5 w-3.5" />
+                        Trades
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Results Content */}
+                  <div className="space-y-3">
+                    {pricesLoading ? (
+                      <Card className="p-8 text-center">
+                        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                          <RefreshCw className="h-8 w-8 text-gray-400 animate-spin" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                          Loading Prices...
+                        </h3>
+                        <p className="text-gray-500 dark:text-gray-400">
+                          Fetching latest market data
+                        </p>
+                      </Card>
+                    ) : metrics ? (
+                      <>
+                        {impactView === 'summary' ? (
+                          <>
+                            {/* Summary Cards */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                <div className="text-sm text-gray-500 dark:text-gray-400">Positions</div>
+                                <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                                  {metrics.position_count_before} → {metrics.position_count_after}
+                                </div>
+                                <div className="text-xs text-gray-500 h-4">
+                                  {metrics.positions_added > 0 && <span className="text-green-600">+{metrics.positions_added} new</span>}
+                                  {metrics.positions_added > 0 && metrics.positions_removed > 0 && ', '}
+                                  {metrics.positions_removed > 0 && <span className="text-red-600">-{metrics.positions_removed} removed</span>}
+                                </div>
+                              </Card>
+                              <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                <div className="text-sm text-gray-500 dark:text-gray-400">Top 5 Concentration</div>
+                                <div className={clsx(
+                                  "text-2xl font-bold",
+                                  metrics.top_5_concentration_after > metrics.top_5_concentration_before ? "text-amber-600" : "text-green-600"
+                                )}>
+                                  {metrics.top_5_concentration_after.toFixed(1)}%
+                                </div>
+                                <div className="text-xs text-gray-500 flex items-center gap-1 h-4">
+                                  <span>from {metrics.top_5_concentration_before.toFixed(1)}%</span>
+                                  {metrics.top_5_concentration_after !== metrics.top_5_concentration_before && (
+                                    <span className={metrics.top_5_concentration_after > metrics.top_5_concentration_before ? "text-amber-600" : "text-green-600"}>
+                                      ({metrics.top_5_concentration_after > metrics.top_5_concentration_before ? '+' : ''}{(metrics.top_5_concentration_after - metrics.top_5_concentration_before).toFixed(1)}%)
+                                    </span>
+                                  )}
+                                </div>
+                              </Card>
+                              <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                <div className="text-sm text-gray-500 dark:text-gray-400">Top 10 Concentration</div>
+                                <div className={clsx(
+                                  "text-2xl font-bold",
+                                  metrics.top_10_concentration_after > metrics.top_10_concentration_before ? "text-amber-600" : "text-green-600"
+                                )}>
+                                  {metrics.top_10_concentration_after.toFixed(1)}%
+                                </div>
+                                <div className="text-xs text-gray-500 flex items-center gap-1 h-4">
+                                  <span>from {metrics.top_10_concentration_before.toFixed(1)}%</span>
+                                  {metrics.top_10_concentration_after !== metrics.top_10_concentration_before && (
+                                    <span className={metrics.top_10_concentration_after > metrics.top_10_concentration_before ? "text-amber-600" : "text-green-600"}>
+                                      ({metrics.top_10_concentration_after > metrics.top_10_concentration_before ? '+' : ''}{(metrics.top_10_concentration_after - metrics.top_10_concentration_before).toFixed(1)}%)
+                                    </span>
+                                  )}
+                                </div>
+                              </Card>
+                              <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                <div className="text-sm text-gray-500 dark:text-gray-400">HHI Index</div>
+                                <div className={clsx(
+                                  "text-2xl font-bold",
+                                  metrics.herfindahl_index_after > metrics.herfindahl_index_before ? "text-amber-600" : "text-green-600"
+                                )}>
+                                  {(metrics.herfindahl_index_after * 100).toFixed(0)}
+                                </div>
+                                <div className="text-xs text-gray-500 h-4">
+                                  from {(metrics.herfindahl_index_before * 100).toFixed(0)}
+                                </div>
+                              </Card>
+                            </div>
+
+                            {/* Charts */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                              <SectorExposureChart
+                                before={metrics.sector_exposure_before}
+                                after={metrics.sector_exposure_after}
+                              />
+                              <ConcentrationMetrics metrics={metrics} />
+                            </div>
+
+                            {/* Holdings Comparison */}
+                            <HoldingsComparison
+                              holdings={metrics.holdings_after}
+                              baseline={simulation.baseline_holdings as BaselineHolding[]}
+                            />
+                          </>
+                        ) : impactView === 'holdings' ? (
+                          /* Full Holdings Table View with Sandbox Trades */
+                          <>
+                            {/* Quick Add Trade Form (shown when expanded) */}
+                            {showQuickTrade && (
+                              <div className="mb-2">
+                                <Card className="p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">Quick Trade</span>
+                                    <button
+                                      onClick={() => {
+                                        setShowQuickTrade(false)
+                                        setQuickTradeSearch('')
+                                        setQuickTradeAsset(null)
+                                        setQuickTradeShares('')
+                                        setQuickTradeWeight('')
+                                      }}
+                                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                    >
+                                      <X className="h-4 w-4 text-gray-500" />
+                                    </button>
+                                  </div>
+                                  <div className="flex flex-wrap items-end gap-3">
+                                    {/* Asset Search */}
+                                    <div className="relative flex-1 min-w-[200px]">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Asset</label>
+                                      {quickTradeAsset ? (
+                                        <div className="flex items-center justify-between px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700">
+                                          <div>
+                                            <span className="font-medium text-gray-900 dark:text-white">{quickTradeAsset.symbol}</span>
+                                            <span className="text-sm text-gray-500 dark:text-gray-400 ml-2 truncate">{quickTradeAsset.company_name}</span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setQuickTradeAsset(null)
+                                              setQuickTradeSearch('')
+                                            }}
+                                            className="text-xs text-primary-600 hover:text-primary-700"
+                                          >
+                                            Change
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="relative">
+                                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                          <Input
+                                            placeholder="Search symbol..."
+                                            value={quickTradeSearch}
+                                            onChange={(e) => setQuickTradeSearch(e.target.value)}
+                                            className="pl-9"
+                                          />
+                                          {quickTradeAssets && quickTradeAssets.length > 0 && quickTradeSearch && (
+                                            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                              {quickTradeAssets.map(asset => (
+                                                <button
+                                                  key={asset.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setQuickTradeAsset(asset)
+                                                    setQuickTradeSearch('')
+                                                  }}
+                                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
+                                                >
+                                                  <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                                                  <span className="text-gray-500 dark:text-gray-400 ml-2">{asset.company_name}</span>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Action */}
+                                    <div className="w-32">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Action</label>
+                                      <div className="flex gap-1">
+                                        {(['buy', 'sell'] as TradeAction[]).map(a => (
+                                          <button
+                                            key={a}
+                                            type="button"
+                                            onClick={() => setQuickTradeAction(a)}
+                                            className={clsx(
+                                              "flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-lg border transition-colors capitalize text-sm",
+                                              quickTradeAction === a
+                                                ? a === 'buy'
+                                                  ? "border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
+                                                  : "border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
+                                                : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                            )}
+                                          >
+                                            {a === 'buy' ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                                            {a}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Shares or Weight */}
+                                    <div className="w-24">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Shares</label>
+                                      <Input
+                                        type="number"
+                                        placeholder="1000"
+                                        value={quickTradeShares}
+                                        onChange={(e) => setQuickTradeShares(e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="w-20">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Weight %</label>
+                                      <Input
+                                        type="number"
+                                        step="0.1"
+                                        placeholder="2.5"
+                                        value={quickTradeWeight}
+                                        onChange={(e) => setQuickTradeWeight(e.target.value)}
+                                      />
+                                    </div>
+
+                                    {/* Add Button */}
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!quickTradeAsset) return
+                                        addQuickTradeMutation.mutate({
+                                          asset: quickTradeAsset,
+                                          action: quickTradeAction,
+                                          shares: quickTradeShares ? parseFloat(quickTradeShares) : undefined,
+                                          weight: quickTradeWeight ? parseFloat(quickTradeWeight) : undefined,
+                                        })
+                                      }}
+                                      disabled={!quickTradeAsset || addQuickTradeMutation.isPending}
+                                      loading={addQuickTradeMutation.isPending}
+                                    >
+                                      Add
+                                    </Button>
+                                  </div>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                    This adds a sandbox-only trade. It won't create a trade idea.
+                                  </p>
+                                </Card>
+                              </div>
+                            )}
+
+                          <Card className="overflow-hidden">
+                            {/* Sandbox Trade Summary Header */}
+                            {tradeStats.total > 0 && (
+                              <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-b border-amber-200 dark:border-amber-800">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                      <Beaker className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                      <span className="font-medium text-amber-900 dark:text-amber-100">
+                                        Sandbox Trades
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-sm">
+                                      <span className="text-gray-600 dark:text-gray-400">
+                                        {tradeStats.total} changes
+                                      </span>
+                                      {tradeStats.buys > 0 && (
+                                        <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                          <ArrowUpRight className="h-3.5 w-3.5" />
+                                          {tradeStats.buys} buy{tradeStats.buys !== 1 ? 's' : ''}
+                                        </span>
+                                      )}
+                                      {tradeStats.sells > 0 && (
+                                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                                          <ArrowDownRight className="h-3.5 w-3.5" />
+                                          {tradeStats.sells} sell{tradeStats.sells !== 1 ? 's' : ''}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="text-xs text-amber-700 dark:text-amber-300">
+                                    Click action badges to edit
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Grouping Options */}
+                            <div className="px-4 py-2 bg-gray-50 dark:bg-gray-700/30 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <FolderOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                                <span className="text-sm text-gray-600 dark:text-gray-400">Group by:</span>
+                                <select
+                                  value={holdingsGroupBy}
+                                  onChange={(e) => {
+                                    setHoldingsGroupBy(e.target.value as 'none' | 'sector' | 'action' | 'change')
+                                    setCollapsedGroups(new Set())
+                                  }}
+                                  className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                >
+                                  <option value="none">None</option>
+                                  <option value="sector">Sector</option>
+                                  <option value="action">Trade Action</option>
+                                  <option value="change">Weight Change</option>
+                                </select>
+                              </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {metrics.holdings_after.filter(h => !h.is_removed).length} active positions
+                              </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-300">Symbol</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-300">Company</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-300">Sector</th>
+                                    <th className="px-4 py-3 text-center font-medium text-gray-700 dark:text-gray-300">Trade</th>
+                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Shares</th>
+                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Price</th>
+                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Value</th>
+                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Base Wt%</th>
+                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">New Wt%</th>
+                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Change</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                  {groupedHoldings ? (
+                                    // Grouped view
+                                    groupedHoldings.map((group) => {
+                                      const isCollapsed = collapsedGroups.has(group.name)
+                                      return (
+                                        <React.Fragment key={`group-${group.name}`}>
+                                          {/* Group Header */}
+                                          <tr
+                                            className="bg-gray-100 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
+                                            onClick={() => toggleGroupCollapse(group.name)}
+                                          >
+                                            <td colSpan={10} className="px-4 py-2">
+                                              <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                  <ChevronDown className={clsx(
+                                                    "h-4 w-4 text-gray-500 transition-transform",
+                                                    isCollapsed && "-rotate-90"
+                                                  )} />
+                                                  <span className="font-medium text-gray-900 dark:text-white">{group.name}</span>
+                                                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                    ({group.count} position{group.count !== 1 ? 's' : ''})
+                                                  </span>
+                                                </div>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                  {group.totalWeight.toFixed(1)}% weight
+                                                </span>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                          {/* Group Holdings */}
+                                          {!isCollapsed && group.holdings.map((holding) => {
+                                            const baseline = (simulation.baseline_holdings as BaselineHolding[]).find(
+                                              b => b.asset_id === holding.asset_id
+                                            )
+                                            const baseWeight = baseline?.weight || 0
+                                            const weightChange = holding.weight - baseWeight
+                                            const trade = simulation.simulation_trades?.find(t => t.asset_id === holding.asset_id)
+                                            const isEditing = editingTradeId === trade?.id
+
+                                            return (
+                                              <tr
+                                                key={holding.asset_id}
+                                                className={clsx(
+                                                  "hover:bg-gray-50 dark:hover:bg-gray-700/30 group",
+                                                  holding.is_new && "bg-green-50 dark:bg-green-900/10",
+                                                  holding.is_removed && "bg-red-50 dark:bg-red-900/10 opacity-60"
+                                                )}
+                                              >
+                                                <td className="px-4 py-3 font-medium text-gray-900 dark:text-white pl-8">
+                                                  {holding.symbol}
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-[200px] truncate">
+                                                  {holding.company_name}
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                                                  {holding.sector || '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                  {trade ? (
+                                                    isEditing ? (
+                                                      <div className="flex items-center gap-1 justify-center">
+                                                        <Input
+                                                          type="number"
+                                                          value={editingShares}
+                                                          onChange={(e) => setEditingShares(e.target.value)}
+                                                          className="w-20 text-xs h-7"
+                                                          placeholder="Shares"
+                                                        />
+                                                        <button
+                                                          onClick={saveTradeEdit}
+                                                          className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                                                        >
+                                                          <Check className="h-3 w-3" />
+                                                        </button>
+                                                        <button
+                                                          onClick={() => setEditingTradeId(null)}
+                                                          className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                                        >
+                                                          <X className="h-3 w-3" />
+                                                        </button>
+                                                      </div>
+                                                    ) : (
+                                                      <div className="flex items-center gap-1 justify-center">
+                                                        <button
+                                                          onClick={() => canEdit && startEditingTrade(trade)}
+                                                          className={clsx(
+                                                            "text-xs font-medium uppercase px-2 py-1 rounded flex items-center gap-1",
+                                                            trade.action === 'buy' || trade.action === 'add'
+                                                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                                                            canEdit && "hover:ring-2 hover:ring-offset-1 hover:ring-primary-400 cursor-pointer"
+                                                          )}
+                                                          title={canEdit ? "Click to edit" : undefined}
+                                                        >
+                                                          {trade.action}
+                                                          {trade.shares && <span className="font-normal">({trade.shares})</span>}
+                                                        </button>
+                                                        {canEdit && (
+                                                          <button
+                                                            onClick={() => removeTradeMutation.mutate(trade.id)}
+                                                            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-opacity"
+                                                            title="Remove trade"
+                                                          >
+                                                            <X className="h-3 w-3 text-red-500" />
+                                                          </button>
+                                                        )}
+                                                      </div>
+                                                    )
+                                                  ) : (
+                                                    <span className="text-gray-400 text-xs">—</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                                  {holding.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                                  ${holding.price.toFixed(2)}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                                  ${holding.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono">
+                                                  {baseWeight.toFixed(2)}%
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono font-medium">
+                                                  {holding.weight.toFixed(2)}%
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-mono">
+                                                  <span className={clsx(
+                                                    "inline-flex items-center gap-0.5",
+                                                    weightChange > 0.01 ? "text-green-600 dark:text-green-400" :
+                                                    weightChange < -0.01 ? "text-red-600 dark:text-red-400" :
+                                                    "text-gray-500"
+                                                  )}>
+                                                    {weightChange > 0.01 ? (
+                                                      <ArrowUpRight className="h-3 w-3" />
+                                                    ) : weightChange < -0.01 ? (
+                                                      <ArrowDownRight className="h-3 w-3" />
+                                                    ) : (
+                                                      <Minus className="h-3 w-3" />
+                                                    )}
+                                                    {weightChange > 0 ? '+' : ''}{weightChange.toFixed(2)}%
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            )
+                                          })}
+                                        </React.Fragment>
+                                      )
+                                    })
+                                  ) : (
+                                    // Ungrouped view
+                                    metrics.holdings_after.map((holding) => {
+                                      const baseline = (simulation.baseline_holdings as BaselineHolding[]).find(
+                                        b => b.asset_id === holding.asset_id
+                                      )
+                                      const baseWeight = baseline?.weight || 0
+                                      const weightChange = holding.weight - baseWeight
+                                      const trade = simulation.simulation_trades?.find(t => t.asset_id === holding.asset_id)
+                                      const isEditing = editingTradeId === trade?.id
+
+                                      return (
+                                        <tr
+                                          key={holding.asset_id}
+                                          className={clsx(
+                                            "hover:bg-gray-50 dark:hover:bg-gray-700/30 group",
+                                            holding.is_new && "bg-green-50 dark:bg-green-900/10",
+                                            holding.is_removed && "bg-red-50 dark:bg-red-900/10 opacity-60"
+                                          )}
+                                        >
+                                          <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                                            {holding.symbol}
+                                          </td>
+                                          <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-[200px] truncate">
+                                            {holding.company_name}
+                                          </td>
+                                          <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                                            {holding.sector || '—'}
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            {trade ? (
+                                              isEditing ? (
+                                                <div className="flex items-center gap-1 justify-center">
+                                                  <Input
+                                                    type="number"
+                                                    value={editingShares}
+                                                    onChange={(e) => setEditingShares(e.target.value)}
+                                                    className="w-20 text-xs h-7"
+                                                    placeholder="Shares"
+                                                  />
+                                                  <button
+                                                    onClick={saveTradeEdit}
+                                                    className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                                                  >
+                                                    <Check className="h-3 w-3" />
+                                                  </button>
+                                                  <button
+                                                    onClick={() => setEditingTradeId(null)}
+                                                    className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                                  >
+                                                    <X className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center gap-1 justify-center">
+                                                  <button
+                                                    onClick={() => canEdit && startEditingTrade(trade)}
+                                                    className={clsx(
+                                                      "text-xs font-medium uppercase px-2 py-1 rounded flex items-center gap-1",
+                                                      trade.action === 'buy' || trade.action === 'add'
+                                                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                                                      canEdit && "hover:ring-2 hover:ring-offset-1 hover:ring-primary-400 cursor-pointer"
+                                                    )}
+                                                    title={canEdit ? "Click to edit" : undefined}
+                                                  >
+                                                    {trade.action}
+                                                    {trade.shares && <span className="font-normal">({trade.shares})</span>}
+                                                  </button>
+                                                  {canEdit && (
+                                                    <button
+                                                      onClick={() => removeTradeMutation.mutate(trade.id)}
+                                                      className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-opacity"
+                                                      title="Remove trade"
+                                                    >
+                                                      <X className="h-3 w-3 text-red-500" />
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              )
+                                            ) : (
+                                              <span className="text-gray-400 text-xs">—</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                            {holding.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                            ${holding.price.toFixed(2)}
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                            ${holding.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono">
+                                            {baseWeight.toFixed(2)}%
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono font-medium">
+                                            {holding.weight.toFixed(2)}%
+                                          </td>
+                                          <td className="px-4 py-3 text-right font-mono">
+                                            <span className={clsx(
+                                              "inline-flex items-center gap-0.5",
+                                              weightChange > 0.01 ? "text-green-600 dark:text-green-400" :
+                                              weightChange < -0.01 ? "text-red-600 dark:text-red-400" :
+                                              "text-gray-500"
+                                            )}>
+                                              {weightChange > 0.01 ? (
+                                                <ArrowUpRight className="h-3 w-3" />
+                                              ) : weightChange < -0.01 ? (
+                                                <ArrowDownRight className="h-3 w-3" />
+                                              ) : (
+                                                <Minus className="h-3 w-3" />
+                                              )}
+                                              {weightChange > 0 ? '+' : ''}{weightChange.toFixed(2)}%
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })
+                                  )}
+                                </tbody>
+                                <tfoot className="bg-gray-100 dark:bg-gray-700 font-medium">
+                                  <tr>
+                                    <td className="px-4 py-3 text-gray-900 dark:text-white" colSpan={4}>
+                                      Total ({metrics.holdings_after.length} positions)
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono" colSpan={2}>
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                      ${metrics.total_value_after.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono">
+                                      100.00%
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
+                                      100.00%
+                                    </td>
+                                    <td className="px-4 py-3"></td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </Card>
+                          </>
+                        ) : (
+                          /* Trades View - Grouped by Action with Cash Impact */
+                          <>
+                            {tradesGroupedByAction && tradesGroupedByAction.groups.length > 0 ? (
+                              <>
+                                {/* Cash Impact Summary Cards */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                  <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">Total Trades</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                                      {tradeStats.total}
+                                    </div>
+                                    <div className="text-xs text-gray-500 h-4">
+                                      {tradeStats.buys > 0 && <span className="text-green-600">{tradeStats.buys} buy{tradeStats.buys !== 1 ? 's' : ''}</span>}
+                                      {tradeStats.buys > 0 && tradeStats.sells > 0 && ', '}
+                                      {tradeStats.sells > 0 && <span className="text-red-600">{tradeStats.sells} sell{tradeStats.sells !== 1 ? 's' : ''}</span>}
+                                    </div>
+                                  </Card>
+                                  <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">Buy Value</div>
+                                    <div className="text-2xl font-bold text-green-600">
+                                      ${tradesGroupedByAction.totalBuyValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </div>
+                                    <div className="text-xs text-gray-500 h-4">
+                                      {tradesGroupedByAction.totalPortfolioValue > 0 && (
+                                        <span>{((tradesGroupedByAction.totalBuyValue / tradesGroupedByAction.totalPortfolioValue) * 100).toFixed(1)}% of portfolio</span>
+                                      )}
+                                    </div>
+                                  </Card>
+                                  <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">Sell Value</div>
+                                    <div className="text-2xl font-bold text-red-600">
+                                      ${tradesGroupedByAction.totalSellValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </div>
+                                    <div className="text-xs text-gray-500 h-4">
+                                      {tradesGroupedByAction.totalPortfolioValue > 0 && (
+                                        <span>{((tradesGroupedByAction.totalSellValue / tradesGroupedByAction.totalPortfolioValue) * 100).toFixed(1)}% of portfolio</span>
+                                      )}
+                                    </div>
+                                  </Card>
+                                  <Card className="pt-2 px-3 pb-3 h-[88px]">
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                                      <DollarSign className="h-3.5 w-3.5" />
+                                      Net Cash Flow
+                                    </div>
+                                    <div className={clsx(
+                                      "text-2xl font-bold",
+                                      tradesGroupedByAction.netCashFlow >= 0 ? "text-green-600" : "text-red-600"
+                                    )}>
+                                      {tradesGroupedByAction.netCashFlow >= 0 ? '+' : ''}${tradesGroupedByAction.netCashFlow.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </div>
+                                    <div className="text-xs text-gray-500 h-4">
+                                      {tradesGroupedByAction.netCashFlow >= 0 ? 'Cash generated' : 'Cash needed'}
+                                    </div>
+                                  </Card>
+                                </div>
+
+                                {/* Trades Grouped by Action */}
+                                <div className="space-y-4">
+                                  {tradesGroupedByAction.groups.map(group => (
+                                    <Card key={group.action} className="overflow-hidden">
+                                      {/* Group Header */}
+                                      <div className={clsx(
+                                        "px-4 py-3 border-b",
+                                        group.action === 'buy' || group.action === 'add'
+                                          ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                                          : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                                      )}>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                            <div className={clsx(
+                                              "w-8 h-8 rounded-full flex items-center justify-center",
+                                              group.action === 'buy' || group.action === 'add'
+                                                ? "bg-green-100 dark:bg-green-900/40"
+                                                : "bg-red-100 dark:bg-red-900/40"
+                                            )}>
+                                              {group.action === 'buy' || group.action === 'add' ? (
+                                                <TrendingUp className={clsx(
+                                                  "h-4 w-4",
+                                                  group.action === 'buy' || group.action === 'add'
+                                                    ? "text-green-600 dark:text-green-400"
+                                                    : "text-red-600 dark:text-red-400"
+                                                )} />
+                                              ) : (
+                                                <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                                              )}
+                                            </div>
+                                            <div>
+                                              <h3 className="font-semibold text-gray-900 dark:text-white">
+                                                {group.action === 'buy' ? 'Buys' : group.action === 'add' ? 'Adds' : group.action === 'sell' ? 'Sells' : 'Trims'}
+                                              </h3>
+                                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                                {group.count} trade{group.count !== 1 ? 's' : ''}
+                                              </p>
+                                            </div>
+                                          </div>
+                                          <div className="text-right">
+                                            <div className={clsx(
+                                              "text-lg font-bold",
+                                              group.action === 'buy' || group.action === 'add' ? "text-green-600" : "text-red-600"
+                                            )}>
+                                              ${group.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            </div>
+                                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                                              {group.totalWeight.toFixed(1)}% weight
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Trades Table */}
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                          <thead>
+                                            <tr className="border-b border-gray-100 dark:border-gray-700">
+                                              <th className="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Symbol</th>
+                                              <th className="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Company</th>
+                                              <th className="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Sector</th>
+                                              <th className="text-right px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Current</th>
+                                              <th className="text-right px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Trade Shares</th>
+                                              <th className="text-right px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Price</th>
+                                              <th className="text-right px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Value</th>
+                                              <th className="text-right px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Weight</th>
+                                              <th className="text-right px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Cash Impact</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {group.trades.map(trade => (
+                                              <tr key={trade.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                                                <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">
+                                                  {trade.symbol}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 max-w-[180px] truncate">
+                                                  {trade.company_name}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-gray-500 dark:text-gray-500">
+                                                  {trade.sector || '—'}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right text-gray-500 dark:text-gray-400 font-mono text-xs">
+                                                  {trade.currentHolding > 0 ? (
+                                                    <span>{trade.currentHolding.toLocaleString()} ({trade.currentWeight.toFixed(1)}%)</span>
+                                                  ) : (
+                                                    <span className="text-gray-400">New</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-gray-900 dark:text-white">
+                                                  {trade.shares > 0 ? trade.shares.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-gray-600 dark:text-gray-400">
+                                                  ${trade.price.toFixed(2)}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono font-medium text-gray-900 dark:text-white">
+                                                  ${trade.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-gray-600 dark:text-gray-400">
+                                                  {trade.weight.toFixed(2)}%
+                                                </td>
+                                                <td className={clsx(
+                                                  "px-4 py-2.5 text-right font-mono font-medium",
+                                                  trade.cashImpact > 0 ? "text-red-600" : "text-green-600"
+                                                )}>
+                                                  {trade.cashImpact > 0 ? '-' : '+'}${Math.abs(trade.cashImpact).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                          <tfoot className="bg-gray-50 dark:bg-gray-800/50">
+                                            <tr>
+                                              <td colSpan={6} className="px-4 py-2 font-medium text-gray-700 dark:text-gray-300">
+                                                Subtotal
+                                              </td>
+                                              <td className="px-4 py-2 text-right font-mono font-bold text-gray-900 dark:text-white">
+                                                ${group.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                              </td>
+                                              <td className="px-4 py-2 text-right font-mono font-medium text-gray-700 dark:text-gray-300">
+                                                {group.totalWeight.toFixed(2)}%
+                                              </td>
+                                              <td className={clsx(
+                                                "px-4 py-2 text-right font-mono font-bold",
+                                                group.totalCashImpact > 0 ? "text-red-600" : "text-green-600"
+                                              )}>
+                                                {group.totalCashImpact > 0 ? '-' : '+'}${Math.abs(group.totalCashImpact).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                              </td>
+                                            </tr>
+                                          </tfoot>
+                                        </table>
+                                      </div>
+                                    </Card>
+                                  ))}
+                                </div>
+
+                                {/* Net Cash Summary */}
+                                <Card className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-200 dark:border-blue-800">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                                        <DollarSign className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                      </div>
+                                      <div>
+                                        <h3 className="font-semibold text-gray-900 dark:text-white">Net Cash Impact</h3>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                                          {tradesGroupedByAction.netCashFlow >= 0
+                                            ? 'These trades will generate cash for redeployment'
+                                            : 'These trades require additional cash investment'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className={clsx(
+                                        "text-2xl font-bold",
+                                        tradesGroupedByAction.netCashFlow >= 0 ? "text-green-600" : "text-red-600"
+                                      )}>
+                                        {tradesGroupedByAction.netCashFlow >= 0 ? '+' : ''}${tradesGroupedByAction.netCashFlow.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </div>
+                                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                                        {tradesGroupedByAction.totalPortfolioValue > 0 && (
+                                          <span>
+                                            {((Math.abs(tradesGroupedByAction.netCashFlow) / tradesGroupedByAction.totalPortfolioValue) * 100).toFixed(1)}% of portfolio
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </Card>
+                              </>
+                            ) : (
+                              <Card className="p-8 text-center">
+                                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                                  <List className="h-8 w-8 text-gray-400" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                                  No Trades Yet
+                                </h3>
+                                <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                                  Add trades from the Ideas panel or use Quick Trade to see the trades view.
+                                </p>
+                              </Card>
+                            )}
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <Card className="p-8 text-center">
+                        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Layers className="h-8 w-8 text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                          Add Trades to See Impact
+                        </h3>
+                        <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                          Import trade ideas from the left panel or add custom trades.
+                          Results will update automatically as you make changes.
+                        </p>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              </div>
+          </>
+        ) : null}
+      </div>
+
+      {/* Collaborators Modal */}
+      {simulation && (
+        <SimulationCollaboratorsModal
+          isOpen={showCollaboratorsModal}
+          onClose={() => setShowCollaboratorsModal(false)}
+          simulationId={simulation.id}
+          simulationName={simulation.name}
+          isOwner={isOwner}
+          currentUserPermission={currentUserPermission}
+        />
+      )}
+
+      {/* Add Trade Idea Modal */}
+      <AddTradeIdeaModal
+        isOpen={showAddTradeIdeaModal}
+        onClose={() => setShowAddTradeIdeaModal(false)}
+        onSuccess={() => {
+          setShowAddTradeIdeaModal(false)
+          refetchTradeIdeas()
+        }}
+        preselectedPortfolioId={simulation?.portfolio_id}
+      />
+
+      {/* Archive Confirmation Modal */}
+      {showArchiveConfirm && simulation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                  <Archive className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Archive Trade Lab
+                </h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 mb-2">
+                Are you sure you want to archive <span className="font-medium text-gray-900 dark:text-white">"{simulation.name}"</span>?
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-500 mb-6">
+                This trade lab will be moved to your archived items. You can restore it at any time from the Trade Lab dashboard.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowArchiveConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    archiveSimulationMutation.mutate({ simId: simulation.id, archive: true })
+                    setShowArchiveConfirm(false)
+                  }}
+                  loading={archiveSimulationMutation.isPending}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  Archive
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Helper function to calculate simulation metrics
+function calculateSimulationMetrics(
+  baselineHoldings: BaselineHolding[],
+  trades: SimulationTradeWithDetails[],
+  priceMap: Record<string, number>
+): SimulationMetrics {
+  const holdingsMap = new Map<string, SimulatedHolding>()
+
+  let totalValueBefore = 0
+  baselineHoldings.forEach(h => {
+    const currentPrice = priceMap[h.asset_id] || h.price
+    const value = h.shares * currentPrice
+    totalValueBefore += value
+
+    holdingsMap.set(h.asset_id, {
+      asset_id: h.asset_id,
+      symbol: h.symbol,
+      company_name: h.company_name,
+      sector: h.sector,
+      shares: h.shares,
+      price: currentPrice,
+      value,
+      weight: 0,
+      change_from_baseline: 0,
+      is_new: false,
+      is_removed: false,
+    })
+  })
+
+  holdingsMap.forEach(h => {
+    h.weight = totalValueBefore > 0 ? (h.value / totalValueBefore) * 100 : 0
+  })
+
+  let positionsAdded = 0
+  let positionsRemoved = 0
+  let positionsAdjusted = 0
+
+  trades.forEach(trade => {
+    const existing = holdingsMap.get(trade.asset_id)
+    const price = priceMap[trade.asset_id] || trade.price || 100
+
+    if (trade.action === 'buy' || trade.action === 'add') {
+      if (existing) {
+        const additionalShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
+        existing.shares += additionalShares
+        existing.value = existing.shares * existing.price
+        positionsAdjusted++
+      } else {
+        const shares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
+        holdingsMap.set(trade.asset_id, {
+          asset_id: trade.asset_id,
+          symbol: trade.assets?.symbol || '',
+          company_name: trade.assets?.company_name || '',
+          sector: trade.assets?.sector || null,
+          shares,
+          price,
+          value: shares * price,
+          weight: 0,
+          change_from_baseline: 0,
+          is_new: true,
+          is_removed: false,
+        })
+        positionsAdded++
+      }
+    } else if (trade.action === 'sell') {
+      if (existing) {
+        const sellShares = trade.shares || existing.shares
+        existing.shares = Math.max(0, existing.shares - sellShares)
+        existing.value = existing.shares * existing.price
+        if (existing.shares === 0) {
+          existing.is_removed = true
+          positionsRemoved++
+        } else {
+          positionsAdjusted++
+        }
+      }
+    } else if (trade.action === 'trim') {
+      if (existing) {
+        const sellShares = trade.shares || existing.shares * 0.5
+        existing.shares = Math.max(0, existing.shares - sellShares)
+        existing.value = existing.shares * existing.price
+        if (existing.shares === 0) {
+          existing.is_removed = true
+          positionsRemoved++
+        } else {
+          positionsAdjusted++
+        }
+      }
+    }
+  })
+
+  let totalValueAfter = 0
+  holdingsMap.forEach(h => {
+    totalValueAfter += h.value
+  })
+
+  holdingsMap.forEach(h => {
+    const newWeight = totalValueAfter > 0 ? (h.value / totalValueAfter) * 100 : 0
+    const baseline = baselineHoldings.find(b => b.asset_id === h.asset_id)
+    const baselineWeight = baseline?.weight || 0
+    h.change_from_baseline = newWeight - baselineWeight
+    h.weight = newWeight
+  })
+
+  const sectorExposureBefore: Record<string, number> = {}
+  const sectorExposureAfter: Record<string, number> = {}
+
+  baselineHoldings.forEach(h => {
+    const sector = h.sector || 'Other'
+    sectorExposureBefore[sector] = (sectorExposureBefore[sector] || 0) + h.weight
+  })
+
+  holdingsMap.forEach(h => {
+    if (!h.is_removed && h.shares > 0) {
+      const sector = h.sector || 'Other'
+      sectorExposureAfter[sector] = (sectorExposureAfter[sector] || 0) + h.weight
+    }
+  })
+
+  const sectorChanges: Record<string, number> = {}
+  const allSectors = new Set([...Object.keys(sectorExposureBefore), ...Object.keys(sectorExposureAfter)])
+  allSectors.forEach(sector => {
+    sectorChanges[sector] = (sectorExposureAfter[sector] || 0) - (sectorExposureBefore[sector] || 0)
+  })
+
+  const sortedBefore = [...baselineHoldings].sort((a, b) => b.weight - a.weight)
+
+  // For concentration metrics, only count active positions
+  const activeHoldings = [...holdingsMap.values()]
+    .filter(h => !h.is_removed && h.shares > 0)
+    .sort((a, b) => b.weight - a.weight)
+
+  // For display, include all holdings (including removed ones to show the sell)
+  const allHoldings = [...holdingsMap.values()]
+    .sort((a, b) => {
+      // Sort removed positions to the bottom
+      if (a.is_removed && !b.is_removed) return 1
+      if (!a.is_removed && b.is_removed) return -1
+      return b.weight - a.weight
+    })
+
+  const top5Before = sortedBefore.slice(0, 5).reduce((sum, h) => sum + h.weight, 0)
+  const top5After = activeHoldings.slice(0, 5).reduce((sum, h) => sum + h.weight, 0)
+  const top10Before = sortedBefore.slice(0, 10).reduce((sum, h) => sum + h.weight, 0)
+  const top10After = activeHoldings.slice(0, 10).reduce((sum, h) => sum + h.weight, 0)
+
+  const hhiBefore = baselineHoldings.reduce((sum, h) => sum + Math.pow(h.weight / 100, 2), 0)
+  const hhiAfter = activeHoldings.reduce((sum, h) => sum + Math.pow(h.weight / 100, 2), 0)
+
+  return {
+    total_value_before: totalValueBefore,
+    total_value_after: totalValueAfter,
+    value_change: totalValueAfter - totalValueBefore,
+    value_change_pct: totalValueBefore > 0 ? ((totalValueAfter - totalValueBefore) / totalValueBefore) * 100 : 0,
+    positions_added: positionsAdded,
+    positions_removed: positionsRemoved,
+    positions_adjusted: positionsAdjusted,
+    sector_exposure_before: sectorExposureBefore,
+    sector_exposure_after: sectorExposureAfter,
+    sector_changes: sectorChanges,
+    top_5_concentration_before: top5Before,
+    top_5_concentration_after: top5After,
+    top_10_concentration_before: top10Before,
+    top_10_concentration_after: top10After,
+    herfindahl_index_before: hhiBefore,
+    herfindahl_index_after: hhiAfter,
+    position_count_before: baselineHoldings.length,
+    position_count_after: activeHoldings.length,
+    avg_position_size_before: baselineHoldings.length > 0 ? 100 / baselineHoldings.length : 0,
+    avg_position_size_after: activeHoldings.length > 0 ? 100 / activeHoldings.length : 0,
+    holdings_after: allHoldings,
+  }
+}
