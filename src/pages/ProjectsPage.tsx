@@ -15,7 +15,18 @@ import {
   Circle,
   Ban,
   ChevronDown,
-  X
+  X,
+  Trash2,
+  Tag,
+  Star,
+  LayoutList,
+  LayoutGrid,
+  ChevronLeft,
+  ChevronRight,
+  FolderKanban,
+  Zap,
+  ArrowUp,
+  Minus
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -26,9 +37,12 @@ import { Select } from '../components/ui/Select'
 import { Input } from '../components/ui/Input'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { EmptyState } from '../components/common/EmptyState'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { clsx } from 'clsx'
 import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../types/project'
+import { CreateProjectModal } from '../components/projects/CreateProjectModal'
+import { DeleteProjectModal } from '../components/projects/DeleteProjectModal'
+import { ProjectCollectionsSidebar } from '../components/projects/ProjectCollectionsSidebar'
 
 interface ProjectsPageProps {
   onProjectSelect?: (project: ProjectWithAssignments) => void
@@ -37,32 +51,39 @@ interface ProjectsPageProps {
 export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const [showContent, setShowContent] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all')
   const [priorityFilter, setPriorityFilter] = useState<'all' | ProjectPriority>('all')
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'created' | 'assigned'>('all')
+  const [viewFilter, setViewFilter] = useState<'active' | 'archived'>('active')
   const [sortBy, setSortBy] = useState<'created_at' | 'due_date' | 'priority' | 'title'>('created_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [showFilters, setShowFilters] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
-
-  // Delay showing content to prevent flash
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowContent(true)
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [])
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; projectId: string; projectTitle: string }>({
+    isOpen: false,
+    projectId: '',
+    projectTitle: ''
+  })
+  const [openDropdown, setOpenDropdown] = useState<{ projectId: string; type: 'status' | 'priority' | 'tags'; rect: DOMRect } | null>(null)
+  const [tagSearchQuery, setTagSearchQuery] = useState('')
+  const [newTagName, setNewTagName] = useState('')
+  const [showCollectionsSidebar, setShowCollectionsSidebar] = useState(true)
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
+  const [collectionFilters, setCollectionFilters] = useState<{ statuses?: ProjectStatus[]; tagIds?: string[] } | null>(null)
+  const [quickStatusFilter, setQuickStatusFilter] = useState<ProjectStatus | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
+  const [draggedProject, setDraggedProject] = useState<string | null>(null)
+  const [draggedOverStatus, setDraggedOverStatus] = useState<ProjectStatus | null>(null)
 
   // Fetch projects user has access to (created or assigned)
   const { data: projects, isLoading } = useQuery({
-    queryKey: ['projects', user?.id],
+    queryKey: ['projects', user?.id, viewFilter],
     queryFn: async () => {
       if (!user?.id) return []
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('projects')
         .select(`
           *,
@@ -77,15 +98,250 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
             id,
             title,
             completed
+          ),
+          project_tag_assignments(
+            id,
+            tag_id,
+            project_tags(
+              id,
+              name,
+              color
+            )
           )
         `)
-        .order('created_at', { ascending: false })
+
+      // Filter by active or archived
+      if (viewFilter === 'active') {
+        query = query.is('deleted_at', null)
+      } else {
+        query = query.not('deleted_at', 'is', null)
+      }
+
+      query = query.order('created_at', { ascending: false })
+
+      const { data, error} = await query
 
       if (error) throw error
       return (data || []) as ProjectWithAssignments[]
     },
     enabled: !!user?.id,
     staleTime: 30000
+  })
+
+  // Fetch collections
+  const { data: collections } = useQuery({
+    queryKey: ['project-collections', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      const { data, error } = await supabase
+        .from('project_collections')
+        .select('*')
+        .eq('created_by', user.id)
+        .order('is_pinned', { ascending: false })
+        .order('sort_order')
+        .order('name')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!user?.id
+  })
+
+  // Fetch all available tags
+  const { data: allTags } = useQuery({
+    queryKey: ['project-tags', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      const { data, error } = await supabase
+        .from('project_tags')
+        .select('*')
+        .eq('created_by', user.id)
+        .order('name')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!user?.id
+  })
+
+  // Create tag mutation
+  const createTagMutation = useMutation({
+    mutationFn: async ({ name, color }: { name: string; color: string }) => {
+      const { data, error } = await supabase
+        .from('project_tags')
+        .insert({ name, color, created_by: user?.id })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-tags'] })
+      setNewTagName('')
+    }
+  })
+
+  // Add tag to project mutation
+  const addTagToProjectMutation = useMutation({
+    mutationFn: async ({ projectId, tagId }: { projectId: string; tagId: string }) => {
+      const { error } = await supabase
+        .from('project_tag_assignments')
+        .insert({ project_id: projectId, tag_id: tagId })
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Remove tag from project mutation
+  const removeTagFromProjectMutation = useMutation({
+    mutationFn: async ({ projectId, tagId }: { projectId: string; tagId: string }) => {
+      const { error } = await supabase
+        .from('project_tag_assignments')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('tag_id', tagId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Create collection mutation
+  const createCollectionMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const { data, error } = await supabase
+        .from('project_collections')
+        .insert({
+          name,
+          created_by: user?.id,
+          filter_criteria: {
+            status: statusFilter !== 'all' ? [statusFilter] : undefined,
+            priority: priorityFilter !== 'all' ? [priorityFilter] : undefined,
+            assignmentFilter,
+            viewFilter
+          }
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-collections'] })
+      setShowCreateCollection(false)
+      setNewCollectionName('')
+    }
+  })
+
+  // Delete collection mutation
+  const deleteCollectionMutation = useMutation({
+    mutationFn: async (collectionId: string) => {
+      const { error } = await supabase
+        .from('project_collections')
+        .delete()
+        .eq('id', collectionId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-collections'] })
+      if (activeCollectionId) {
+        setActiveCollectionId(null)
+      }
+    }
+  })
+
+  // Toggle pin collection mutation
+  const togglePinCollectionMutation = useMutation({
+    mutationFn: async ({ collectionId, isPinned }: { collectionId: string; isPinned: boolean }) => {
+      const { error } = await supabase
+        .from('project_collections')
+        .update({ is_pinned: !isPinned })
+        .eq('id', collectionId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-collections'] })
+    }
+  })
+
+  // Delete project mutation (soft delete)
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const { error } = await supabase
+        .from('projects')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', projectId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setDeleteModal({ isOpen: false, projectId: '', projectTitle: '' })
+    }
+  })
+
+  // Update project status mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ projectId, status }: { projectId: string, status: ProjectStatus }) => {
+      const { error } = await supabase
+        .from('projects')
+        .update({ status })
+        .eq('id', projectId)
+
+      if (error) throw error
+    },
+    onMutate: async ({ projectId, status }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['projects'] })
+
+      // Snapshot previous value
+      const previousProjects = queryClient.getQueryData(['projects', user?.id, viewFilter])
+
+      // Optimistically update
+      queryClient.setQueryData(['projects', user?.id, viewFilter], (old: any) => {
+        if (!old) return old
+        return old.map((project: any) =>
+          project.id === projectId ? { ...project, status } : project
+        )
+      })
+
+      return { previousProjects }
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousProjects) {
+        queryClient.setQueryData(['projects', user?.id, viewFilter], context.previousProjects)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Update project priority mutation
+  const updatePriorityMutation = useMutation({
+    mutationFn: async ({ projectId, priority }: { projectId: string, priority: ProjectPriority }) => {
+      const { error } = await supabase
+        .from('projects')
+        .update({ priority })
+        .eq('id', projectId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
   })
 
   // Filter and sort projects
@@ -122,6 +378,30 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
         if (!isAssigned) return false
       }
 
+      // Collection filters
+      if (collectionFilters) {
+        // Status filter from collection
+        if (collectionFilters.statuses && collectionFilters.statuses.length > 0) {
+          if (!collectionFilters.statuses.includes(project.status)) {
+            return false
+          }
+        }
+
+        // Tag filter from collection
+        if (collectionFilters.tagIds && collectionFilters.tagIds.length > 0) {
+          const projectTagIds = project.project_tag_assignments?.map((a: any) => a.tag_id) || []
+          const hasAllTags = collectionFilters.tagIds.every(tagId => projectTagIds.includes(tagId))
+          if (!hasAllTags) {
+            return false
+          }
+        }
+      }
+
+      // Quick status filter (overrides collection status filter)
+      if (quickStatusFilter && project.status !== quickStatusFilter) {
+        return false
+      }
+
       return true
     })
 
@@ -155,13 +435,14 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
     })
 
     return filtered
-  }, [projects, searchQuery, statusFilter, priorityFilter, assignmentFilter, sortBy, sortOrder, user?.id])
+  }, [projects, searchQuery, statusFilter, priorityFilter, assignmentFilter, sortBy, sortOrder, user?.id, collectionFilters, quickStatusFilter])
 
   const clearFilters = () => {
     setSearchQuery('')
     setStatusFilter('all')
     setPriorityFilter('all')
     setAssignmentFilter('all')
+    // Don't reset viewFilter as it's a primary navigation choice
   }
 
   const getStatusIcon = (status: ProjectStatus) => {
@@ -213,30 +494,281 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
     assignmentFilter !== 'all'
   ].filter(Boolean).length
 
+  // Apply collection filters
+  const applyCollection = (collection: any) => {
+    setActiveCollectionId(collection.id)
+    const criteria = collection.filter_criteria
+
+    if (criteria.status && criteria.status.length > 0) {
+      setStatusFilter(criteria.status[0])
+    } else {
+      setStatusFilter('all')
+    }
+
+    if (criteria.priority && criteria.priority.length > 0) {
+      setPriorityFilter(criteria.priority[0])
+    } else {
+      setPriorityFilter('all')
+    }
+
+    if (criteria.assignmentFilter) {
+      setAssignmentFilter(criteria.assignmentFilter)
+    } else {
+      setAssignmentFilter('all')
+    }
+
+    if (criteria.viewFilter) {
+      setViewFilter(criteria.viewFilter)
+    } else {
+      setViewFilter('active')
+    }
+  }
+
+  // Clear all filters and active collection
+  const clearAllFilters = () => {
+    clearFilters()
+    setActiveCollectionId(null)
+  }
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
+    <div className="-mx-4 sm:-mx-6 lg:-mx-8 -my-6 h-[calc(100%+3rem)] flex bg-white dark:bg-gray-800">
+      {/* Collections Sidebar */}
+      {showCollectionsSidebar && (
+        <ProjectCollectionsSidebar
+          activeCollectionId={activeCollectionId}
+          onSelectCollection={(collectionId, filters) => {
+            setActiveCollectionId(collectionId)
+            setCollectionFilters(filters || null)
+          }}
+          onSelectView={setViewFilter}
+          activeView={viewFilter}
+        />
+      )}
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                <Briefcase className="w-5 h-5 text-white" />
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCollectionsSidebar(!showCollectionsSidebar)}
+                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                title={showCollectionsSidebar ? "Hide collections" : "Show collections"}
+              >
+                {showCollectionsSidebar ? (
+                  <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                ) : (
+                  <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                )}
+              </button>
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                <FolderKanban className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Projects</h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">Projects</h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Manage one-off initiatives and deliverables
                 </p>
               </div>
             </div>
-            <Button onClick={() => setShowCreateForm(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Project
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'list'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  )}
+                  title="List view"
+                >
+                  <LayoutList className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('board')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'board'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  )}
+                  title="Board view"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
+
+              <Button onClick={() => setShowCreateForm(true)} size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                New Project
+              </Button>
+            </div>
           </div>
 
-          {/* Search and Filters */}
+          {/* Status Quick Filters - Show in both views */}
+          <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status:</span>
+              <button
+                onClick={() => {
+                  setQuickStatusFilter(null)
+                  setViewFilter('active')
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  !quickStatusFilter && viewFilter === 'active'
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                All
+              </button>
+              <button
+                onClick={() => {
+                  setQuickStatusFilter('planning')
+                  setViewFilter('active')
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  quickStatusFilter === 'planning' && viewFilter === 'active'
+                    ? 'bg-yellow-500 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <Circle className="w-3.5 h-3.5" />
+                Planning
+              </button>
+              <button
+                onClick={() => {
+                  setQuickStatusFilter('in_progress')
+                  setViewFilter('active')
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  quickStatusFilter === 'in_progress' && viewFilter === 'active'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                In Progress
+              </button>
+              <button
+                onClick={() => {
+                  setQuickStatusFilter('blocked')
+                  setViewFilter('active')
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  quickStatusFilter === 'blocked' && viewFilter === 'active'
+                    ? 'bg-orange-500 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <AlertCircle className="w-3.5 h-3.5" />
+                Blocked
+              </button>
+              <button
+                onClick={() => {
+                  setQuickStatusFilter('completed')
+                  setViewFilter('active')
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  quickStatusFilter === 'completed' && viewFilter === 'active'
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+                Completed
+              </button>
+              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+              <button
+                onClick={() => {
+                  setQuickStatusFilter(null)
+                  setViewFilter('archived')
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  viewFilter === 'archived'
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <X className="w-3.5 h-3.5" />
+                Cancelled
+              </button>
+            </div>
+
+          {/* Priority Quick Filters - Show in both views */}
+          <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Priority:</span>
+              <button
+                onClick={() => setPriorityFilter('all')}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  priorityFilter === 'all'
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setPriorityFilter('urgent')}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  priorityFilter === 'urgent'
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Urgent
+              </button>
+              <button
+                onClick={() => setPriorityFilter('high')}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  priorityFilter === 'high'
+                    ? 'bg-orange-500 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+                High
+              </button>
+              <button
+                onClick={() => setPriorityFilter('medium')}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  priorityFilter === 'medium'
+                    ? 'bg-yellow-500 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <Minus className="w-3.5 h-3.5" />
+                Medium
+              </button>
+              <button
+                onClick={() => setPriorityFilter('low')}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  priorityFilter === 'low'
+                    ? 'bg-gray-500 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                <Circle className="w-3.5 h-3.5" />
+                Low
+              </button>
+            </div>
+
+          {/* Search and Filters - Show in both views */}
           <div className="flex gap-3">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -248,38 +780,24 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 className="pl-10"
               />
             </div>
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className={clsx(
-                showFilters && 'bg-gray-100 dark:bg-gray-700'
-              )}
-            >
-              <Filter className="w-4 h-4 mr-2" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge className="ml-2">{activeFilterCount}</Badge>
-              )}
-              <ChevronDown className={clsx(
-                'w-4 h-4 ml-2 transition-transform',
-                showFilters && 'rotate-180'
-              )} />
-            </Button>
             <Select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-            >
-              <option value="created_at">Created Date</option>
-              <option value="due_date">Due Date</option>
-              <option value="priority">Priority</option>
-              <option value="title">Title</option>
-            </Select>
-            <Button
-              variant="outline"
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            >
-              <ArrowUpDown className="w-4 h-4" />
-            </Button>
+              value={`${sortBy}-${sortOrder}`}
+              onChange={(e) => {
+                const [field, order] = e.target.value.split('-')
+                setSortBy(field as any)
+                setSortOrder(order as 'asc' | 'desc')
+              }}
+              options={[
+                { value: 'created_at-desc', label: 'Newest First' },
+                { value: 'created_at-asc', label: 'Oldest First' },
+                { value: 'due_date-asc', label: 'Due Date (Soonest)' },
+                { value: 'due_date-desc', label: 'Due Date (Latest)' },
+                { value: 'priority-desc', label: 'Priority (High to Low)' },
+                { value: 'priority-asc', label: 'Priority (Low to High)' },
+                { value: 'title-asc', label: 'Title (A to Z)' },
+                { value: 'title-desc', label: 'Title (Z to A)' }
+              ]}
+            />
           </div>
 
           {/* Filter Panel */}
@@ -293,14 +811,15 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <Select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as any)}
-                  >
-                    <option value="all">All Statuses</option>
-                    <option value="planning">Planning</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="blocked">Blocked</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </Select>
+                    options={[
+                      { value: 'all', label: 'All Statuses' },
+                      { value: 'planning', label: 'Planning' },
+                      { value: 'in_progress', label: 'In Progress' },
+                      { value: 'blocked', label: 'Blocked' },
+                      { value: 'completed', label: 'Completed' },
+                      { value: 'cancelled', label: 'Cancelled' }
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -309,13 +828,14 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <Select
                     value={priorityFilter}
                     onChange={(e) => setPriorityFilter(e.target.value as any)}
-                  >
-                    <option value="all">All Priorities</option>
-                    <option value="urgent">Urgent</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </Select>
+                    options={[
+                      { value: 'all', label: 'All Priorities' },
+                      { value: 'urgent', label: 'Urgent' },
+                      { value: 'high', label: 'High' },
+                      { value: 'medium', label: 'Medium' },
+                      { value: 'low', label: 'Low' }
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -324,11 +844,12 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <Select
                     value={assignmentFilter}
                     onChange={(e) => setAssignmentFilter(e.target.value as any)}
-                  >
-                    <option value="all">All Projects</option>
-                    <option value="created">Created by Me</option>
-                    <option value="assigned">Assigned to Me</option>
-                  </Select>
+                    options={[
+                      { value: 'all', label: 'All Projects' },
+                      { value: 'created', label: 'Created by Me' },
+                      { value: 'assigned', label: 'Assigned to Me' }
+                    ]}
+                  />
                 </div>
               </div>
               {activeFilterCount > 0 && (
@@ -347,14 +868,208 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
         </div>
       </div>
 
-      {/* Project List */}
-      <div className="flex-1 overflow-y-auto">
-        {!showContent || isLoading ? (
-          <div className="p-6">
+      {/* Project List/Board View */}
+      <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
+        {isLoading || !projects ? (
+          <div className="p-4">
             <ListSkeleton count={5} />
           </div>
         ) : filteredProjects.length > 0 ? (
-          <div className="p-6 space-y-4">
+          viewMode === 'board' ? (
+            // Board View
+            <div className="h-full p-4">
+              <div className="flex gap-4 h-full">
+                {['planning', 'in_progress', 'blocked', 'completed'].map((status) => {
+                  const statusProjects = filteredProjects.filter(p => p.status === status)
+                  const isDropTarget = draggedOverStatus === status
+                  return (
+                    <div
+                      key={status}
+                      className={clsx(
+                        "flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-lg p-3 flex flex-col transition-all",
+                        isDropTarget && 'ring-2 ring-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                      )}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        setDraggedOverStatus(status as ProjectStatus)
+                      }}
+                      onDragLeave={(e) => {
+                        // Only clear if we're leaving for a non-child element
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                          setDraggedOverStatus(null)
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        if (draggedProject) {
+                          updateStatusMutation.mutate({ projectId: draggedProject, status: status as ProjectStatus })
+                        }
+                        setDraggedProject(null)
+                        setDraggedOverStatus(null)
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(status as ProjectStatus)}
+                          <h3 className="font-semibold text-gray-900 dark:text-white capitalize">
+                            {status.replace('_', ' ')}
+                          </h3>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {statusProjects.length}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto space-y-2 min-h-[200px]">
+                        {statusProjects.map((project) => {
+                          const totalDeliverables = project.project_deliverables?.length || 0
+                          const completedDeliverables = project.project_deliverables?.filter(d => d.completed).length || 0
+                          const assignmentCount = project.project_assignments?.length || 0
+                          const isOverdue = project.due_date && new Date(project.due_date) < new Date() && project.status !== 'completed'
+
+                          // Helper function for priority border colors
+                          const getPriorityBorderColor = (priority: ProjectPriority) => {
+                            switch (priority) {
+                              case 'urgent': return 'border-red-500'
+                              case 'high': return 'border-orange-500'
+                              case 'medium': return 'border-yellow-500'
+                              case 'low': return 'border-gray-400'
+                            }
+                          }
+
+                          const getPriorityBgColor = (priority: ProjectPriority) => {
+                            switch (priority) {
+                              case 'urgent': return 'bg-red-500'
+                              case 'high': return 'bg-orange-500'
+                              case 'medium': return 'bg-yellow-500'
+                              case 'low': return 'bg-gray-400'
+                            }
+                          }
+
+                          const getPriorityLabel = (priority: ProjectPriority) => {
+                            switch (priority) {
+                              case 'urgent': return 'Urgent'
+                              case 'high': return 'High'
+                              case 'medium': return 'Med'
+                              case 'low': return 'Low'
+                            }
+                          }
+
+                          return (
+                            <div
+                              key={project.id}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedProject(project.id)
+                                e.dataTransfer.effectAllowed = 'move'
+                              }}
+                              onDragEnd={() => {
+                                setDraggedProject(null)
+                                setDraggedOverStatus(null)
+                              }}
+                              className={clsx(
+                                'transition-all duration-150 cursor-move',
+                                draggedProject === project.id && 'scale-105 rotate-3 opacity-80 z-50'
+                              )}
+                              style={{
+                                transform: draggedProject === project.id ? 'translateZ(50px)' : undefined
+                              }}
+                            >
+                              <Card
+                                className={clsx(
+                                  "p-0 hover:shadow-md transition-all cursor-move border-2 h-32 flex",
+                                  getPriorityBorderColor(project.priority),
+                                  draggedProject === project.id && 'shadow-2xl'
+                                )}
+                                onClick={() => onProjectSelect?.({
+                                  id: project.id,
+                                  title: project.title,
+                                  type: 'project',
+                                  data: project
+                                })}
+                              >
+                                {/* Left side - Main content */}
+                                <div className="p-2 flex-1 flex flex-col min-w-0">
+                                  {/* Priority Badge in upper left */}
+                                  <div className="flex items-start gap-2 mb-1">
+                                    <span className={clsx(
+                                      'px-1.5 py-0.5 rounded text-xs font-semibold text-white',
+                                      getPriorityBgColor(project.priority)
+                                    )}>
+                                      {getPriorityLabel(project.priority)}
+                                    </span>
+                                  </div>
+
+                                  {/* Title */}
+                                  <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-1 line-clamp-2 flex-shrink-0">
+                                    {project.title}
+                                  </h4>
+
+                                  {/* Tags - Fixed height container */}
+                                  <div className="h-5 mb-1 flex-shrink-0">
+                                    {project.project_tag_assignments && project.project_tag_assignments.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {project.project_tag_assignments.slice(0, 2).map((assignment: any) => (
+                                          <span
+                                            key={assignment.id}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                                            style={{ backgroundColor: assignment.project_tags.color + '15', color: assignment.project_tags.color }}
+                                          >
+                                            <Tag className="w-2.5 h-2.5" />
+                                            {assignment.project_tags.name}
+                                          </span>
+                                        ))}
+                                        {project.project_tag_assignments.length > 2 && (
+                                          <span className="text-xs text-gray-500">+{project.project_tag_assignments.length - 2}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Due Date & Deliverables - Push to bottom */}
+                                  <div className="mt-auto flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                                    {project.due_date && (
+                                      <div className={clsx('flex items-center gap-1', isOverdue && 'text-red-600 dark:text-red-400')}>
+                                        <Calendar className="w-3 h-3" />
+                                        <span>{Math.abs(differenceInDays(new Date(project.due_date), new Date()))}d</span>
+                                      </div>
+                                    )}
+                                    {totalDeliverables > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        <CheckCircle className="w-3 h-3" />
+                                        <span>{completedDeliverables}/{totalDeliverables}</span>
+                                      </div>
+                                    )}
+                                    {assignmentCount > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        <Users className="w-3 h-3" />
+                                        <span>{assignmentCount}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Right side - Description */}
+                                {project.description && (
+                                  <div className="p-2 border-l border-gray-200 dark:border-gray-700 w-40 flex-shrink-0">
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-4">
+                                      {project.description}
+                                    </p>
+                                  </div>
+                                )}
+                              </Card>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            // List View
+            <div className="p-4 space-y-3">
             {filteredProjects.map((project) => {
               const totalDeliverables = project.project_deliverables?.length || 0
               const completedDeliverables = project.project_deliverables?.filter(d => d.completed).length || 0
@@ -364,22 +1079,284 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               return (
                 <Card
                   key={project.id}
-                  className="p-5 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => onProjectSelect?.(project)}
+                  className="p-4 hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        <h3
+                          className="text-lg font-semibold text-gray-900 dark:text-white cursor-pointer hover:text-primary-600"
+                          onClick={() => onProjectSelect?.({
+                            id: project.id,
+                            title: project.title,
+                            type: 'project',
+                            data: project
+                          })}
+                        >
                           {project.title}
                         </h3>
-                        <Badge className={clsx('flex items-center gap-1', getStatusColor(project.status))}>
-                          {getStatusIcon(project.status)}
-                          <span className="capitalize">{project.status.replace('_', ' ')}</span>
-                        </Badge>
-                        <Badge className={getPriorityColor(project.priority)}>
-                          <span className="capitalize">{project.priority}</span>
-                        </Badge>
+
+                        {/* Status Badge Dropdown */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              setOpenDropdown(
+                                openDropdown?.projectId === project.id && openDropdown?.type === 'status'
+                                  ? null
+                                  : { projectId: project.id, type: 'status', rect }
+                              )
+                            }}
+                            className={clsx(
+                              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                              'hover:shadow-md',
+                              getStatusColor(project.status)
+                            )}
+                          >
+                            {getStatusIcon(project.status)}
+                            <span className="capitalize">{project.status.replace('_', ' ')}</span>
+                            <ChevronDown className="w-3 h-3 opacity-60" />
+                          </button>
+                          {openDropdown?.projectId === project.id && openDropdown?.type === 'status' && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setOpenDropdown(null)}
+                              />
+                              <div
+                                className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[140px] z-20"
+                                style={{
+                                  left: `${openDropdown.rect.left}px`,
+                                  top: `${openDropdown.rect.bottom + 4}px`
+                                }}
+                              >
+                                {(['planning', 'in_progress', 'blocked', 'completed'] as ProjectStatus[]).map((status) => (
+                                  <button
+                                    key={status}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      updateStatusMutation.mutate({
+                                        projectId: project.id,
+                                        status
+                                      })
+                                      setOpenDropdown(null)
+                                    }}
+                                    className={clsx(
+                                      'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
+                                      project.status === status && 'bg-gray-50 dark:bg-gray-700/50'
+                                    )}
+                                  >
+                                    {getStatusIcon(status)}
+                                    <span className="capitalize">{status.replace('_', ' ')}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Priority Badge Dropdown */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              setOpenDropdown(
+                                openDropdown?.projectId === project.id && openDropdown?.type === 'priority'
+                                  ? null
+                                  : { projectId: project.id, type: 'priority', rect }
+                              )
+                            }}
+                            className={clsx(
+                              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                              'hover:shadow-md',
+                              getPriorityColor(project.priority)
+                            )}
+                          >
+                            <span className="capitalize">{project.priority}</span>
+                            <ChevronDown className="w-3 h-3 opacity-60" />
+                          </button>
+                          {openDropdown?.projectId === project.id && openDropdown?.type === 'priority' && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setOpenDropdown(null)}
+                              />
+                              <div
+                                className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[120px] z-20"
+                                style={{
+                                  left: `${openDropdown.rect.left}px`,
+                                  top: `${openDropdown.rect.bottom + 4}px`
+                                }}
+                              >
+                                {(['urgent', 'high', 'medium', 'low'] as ProjectPriority[]).map((priority) => (
+                                  <button
+                                    key={priority}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      updatePriorityMutation.mutate({
+                                        projectId: project.id,
+                                        priority
+                                      })
+                                      setOpenDropdown(null)
+                                    }}
+                                    className={clsx(
+                                      'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
+                                      project.priority === priority && 'bg-gray-50 dark:bg-gray-700/50'
+                                    )}
+                                  >
+                                    <span className="capitalize">{priority}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Tags Display and Management */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {project.project_tag_assignments?.map((assignment: any) => (
+                            <button
+                              key={assignment.id}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (project.created_by === user?.id) {
+                                  removeTagFromProjectMutation.mutate({
+                                    projectId: project.id,
+                                    tagId: assignment.tag_id
+                                  })
+                                }
+                              }}
+                              className={clsx(
+                                'flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all',
+                                project.created_by === user?.id && 'hover:line-through hover:opacity-75'
+                              )}
+                              style={{ backgroundColor: assignment.project_tags.color + '20', color: assignment.project_tags.color }}
+                              title={project.created_by === user?.id ? 'Click to remove tag' : ''}
+                            >
+                              <Tag className="w-3 h-3" />
+                              <span>{assignment.project_tags.name}</span>
+                            </button>
+                          ))}
+
+                          {project.created_by === user?.id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                setOpenDropdown(
+                                  openDropdown?.projectId === project.id && openDropdown?.type === 'tags'
+                                    ? null
+                                    : { projectId: project.id, type: 'tags', rect }
+                                )
+                                setTagSearchQuery('')
+                              }}
+                              className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Add tag</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Tag Dropdown Menu */}
+                        {openDropdown?.projectId === project.id && openDropdown?.type === 'tags' && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setOpenDropdown(null)}
+                            />
+                            <div
+                              className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 w-64 z-20"
+                              style={{
+                                left: `${openDropdown.rect.left}px`,
+                                top: `${openDropdown.rect.bottom + 4}px`
+                              }}
+                            >
+                              <div className="space-y-3">
+                                <div className="relative">
+                                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                  <input
+                                    type="text"
+                                    placeholder="Search tags..."
+                                    value={tagSearchQuery}
+                                    onChange={(e) => setTagSearchQuery(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </div>
+
+                                <div className="max-h-40 overflow-y-auto space-y-1">
+                                  {allTags
+                                    ?.filter(tag => {
+                                      const query = tagSearchQuery.toLowerCase()
+                                      const matchesSearch = tag.name.toLowerCase().includes(query)
+                                      const alreadyAssigned = project.project_tag_assignments?.some(
+                                        (a: any) => a.tag_id === tag.id
+                                      )
+                                      return matchesSearch && !alreadyAssigned
+                                    })
+                                    .map(tag => (
+                                      <button
+                                        key={tag.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          addTagToProjectMutation.mutate({
+                                            projectId: project.id,
+                                            tagId: tag.id
+                                          })
+                                        }}
+                                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                      >
+                                        <div
+                                          className="w-3 h-3 rounded-full"
+                                          style={{ backgroundColor: tag.color }}
+                                        />
+                                        <span className="text-gray-900 dark:text-white">{tag.name}</span>
+                                      </button>
+                                    ))}
+                                </div>
+
+                                <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
+                                  <div className="flex gap-2 items-center">
+                                    <input
+                                      type="text"
+                                      placeholder="New tag name..."
+                                      value={newTagName}
+                                      onChange={(e) => setNewTagName(e.target.value)}
+                                      className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && newTagName.trim()) {
+                                          createTagMutation.mutate({
+                                            name: newTagName.trim(),
+                                            color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
+                                          })
+                                        }
+                                      }}
+                                    />
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (newTagName.trim()) {
+                                          createTagMutation.mutate({
+                                            name: newTagName.trim(),
+                                            color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
+                                          })
+                                        }
+                                      }}
+                                      disabled={!newTagName.trim() || createTagMutation.isPending}
+                                      className="flex-shrink-0 px-3 py-1.5 bg-primary-600 text-white text-sm rounded hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                                    >
+                                      Create
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {project.description && (
@@ -407,7 +1384,11 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                             isOverdue && 'text-red-600 dark:text-red-400 font-medium'
                           )}>
                             <Calendar className="w-4 h-4" />
-                            <span>Due {formatDistanceToNow(new Date(project.due_date), { addSuffix: true })}</span>
+                            <span>
+                              {format(new Date(project.due_date), 'MMM d, yyyy')}
+                              {' '}
+                              ({Math.abs(differenceInDays(new Date(project.due_date), new Date()))} days {isOverdue ? 'overdue' : 'remaining'})
+                            </span>
                           </div>
                         )}
                         <div className="flex items-center gap-1">
@@ -416,22 +1397,51 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                         </div>
                       </div>
                     </div>
+
+                    {/* Delete Button */}
+                    {project.created_by === user?.id && viewFilter === 'active' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteModal({
+                            isOpen: true,
+                            projectId: project.id,
+                            projectTitle: project.title
+                          })
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        title="Cancel project"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </Card>
               )
             })}
           </div>
+          )
         ) : projects?.length === 0 ? (
-          <EmptyState
-            icon={Briefcase}
-            title="No projects yet"
-            description="Start by creating your first project to organize one-off initiatives."
-            action={{
-              label: 'Create Project',
-              onClick: () => setShowCreateForm(true),
-              icon: Plus
-            }}
-          />
+          viewFilter === 'active' ? (
+            <EmptyState
+              icon={Briefcase}
+              title="No projects yet"
+              description="Start by creating your first project to organize one-off initiatives."
+              action={{
+                label: 'Create Project',
+                onClick: () => setShowCreateForm(true),
+                icon: Plus
+              }}
+            />
+          ) : (
+            <EmptyState
+              icon={X}
+              title="No cancelled projects"
+              description="Projects you cancel will appear here."
+            />
+          )
         ) : (
           <EmptyState
             icon={Search}
@@ -445,18 +1455,21 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
         )}
       </div>
 
-      {/* TODO: Add CreateProjectModal */}
-      {showCreateForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-4">Create Project</h2>
-              <p className="text-gray-600 dark:text-gray-400">Project creation form coming soon...</p>
-              <Button onClick={() => setShowCreateForm(false)} className="mt-4">Close</Button>
-            </div>
-          </Card>
-        </div>
-      )}
+      {/* Create Project Modal */}
+      <CreateProjectModal
+        isOpen={showCreateForm}
+        onClose={() => setShowCreateForm(false)}
+      />
+
+      {/* Delete Project Modal */}
+      <DeleteProjectModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, projectId: '', projectTitle: '' })}
+        onConfirm={() => deleteProjectMutation.mutate(deleteModal.projectId)}
+        projectTitle={deleteModal.projectTitle}
+        isDeleting={deleteProjectMutation.isPending}
+      />
+      </div>
     </div>
   )
 }

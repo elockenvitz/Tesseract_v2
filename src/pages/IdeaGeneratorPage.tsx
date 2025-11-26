@@ -1271,7 +1271,7 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
             </Button>
 
             {showFilterDropdown && (
-              <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+              <div className="absolute right-0 bottom-full mb-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                 <div className="p-4 space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-2">Status</label>

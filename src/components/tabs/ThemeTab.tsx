@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, UserPlus, UserMinus, X, Search, Trash2 } from 'lucide-react'
+import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, UserPlus, UserMinus, X, Search, Trash2, FolderKanban } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -8,6 +8,7 @@ import { Badge } from '../ui/Badge'
 import { BadgeSelect } from '../ui/BadgeSelect'
 import { EditableSection, type EditableSectionRef } from '../ui/EditableSection'
 import { ThemeNoteEditor } from '../notes/ThemeNoteEditorUnified'
+import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -25,7 +26,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   const [themeType, setThemeType] = useState(theme.theme_type || 'general')
 
   // Initialize state from saved tab state
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'related-assets' | 'notes'>(() => {
+  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'related-assets' | 'notes' | 'projects'>(() => {
     const savedState = TabStateManager.loadTabState(theme.id)
     return savedState?.activeTab || 'thesis'
   })
@@ -564,6 +565,19 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 <span>Notes</span>
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab('projects')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'projects'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <FolderKanban className="h-4 w-4" />
+                <span>Projects</span>
+              </div>
+            </button>
           </nav>
         </div>
 
@@ -803,6 +817,20 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 )}
               </div>
             )
+          )}
+
+          {activeTab === 'projects' && (
+            <div className="space-y-6">
+              <RelatedProjects
+                contextType="theme"
+                contextId={theme.id}
+                contextTitle={theme.name}
+                onProjectClick={(projectId) => {
+                  // Navigate to project - you may need to implement this via onNavigate if available
+                  console.log('Navigate to project:', projectId)
+                }}
+              />
+            </div>
           )}
         </div>
       </Card>

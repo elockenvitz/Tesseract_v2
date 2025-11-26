@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
@@ -28,6 +28,11 @@ import { SettingsPage } from './SettingsPage'
 import { IdeaGeneratorPage} from './IdeaGeneratorPage'
 import { WorkflowsPage } from './WorkflowsPage'
 import { ProjectsPage } from './ProjectsPage'
+import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
+import { ProjectOverviewWidget } from '../components/projects/ProjectOverviewWidget'
+import { ProjectStatusBreakdown } from '../components/projects/ProjectStatusBreakdown'
+import { UpcomingDeadlines } from '../components/projects/UpcomingDeadlines'
+import { RecentProjectActivity } from '../components/projects/RecentProjectActivity'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -538,6 +543,8 @@ export function DashboardPage() {
         return <WorkflowsPage />
       case 'projects-list':
         return <ProjectsPage onProjectSelect={handleSearchResult} />
+      case 'project':
+        return activeTab.data ? <ProjectDetailTab project={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading project...</div>
       case 'note':
         return <NotebookTab notebook={activeTab.data} />
       case 'theme':
@@ -590,6 +597,26 @@ export function DashboardPage() {
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-900">Workflows</div>
               <div className="text-xs text-gray-500">Manage processes</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'projects-list',
+            title: 'All Projects',
+            type: 'projects-list',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-violet-100 to-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <FolderKanban className="h-6 w-6 text-violet-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Projects</div>
+              <div className="text-xs text-gray-500">One-off tasks</div>
             </div>
           </div>
         </Card>
@@ -865,6 +892,39 @@ export function DashboardPage() {
             </div>
           </div>
         </Card>
+
+        {/* Project Overview */}
+        <ProjectOverviewWidget
+          onProjectSelect={(project) => handleSearchResult({
+            id: project.id,
+            title: project.title,
+            type: 'project',
+            data: project
+          })}
+        />
+
+        {/* Project Status Breakdown */}
+        <ProjectStatusBreakdown />
+
+        {/* Upcoming Deadlines */}
+        <UpcomingDeadlines
+          onProjectSelect={(project) => handleSearchResult({
+            id: project.id,
+            title: project.title,
+            type: 'project',
+            data: project
+          })}
+        />
+
+        {/* Recent Project Activity */}
+        <RecentProjectActivity
+          onProjectSelect={(project) => handleSearchResult({
+            id: project.id,
+            title: project.title,
+            type: 'project',
+            data: project
+          })}
+        />
       </div>
       </div> {/* End space-y-6 */}
     </>

@@ -326,9 +326,9 @@ export function Layout({
         onTabReorder={onTabReorder}
         onFocusSearch={onFocusSearch}
       />
-      <main className="flex-1">
+      <main className="flex-1 h-[calc(100vh-8rem)]">
         <div className={clsx(
-          "px-4 sm:px-6 lg:px-8 py-6 relative transition-all duration-300",
+          "relative transition-all duration-300 h-full px-4 sm:px-6 lg:px-8 py-6",
           isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
           isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
         )}>
