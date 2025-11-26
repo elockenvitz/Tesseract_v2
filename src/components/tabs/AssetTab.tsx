@@ -28,6 +28,7 @@ import { financialDataService } from '../../lib/financial-data/browser-client'
 import { AdvancedChart } from '../charts/AdvancedChart'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { NoteEditor } from '../notes/NoteEditorUnified'
+import { RelatedProjects } from '../projects/RelatedProjects'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
@@ -2809,6 +2810,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               <p className="text-sm text-gray-500">Not in any portfolios</p>
                             </div>
                           )}
+                        </div>
+
+                        {/* Projects Section */}
+                        <div className="pt-8 border-t border-gray-200">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                              Projects
+                            </h4>
+                          </div>
+                          <RelatedProjects
+                            contextType="asset"
+                            contextId={asset.id}
+                            contextTitle={`${asset.symbol} - ${asset.company_name}`}
+                            onProjectClick={(projectId) => {
+                              if (onNavigate) {
+                                onNavigate({
+                                  id: projectId,
+                                  title: 'Project',
+                                  type: 'project',
+                                  data: { id: projectId }
+                                })
+                              }
+                            }}
+                          />
                         </div>
                       </div>
                     )

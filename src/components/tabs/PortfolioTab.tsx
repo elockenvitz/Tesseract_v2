@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical, Edit, X } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical, Edit, X, FolderKanban } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { StockQuote } from '../financial/StockQuote'
 import { PortfolioNoteEditor } from '../notes/PortfolioNoteEditorUnified'
+import { RelatedProjects } from '../projects/RelatedProjects'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { AddTeamMemberModal } from '../portfolios/AddTeamMemberModal'
@@ -18,7 +19,7 @@ interface PortfolioTabProps {
 }
 
 export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'holdings' | 'performance' | 'notes' | 'team'>(() => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'holdings' | 'performance' | 'notes' | 'team' | 'projects'>(() => {
     const savedState = TabStateManager.loadTabState(portfolio.id)
     return savedState?.activeTab || 'overview'
   })
@@ -524,6 +525,20 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                     {new Set(teamWithUsers.map(t => `${t.user_id}-${t.role}`)).size}
                   </Badge>
                 )}
+              </div>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('projects')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'projects'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <FolderKanban className="h-4 w-4" />
+                <span>Projects</span>
               </div>
             </button>
           </nav>
@@ -1135,6 +1150,26 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'projects' && (
+            <div className="space-y-6">
+              <RelatedProjects
+                contextType="portfolio"
+                contextId={portfolio.id}
+                contextTitle={portfolio.name}
+                onProjectClick={(projectId) => {
+                  if (onNavigate) {
+                    onNavigate({
+                      id: projectId,
+                      title: 'Project',
+                      type: 'project',
+                      data: { id: projectId }
+                    })
+                  }
+                }}
+              />
             </div>
           )}
         </div>
