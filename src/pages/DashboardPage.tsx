@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar, AlertTriangle, CheckCircle2, Play, ChevronRight, Plus, Zap, ArrowRight } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar, AlertTriangle, CheckCircle2, Play, ChevronRight, ChevronLeft, ChevronDown, Plus, Zap, ArrowRight } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
@@ -29,10 +29,7 @@ import { IdeaGeneratorPage} from './IdeaGeneratorPage'
 import { WorkflowsPage } from './WorkflowsPage'
 import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
-import { ProjectOverviewWidget } from '../components/projects/ProjectOverviewWidget'
-import { ProjectStatusBreakdown } from '../components/projects/ProjectStatusBreakdown'
-import { UpcomingDeadlines } from '../components/projects/UpcomingDeadlines'
-import { RecentProjectActivity } from '../components/projects/RecentProjectActivity'
+// Project widgets removed - content now in Command Center carousel
 import { TradeQueuePage } from './TradeQueuePage'
 import { SimulationPage } from './SimulationPage'
 import { AssetAllocationPage } from './AssetAllocationPage'
@@ -40,7 +37,8 @@ import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
 import { CalendarPage } from './CalendarPage'
 import { PrioritizerPage } from './PrioritizerPage'
-import { QuickThoughtCapture, ThoughtsFeed } from '../components/thoughts'
+import { ThoughtsFeed } from '../components/thoughts'
+import { ContentSection } from '../components/dashboard/ContentSection'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -726,6 +724,15 @@ export function DashboardPage() {
     return formatDistanceToNow(due, { addSuffix: true })
   }
 
+  // Carousel state for Command Center
+  const [focusTab, setFocusTab] = useState<'urgent' | 'tasks' | 'projects' | 'deliverables' | 'deadlines' | 'activity' | 'workflows'>('urgent')
+
+  // Dropdown menu states
+  const [showNewMenu, setShowNewMenu] = useState(false)
+  const [showTradeMenu, setShowTradeMenu] = useState(false)
+  const [showResearchMenu, setShowResearchMenu] = useState(false)
+  const [showEfficiencyMenu, setShowEfficiencyMenu] = useState(false)
+
   const renderDashboardContent = () => {
     // Combine urgent items for Today's Focus
     const allUrgentItems = [
@@ -738,68 +745,24 @@ export function DashboardPage() {
       return new Date(dateA).getTime() - new Date(dateB).getTime()
     }).slice(0, 8)
 
-    return (
-    <>
-      <div className="space-y-6">
-        {/* Quick Actions Bar */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => handleSearchResult({ id: 'projects-list', title: 'All Projects', type: 'projects-list', data: null })}
-              className="flex items-center space-x-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="text-sm font-medium">New Project</span>
-            </button>
-            <button
-              onClick={() => handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })}
-              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Calendar className="h-4 w-4" />
-              <span className="text-sm font-medium">Calendar</span>
-            </button>
-            <button
-              onClick={() => handleSearchResult({ id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', data: null })}
-              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <ListTodo className="h-4 w-4" />
-              <span className="text-sm font-medium">Prioritizer</span>
-            </button>
-          </div>
-          <div className="flex items-center space-x-4 text-sm text-gray-500">
-            <div className="flex items-center space-x-1">
-              <Activity className="h-4 w-4 text-blue-500" />
-              <span>{myTasks?.length || 0} active tasks</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <span>{allUrgentItems.filter(i => getUrgencyColor(i.due_date || i.start_date, i.priority) === 'error').length} urgent</span>
-            </div>
-          </div>
-        </div>
+    // Tab configuration for the Command Center
+    const focusTabs = [
+      { id: 'urgent' as const, label: 'Urgent', icon: AlertTriangle, color: 'amber', count: allUrgentItems.filter(i => getUrgencyColor(i.due_date || i.start_date, i.priority) === 'error').length, viewAllType: 'prioritizer' as const, viewAllTitle: 'Prioritizer' },
+      { id: 'tasks' as const, label: 'Tasks', icon: Play, color: 'blue', count: myTasks?.length || 0, viewAllType: 'workflows' as const, viewAllTitle: 'Workflows' },
+      { id: 'projects' as const, label: 'Projects', icon: FolderKanban, color: 'violet', count: urgentItems?.projects?.length || 0, viewAllType: 'projects-list' as const, viewAllTitle: 'Projects' },
+      { id: 'deliverables' as const, label: 'Deliverables', icon: Target, color: 'purple', count: urgentItems?.deliverables?.length || 0, viewAllType: 'projects-list' as const, viewAllTitle: 'Projects' },
+      { id: 'deadlines' as const, label: 'Deadlines', icon: Clock, color: 'red', count: urgentItems?.calendarEvents?.length || 0, viewAllType: 'calendar' as const, viewAllTitle: 'Calendar' },
+      { id: 'activity' as const, label: 'Activity', icon: Activity, color: 'green', count: teamActivity?.length || 0, viewAllType: 'projects-list' as const, viewAllTitle: 'Projects' },
+      { id: 'workflows' as const, label: 'Workflows', icon: Orbit, color: 'indigo', count: workflows?.filter(wf => wf.active_assets > 0).length || 0, viewAllType: 'workflows' as const, viewAllTitle: 'Workflows' },
+    ]
 
-        {/* Today's Focus - Full Width Priority Section */}
-        <Card className="border-l-4 border-l-amber-500">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                <Zap className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Today's Focus</h2>
-                <p className="text-sm text-gray-500">Urgent deadlines and high-priority work</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleSearchResult({ id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', data: null })}
-              className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center space-x-1"
-            >
-              <span>View all</span>
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
+    // Get current tab for View All link
+    const currentTab = focusTabs.find(t => t.id === focusTab)
 
-          {allUrgentItems.length > 0 ? (
+    const renderFocusContent = () => {
+      switch (focusTab) {
+        case 'urgent':
+          return allUrgentItems.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
               {allUrgentItems.map((item: any, index: number) => {
                 const urgency = getUrgencyColor(item.due_date || item.start_date, item.priority)
@@ -857,277 +820,837 @@ export function DashboardPage() {
               <p className="font-medium">You're all caught up!</p>
               <p className="text-sm">No urgent items requiring immediate attention</p>
             </div>
-          )}
-        </Card>
+          )
 
-        {/* Main Dashboard Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Work Management */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* My Active Tasks */}
-            <Card>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Play className="h-5 w-5 text-blue-600" />
+        case 'tasks':
+          return myTasks && myTasks.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {myTasks.slice(0, 8).map((task: any) => (
+                <div
+                  key={task.id}
+                  onClick={() => handleSearchResult({
+                    id: task.assets?.id,
+                    title: task.assets?.symbol,
+                    type: 'asset',
+                    data: { ...task.assets, workflow_id: task.workflow_id }
+                  })}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors group"
+                >
+                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                    <div className="w-8 h-8 bg-primary-100 rounded flex items-center justify-center flex-shrink-0">
+                      <TrendingUp className="h-4 w-4 text-primary-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-semibold text-gray-900">{task.assets?.symbol}</span>
+                        <PriorityBadge priority={task.assets?.priority} />
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">{task.assets?.company_name}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900">My Active Tasks</h2>
-                    <p className="text-sm text-gray-500">Work in progress across workflows</p>
+                  <div className="flex items-center space-x-3">
+                    <div className="text-right">
+                      <Badge variant="outline" size="sm">{task.workflow_stages?.name}</Badge>
+                      <p className="text-xs text-gray-400 mt-1">{task.workflows?.name}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
                   </div>
                 </div>
-                <button
-                  onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center space-x-1"
-                >
-                  <span>Workflows</span>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                {myTasks && myTasks.length > 0 ? (
-                  myTasks.slice(0, 6).map((task: any) => (
-                    <div
-                      key={task.id}
-                      onClick={() => handleSearchResult({
-                        id: task.assets?.id,
-                        title: task.assets?.symbol,
-                        type: 'asset',
-                        data: { ...task.assets, workflow_id: task.workflow_id }
-                      })}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors group"
-                    >
-                      <div className="flex items-center space-x-3 flex-1 min-w-0">
-                        <div className="w-8 h-8 bg-primary-100 rounded flex items-center justify-center flex-shrink-0">
-                          <TrendingUp className="h-4 w-4 text-primary-600" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-semibold text-gray-900">{task.assets?.symbol}</span>
-                            <PriorityBadge priority={task.assets?.priority} />
-                          </div>
-                          <p className="text-xs text-gray-500 truncate">{task.assets?.company_name}</p>
-                        </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Play className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No active tasks</p>
+              <p className="text-sm">Start a workflow to see tasks here</p>
+            </div>
+          )
+
+        case 'deliverables':
+          const deliverableItems = (urgentItems?.deliverables || []).sort((a: any, b: any) => {
+            const dateA = a.due_date || ''
+            const dateB = b.due_date || ''
+            return new Date(dateA).getTime() - new Date(dateB).getTime()
+          })
+
+          return deliverableItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {deliverableItems.slice(0, 8).map((item: any, index: number) => {
+                const dueLabel = formatDueDate(item.due_date)
+                const urgency = getUrgencyColor(item.due_date)
+                return (
+                  <div
+                    key={`deliverable-${item.id}-${index}`}
+                    onClick={() => {
+                      if (item.projects) {
+                        handleSearchResult({ id: item.projects.id, title: item.projects.title, type: 'project', data: item.projects })
+                      }
+                    }}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className={`p-2 rounded-lg flex-shrink-0 ${
+                        item.completed ? 'bg-green-100' :
+                        urgency === 'error' ? 'bg-red-100' : urgency === 'warning' ? 'bg-amber-100' : 'bg-violet-100'
+                      }`}>
+                        {item.completed ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Target className={`h-4 w-4 ${
+                            urgency === 'error' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-violet-600'
+                          }`} />
+                        )}
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="text-right">
-                          <Badge variant="outline" size="sm">{task.workflow_stages?.name}</Badge>
-                          <p className="text-xs text-gray-400 mt-1">{task.workflows?.name}</p>
-                        </div>
-                        <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">{item.title || item.name}</p>
+                        {item.projects?.title && (
+                          <p className="text-xs text-gray-500 truncate">{item.projects.title}</p>
+                        )}
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <NoDataAvailable message="No active workflow tasks" compact />
-                )}
-              </div>
-            </Card>
-
-            {/* Projects Overview with Deadlines */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ProjectOverviewWidget
-                onProjectSelect={(project) => handleSearchResult({
-                  id: project.id,
-                  title: project.title,
-                  type: 'project',
-                  data: project
-                })}
-              />
-              <UpcomingDeadlines
-                onProjectSelect={(project) => handleSearchResult({
-                  id: project.id,
-                  title: project.title,
-                  type: 'project',
-                  data: project
-                })}
-              />
-            </div>
-
-            {/* Active Workflows */}
-            <Card>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                    <Orbit className="h-5 w-5 text-indigo-600" />
+                    {dueLabel && !item.completed && (
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
+                        urgency === 'error' ? 'bg-red-100 text-red-700' :
+                        urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {dueLabel}
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900">Active Workflows</h2>
-                    <p className="text-sm text-gray-500">Process status at a glance</p>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Target className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No deliverables</p>
+              <p className="text-sm">Create deliverables in your projects</p>
+            </div>
+          )
+
+        case 'projects':
+          const projectItems = (urgentItems?.projects || []).sort((a: any, b: any) => {
+            const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+            const priorityDiff = (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3)
+            if (priorityDiff !== 0) return priorityDiff
+            const dateA = a.due_date || ''
+            const dateB = b.due_date || ''
+            return new Date(dateA).getTime() - new Date(dateB).getTime()
+          })
+
+          return projectItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {projectItems.slice(0, 8).map((project: any, index: number) => {
+                const dueLabel = formatDueDate(project.due_date)
+                const urgency = getUrgencyColor(project.due_date, project.priority)
+                const statusColors: Record<string, string> = {
+                  planning: 'bg-blue-100 text-blue-700',
+                  in_progress: 'bg-green-100 text-green-700',
+                  blocked: 'bg-red-100 text-red-700',
+                  on_hold: 'bg-gray-100 text-gray-700',
+                  completed: 'bg-emerald-100 text-emerald-700',
+                }
+                return (
+                  <div
+                    key={`project-${project.id}-${index}`}
+                    onClick={() => handleSearchResult({ id: project.id, title: project.title, type: 'project', data: project })}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className={`p-2 rounded-lg flex-shrink-0 ${
+                        urgency === 'error' ? 'bg-red-100' : urgency === 'warning' ? 'bg-amber-100' : 'bg-violet-100'
+                      }`}>
+                        <FolderKanban className={`h-4 w-4 ${
+                          urgency === 'error' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-violet-600'
+                        }`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">{project.title}</p>
+                        <div className="flex items-center space-x-2 mt-0.5">
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${statusColors[project.status] || 'bg-gray-100 text-gray-600'}`}>
+                            {project.status?.replace('_', ' ')}
+                          </span>
+                          {project.priority && (
+                            <PriorityBadge priority={project.priority} size="sm" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {dueLabel && (
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
+                        urgency === 'error' ? 'bg-red-100 text-red-700' :
+                        urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {dueLabel}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <FolderKanban className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No active projects</p>
+              <p className="text-sm">Create a project to get started</p>
+            </div>
+          )
+
+        case 'deadlines':
+          const deadlineItems = (urgentItems?.calendarEvents || []).sort((a: any, b: any) => {
+            const dateA = a.start_date || ''
+            const dateB = b.start_date || ''
+            return new Date(dateA).getTime() - new Date(dateB).getTime()
+          })
+
+          return deadlineItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {deadlineItems.slice(0, 8).map((event: any, index: number) => {
+                const eventDate = new Date(event.start_date)
+                const dueLabel = formatDueDate(event.start_date)
+                const urgency = getUrgencyColor(event.start_date)
+                const eventTypeColors: Record<string, { bg: string; icon: string }> = {
+                  deadline: { bg: 'bg-red-100', icon: 'text-red-600' },
+                  meeting: { bg: 'bg-blue-100', icon: 'text-blue-600' },
+                  earnings_call: { bg: 'bg-green-100', icon: 'text-green-600' },
+                  conference: { bg: 'bg-purple-100', icon: 'text-purple-600' },
+                  deliverable: { bg: 'bg-amber-100', icon: 'text-amber-600' },
+                }
+                const colors = eventTypeColors[event.event_type] || { bg: 'bg-gray-100', icon: 'text-gray-600' }
+                return (
+                  <div
+                    key={`deadline-${event.id}-${index}`}
+                    onClick={() => handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className={`p-2 rounded-lg flex-shrink-0 ${colors.bg}`}>
+                        <Clock className={`h-4 w-4 ${colors.icon}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">{event.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {eventDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {event.start_time && ` at ${event.start_time}`}
+                        </p>
+                      </div>
+                    </div>
+                    {dueLabel && (
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
+                        urgency === 'error' ? 'bg-red-100 text-red-700' :
+                        urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {dueLabel}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Clock className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No upcoming deadlines</p>
+              <p className="text-sm">Add events to your calendar</p>
+            </div>
+          )
+
+        case 'activity':
+          return teamActivity && teamActivity.length > 0 ? (
+            <div className="space-y-2">
+              {teamActivity.slice(0, 8).map((activity: any, index: number) => (
+                <div
+                  key={`activity-${activity.id}-${index}`}
+                  onClick={() => {
+                    if (activity.projects) {
+                      handleSearchResult({ id: activity.projects.id, title: activity.projects.title, type: 'project', data: activity.projects })
+                    }
+                  }}
+                  className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                >
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Activity className="h-4 w-4 text-green-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-900 truncate">{activity.description || activity.action}</p>
+                    <p className="text-xs text-gray-500">
+                      {activity.projects?.title} • {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
+                    </p>
                   </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {workflows && workflows.filter(wf => wf.active_assets > 0 || wf.usage_count > 0).length > 0 ? (
-                  workflows
-                    .filter(wf => wf.active_assets > 0 || wf.usage_count > 0)
-                    .slice(0, 4)
-                    .map(workflow => {
-                      const progress = workflow.usage_count > 0
-                        ? Math.round((workflow.completed_assets / workflow.usage_count) * 100)
-                        : 0
-                      return (
-                        <div
-                          key={workflow.id}
-                          onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
-                          className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-semibold text-gray-900 text-sm">{workflow.name}</span>
-                            <span className="text-xs text-gray-500">{progress}%</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
-                            <div
-                              className="bg-indigo-500 h-1.5 rounded-full transition-all"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-gray-500">
-                            <span>{workflow.active_assets} active</span>
-                            <span>{workflow.completed_assets} done</span>
-                          </div>
-                        </div>
-                      )
-                    })
-                ) : (
-                  <div className="col-span-2">
-                    <NoDataAvailable message="No active workflows" compact />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Activity className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No recent activity</p>
+              <p className="text-sm">Activity will appear here as work progresses</p>
+            </div>
+          )
+
+        case 'workflows':
+          const activeWorkflows = workflows?.filter(wf => wf.active_assets > 0 || wf.usage_count > 0) || []
+          return activeWorkflows.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activeWorkflows.slice(0, 6).map(workflow => {
+                const progress = workflow.usage_count > 0
+                  ? Math.round((workflow.completed_assets / workflow.usage_count) * 100)
+                  : 0
+                return (
+                  <div
+                    key={workflow.id}
+                    onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
+                    className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-gray-900 text-sm">{workflow.name}</span>
+                      <span className="text-xs text-gray-500">{progress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                      <div
+                        className="bg-indigo-500 h-2 rounded-full transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>{workflow.active_assets} active</span>
+                      <span>{workflow.completed_assets} done</span>
+                    </div>
                   </div>
-                )}
-              </div>
-            </Card>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Orbit className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No active workflows</p>
+              <p className="text-sm">Create a workflow to track your process</p>
+            </div>
+          )
+
+        default:
+          return null
+      }
+    }
+
+    return (
+    <>
+      <div className="space-y-6">
+        {/* Quick Actions Bar */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* New Button with Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNewMenu(!showNewMenu)}
+              className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="text-sm font-medium">New</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${showNewMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showNewMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowNewMenu(false)}
+                />
+                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] z-20">
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'projects-list', title: 'All Projects', type: 'projects-list', data: { createNew: true } })
+                      setShowNewMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <FolderKanban className="h-4 w-4 text-violet-500" />
+                    <span className="text-sm font-medium text-gray-700">Project</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'notes-list', title: 'Notes', type: 'notes-list', data: { createNew: true } })
+                      setShowNewMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-gray-700">Note</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: { createNew: true } })
+                      setShowNewMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Orbit className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-gray-700">Workflow</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'lists', title: 'Lists', type: 'lists', data: { createNew: true } })
+                      setShowNewMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <List className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">List</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'themes-list', title: 'Themes', type: 'themes-list', data: { createNew: true } })
+                      setShowNewMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Tag className="h-4 w-4 text-purple-500" />
+                    <span className="text-sm font-medium text-gray-700">Theme</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', data: { createNew: true } })
+                      setShowNewMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Beaker className="h-4 w-4 text-cyan-500" />
+                    <span className="text-sm font-medium text-gray-700">Trade Lab</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Right Column - Quick Access & Activity */}
-          <div className="space-y-6">
-            {/* Quick Thought Capture */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center space-x-2">
-                <Zap className="h-4 w-4 text-amber-500" />
-                <span>Capture a Thought</span>
-              </h3>
-              <QuickThoughtCapture compact placeholder="Quick reaction to news, research, market moves..." />
-            </div>
+          {/* Divider */}
+          <div className="h-6 w-px bg-gray-300 mx-1" />
 
-            {/* Recent Thoughts */}
-            <Card>
-              <ThoughtsFeed
-                limit={5}
-                showHeader={true}
-                onAssetClick={(assetId, symbol) => handleSearchResult({
-                  id: assetId,
-                  title: symbol,
-                  type: 'asset',
-                  data: { id: assetId, symbol }
-                })}
-              />
-            </Card>
+          {/* Calendar - standalone button */}
+          <button
+            onClick={() => handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })}
+            className="flex items-center space-x-2 px-3 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
+          >
+            <Calendar className="h-4 w-4" />
+            <span className="text-sm font-medium">Calendar</span>
+          </button>
 
-            {/* Quick Navigation */}
-            <Card>
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Access</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'violet' },
-                  { id: 'workflows', title: 'Workflows', type: 'workflows', icon: Orbit, color: 'indigo' },
-                  { id: 'calendar', title: 'Calendar', type: 'calendar', icon: Calendar, color: 'blue' },
-                  { id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', icon: ListTodo, color: 'amber' },
-                  { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'purple' },
-                  { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ListTodo, color: 'emerald' },
-                ].map(item => (
+          {/* Efficiency Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowEfficiencyMenu(!showEfficiencyMenu)
+                setShowTradeMenu(false)
+                setShowResearchMenu(false)
+              }}
+              className="flex items-center space-x-2 px-3 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              <Zap className="h-4 w-4" />
+              <span className="text-sm font-medium">Efficiency</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${showEfficiencyMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showEfficiencyMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowEfficiencyMenu(false)}
+                />
+                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] z-20">
                   <button
-                    key={item.id}
-                    onClick={() => handleSearchResult({ id: item.id, title: item.title, type: item.type as any, data: null })}
-                    className={`flex items-center space-x-2 p-2.5 rounded-lg transition-colors bg-${item.color}-50 hover:bg-${item.color}-100 text-${item.color}-700`}
+                    onClick={() => {
+                      handleSearchResult({ id: 'projects-list', title: 'All Projects', type: 'projects-list', data: null })
+                      setShowEfficiencyMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
                   >
-                    <item.icon className="h-4 w-4" />
-                    <span className="text-xs font-medium">{item.title}</span>
+                    <FolderKanban className="h-4 w-4 text-violet-500" />
+                    <span className="text-sm font-medium text-gray-700">Projects</span>
                   </button>
-                ))}
-              </div>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })
+                      setShowEfficiencyMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Orbit className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-gray-700">Workflows</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', data: null })
+                      setShowEfficiencyMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <ListTodo className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-medium text-gray-700">Prioritizer</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
-              <div className="border-t border-gray-100 mt-4 pt-4">
-                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Research</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp },
-                    { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase },
-                    { id: 'themes-list', title: 'Themes', type: 'themes-list', icon: Tag },
-                    { id: 'notes-list', title: 'Notes', type: 'notes-list', icon: FileText },
-                  ].map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSearchResult({ id: item.id, title: item.title, type: item.type as any, data: null })}
-                      className="flex items-center space-x-2 p-2 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 text-gray-700"
-                    >
-                      <item.icon className="h-4 w-4 text-gray-500" />
-                      <span className="text-xs font-medium">{item.title}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+          {/* Research Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowResearchMenu(!showResearchMenu)
+                setShowTradeMenu(false)
+                setShowEfficiencyMenu(false)
+              }}
+              className="flex items-center space-x-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+            >
+              <FileText className="h-4 w-4" />
+              <span className="text-sm font-medium">Research</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${showResearchMenu ? 'rotate-180' : ''}`} />
+            </button>
 
-              <div className="border-t border-gray-100 mt-4 pt-4">
-                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Tools</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', icon: Beaker },
-                    { id: 'asset-allocation', title: 'Allocation', type: 'asset-allocation', icon: PieChart },
-                    { id: 'tdf-list', title: 'TDF', type: 'tdf-list', icon: Clock },
-                    { id: 'lists', title: 'Lists', type: 'lists', icon: List },
-                  ].map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSearchResult({ id: item.id, title: item.title, type: item.type as any, data: null })}
-                      className="flex items-center space-x-2 p-2 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 text-gray-700"
-                    >
-                      <item.icon className="h-4 w-4 text-gray-500" />
-                      <span className="text-xs font-medium">{item.title}</span>
-                    </button>
-                  ))}
+            {showResearchMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowResearchMenu(false)}
+                />
+                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] z-20">
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <TrendingUp className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm font-medium text-gray-700">Assets</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Briefcase className="h-4 w-4 text-green-500" />
+                    <span className="text-sm font-medium text-gray-700">Portfolios</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'themes-list', title: 'Themes', type: 'themes-list', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Tag className="h-4 w-4 text-purple-500" />
+                    <span className="text-sm font-medium text-gray-700">Themes</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'notes-list', title: 'Notes', type: 'notes-list', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-gray-700">Notes</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'lists', title: 'Lists', type: 'lists', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <List className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Lists</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'tdf-list', title: 'TDF', type: 'tdf-list', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Clock className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-medium text-gray-700">TDF</span>
+                  </button>
                 </div>
-              </div>
-            </Card>
+              </>
+            )}
+          </div>
 
-            {/* Team Activity */}
-            <RecentProjectActivity
-              onProjectSelect={(project) => handleSearchResult({
-                id: project.id,
-                title: project.title,
-                type: 'project',
-                data: project
-              })}
-            />
+          {/* Trade Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowTradeMenu(!showTradeMenu)
+                setShowResearchMenu(false)
+                setShowEfficiencyMenu(false)
+              }}
+              className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+            >
+              <TrendingUp className="h-4 w-4" />
+              <span className="text-sm font-medium">Trade</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${showTradeMenu ? 'rotate-180' : ''}`} />
+            </button>
 
-            {/* Quick Stats */}
-            <Card>
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Overview</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-2 bg-primary-50 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <TrendingUp className="h-4 w-4 text-primary-600" />
-                    <span className="text-sm text-gray-600">Assets</span>
-                  </div>
-                  <span className="font-bold text-gray-900">{stats?.assets || 0}</span>
+            {showTradeMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowTradeMenu(false)}
+                />
+                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] z-20">
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'idea-generator', title: 'Ideas', type: 'idea-generator', data: null })
+                      setShowTradeMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Lightbulb className="h-4 w-4 text-purple-500" />
+                    <span className="text-sm font-medium text-gray-700">Ideas</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', data: null })
+                      setShowTradeMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <List className="h-4 w-4 text-emerald-500" />
+                    <span className="text-sm font-medium text-gray-700">Trade Queue</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', data: null })
+                      setShowTradeMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Beaker className="h-4 w-4 text-cyan-500" />
+                    <span className="text-sm font-medium text-gray-700">Trade Lab</span>
+                  </button>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-indigo-50 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <FileText className="h-4 w-4 text-indigo-600" />
-                    <span className="text-sm text-gray-600">Notes</span>
-                  </div>
-                  <span className="font-bold text-gray-900">{stats?.notes || 0}</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-success-50 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <Target className="h-4 w-4 text-success-600" />
-                    <span className="text-sm text-gray-600">Price Targets</span>
-                  </div>
-                  <span className="font-bold text-gray-900">{stats?.priceTargets || 0}</span>
-                </div>
-              </div>
-            </Card>
+              </>
+            )}
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Stats */}
+          <div className="flex items-center space-x-4 text-sm text-gray-500">
+            <div className="flex items-center space-x-1">
+              <Activity className="h-4 w-4 text-blue-500" />
+              <span>{myTasks?.length || 0} tasks</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <span>{allUrgentItems.filter(i => getUrgencyColor(i.due_date || i.start_date, i.priority) === 'error').length} urgent</span>
+            </div>
           </div>
         </div>
+
+        {/* Command Center - Unified Focus Box with Tabs */}
+        <Card className="border-l-4 border-l-amber-500">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                <Zap className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Command Center</h2>
+                <p className="text-sm text-gray-500">Everything that needs your attention</p>
+              </div>
+            </div>
+            {currentTab && (
+              <button
+                onClick={() => handleSearchResult({
+                  id: currentTab.viewAllType,
+                  title: currentTab.viewAllTitle,
+                  type: currentTab.viewAllType as any,
+                  data: null
+                })}
+                className="flex items-center space-x-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
+              >
+                <span>View all {currentTab.viewAllTitle}</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex items-center space-x-1 mb-4 bg-gray-100 rounded-lg p-1">
+            {focusTabs.map(tab => {
+              const Icon = tab.icon
+              const isActive = focusTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setFocusTab(tab.id)}
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all flex-1 justify-center ${
+                    isActive
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <Icon className={`h-4 w-4 ${isActive ? `text-${tab.color}-500` : ''}`} />
+                  <span className="hidden md:inline">{tab.label}</span>
+                  {tab.count > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs font-semibold ${
+                      isActive ? `bg-${tab.color}-100 text-${tab.color}-700` : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Tab Content */}
+          <div className="min-h-[200px]">
+            {renderFocusContent()}
+          </div>
+        </Card>
+
+        {/* Content Section - Full Width */}
+        <ContentSection
+          onAssetClick={(assetId, symbol) => handleSearchResult({
+            id: assetId,
+            title: symbol,
+            type: 'asset',
+            data: { id: assetId, symbol }
+          })}
+          onNoteClick={(noteId, noteType, noteData) => {
+            // Navigate based on note type
+            if (noteType === 'asset' && noteData.assets) {
+              handleSearchResult({
+                id: noteData.assets.id,
+                title: noteData.assets.symbol,
+                type: 'asset',
+                data: noteData.assets
+              })
+            } else if (noteType === 'portfolio' && noteData.portfolios) {
+              handleSearchResult({
+                id: noteData.portfolios.id,
+                title: noteData.portfolios.name,
+                type: 'portfolio',
+                data: noteData.portfolios
+              })
+            } else if (noteType === 'theme' && noteData.themes) {
+              handleSearchResult({
+                id: noteData.themes.id,
+                title: noteData.themes.name,
+                type: 'theme',
+                data: noteData.themes
+              })
+            }
+          }}
+          onTradeIdeaClick={(tradeId) => {
+            handleSearchResult({
+              id: 'trade-queue',
+              title: 'Trade Queue',
+              type: 'trade-queue',
+              data: { selectedTradeId: tradeId }
+            })
+          }}
+        />
+
+        {/* Analytics Section */}
+        <Card className="border-l-4 border-l-cyan-500">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center">
+                <PieChart className="h-5 w-5 text-cyan-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Analytics</h2>
+                <p className="text-sm text-gray-500">Overview across all applications</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {/* Research Analytics */}
+            <button
+              onClick={() => handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list', data: null })}
+              className="p-4 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors text-left"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <TrendingUp className="h-5 w-5 text-blue-600" />
+                <span className="text-2xl font-bold text-gray-900">{stats?.assets || 0}</span>
+              </div>
+              <p className="text-sm font-medium text-gray-700">Assets</p>
+              <p className="text-xs text-gray-500">Under coverage</p>
+            </button>
+
+            <button
+              onClick={() => handleSearchResult({ id: 'notes-list', title: 'Notes', type: 'notes-list', data: null })}
+              className="p-4 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors text-left"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <FileText className="h-5 w-5 text-indigo-600" />
+                <span className="text-2xl font-bold text-gray-900">{stats?.notes || 0}</span>
+              </div>
+              <p className="text-sm font-medium text-gray-700">Notes</p>
+              <p className="text-xs text-gray-500">Total written</p>
+            </button>
+
+            <button
+              onClick={() => handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list', data: null })}
+              className="p-4 bg-green-50 rounded-xl hover:bg-green-100 transition-colors text-left"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <Target className="h-5 w-5 text-green-600" />
+                <span className="text-2xl font-bold text-gray-900">{stats?.priceTargets || 0}</span>
+              </div>
+              <p className="text-sm font-medium text-gray-700">Price Targets</p>
+              <p className="text-xs text-gray-500">Active targets</p>
+            </button>
+
+            {/* Efficiency Analytics */}
+            <button
+              onClick={() => handleSearchResult({ id: 'projects-list', title: 'All Projects', type: 'projects-list', data: null })}
+              className="p-4 bg-violet-50 rounded-xl hover:bg-violet-100 transition-colors text-left"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <FolderKanban className="h-5 w-5 text-violet-600" />
+                <span className="text-2xl font-bold text-gray-900">{urgentItems?.projects?.length || 0}</span>
+              </div>
+              <p className="text-sm font-medium text-gray-700">Projects</p>
+              <p className="text-xs text-gray-500">Active projects</p>
+            </button>
+
+            <button
+              onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
+              className="p-4 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors text-left"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <Orbit className="h-5 w-5 text-purple-600" />
+                <span className="text-2xl font-bold text-gray-900">{workflows?.length || 0}</span>
+              </div>
+              <p className="text-sm font-medium text-gray-700">Workflows</p>
+              <p className="text-xs text-gray-500">Total workflows</p>
+            </button>
+
+            {/* Trade Analytics */}
+            <button
+              onClick={() => handleSearchResult({ id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', data: null })}
+              className="p-4 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors text-left"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <Lightbulb className="h-5 w-5 text-emerald-600" />
+                <span className="text-2xl font-bold text-gray-900">{myTasks?.length || 0}</span>
+              </div>
+              <p className="text-sm font-medium text-gray-700">Active Tasks</p>
+              <p className="text-xs text-gray-500">In workflows</p>
+            </button>
+          </div>
+        </Card>
       </div>
     </>
   )

@@ -47,7 +47,7 @@ export function Layout({
     openCommPane
   } = useCommunication()
 
-  const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages'>('messages')
+  const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'>('messages')
   const [showCoverageManager, setShowCoverageManager] = useState(false)
   const [coverageManagerView, setCoverageManagerView] = useState<'active' | 'history' | 'requests'>('active')
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
@@ -99,6 +99,13 @@ export function Layout({
 
   const handleShowAI = () => {
     setCommPaneView('ai')
+    if (!isCommPaneOpen) {
+      toggleCommPane()
+    }
+  }
+
+  const handleShowThoughts = () => {
+    setCommPaneView('thoughts')
     if (!isCommPaneOpen) {
       toggleCommPane()
     }
@@ -306,7 +313,7 @@ export function Layout({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header 
+      <Header
         onSearchResult={onSearchResult}
         onShowMessages={handleShowMessages}
         hasUnreadMessages={false}
@@ -319,6 +326,7 @@ export function Layout({
         onToggleCommPane={toggleCommPane}
         commPaneView={commPaneView}
         onShowAI={handleShowAI}
+        onShowThoughts={handleShowThoughts}
       />
       <TabManager
         tabs={tabs}

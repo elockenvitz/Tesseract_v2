@@ -1,9 +1,10 @@
 import React from 'react'
-import { X, Minimize2, Maximize2, MessageCircle, Mail, Bell, User } from 'lucide-react'
+import { X, Minimize2, Maximize2, MessageCircle, Mail, Bell, User, Lightbulb } from 'lucide-react'
 import { AISection } from './AISection'
 import { DirectMessaging } from './DirectMessaging'
 import { MessagingSection } from './MessagingSection'
 import { NotificationPane } from '../notifications/NotificationPane'
+import { ThoughtsSection } from './ThoughtsSection'
 import { clsx } from 'clsx'
 
 interface CommunicationPaneProps {
@@ -11,8 +12,8 @@ interface CommunicationPaneProps {
   onToggle: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
-  view: 'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages'
-  onViewChange: (view: 'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages') => void
+  view: 'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'
+  onViewChange: (view: 'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts') => void
   contextType?: string
   contextId?: string
   contextTitle?: string
@@ -68,6 +69,8 @@ export function CommunicationPane({
         return 'Notifications'
       case 'profile':
         return 'Profile'
+      case 'thoughts':
+        return 'Quick Thoughts'
       default:
         return 'Communication'
     }
@@ -89,6 +92,8 @@ export function CommunicationPane({
         return <Bell className="h-5 w-5 text-gray-600" />
       case 'profile':
         return <User className="h-5 w-5 text-gray-600" />
+      case 'thoughts':
+        return <Lightbulb className="h-5 w-5 text-amber-500" />
       default:
         return <MessageCircle className="h-5 w-5 text-gray-600" />
     }
@@ -138,6 +143,10 @@ export function CommunicationPane({
             onToggleFullscreen={onToggleFullscreen}
             onNotificationClick={onNotificationClick}
           />
+        )
+      case 'thoughts':
+        return (
+          <ThoughtsSection />
         )
       default:
         return (

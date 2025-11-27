@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown } from 'lucide-react'
+import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -25,22 +25,24 @@ interface HeaderProps {
   onToggleCommPane?: () => void
   commPaneView?: string
   onShowAI?: () => void
+  onShowThoughts?: () => void
 }
 
-export function Header({ 
-  onSearchResult, 
-  onFocusSearch, 
-  onShowMessages, 
-  hasUnreadMessages, 
-  onShowDirectMessages, 
-  onShowNotifications, 
+export function Header({
+  onSearchResult,
+  onFocusSearch,
+  onShowMessages,
+  hasUnreadMessages,
+  onShowDirectMessages,
+  onShowNotifications,
   isCoverageManagerOpen,
   onCloseCoverageManager,
   onShowCoverageManager,
   isCommPaneOpen,
   onToggleCommPane,
   commPaneView = 'messages',
-  onShowAI = () => {}
+  onShowAI = () => {},
+  onShowThoughts = () => {}
 }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -249,6 +251,22 @@ export function Header({
 
           {/* Right side actions */}
           <div className="flex items-center space-x-4">
+            {/* Capture Thought Button */}
+            <button
+              onClick={() => {
+                onShowThoughts()
+              }}
+              className={clsx(
+                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative",
+                isCommPaneOpen && commPaneView === 'thoughts'
+                  ? "text-amber-600 bg-amber-100"
+                  : "text-gray-400 hover:text-gray-600"
+              )}
+              title="Capture a thought"
+            >
+              <Lightbulb className="h-5 w-5" />
+            </button>
+
             {/* AI Button */}
             <button
               onClick={() => {
