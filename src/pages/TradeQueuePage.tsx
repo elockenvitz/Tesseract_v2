@@ -1340,12 +1340,12 @@ function PairTradeCard({
       )}
     >
       <div className="p-3">
-        {/* Pair Trade Header */}
+        {/* Pairs Trade Header */}
         <div className="flex items-center gap-2 mb-3 pb-2 border-b border-purple-100 dark:border-purple-800">
           <GripVertical className="h-4 w-4 text-gray-400 cursor-grab" />
           <Link2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
           <span className="font-semibold text-purple-700 dark:text-purple-300 truncate flex-1">
-            {pairTrade.name || 'Pair Trade'}
+            {pairTrade.name || 'Pairs Trade'}
           </span>
         </div>
 
@@ -1445,12 +1445,12 @@ function TradeQueueCard({
       )}
     >
       <div className="p-3">
-        {/* Pair Trade Indicator */}
+        {/* Pairs Trade Indicator */}
         {item.pair_trade_id && item.pair_trades && (
           <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-purple-50 dark:bg-purple-900/20 rounded-md border border-purple-200 dark:border-purple-800">
             <Link2 className="h-3 w-3 text-purple-600 dark:text-purple-400" />
             <span className="text-xs font-medium text-purple-700 dark:text-purple-300 truncate">
-              {item.pair_trades.name || 'Pair Trade'}
+              {item.pair_trades.name || 'Pairs Trade'}
             </span>
             {item.pair_leg_type && (
               <span className={clsx(

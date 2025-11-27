@@ -178,7 +178,7 @@ export function AddPairTradeModal({
     // Validate at least 2 legs with assets selected
     const validLegs = legs.filter(leg => leg.assetId)
     if (validLegs.length < 2) {
-      alert('Please select at least 2 assets for the pair trade')
+      alert('Please select at least 2 assets for the pairs trade')
       return
     }
 
@@ -248,7 +248,7 @@ export function AddPairTradeModal({
           <div className="flex items-center gap-2">
             <Link2 className="h-5 w-5 text-primary-600" />
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Add Pair Trade
+              Add Pairs Trade
             </h2>
           </div>
           <button
@@ -279,10 +279,10 @@ export function AddPairTradeModal({
             </select>
           </div>
 
-          {/* Pair Trade Name */}
+          {/* Pairs Trade Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Pair Trade Name *
+              Pairs Trade Name *
             </label>
             <Input
               placeholder={autoGenerateName || ""}
@@ -427,7 +427,7 @@ export function AddPairTradeModal({
               Thesis Summary
             </label>
             <Input
-              placeholder="Brief summary of the pair trade thesis..."
+              placeholder="Brief summary of the pairs trade thesis..."
               value={thesisSummary}
               onChange={(e) => setThesisSummary(e.target.value)}
             />
@@ -439,7 +439,7 @@ export function AddPairTradeModal({
               Rationale
             </label>
             <TextArea
-              placeholder="Why are you proposing this pair trade? What's the spread opportunity?"
+              placeholder="Why are you proposing this pairs trade? What's the spread opportunity?"
               value={rationale}
               onChange={(e) => setRationale(e.target.value)}
               rows={3}
@@ -461,7 +461,7 @@ export function AddPairTradeModal({
               loading={createMutation.isPending}
             >
               <Link2 className="h-4 w-4 mr-2" />
-              Create Pair Trade
+              Create Pairs Trade
             </Button>
           </div>
         </form>

@@ -335,7 +335,9 @@ export function Layout({
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
           return (
             <div className={clsx(
-              "relative transition-all duration-300 h-full",
+              "relative h-full",
+              // Only transition margin for comm pane, not padding
+              "transition-[margin] duration-300",
               !isFullWidth && "px-4 sm:px-6 lg:px-8 py-6",
               isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
               isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"

@@ -1187,11 +1187,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
           </button>
 
           <div className="flex-1 min-w-0">
-            {/* Pair Trade Header */}
+            {/* Pairs Trade Header */}
             <div className="flex items-center gap-2 mb-2">
               <Link2 className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
               <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                {pairTrade.name || 'Pair Trade'}
+                {pairTrade.name || 'Pairs Trade'}
               </span>
             </div>
 
@@ -1702,7 +1702,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
                                 collapsedGroups.has('ideas-pairs') && "-rotate-90"
                               )} />
                               <Link2 className="h-3.5 w-3.5 text-purple-500" />
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Pair Trades</span>
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Pairs Trades</span>
                               <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{pairTradesGrouped.pairTrades.size}</Badge>
                             </button>
                             {!collapsedGroups.has('ideas-pairs') && (

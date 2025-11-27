@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Search, TrendingUp, Briefcase, Tag, FileText, List } from 'lucide-react'
+import { Search, TrendingUp, Briefcase, Tag, FileText, List, Target, PieChart, Clock } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase'
 interface SearchResult {
   id: string
   title: string
-  type: 'asset' | 'portfolio' | 'theme' | 'note' | 'list'
+  type: 'asset' | 'portfolio' | 'theme' | 'note' | 'list' | 'tdf' | 'allocation-period'
   subtitle?: string
   data: any
 }
@@ -163,7 +163,7 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search assets, por
         `)
         .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
         .limit(5)
-      
+
       if (assetLists) {
         results.push(...assetLists.map(list => ({
           id: list.id,
@@ -173,7 +173,43 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search assets, por
           data: list
         })))
       }
-      
+
+      // Search Target Date Funds
+      const { data: tdfs } = await supabase
+        .from('target_date_funds')
+        .select('*')
+        .eq('is_active', true)
+        .or(`name.ilike.%${query}%,fund_code.ilike.%${query}%,target_year::text.ilike.%${query}%`)
+        .limit(5)
+
+      if (tdfs) {
+        results.push(...tdfs.map(tdf => ({
+          id: tdf.id,
+          title: tdf.name,
+          subtitle: `Target Year: ${tdf.target_year}${tdf.fund_code ? ` • ${tdf.fund_code}` : ''}`,
+          type: 'tdf' as const,
+          data: tdf
+        })))
+      }
+
+      // Search Allocation Periods
+      const { data: allocationPeriods } = await supabase
+        .from('allocation_periods')
+        .select('*')
+        .or(`name.ilike.%${query}%`)
+        .order('start_date', { ascending: false })
+        .limit(3)
+
+      if (allocationPeriods) {
+        results.push(...allocationPeriods.map(period => ({
+          id: period.id,
+          title: period.name,
+          subtitle: `${period.status} • ${new Date(period.start_date).toLocaleDateString()} - ${new Date(period.end_date).toLocaleDateString()}`,
+          type: 'allocation-period' as const,
+          data: period
+        })))
+      }
+
       return results
     },
     enabled: query.length > 1
@@ -252,6 +288,8 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search assets, por
       case 'theme': return <Tag className="h-4 w-4 text-indigo-600" />
       case 'note': return <FileText className="h-4 w-4 text-slate-600" />
       case 'list': return <List className="h-4 w-4 text-purple-600" />
+      case 'tdf': return <Clock className="h-4 w-4 text-cyan-600" />
+      case 'allocation-period': return <PieChart className="h-4 w-4 text-rose-600" />
       default: return <Search className="h-4 w-4 text-gray-400" />
     }
   }

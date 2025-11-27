@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
@@ -35,6 +35,11 @@ import { UpcomingDeadlines } from '../components/projects/UpcomingDeadlines'
 import { RecentProjectActivity } from '../components/projects/RecentProjectActivity'
 import { TradeQueuePage } from './TradeQueuePage'
 import { SimulationPage } from './SimulationPage'
+import { AssetAllocationPage } from './AssetAllocationPage'
+import { TDFListPage } from './TDFListPage'
+import { TDFTab } from '../components/tabs/TDFTab'
+import { CalendarPage } from './CalendarPage'
+import { PrioritizerPage } from './PrioritizerPage'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -551,12 +556,29 @@ export function DashboardPage() {
         return <TradeQueuePage />
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} />
+      case 'asset-allocation':
+        return <AssetAllocationPage />
+      case 'tdf-list':
+        return <TDFListPage onTDFSelect={(tdf) => handleSearchResult({
+          id: tdf.id,
+          title: tdf.name,
+          type: 'tdf',
+          data: tdf
+        })} />
+      case 'tdf':
+        return activeTab.data ? <TDFTab tdf={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading TDF...</div>
+      case 'allocation-period':
+        return <AssetAllocationPage initialPeriodId={activeTab.data?.id} />
       case 'note':
         return <NotebookTab notebook={activeTab.data} />
       case 'theme':
         return <ThemeTab theme={activeTab.data} />
       case 'portfolio':
         return <PortfolioTab portfolio={activeTab.data} onNavigate={handleSearchResult} />
+      case 'calendar':
+        return <CalendarPage onItemSelect={handleSearchResult} />
+      case 'prioritizer':
+        return <PrioritizerPage onItemSelect={handleSearchResult} />
       default:
         return renderDashboardContent()
     }
@@ -663,6 +685,86 @@ export function DashboardPage() {
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-900">Trade Lab</div>
               <div className="text-xs text-gray-500">Model impact</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'asset-allocation',
+            title: 'Asset Allocation',
+            type: 'asset-allocation',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-rose-100 to-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <PieChart className="h-6 w-6 text-rose-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Asset Allocation</div>
+              <div className="text-xs text-gray-500">Tactical views</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'tdf-list',
+            title: 'Target Date Funds',
+            type: 'tdf-list',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-cyan-100 to-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Clock className="h-6 w-6 text-cyan-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Target Date Funds</div>
+              <div className="text-xs text-gray-500">TDF management</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'calendar',
+            title: 'Calendar',
+            type: 'calendar',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Calendar className="h-6 w-6 text-blue-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Calendar</div>
+              <div className="text-xs text-gray-500">Events & deadlines</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          className="hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => handleSearchResult({
+            id: 'prioritizer',
+            title: 'Prioritizer',
+            type: 'prioritizer',
+            data: null
+          })}
+        >
+          <div className="flex items-center p-3 space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-amber-100 to-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <ListTodo className="h-6 w-6 text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-900">Prioritizer</div>
+              <div className="text-xs text-gray-500">Task management</div>
             </div>
           </div>
         </Card>

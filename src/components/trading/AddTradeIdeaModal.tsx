@@ -344,7 +344,7 @@ export function AddTradeIdeaModal({
       // Validate at least 2 legs with assets selected
       const validLegs = legs.filter(leg => leg.assetId)
       if (validLegs.length < 2) {
-        alert('Please select at least 2 assets for the pair trade')
+        alert('Please select at least 2 assets for the pairs trade')
         return
       }
       createPairTradeMutation.mutate()
@@ -406,16 +406,13 @@ export function AddTradeIdeaModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className={clsx(
-        "bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-h-[90vh] overflow-y-auto",
-        isPairTrade ? "max-w-2xl" : "max-w-lg"
-      )}>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-h-[90vh] overflow-y-auto max-w-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
             {isPairTrade && <Link2 className="h-5 w-5 text-purple-600" />}
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {isPairTrade ? 'Add Pair Trade' : 'Add Trade Idea'}
+              {isPairTrade ? 'Add Pairs Trade' : 'Add Trade Idea'}
             </h2>
           </div>
           <button
@@ -445,7 +442,7 @@ export function AddTradeIdeaModal({
                 "text-sm font-medium",
                 isPairTrade ? "text-purple-700 dark:text-purple-300" : "text-gray-600 dark:text-gray-400"
               )}>
-                Pair Trade
+                Pairs Trade
               </span>
             </div>
           </div>
@@ -691,16 +688,16 @@ export function AddTradeIdeaModal({
             </>
           )}
 
-          {/* ========== PAIR TRADE FORM ========== */}
+          {/* ========== PAIRS TRADE FORM ========== */}
           {isPairTrade && (
             <>
-              {/* Pair Trade Name */}
+              {/* Pairs Trade Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Pair Trade Name *
+                  Pairs Trade Name *
                 </label>
                 <Input
-                  placeholder={autoGeneratePairTradeName || "Enter pair trade name..."}
+                  placeholder={autoGeneratePairTradeName || "Enter pairs trade name..."}
                   value={pairTradeName}
                   onChange={(e) => setPairTradeName(e.target.value)}
                 />
@@ -881,7 +878,7 @@ export function AddTradeIdeaModal({
               loading={isMutating}
             >
               {isPairTrade && <Link2 className="h-4 w-4 mr-2" />}
-              {isPairTrade ? 'Create Pair Trade' : 'Add to Queue'}
+              {isPairTrade ? 'Create Pairs Trade' : 'Add to Queue'}
             </Button>
           </div>
         </form>
@@ -890,7 +887,7 @@ export function AddTradeIdeaModal({
   )
 }
 
-// Individual Leg Form Component for Pair Trades
+// Individual Leg Form Component for Pairs Trades
 interface LegFormProps {
   leg: LegFormState
   onUpdate: (updates: Partial<LegFormState>) => void
