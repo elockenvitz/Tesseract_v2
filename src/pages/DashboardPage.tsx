@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar, AlertTriangle, CheckCircle2, Play, ChevronRight, Plus, Zap, ArrowRight } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
@@ -40,6 +40,7 @@ import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
 import { CalendarPage } from './CalendarPage'
 import { PrioritizerPage } from './PrioritizerPage'
+import { QuickThoughtCapture, ThoughtsFeed } from '../components/thoughts'
 
 export function DashboardPage() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -314,6 +315,123 @@ export function DashboardPage() {
     refetchInterval: 30000, // Refetch every 30 seconds for live updates
   })
 
+  // Fetch urgent tasks and deadlines for Today's Focus
+  const { data: urgentItems } = useQuery({
+    queryKey: ['dashboard-urgent-items'],
+    queryFn: async () => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+      if (!userId) return { projects: [], deliverables: [], calendarEvents: [] }
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const endOfWeek = new Date(today)
+      endOfWeek.setDate(endOfWeek.getDate() + 7)
+
+      // Fetch urgent/overdue projects
+      const { data: projects } = await supabase
+        .from('projects')
+        .select(`
+          *,
+          project_assignments!inner(assigned_to, role)
+        `)
+        .eq('project_assignments.assigned_to', userId)
+        .in('status', ['planning', 'in_progress', 'blocked'])
+        .or(`priority.eq.urgent,priority.eq.high,due_date.lte.${endOfWeek.toISOString()}`)
+        .order('due_date', { ascending: true })
+        .limit(10)
+
+      // Fetch incomplete deliverables with due dates
+      const { data: deliverables } = await supabase
+        .from('project_deliverables')
+        .select(`
+          *,
+          projects!inner(
+            id,
+            title,
+            status,
+            project_assignments!inner(assigned_to)
+          )
+        `)
+        .eq('projects.project_assignments.assigned_to', userId)
+        .eq('completed', false)
+        .not('due_date', 'is', null)
+        .lte('due_date', endOfWeek.toISOString())
+        .order('due_date', { ascending: true })
+        .limit(10)
+
+      // Fetch upcoming calendar events
+      const { data: calendarEvents } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('created_by', userId)
+        .gte('start_date', today.toISOString())
+        .lte('start_date', endOfWeek.toISOString())
+        .in('event_type', ['deadline', 'meeting', 'deliverable', 'earnings_call', 'conference'])
+        .order('start_date', { ascending: true })
+        .limit(10)
+
+      return {
+        projects: projects || [],
+        deliverables: deliverables || [],
+        calendarEvents: calendarEvents || []
+      }
+    }
+  })
+
+  // Fetch my active tasks across workflows
+  const { data: myTasks } = useQuery({
+    queryKey: ['dashboard-my-tasks'],
+    queryFn: async () => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+      if (!userId) return []
+
+      // Get assets assigned to user in active workflow stages
+      const { data: workflowProgress } = await supabase
+        .from('asset_workflow_progress')
+        .select(`
+          *,
+          assets!inner(id, symbol, company_name, priority, process_stage),
+          workflows!inner(id, name),
+          workflow_stages!inner(id, name, stage_order)
+        `)
+        .eq('is_started', true)
+        .eq('is_completed', false)
+        .order('started_at', { ascending: false })
+        .limit(15)
+
+      return workflowProgress || []
+    }
+  })
+
+  // Fetch team activity
+  const { data: teamActivity } = useQuery({
+    queryKey: ['dashboard-team-activity'],
+    queryFn: async () => {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+      if (!userId) return []
+
+      // Get recent project activity from projects the user is assigned to
+      const { data: activity } = await supabase
+        .from('project_activity')
+        .select(`
+          *,
+          projects!inner(
+            id,
+            title,
+            project_assignments!inner(assigned_to)
+          )
+        `)
+        .eq('projects.project_assignments.assigned_to', userId)
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      return activity || []
+    }
+  })
+
   // Initialize tab state from persistence on component mount
   useEffect(() => {
     const savedState = TabStateManager.loadMainTabState()
@@ -584,499 +702,436 @@ export function DashboardPage() {
     }
   }
 
-  const renderDashboardContent = () => (
+  // Helper functions for dashboard
+  const getUrgencyColor = (dueDate: string | null, priority?: string) => {
+    if (!dueDate) return priority === 'urgent' ? 'error' : priority === 'high' ? 'warning' : 'default'
+    const now = new Date()
+    const due = new Date(dueDate)
+    const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays < 0) return 'error' // Overdue
+    if (diffDays === 0) return 'error' // Due today
+    if (diffDays <= 2) return 'warning' // Due soon
+    return 'primary'
+  }
+
+  const formatDueDate = (dueDate: string | null) => {
+    if (!dueDate) return null
+    const now = new Date()
+    const due = new Date(dueDate)
+    const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`
+    if (diffDays === 0) return 'Due today'
+    if (diffDays === 1) return 'Due tomorrow'
+    if (diffDays <= 7) return `Due in ${diffDays}d`
+    return formatDistanceToNow(due, { addSuffix: true })
+  }
+
+  const renderDashboardContent = () => {
+    // Combine urgent items for Today's Focus
+    const allUrgentItems = [
+      ...(urgentItems?.projects || []).map((p: any) => ({ ...p, itemType: 'project' })),
+      ...(urgentItems?.deliverables || []).map((d: any) => ({ ...d, itemType: 'deliverable' })),
+      ...(urgentItems?.calendarEvents || []).map((e: any) => ({ ...e, itemType: 'event' }))
+    ].sort((a, b) => {
+      const dateA = a.due_date || a.start_date || ''
+      const dateB = b.due_date || b.start_date || ''
+      return new Date(dateA).getTime() - new Date(dateB).getTime()
+    }).slice(0, 8)
+
+    return (
     <>
       <div className="space-y-6">
-      {/* Navigation Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'idea-generator',
-            title: 'Ideas',
-            type: 'idea-generator',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Lightbulb className="h-6 w-6 text-purple-600" />
+        {/* Quick Actions Bar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleSearchResult({ id: 'projects-list', title: 'All Projects', type: 'projects-list', data: null })}
+              className="flex items-center space-x-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="text-sm font-medium">New Project</span>
+            </button>
+            <button
+              onClick={() => handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })}
+              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Calendar className="h-4 w-4" />
+              <span className="text-sm font-medium">Calendar</span>
+            </button>
+            <button
+              onClick={() => handleSearchResult({ id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', data: null })}
+              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <ListTodo className="h-4 w-4" />
+              <span className="text-sm font-medium">Prioritizer</span>
+            </button>
+          </div>
+          <div className="flex items-center space-x-4 text-sm text-gray-500">
+            <div className="flex items-center space-x-1">
+              <Activity className="h-4 w-4 text-blue-500" />
+              <span>{myTasks?.length || 0} active tasks</span>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Ideas</div>
-              <div className="text-xs text-gray-500">Discover insights</div>
+            <div className="flex items-center space-x-1">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <span>{allUrgentItems.filter(i => getUrgencyColor(i.due_date || i.start_date, i.priority) === 'error').length} urgent</span>
             </div>
           </div>
-        </Card>
+        </div>
 
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'workflows',
-            title: 'Workflows',
-            type: 'workflows',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Orbit className="h-6 w-6 text-blue-600" />
+        {/* Today's Focus - Full Width Priority Section */}
+        <Card className="border-l-4 border-l-amber-500">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                <Zap className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Today's Focus</h2>
+                <p className="text-sm text-gray-500">Urgent deadlines and high-priority work</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Workflows</div>
-              <div className="text-xs text-gray-500">Manage processes</div>
-            </div>
+            <button
+              onClick={() => handleSearchResult({ id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', data: null })}
+              className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center space-x-1"
+            >
+              <span>View all</span>
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-        </Card>
 
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'projects-list',
-            title: 'All Projects',
-            type: 'projects-list',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-violet-100 to-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <FolderKanban className="h-6 w-6 text-violet-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Projects</div>
-              <div className="text-xs text-gray-500">One-off tasks</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'trade-queue',
-            title: 'Trade Queue',
-            type: 'trade-queue',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-emerald-100 to-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <ListTodo className="h-6 w-6 text-emerald-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Trade Queue</div>
-              <div className="text-xs text-gray-500">Ideas & sizing</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'trade-lab',
-            title: 'Trade Lab',
-            type: 'trade-lab',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-amber-100 to-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Beaker className="h-6 w-6 text-amber-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Trade Lab</div>
-              <div className="text-xs text-gray-500">Model impact</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'asset-allocation',
-            title: 'Asset Allocation',
-            type: 'asset-allocation',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-rose-100 to-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <PieChart className="h-6 w-6 text-rose-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Asset Allocation</div>
-              <div className="text-xs text-gray-500">Tactical views</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'tdf-list',
-            title: 'Target Date Funds',
-            type: 'tdf-list',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-cyan-100 to-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Clock className="h-6 w-6 text-cyan-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Target Date Funds</div>
-              <div className="text-xs text-gray-500">TDF management</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'calendar',
-            title: 'Calendar',
-            type: 'calendar',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Calendar className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Calendar</div>
-              <div className="text-xs text-gray-500">Events & deadlines</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'prioritizer',
-            title: 'Prioritizer',
-            type: 'prioritizer',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-amber-100 to-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <ListTodo className="h-6 w-6 text-amber-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Prioritizer</div>
-              <div className="text-xs text-gray-500">Task management</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'assets-list',
-            title: 'All Assets',
-            type: 'assets-list',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <TrendingUp className="h-6 w-6 text-primary-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Assets</div>
-              <div className="text-xs text-gray-500">Investment ideas</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'portfolios-list',
-            title: 'All Portfolios',
-            type: 'portfolios-list',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-success-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Briefcase className="h-6 w-6 text-success-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Portfolios</div>
-              <div className="text-xs text-gray-500">Track performance</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'themes-list',
-            title: 'All Themes',
-            type: 'themes-list',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Tag className="h-6 w-6 text-indigo-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Themes</div>
-              <div className="text-xs text-gray-500">Organize by topic</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'notes-list',
-            title: 'All Notes',
-            type: 'notes-list',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <FileText className="h-6 w-6 text-slate-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Notes</div>
-              <div className="text-xs text-gray-500">All your notes</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          className="hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => handleSearchResult({
-            id: 'lists',
-            title: 'Asset Lists',
-            type: 'lists',
-            data: null
-          })}
-        >
-          <div className="flex items-center p-3 space-x-3">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <List className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">Lists</div>
-              <div className="text-xs text-gray-500">Organize assets</div>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Curated Content Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Priority Assets */}
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Priority Assets</h2>
-            <p className="text-sm text-gray-500">High-priority items needing your attention</p>
-          </div>
-          <div className="space-y-3">
-            {assets && assets.length > 0 ? (
-              assets
-                .filter(asset => asset.priority === 'high' || asset.priority === 'medium')
-                .slice(0, 5)
-                .map(asset => (
+          {allUrgentItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {allUrgentItems.map((item: any, index: number) => {
+                const urgency = getUrgencyColor(item.due_date || item.start_date, item.priority)
+                const dueLabel = formatDueDate(item.due_date || item.start_date)
+                return (
                   <div
-                    key={asset.id}
-                    onClick={() => handleSearchResult({
-                      id: asset.id,
-                      title: asset.symbol,
-                      type: 'asset',
-                      data: asset
-                    })}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                    key={`${item.itemType}-${item.id}-${index}`}
+                    onClick={() => {
+                      if (item.itemType === 'project') {
+                        handleSearchResult({ id: item.id, title: item.title, type: 'project', data: item })
+                      } else if (item.itemType === 'deliverable') {
+                        handleSearchResult({ id: item.projects?.id, title: item.projects?.title, type: 'project', data: item.projects })
+                      } else {
+                        handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })
+                      }
+                    }}
+                    className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                      urgency === 'error' ? 'bg-red-50 border border-red-200 hover:border-red-300' :
+                      urgency === 'warning' ? 'bg-amber-50 border border-amber-200 hover:border-amber-300' :
+                      'bg-gray-50 border border-gray-200 hover:border-gray-300'
+                    }`}
                   >
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-semibold text-gray-900">{asset.symbol}</span>
-                        <PriorityBadge priority={asset.priority} />
+                    <div className="flex items-start justify-between mb-2">
+                      <div className={`p-1.5 rounded ${
+                        item.itemType === 'project' ? 'bg-violet-100' :
+                        item.itemType === 'deliverable' ? 'bg-blue-100' : 'bg-green-100'
+                      }`}>
+                        {item.itemType === 'project' ? <FolderKanban className="h-3.5 w-3.5 text-violet-600" /> :
+                         item.itemType === 'deliverable' ? <Target className="h-3.5 w-3.5 text-blue-600" /> :
+                         <Calendar className="h-3.5 w-3.5 text-green-600" />}
                       </div>
-                      <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>
-                    </div>
-                    {financialData?.[asset.symbol] && (
-                      <div className="text-right ml-4">
-                        <div className="font-semibold text-gray-900">
-                          ${financialData[asset.symbol].price?.toFixed(2)}
-                        </div>
-                        <div className={`text-sm flex items-center justify-end ${
-                          financialData[asset.symbol].changePercent >= 0 ? 'text-success-600' : 'text-error-600'
+                      {dueLabel && (
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          urgency === 'error' ? 'bg-red-100 text-red-700' :
+                          urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-600'
                         }`}>
-                          {financialData[asset.symbol].changePercent >= 0 ? (
-                            <ArrowUpRight className="h-3 w-3 mr-1" />
-                          ) : (
-                            <ArrowDownRight className="h-3 w-3 mr-1" />
-                          )}
-                          {Math.abs(financialData[asset.symbol].changePercent).toFixed(2)}%
-                        </div>
-                      </div>
+                          {dueLabel}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
+                      {item.title || item.name}
+                    </h4>
+                    {item.itemType === 'deliverable' && item.projects?.title && (
+                      <p className="text-xs text-gray-500 mt-1 truncate">{item.projects.title}</p>
                     )}
                   </div>
-                ))
-            ) : (
-              <NoDataAvailable message="No priority assets yet" compact />
-            )}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-green-300" />
+              <p className="font-medium">You're all caught up!</p>
+              <p className="text-sm">No urgent items requiring immediate attention</p>
+            </div>
+          )}
         </Card>
 
-        {/* Active Workflows */}
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Active Workflows</h2>
-            <p className="text-sm text-gray-500">Workflows currently in progress</p>
-          </div>
-          <div className="space-y-3">
-            {workflows && workflows.length > 0 ? (
-              workflows
-                .filter(wf => wf.active_assets && wf.active_assets > 0)
-                .slice(0, 5)
-                .map(workflow => (
-                  <div
-                    key={workflow.id}
-                    className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-gray-900">{workflow.name}</span>
-                    </div>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600">
-                      <div className="flex items-center space-x-1">
-                        <Activity className="h-4 w-4" />
-                        <span>{workflow.active_assets} active</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <Target className="h-4 w-4" />
-                        <span>{workflow.completed_assets} completed</span>
-                      </div>
-                    </div>
+        {/* Main Dashboard Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Work Management */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* My Active Tasks */}
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Play className="h-5 w-5 text-blue-600" />
                   </div>
-                ))
-            ) : (
-              <NoDataAvailable message="No active workflows" compact />
-            )}
-          </div>
-        </Card>
-
-        {/* Recent Notes */}
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Notes</h2>
-            <p className="text-sm text-gray-500">Your latest research and insights</p>
-          </div>
-          <div className="space-y-3">
-            {notes && notes.length > 0 ? (
-              notes.slice(0, 5).map((note: any) => (
-                <div
-                  key={note.id}
-                  className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">My Active Tasks</h2>
+                    <p className="text-sm text-gray-500">Work in progress across workflows</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center space-x-1"
                 >
-                  <div className="flex items-start justify-between mb-1">
-                    <span className="font-medium text-gray-900 text-sm">
-                      {note.type === 'asset' ? note.assets?.symbol :
-                       note.type === 'portfolio' ? note.portfolios?.name :
-                       note.type === 'theme' ? note.themes?.name :
-                       note.custom_notebooks?.name}
-                    </span>
-                    <Badge variant="outline" size="sm">{note.type}</Badge>
+                  <span>Workflows</span>
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="space-y-2">
+                {myTasks && myTasks.length > 0 ? (
+                  myTasks.slice(0, 6).map((task: any) => (
+                    <div
+                      key={task.id}
+                      onClick={() => handleSearchResult({
+                        id: task.assets?.id,
+                        title: task.assets?.symbol,
+                        type: 'asset',
+                        data: { ...task.assets, workflow_id: task.workflow_id }
+                      })}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors group"
+                    >
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <div className="w-8 h-8 bg-primary-100 rounded flex items-center justify-center flex-shrink-0">
+                          <TrendingUp className="h-4 w-4 text-primary-600" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-semibold text-gray-900">{task.assets?.symbol}</span>
+                            <PriorityBadge priority={task.assets?.priority} />
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">{task.assets?.company_name}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <div className="text-right">
+                          <Badge variant="outline" size="sm">{task.workflow_stages?.name}</Badge>
+                          <p className="text-xs text-gray-400 mt-1">{task.workflows?.name}</p>
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <NoDataAvailable message="No active workflow tasks" compact />
+                )}
+              </div>
+            </Card>
+
+            {/* Projects Overview with Deadlines */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ProjectOverviewWidget
+                onProjectSelect={(project) => handleSearchResult({
+                  id: project.id,
+                  title: project.title,
+                  type: 'project',
+                  data: project
+                })}
+              />
+              <UpcomingDeadlines
+                onProjectSelect={(project) => handleSearchResult({
+                  id: project.id,
+                  title: project.title,
+                  type: 'project',
+                  data: project
+                })}
+              />
+            </div>
+
+            {/* Active Workflows */}
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <Orbit className="h-5 w-5 text-indigo-600" />
                   </div>
-                  <p className="text-xs text-gray-600 line-clamp-2">{note.content}</p>
-                  <div className="flex items-center space-x-1 mt-2 text-xs text-gray-500">
-                    <Clock className="h-3 w-3" />
-                    <span>{formatDistanceToNow(new Date(note.updated_at), { addSuffix: true })}</span>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">Active Workflows</h2>
+                    <p className="text-sm text-gray-500">Process status at a glance</p>
                   </div>
                 </div>
-              ))
-            ) : (
-              <NoDataAvailable message="No recent notes" compact />
-            )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {workflows && workflows.filter(wf => wf.active_assets > 0 || wf.usage_count > 0).length > 0 ? (
+                  workflows
+                    .filter(wf => wf.active_assets > 0 || wf.usage_count > 0)
+                    .slice(0, 4)
+                    .map(workflow => {
+                      const progress = workflow.usage_count > 0
+                        ? Math.round((workflow.completed_assets / workflow.usage_count) * 100)
+                        : 0
+                      return (
+                        <div
+                          key={workflow.id}
+                          onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
+                          className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-gray-900 text-sm">{workflow.name}</span>
+                            <span className="text-xs text-gray-500">{progress}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+                            <div
+                              className="bg-indigo-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>{workflow.active_assets} active</span>
+                            <span>{workflow.completed_assets} done</span>
+                          </div>
+                        </div>
+                      )
+                    })
+                ) : (
+                  <div className="col-span-2">
+                    <NoDataAvailable message="No active workflows" compact />
+                  </div>
+                )}
+              </div>
+            </Card>
           </div>
-        </Card>
 
-        {/* Quick Stats */}
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Your Research</h2>
-            <p className="text-sm text-gray-500">Overview of your activity</p>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-primary-50 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-primary-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total Assets</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats?.assets || 0}</p>
+          {/* Right Column - Quick Access & Activity */}
+          <div className="space-y-6">
+            {/* Quick Thought Capture */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center space-x-2">
+                <Zap className="h-4 w-4 text-amber-500" />
+                <span>Capture a Thought</span>
+              </h3>
+              <QuickThoughtCapture compact placeholder="Quick reaction to news, research, market moves..." />
+            </div>
+
+            {/* Recent Thoughts */}
+            <Card>
+              <ThoughtsFeed
+                limit={5}
+                showHeader={true}
+                onAssetClick={(assetId, symbol) => handleSearchResult({
+                  id: assetId,
+                  title: symbol,
+                  type: 'asset',
+                  data: { id: assetId, symbol }
+                })}
+              />
+            </Card>
+
+            {/* Quick Navigation */}
+            <Card>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Access</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'violet' },
+                  { id: 'workflows', title: 'Workflows', type: 'workflows', icon: Orbit, color: 'indigo' },
+                  { id: 'calendar', title: 'Calendar', type: 'calendar', icon: Calendar, color: 'blue' },
+                  { id: 'prioritizer', title: 'Prioritizer', type: 'prioritizer', icon: ListTodo, color: 'amber' },
+                  { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'purple' },
+                  { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ListTodo, color: 'emerald' },
+                ].map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSearchResult({ id: item.id, title: item.title, type: item.type as any, data: null })}
+                    className={`flex items-center space-x-2 p-2.5 rounded-lg transition-colors bg-${item.color}-50 hover:bg-${item.color}-100 text-${item.color}-700`}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span className="text-xs font-medium">{item.title}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="border-t border-gray-100 mt-4 pt-4">
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Research</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp },
+                    { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase },
+                    { id: 'themes-list', title: 'Themes', type: 'themes-list', icon: Tag },
+                    { id: 'notes-list', title: 'Notes', type: 'notes-list', icon: FileText },
+                  ].map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSearchResult({ id: item.id, title: item.title, type: item.type as any, data: null })}
+                      className="flex items-center space-x-2 p-2 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 text-gray-700"
+                    >
+                      <item.icon className="h-4 w-4 text-gray-500" />
+                      <span className="text-xs font-medium">{item.title}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                  <FileText className="h-5 w-5 text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total Notes</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats?.notes || 0}</p>
+
+              <div className="border-t border-gray-100 mt-4 pt-4">
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Tools</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', icon: Beaker },
+                    { id: 'asset-allocation', title: 'Allocation', type: 'asset-allocation', icon: PieChart },
+                    { id: 'tdf-list', title: 'TDF', type: 'tdf-list', icon: Clock },
+                    { id: 'lists', title: 'Lists', type: 'lists', icon: List },
+                  ].map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSearchResult({ id: item.id, title: item.title, type: item.type as any, data: null })}
+                      className="flex items-center space-x-2 p-2 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 text-gray-700"
+                    >
+                      <item.icon className="h-4 w-4 text-gray-500" />
+                      <span className="text-xs font-medium">{item.title}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-success-50 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-success-100 rounded-lg flex items-center justify-center">
-                  <Target className="h-5 w-5 text-success-600" />
+            </Card>
+
+            {/* Team Activity */}
+            <RecentProjectActivity
+              onProjectSelect={(project) => handleSearchResult({
+                id: project.id,
+                title: project.title,
+                type: 'project',
+                data: project
+              })}
+            />
+
+            {/* Quick Stats */}
+            <Card>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Overview</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-2 bg-primary-50 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <TrendingUp className="h-4 w-4 text-primary-600" />
+                    <span className="text-sm text-gray-600">Assets</span>
+                  </div>
+                  <span className="font-bold text-gray-900">{stats?.assets || 0}</span>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Price Targets</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats?.priceTargets || 0}</p>
+                <div className="flex items-center justify-between p-2 bg-indigo-50 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="h-4 w-4 text-indigo-600" />
+                    <span className="text-sm text-gray-600">Notes</span>
+                  </div>
+                  <span className="font-bold text-gray-900">{stats?.notes || 0}</span>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-success-50 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <Target className="h-4 w-4 text-success-600" />
+                    <span className="text-sm text-gray-600">Price Targets</span>
+                  </div>
+                  <span className="font-bold text-gray-900">{stats?.priceTargets || 0}</span>
                 </div>
               </div>
-            </div>
+            </Card>
           </div>
-        </Card>
-
-        {/* Project Overview */}
-        <ProjectOverviewWidget
-          onProjectSelect={(project) => handleSearchResult({
-            id: project.id,
-            title: project.title,
-            type: 'project',
-            data: project
-          })}
-        />
-
-        {/* Project Status Breakdown */}
-        <ProjectStatusBreakdown />
-
-        {/* Upcoming Deadlines */}
-        <UpcomingDeadlines
-          onProjectSelect={(project) => handleSearchResult({
-            id: project.id,
-            title: project.title,
-            type: 'project',
-            data: project
-          })}
-        />
-
-        {/* Recent Project Activity */}
-        <RecentProjectActivity
-          onProjectSelect={(project) => handleSearchResult({
-            id: project.id,
-            title: project.title,
-            type: 'project',
-            data: project
-          })}
-        />
+        </div>
       </div>
-      </div> {/* End space-y-6 */}
     </>
   )
+  }
 
   return (
     <Layout
