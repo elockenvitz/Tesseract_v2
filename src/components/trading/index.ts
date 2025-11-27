@@ -1,5 +1,6 @@
 // Trading Components
 export { AddTradeIdeaModal } from './AddTradeIdeaModal'
+export { AddPairTradeModal } from './AddPairTradeModal'
 export { TradeIdeaDetailModal } from './TradeIdeaDetailModal'
 export { CreateSimulationModal } from './CreateSimulationModal'
 export { SectorExposureChart } from './SectorExposureChart'

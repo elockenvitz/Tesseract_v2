@@ -31,7 +31,8 @@ import {
   MessageSquare,
   CheckCircle2,
   DollarSign,
-  List
+  List,
+  Link2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -58,7 +59,8 @@ import type {
   TradeQueueItemWithDetails,
   SimulationVisibility,
   SimulationPermission,
-  SimulationCollaboratorWithUser
+  SimulationCollaboratorWithUser,
+  PairTrade
 } from '../types/trading'
 import { clsx } from 'clsx'
 
@@ -211,7 +213,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
         .select(`
           *,
           assets (id, symbol, company_name, sector),
-          portfolios (id, name)
+          portfolios (id, name),
+          pair_trades (id, name, description, rationale, thesis_summary, urgency, status)
         `)
         .eq('portfolio_id', simulation?.portfolio_id)
         .in('status', ['idea', 'discussing', 'approved'])
@@ -421,6 +424,80 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
     },
   })
 
+  // Import entire pair trade (all legs) to simulation
+  const importPairTradeMutation = useMutation({
+    mutationFn: async (pairTradeLegs: TradeQueueItemWithDetails[]) => {
+      if (!simulation) throw new Error('No simulation selected')
+
+      console.log('📥 Importing pair trade with', pairTradeLegs.length, 'legs')
+
+      // Insert all legs as simulation trades
+      const inserts = pairTradeLegs.map((leg, index) => ({
+        simulation_id: simulation.id,
+        trade_queue_item_id: leg.id,
+        asset_id: leg.asset_id,
+        action: leg.action,
+        shares: leg.proposed_shares,
+        weight: leg.proposed_weight,
+        price: priceMap?.[leg.asset_id] || leg.target_price || 100,
+        sort_order: (simulation.simulation_trades?.length || 0) + index,
+      }))
+
+      const { data, error } = await supabase
+        .from('simulation_trades')
+        .insert(inserts)
+        .select()
+
+      if (error) {
+        console.error('❌ Import pair trade error:', error)
+        throw error
+      }
+      console.log('✅ Import pair trade success:', data)
+      return data
+    },
+    onMutate: async (pairTradeLegs) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
+
+      // Snapshot previous value
+      const previousSimulation = queryClient.getQueryData(['simulation', selectedSimulationId])
+
+      // Optimistically update - add temporary trades for all legs
+      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
+        if (!old) return old
+        const tempTrades = pairTradeLegs.map((leg, index) => ({
+          id: `temp-${leg.id}`,
+          simulation_id: simulation?.id,
+          trade_queue_item_id: leg.id,
+          asset_id: leg.asset_id,
+          action: leg.action,
+          shares: leg.proposed_shares,
+          weight: leg.proposed_weight,
+          price: leg.target_price,
+          sort_order: (old.simulation_trades?.length || 0) + index,
+          assets: leg.assets,
+        }))
+        return {
+          ...old,
+          simulation_trades: [...(old.simulation_trades || []), ...tempTrades],
+        }
+      })
+
+      return { previousSimulation }
+    },
+    onError: (_err, _pairTradeLegs, context) => {
+      // Rollback on error
+      if (context?.previousSimulation) {
+        queryClient.setQueryData(['simulation', selectedSimulationId], context.previousSimulation)
+      }
+    },
+    onSettled: () => {
+      // Always refetch after mutation settles
+      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      refetchPrices()
+    },
+  })
+
   // Update trade in simulation (sandbox edit - doesn't affect original idea)
   const updateTradeMutation = useMutation({
     mutationFn: async ({ tradeId, shares, weight }: { tradeId: string; shares?: number; weight?: number }) => {
@@ -577,20 +654,66 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
     }))
   }, [tradeIdeas, simulation?.simulation_trades])
 
-  // Group trade ideas by status
+  // Group pair trades and check their added status
+  const pairTradesGrouped = useMemo(() => {
+    if (!tradeIdeasWithStatus.length) return { pairTrades: new Map<string, { pairTrade: PairTrade; legs: typeof tradeIdeasWithStatus; allAdded: boolean; someAdded: boolean }>(), standalone: tradeIdeasWithStatus }
+
+    const pairTradesMap = new Map<string, { pairTrade: PairTrade; legs: typeof tradeIdeasWithStatus; allAdded: boolean; someAdded: boolean }>()
+    const standalone: typeof tradeIdeasWithStatus = []
+
+    tradeIdeasWithStatus.forEach(idea => {
+      if (idea.pair_trade_id && idea.pair_trades) {
+        if (!pairTradesMap.has(idea.pair_trade_id)) {
+          pairTradesMap.set(idea.pair_trade_id, {
+            pairTrade: idea.pair_trades as PairTrade,
+            legs: [],
+            allAdded: true,
+            someAdded: false
+          })
+        }
+        const entry = pairTradesMap.get(idea.pair_trade_id)!
+        entry.legs.push(idea)
+        if (!idea.isAdded) entry.allAdded = false
+        if (idea.isAdded) entry.someAdded = true
+      } else {
+        standalone.push(idea)
+      }
+    })
+
+    return { pairTrades: pairTradesMap, standalone }
+  }, [tradeIdeasWithStatus])
+
+  // Group trade ideas by status (including pair trades)
   const tradeIdeasByStatus = useMemo(() => {
     const groups = {
       idea: [] as typeof tradeIdeasWithStatus,
       discussing: [] as typeof tradeIdeasWithStatus,
       approved: [] as typeof tradeIdeasWithStatus
     }
-    tradeIdeasWithStatus.forEach(idea => {
+    // Only include standalone ideas in the status groups
+    pairTradesGrouped.standalone.forEach(idea => {
       if (idea.status === 'idea') groups.idea.push(idea)
       else if (idea.status === 'discussing') groups.discussing.push(idea)
       else if (idea.status === 'approved') groups.approved.push(idea)
     })
     return groups
-  }, [tradeIdeasWithStatus])
+  }, [pairTradesGrouped.standalone])
+
+  // Group pair trades by their parent pair trade status
+  const pairTradesByStatus = useMemo(() => {
+    const groups = {
+      idea: [] as Array<{ pairTrade: PairTrade; legs: typeof tradeIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
+      discussing: [] as Array<{ pairTrade: PairTrade; legs: typeof tradeIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
+      approved: [] as Array<{ pairTrade: PairTrade; legs: typeof tradeIdeasWithStatus; allAdded: boolean; someAdded: boolean }>
+    }
+    pairTradesGrouped.pairTrades.forEach(entry => {
+      const status = entry.pairTrade.status
+      if (status === 'idea') groups.idea.push(entry)
+      else if (status === 'discussing') groups.discussing.push(entry)
+      else if (status === 'approved') groups.approved.push(entry)
+    })
+    return groups
+  }, [pairTradesGrouped.pairTrades])
 
   // Count sandbox trade stats
   const tradeStats = useMemo(() => {
@@ -994,6 +1117,133 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
             {idea.thesis_summary && (
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
                 {idea.thesis_summary}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Render a pair trade card (grouped unit with all legs)
+  const renderPairTradeCard = (entry: { pairTrade: PairTrade; legs: typeof tradeIdeasWithStatus; allAdded: boolean; someAdded: boolean }) => {
+    const { pairTrade, legs, allAdded, someAdded } = entry
+
+    // Get long and short legs for display
+    const longLegs = legs.filter(l => l.pair_leg_type === 'long')
+    const shortLegs = legs.filter(l => l.pair_leg_type === 'short')
+
+    const handleTogglePairTrade = () => {
+      if (allAdded) {
+        // Remove all legs from simulation
+        legs.forEach(leg => {
+          const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
+          if (trade) removeTradeMutation.mutate(trade.id)
+        })
+      } else {
+        // Add all legs that aren't already added
+        const legsToAdd = legs.filter(l => !l.isAdded)
+        if (legsToAdd.length > 0) {
+          importPairTradeMutation.mutate(legsToAdd)
+        }
+      }
+    }
+
+    return (
+      <div
+        key={pairTrade.id}
+        className={clsx(
+          "bg-white dark:bg-gray-800 rounded-lg p-3 border transition-colors relative",
+          allAdded
+            ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
+            : someAdded
+              ? "border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10"
+              : "border-purple-200 dark:border-purple-800 hover:border-purple-400 dark:hover:border-purple-600"
+        )}
+      >
+        {/* Partial indicator */}
+        {someAdded && !allAdded && (
+          <span className="absolute -top-2 -right-2 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-amber-500 text-white shadow-sm">
+            Partial
+          </span>
+        )}
+
+        <div className="flex items-start gap-2">
+          {/* Checkbox for added status */}
+          <button
+            onClick={handleTogglePairTrade}
+            disabled={importPairTradeMutation.isPending || removeTradeMutation.isPending}
+            className={clsx(
+              "flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors mt-0.5",
+              allAdded
+                ? "bg-green-500 border-green-500 text-white"
+                : someAdded
+                  ? "bg-amber-500 border-amber-500 text-white"
+                  : "border-purple-400 dark:border-purple-600 hover:border-purple-500"
+            )}
+          >
+            {allAdded && <Check className="h-3 w-3" />}
+            {someAdded && !allAdded && <Minus className="h-3 w-3" />}
+          </button>
+
+          <div className="flex-1 min-w-0">
+            {/* Pair Trade Header */}
+            <div className="flex items-center gap-2 mb-2">
+              <Link2 className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+              <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                {pairTrade.name || 'Pair Trade'}
+              </span>
+            </div>
+
+            {/* Legs display */}
+            <div className="space-y-1.5">
+              {/* Long legs */}
+              {longLegs.map(leg => (
+                <div key={leg.id} className="flex items-center gap-2 text-xs">
+                  <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-medium uppercase">
+                    {leg.action}
+                  </span>
+                  <span className={clsx(
+                    "font-medium",
+                    leg.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
+                  )}>
+                    {leg.assets?.symbol}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {leg.proposed_weight ? `${leg.proposed_weight}%` : ''}
+                    {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
+                    {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
+                  </span>
+                  {leg.isAdded && <Check className="h-3 w-3 text-green-500 ml-auto" />}
+                </div>
+              ))}
+
+              {/* Short legs */}
+              {shortLegs.map(leg => (
+                <div key={leg.id} className="flex items-center gap-2 text-xs">
+                  <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium uppercase">
+                    {leg.action}
+                  </span>
+                  <span className={clsx(
+                    "font-medium",
+                    leg.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
+                  )}>
+                    {leg.assets?.symbol}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {leg.proposed_weight ? `${leg.proposed_weight}%` : ''}
+                    {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
+                    {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
+                  </span>
+                  {leg.isAdded && <Check className="h-3 w-3 text-green-500 ml-auto" />}
+                </div>
+              ))}
+            </div>
+
+            {/* Thesis summary */}
+            {pairTrade.thesis_summary && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">
+                {pairTrade.thesis_summary}
               </div>
             )}
           </div>
@@ -1432,6 +1682,39 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose 
                       </div>
                     ) : (
                       <div className="space-y-3">
+                        {/* Pair Trades Section */}
+                        {pairTradesGrouped.pairTrades.size > 0 && (
+                          <div>
+                            <button
+                              onClick={() => {
+                                const newCollapsed = new Set(collapsedGroups)
+                                if (newCollapsed.has('ideas-pairs')) {
+                                  newCollapsed.delete('ideas-pairs')
+                                } else {
+                                  newCollapsed.add('ideas-pairs')
+                                }
+                                setCollapsedGroups(newCollapsed)
+                              }}
+                              className="flex items-center gap-2 w-full text-left mb-2 group"
+                            >
+                              <ChevronDown className={clsx(
+                                "h-3 w-3 text-gray-400 transition-transform",
+                                collapsedGroups.has('ideas-pairs') && "-rotate-90"
+                              )} />
+                              <Link2 className="h-3.5 w-3.5 text-purple-500" />
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Pair Trades</span>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{pairTradesGrouped.pairTrades.size}</Badge>
+                            </button>
+                            {!collapsedGroups.has('ideas-pairs') && (
+                              <div className="space-y-2 ml-5">
+                                {pairTradesByStatus.approved.map(entry => renderPairTradeCard(entry))}
+                                {pairTradesByStatus.discussing.map(entry => renderPairTradeCard(entry))}
+                                {pairTradesByStatus.idea.map(entry => renderPairTradeCard(entry))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Approved Section */}
                         {tradeIdeasByStatus.approved.length > 0 && (
                           <div>

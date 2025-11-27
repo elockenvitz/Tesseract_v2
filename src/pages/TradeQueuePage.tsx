@@ -26,7 +26,8 @@ import {
   ChevronDown,
   User,
   Calendar,
-  Briefcase
+  Briefcase,
+  Link2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -43,7 +44,8 @@ import type {
   TradeQueueStatus,
   TradeAction,
   TradeUrgency,
-  TradeQueueFilters
+  TradeQueueFilters,
+  PairTradeWithDetails
 } from '../types/trading'
 import { clsx } from 'clsx'
 
@@ -104,7 +106,8 @@ export function TradeQueuePage() {
           portfolios (id, name, portfolio_id),
           users:created_by (id, email, first_name, last_name),
           trade_queue_comments (id),
-          trade_queue_votes (id, vote)
+          trade_queue_votes (id, vote),
+          pair_trades (id, name, description, rationale, thesis_summary, urgency, status)
         `)
         .order('priority', { ascending: false })
         .order('created_at', { ascending: false })
@@ -120,6 +123,29 @@ export function TradeQueuePage() {
           needs_discussion: item.trade_queue_votes?.filter((v: any) => v.vote === 'needs_discussion').length || 0,
         }
       })) as TradeQueueItemWithDetails[]
+    },
+  })
+
+  // Fetch pair trades with their legs
+  const { data: pairTrades } = useQuery({
+    queryKey: ['pair-trades'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pair_trades')
+        .select(`
+          *,
+          portfolios (id, name, portfolio_id),
+          users:created_by (id, email, first_name, last_name),
+          trade_queue_items (
+            id, asset_id, action, proposed_shares, proposed_weight, target_price,
+            pair_leg_type, status,
+            assets (id, symbol, company_name, sector)
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data as PairTradeWithDetails[]
     },
   })
 
@@ -278,7 +304,37 @@ export function TradeQueuePage() {
     )
   }, [simulations])
 
-  // Group items by status for kanban-like view
+  // Group pair trade items by pair_trade_id
+  const pairTradeGroups = useMemo(() => {
+    if (!filteredItems) return new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
+
+    const groups = new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
+
+    filteredItems.forEach(item => {
+      if (item.pair_trade_id && item.pair_trades) {
+        if (!groups.has(item.pair_trade_id)) {
+          groups.set(item.pair_trade_id, {
+            pairTrade: item.pair_trades,
+            legs: []
+          })
+        }
+        groups.get(item.pair_trade_id)!.legs.push(item)
+      }
+    })
+
+    return groups
+  }, [filteredItems])
+
+  // Get IDs of items that are part of pair trades (to exclude from individual display)
+  const pairTradeItemIds = useMemo(() => {
+    const ids = new Set<string>()
+    pairTradeGroups.forEach(group => {
+      group.legs.forEach(leg => ids.add(leg.id))
+    })
+    return ids
+  }, [pairTradeGroups])
+
+  // Group items by status for kanban-like view (excluding individual pair trade legs)
   const itemsByStatus = useMemo(() => {
     const groups: Record<TradeQueueStatus, TradeQueueItemWithDetails[]> = {
       idea: [],
@@ -290,17 +346,49 @@ export function TradeQueuePage() {
     }
 
     filteredItems.forEach(item => {
+      // Skip items that are part of pair trades - they'll be shown as grouped cards
+      if (pairTradeItemIds.has(item.id)) return
       groups[item.status].push(item)
     })
 
     return groups
-  }, [filteredItems])
+  }, [filteredItems, pairTradeItemIds])
+
+  // Group pair trades by status (based on the pair_trade's status)
+  const pairTradesByStatus = useMemo(() => {
+    const groups: Record<TradeQueueStatus, Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>> = {
+      idea: [],
+      discussing: [],
+      approved: [],
+      rejected: [],
+      executed: [],
+      cancelled: [],
+    }
+
+    pairTradeGroups.forEach((group, pairTradeId) => {
+      const status = group.pairTrade.status as TradeQueueStatus
+      if (groups[status]) {
+        groups[status].push({ pairTradeId, ...group })
+      }
+    })
+
+    return groups
+  }, [pairTradeGroups])
 
   // Drag handlers - use dataTransfer to pass the item ID reliably
   const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
     e.dataTransfer.setData('text/plain', itemId)
+    e.dataTransfer.setData('type', 'item')
     e.dataTransfer.effectAllowed = 'move'
     setDraggedItem(itemId)
+  }, [])
+
+  // Drag handler for pair trade cards
+  const handlePairTradeDragStart = useCallback((e: React.DragEvent, pairTradeId: string) => {
+    e.dataTransfer.setData('text/plain', pairTradeId)
+    e.dataTransfer.setData('type', 'pair-trade')
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggedItem(pairTradeId)
   }, [])
 
   const handleDragEnd = useCallback(() => {
@@ -315,9 +403,10 @@ export function TradeQueuePage() {
   const handleDrop = useCallback(async (e: React.DragEvent, targetStatus: TradeQueueStatus) => {
     e.preventDefault()
 
-    // Get the item ID from dataTransfer (more reliable than state)
+    // Get the item ID and type from dataTransfer
     const itemId = e.dataTransfer.getData('text/plain')
-    console.log('Drop event - itemId from dataTransfer:', itemId, 'targetStatus:', targetStatus)
+    const dragType = e.dataTransfer.getData('type')
+    console.log('Drop event - itemId:', itemId, 'type:', dragType, 'targetStatus:', targetStatus)
 
     if (!itemId) {
       console.error('No item ID found in dataTransfer')
@@ -325,6 +414,52 @@ export function TradeQueuePage() {
       return
     }
 
+    // Handle pair trade drag - update all legs AND the pair_trades record
+    if (dragType === 'pair-trade') {
+      const pairTradeGroup = pairTradeGroups.get(itemId)
+      if (!pairTradeGroup) {
+        console.error('Pair trade group not found')
+        setDraggedItem(null)
+        return
+      }
+
+      if (pairTradeGroup.pairTrade.status === targetStatus) {
+        console.log('Pair trade already has target status, skipping update')
+        setDraggedItem(null)
+        return
+      }
+
+      console.log('Updating pair trade and all legs to status:', targetStatus)
+
+      // Update the pair_trades record status
+      const { error: pairError } = await supabase
+        .from('pair_trades')
+        .update({ status: targetStatus })
+        .eq('id', itemId)
+
+      if (pairError) {
+        console.error('Error updating pair trade status:', pairError)
+      }
+
+      // Update all legs
+      const legIds = pairTradeGroup.legs.map(leg => leg.id)
+      const { error: legsError } = await supabase
+        .from('trade_queue_items')
+        .update({ status: targetStatus })
+        .in('id', legIds)
+
+      if (legsError) {
+        console.error('Error updating pair trade leg statuses:', legsError)
+      }
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
+      setDraggedItem(null)
+      return
+    }
+
+    // Handle individual item drag
     const item = tradeItems?.find(i => i.id === itemId)
     console.log('Found item:', item?.assets?.symbol, 'current status:', item?.status)
 
@@ -359,7 +494,7 @@ export function TradeQueuePage() {
     }
 
     setDraggedItem(null)
-  }, [tradeItems, queryClient])
+  }, [tradeItems, pairTradeGroups, queryClient])
 
   const handleSort = useCallback((field: typeof sortBy) => {
     if (sortBy === field) {
@@ -411,12 +546,10 @@ export function TradeQueuePage() {
               Collaborate on trade ideas and run simulations
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <Button onClick={() => setShowAddModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Trade Idea
-            </Button>
-          </div>
+          <Button onClick={() => setShowAddModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Trade Idea
+          </Button>
         </div>
 
         {/* Pipeline Section Tabs */}
@@ -591,7 +724,7 @@ export function TradeQueuePage() {
                       <AlertCircle className="h-5 w-5 text-gray-500" />
                       <h2 className="font-semibold text-gray-900 dark:text-white">Idea</h2>
                       <Badge variant="default" className="ml-auto">
-                        {itemsByStatus.idea.length}
+                        {itemsByStatus.idea.length + pairTradesByStatus.idea.length}
                       </Badge>
                       <button
                         onClick={() => setFullscreenColumn(fullscreenColumn === 'idea' ? null : 'idea')}
@@ -618,6 +751,20 @@ export function TradeQueuePage() {
                           ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                           : "space-y-2"
                       )}>
+                        {/* Pair Trade Cards */}
+                        {pairTradesByStatus.idea.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onClick={(legId) => setSelectedTradeId(legId)}
+                          />
+                        ))}
+                        {/* Individual Trade Cards */}
                         {itemsByStatus.idea.map(item => (
                           <TradeQueueCard
                             key={item.id}
@@ -644,7 +791,7 @@ export function TradeQueuePage() {
                       <MessageSquare className="h-5 w-5 text-gray-500" />
                       <h2 className="font-semibold text-gray-900 dark:text-white">Discussing</h2>
                       <Badge variant="default" className="ml-auto">
-                        {itemsByStatus.discussing.length}
+                        {itemsByStatus.discussing.length + pairTradesByStatus.discussing.length}
                       </Badge>
                       <button
                         onClick={() => setFullscreenColumn(fullscreenColumn === 'discussing' ? null : 'discussing')}
@@ -671,6 +818,20 @@ export function TradeQueuePage() {
                           ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                           : "space-y-2"
                       )}>
+                        {/* Pair Trade Cards */}
+                        {pairTradesByStatus.discussing.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onClick={(legId) => setSelectedTradeId(legId)}
+                          />
+                        ))}
+                        {/* Individual Trade Cards */}
                         {itemsByStatus.discussing.map(item => (
                           <TradeQueueCard
                             key={item.id}
@@ -717,7 +878,7 @@ export function TradeQueuePage() {
                           >
                             <CheckCircle2 className="h-4 w-4" />
                             Approved
-                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.approved.length}</Badge>
+                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.approved.length + pairTradesByStatus.approved.length}</Badge>
                           </button>
                           <button
                             onClick={() => setThirdColumnView('rejected')}
@@ -728,7 +889,7 @@ export function TradeQueuePage() {
                           >
                             <XCircle className="h-4 w-4" />
                             Rejected
-                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.rejected.length}</Badge>
+                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.rejected.length + pairTradesByStatus.rejected.length}</Badge>
                           </button>
                           <button
                             onClick={() => setThirdColumnView('archived')}
@@ -746,9 +907,9 @@ export function TradeQueuePage() {
 
                       <Badge variant="default" className="ml-auto">
                         {thirdColumnView === 'approved'
-                          ? itemsByStatus.approved.length
+                          ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
                           : thirdColumnView === 'rejected'
-                            ? itemsByStatus.rejected.length
+                            ? itemsByStatus.rejected.length + pairTradesByStatus.rejected.length
                             : archivedItems.length}
                       </Badge>
                       <button
@@ -776,6 +937,32 @@ export function TradeQueuePage() {
                           ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                           : "space-y-2"
                       )}>
+                        {/* Pair Trade Cards for Approved/Rejected views */}
+                        {thirdColumnView === 'approved' && pairTradesByStatus.approved.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onClick={(legId) => setSelectedTradeId(legId)}
+                          />
+                        ))}
+                        {thirdColumnView === 'rejected' && pairTradesByStatus.rejected.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onClick={(legId) => setSelectedTradeId(legId)}
+                          />
+                        ))}
+                        {/* Individual Trade Cards */}
                         {(thirdColumnView === 'approved'
                           ? itemsByStatus.approved
                           : thirdColumnView === 'rejected'
@@ -1099,6 +1286,7 @@ export function TradeQueuePage() {
         }}
       />
 
+
       {selectedTradeId && (
         <TradeIdeaDetailModal
           isOpen={!!selectedTradeId}
@@ -1106,6 +1294,119 @@ export function TradeQueuePage() {
           onClose={() => setSelectedTradeId(null)}
         />
       )}
+    </div>
+  )
+}
+
+// Pair Trade Card Component - displays grouped pair trade as a single card
+interface PairTradeCardProps {
+  pairTradeId: string
+  pairTrade: any
+  legs: TradeQueueItemWithDetails[]
+  isDragging: boolean
+  onDragStart: (e: React.DragEvent) => void
+  onDragEnd: () => void
+  onClick: (legId: string) => void
+}
+
+function PairTradeCard({
+  pairTradeId,
+  pairTrade,
+  legs,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onClick
+}: PairTradeCardProps) {
+  // Sort legs: long first, then short
+  const sortedLegs = [...legs].sort((a, b) => {
+    if (a.pair_leg_type === 'long' && b.pair_leg_type === 'short') return -1
+    if (a.pair_leg_type === 'short' && b.pair_leg_type === 'long') return 1
+    return 0
+  })
+
+  const longLeg = sortedLegs.find(l => l.pair_leg_type === 'long')
+  const shortLeg = sortedLegs.find(l => l.pair_leg_type === 'short')
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={clsx(
+        "bg-white dark:bg-gray-800 rounded-lg border-2 shadow-sm transition-all cursor-pointer",
+        isDragging && "opacity-50 rotate-2 scale-105",
+        "border-purple-300 dark:border-purple-700 hover:shadow-md hover:border-purple-400 dark:hover:border-purple-600"
+      )}
+    >
+      <div className="p-3">
+        {/* Pair Trade Header */}
+        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-purple-100 dark:border-purple-800">
+          <GripVertical className="h-4 w-4 text-gray-400 cursor-grab" />
+          <Link2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+          <span className="font-semibold text-purple-700 dark:text-purple-300 truncate flex-1">
+            {pairTrade.name || 'Pair Trade'}
+          </span>
+        </div>
+
+        {/* Legs Display */}
+        <div className="space-y-2">
+          {/* Long Leg */}
+          {longLeg && (
+            <div
+              className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+              onClick={() => onClick(longLeg.id)}
+            >
+              <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <span className="text-xs font-medium text-green-700 dark:text-green-300 uppercase">Long</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{longLeg.assets?.symbol}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{longLeg.assets?.company_name}</span>
+              {longLeg.proposed_weight && (
+                <span className="text-xs font-medium text-green-600 dark:text-green-400">+{longLeg.proposed_weight.toFixed(1)}%</span>
+              )}
+              {longLeg.proposed_shares && !longLeg.proposed_weight && (
+                <span className="text-xs font-medium text-green-600 dark:text-green-400">+{longLeg.proposed_shares.toLocaleString()}</span>
+              )}
+            </div>
+          )}
+
+          {/* Short Leg */}
+          {shortLeg && (
+            <div
+              className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+              onClick={() => onClick(shortLeg.id)}
+            >
+              <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+              <span className="text-xs font-medium text-red-700 dark:text-red-300 uppercase">Short</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{shortLeg.assets?.symbol}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{shortLeg.assets?.company_name}</span>
+              {shortLeg.proposed_weight && (
+                <span className="text-xs font-medium text-red-600 dark:text-red-400">-{shortLeg.proposed_weight.toFixed(1)}%</span>
+              )}
+              {shortLeg.proposed_shares && !shortLeg.proposed_weight && (
+                <span className="text-xs font-medium text-red-600 dark:text-red-400">-{shortLeg.proposed_shares.toLocaleString()}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Rationale preview */}
+        {pairTrade.rationale && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-2">
+            {pairTrade.rationale}
+          </p>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
+          <span className={clsx("text-xs px-2 py-0.5 rounded-full", URGENCY_CONFIG[pairTrade.urgency as TradeUrgency]?.color || URGENCY_CONFIG.medium.color)}>
+            {pairTrade.urgency || 'medium'}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {legs.length} legs
+          </span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1129,7 +1430,6 @@ function TradeQueueCard({
   onClick
 }: TradeQueueCardProps) {
   const ActionIcon = ACTION_CONFIG[item.action].icon
-  const StatusIcon = STATUS_CONFIG[item.status].icon
 
   return (
     <div
@@ -1145,15 +1445,45 @@ function TradeQueueCard({
       )}
     >
       <div className="p-3">
+        {/* Pair Trade Indicator */}
+        {item.pair_trade_id && item.pair_trades && (
+          <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-purple-50 dark:bg-purple-900/20 rounded-md border border-purple-200 dark:border-purple-800">
+            <Link2 className="h-3 w-3 text-purple-600 dark:text-purple-400" />
+            <span className="text-xs font-medium text-purple-700 dark:text-purple-300 truncate">
+              {item.pair_trades.name || 'Pair Trade'}
+            </span>
+            {item.pair_leg_type && (
+              <span className={clsx(
+                "text-xs px-1.5 py-0.5 rounded-full ml-auto",
+                item.pair_leg_type === 'long'
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              )}>
+                {item.pair_leg_type}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
             {!isArchived && (
               <GripVertical className="h-4 w-4 text-gray-400 cursor-grab" />
             )}
-            <div className={clsx("flex items-center gap-1 font-medium", ACTION_CONFIG[item.action].color)}>
+            <div className={clsx("flex items-center gap-1.5 font-medium", ACTION_CONFIG[item.action].color)}>
               <ActionIcon className="h-4 w-4" />
               <span className="uppercase text-xs">{item.action}</span>
+              {item.proposed_weight && (
+                <span className="text-xs">
+                  {(item.action === 'buy' || item.action === 'add') ? '+' : '-'}{item.proposed_weight.toFixed(1)}%
+                </span>
+              )}
+              {!item.proposed_weight && item.proposed_shares && (
+                <span className="text-xs">
+                  {(item.action === 'buy' || item.action === 'add') ? '+' : '-'}{item.proposed_shares.toLocaleString()} shs
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1188,19 +1518,12 @@ function TradeQueueCard({
           </span>
         </div>
 
-        {/* Sizing */}
-        <div className="flex items-center gap-2 mb-2 text-sm" onClick={onClick}>
-          {item.proposed_weight && (
-            <span className="text-gray-700 dark:text-gray-300">
-              {item.proposed_weight.toFixed(1)}% weight
-            </span>
-          )}
-          {item.proposed_shares && (
-            <span className="text-gray-500 dark:text-gray-400">
-              ({item.proposed_shares.toLocaleString()} shares)
-            </span>
-          )}
-        </div>
+        {/* Sizing - show shares as supplementary info if we have both weight and shares */}
+        {item.proposed_weight && item.proposed_shares && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2" onClick={onClick}>
+            {item.proposed_shares.toLocaleString()} shares
+          </div>
+        )}
 
         {/* Rationale preview */}
         {item.rationale && (
@@ -1214,10 +1537,6 @@ function TradeQueueCard({
           <div className="flex items-center gap-2">
             <span className={clsx("text-xs px-2 py-0.5 rounded-full", URGENCY_CONFIG[item.urgency].color)}>
               {item.urgency}
-            </span>
-            <span className={clsx("text-xs px-2 py-0.5 rounded-full flex items-center gap-1", STATUS_CONFIG[item.status].color)}>
-              <StatusIcon className="h-3 w-3" />
-              {STATUS_CONFIG[item.status].label}
             </span>
           </div>
 

@@ -10,6 +10,37 @@ export type TradeAction = 'buy' | 'sell' | 'trim' | 'add'
 export type SimulationStatus = 'draft' | 'running' | 'completed' | 'archived'
 export type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'
 export type TradeVote = 'approve' | 'reject' | 'needs_discussion'
+export type PairLegType = 'long' | 'short'
+
+// Pair Trade - groups related trades that should be executed together
+export interface PairTrade {
+  id: string
+  portfolio_id: string
+  name: string
+  description: string
+  rationale: string
+  thesis_summary: string
+  urgency: TradeUrgency
+  status: TradeQueueStatus
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PairTradeWithDetails extends PairTrade {
+  portfolios: {
+    id: string
+    name: string
+    portfolio_id: string | null
+  }
+  users?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
+  trade_queue_items?: TradeQueueItemWithDetails[]
+}
 
 // Trade Queue Item
 export interface TradeQueueItem {
@@ -31,6 +62,8 @@ export interface TradeQueueItem {
   approved_by: string | null
   approved_at: string | null
   executed_at: string | null
+  pair_trade_id: string | null
+  pair_leg_type: PairLegType | null
 }
 
 // Trade Queue Item with related data
@@ -59,6 +92,7 @@ export interface TradeQueueItemWithDetails extends TradeQueueItem {
     reject: number
     needs_discussion: number
   }
+  pair_trades?: PairTrade | null
 }
 
 // Trade Queue Comment
@@ -271,6 +305,29 @@ export interface CreateTradeQueueItemInput {
   urgency?: TradeUrgency
   rationale?: string
   thesis_summary?: string
+  pair_trade_id?: string | null
+  pair_leg_type?: PairLegType | null
+}
+
+// Pair Trade Leg - for creating individual legs of a pair trade
+export interface PairTradeLegInput {
+  asset_id: string
+  action: TradeAction
+  proposed_shares?: number | null
+  proposed_weight?: number | null
+  target_price?: number | null
+  pair_leg_type: PairLegType
+}
+
+// Create Pair Trade Input - for creating a complete pair trade with legs
+export interface CreatePairTradeInput {
+  portfolio_id: string
+  name: string
+  description?: string
+  rationale?: string
+  thesis_summary?: string
+  urgency?: TradeUrgency
+  legs: PairTradeLegInput[]
 }
 
 export interface UpdateTradeQueueItemInput {
