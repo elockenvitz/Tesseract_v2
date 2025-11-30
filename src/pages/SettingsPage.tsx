@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { supabase } from '../lib/supabase'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { AIConfigurationSection } from '../components/settings/AIConfigurationSection'
 
 interface SettingsPageProps {
   onClose?: () => void
@@ -77,6 +78,9 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
           </div>
         </div>
       </Card>
+
+      {/* AI Configuration */}
+      <AIConfigurationSection />
 
       {/* Account Settings */}
       <Card>

@@ -98,6 +98,15 @@ export function Header({
     staleTime: 0 // Always consider data stale to refetch on invalidation
   })
 
+  // Listen for openSettings event from AI section
+  useEffect(() => {
+    const handleOpenSettings = () => {
+      setShowSettings(true)
+    }
+    window.addEventListener('openSettings', handleOpenSettings)
+    return () => window.removeEventListener('openSettings', handleOpenSettings)
+  }, [])
+
   // Subscribe to real-time message updates
   useEffect(() => {
     if (!user?.id) return
@@ -456,12 +465,12 @@ export function Header({
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div 
+          <div
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
             onClick={() => setShowSettings(false)}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all p-8">
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto transform transition-all p-8">
               <SettingsPage onClose={() => setShowSettings(false)} />
             </div>
           </div>

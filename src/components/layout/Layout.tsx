@@ -386,6 +386,14 @@ export function Layout({
         onFocusMode={handleFocusMode}
         isFocusMode={isFocusMode}
         onNotificationClick={handleNotificationClick}
+        onOpenSettings={() => {
+          // Dispatch event to open settings modal in Header
+          window.dispatchEvent(new CustomEvent('openSettings'))
+          // Close the comm pane
+          if (isCommPaneOpen) {
+            toggleCommPane()
+          }
+        }}
       />
       
       <CoverageManager

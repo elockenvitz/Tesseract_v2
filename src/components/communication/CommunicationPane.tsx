@@ -25,6 +25,7 @@ interface CommunicationPaneProps {
   onFocusMode?: (enable: boolean) => void
   isFocusMode?: boolean
   onNotificationClick?: (notification: any) => void
+  onOpenSettings?: () => void
 }
 
 export function CommunicationPane({
@@ -44,7 +45,8 @@ export function CommunicationPane({
   onShowCoverageManager,
   onFocusMode,
   isFocusMode = false,
-  onNotificationClick
+  onNotificationClick,
+  onOpenSettings
 }: CommunicationPaneProps) {
 
   const handleBackToConversations = () => {
@@ -108,6 +110,12 @@ export function CommunicationPane({
             onToggle={onToggle}
             isFullscreen={isFullscreen}
             onToggleFullscreen={onToggleFullscreen}
+            context={contextType && contextId ? {
+              type: contextType as 'asset' | 'theme' | 'portfolio' | 'note',
+              id: contextId,
+              title: contextTitle
+            } : undefined}
+            onOpenSettings={onOpenSettings}
           />
         )
       case 'direct-messages':
