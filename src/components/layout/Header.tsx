@@ -18,8 +18,6 @@ interface HeaderProps {
   hasUnreadMessages?: boolean
   onShowDirectMessages?: () => void
   onShowNotifications?: () => void
-  isCoverageManagerOpen?: boolean
-  onCloseCoverageManager?: () => void
   onShowCoverageManager?: () => void
   isCommPaneOpen?: boolean
   onToggleCommPane?: () => void
@@ -35,8 +33,6 @@ export function Header({
   hasUnreadMessages,
   onShowDirectMessages,
   onShowNotifications,
-  isCoverageManagerOpen,
-  onCloseCoverageManager,
   onShowCoverageManager,
   isCommPaneOpen,
   onToggleCommPane,

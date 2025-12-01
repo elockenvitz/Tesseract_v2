@@ -37,6 +37,7 @@ import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
 import { CalendarPage } from './CalendarPage'
 import { PrioritizerPage } from './PrioritizerPage'
+import { CoveragePage } from './CoveragePage'
 import { ThoughtsFeed } from '../components/thoughts'
 import { ContentSection } from '../components/dashboard/ContentSection'
 
@@ -695,6 +696,8 @@ export function DashboardPage() {
         return <CalendarPage onItemSelect={handleSearchResult} />
       case 'prioritizer':
         return <PrioritizerPage onItemSelect={handleSearchResult} />
+      case 'coverage':
+        return <CoveragePage initialView={activeTab.data?.initialView} />
       default:
         return renderDashboardContent()
     }

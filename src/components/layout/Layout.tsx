@@ -5,7 +5,6 @@ import { Eye, X } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
-import { CoverageManager } from '../coverage/CoverageManager'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -23,7 +22,7 @@ interface LayoutProps {
 }
 
 // Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'simulation', 'trade-queue']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'simulation', 'trade-queue', 'coverage']
 
 export function Layout({
   children,
@@ -48,8 +47,6 @@ export function Layout({
   } = useCommunication()
 
   const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'>('messages')
-  const [showCoverageManager, setShowCoverageManager] = useState(false)
-  const [coverageManagerView, setCoverageManagerView] = useState<'active' | 'history' | 'requests'>('active')
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
@@ -64,8 +61,14 @@ export function Layout({
   }, [originalCite, isFocusMode])
 
   const handleShowCoverageManager = useCallback(() => {
-    setShowCoverageManager(true)
-  }, [])
+    // Open coverage as a tab instead of modal
+    onSearchResult?.({
+      id: 'coverage',
+      title: 'Coverage',
+      type: 'coverage',
+      data: { initialView: 'active' }
+    })
+  }, [onSearchResult])
 
   const handleShowNotifications = () => {
     setCommPaneView('notifications')
@@ -116,10 +119,14 @@ export function Layout({
     console.log('🔔 Notification type:', notification.type)
     console.log('🔔 Notification data:', notification.data)
 
-    // Handle coverage_manager_requests type
+    // Handle coverage_manager_requests type - open as a tab
     if (notification.type === 'coverage_manager_requests') {
-      setCoverageManagerView('requests')
-      setShowCoverageManager(true)
+      onSearchResult?.({
+        id: 'coverage-requests',
+        title: 'Coverage',
+        type: 'coverage',
+        data: { initialView: 'requests' }
+      })
       // Close the comm pane
       if (isCommPaneOpen) {
         toggleCommPane()
@@ -319,8 +326,6 @@ export function Layout({
         hasUnreadMessages={false}
         onShowDirectMessages={handleShowDirectMessages}
         onShowNotifications={handleShowNotifications}
-        isCoverageManagerOpen={showCoverageManager}
-        onCloseCoverageManager={() => setShowCoverageManager(false)}
         onShowCoverageManager={handleShowCoverageManager}
         isCommPaneOpen={isCommPaneOpen}
         onToggleCommPane={toggleCommPane}
@@ -395,16 +400,6 @@ export function Layout({
           }
         }}
       />
-      
-      <CoverageManager
-        isOpen={showCoverageManager}
-        onClose={() => {
-          setShowCoverageManager(false)
-          setCoverageManagerView('active')
-        }}
-        initialView={coverageManagerView}
-      />
-      
     </div>
   )
 }
