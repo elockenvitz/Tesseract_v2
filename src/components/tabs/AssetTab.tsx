@@ -346,9 +346,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select('*')
+        .select('*, portfolio:portfolios(name)')
         .eq('asset_id', asset.id)
-        .order('created_at', { ascending: false })
+        .eq('is_active', true)
+        .order('role', { ascending: true }) // primary first, then secondary, then tertiary
       if (error) throw error
       return data
     },
