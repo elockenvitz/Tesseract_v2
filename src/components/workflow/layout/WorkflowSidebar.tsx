@@ -7,8 +7,8 @@
  * Extracted from WorkflowsPage.tsx during Phase 2 refactoring.
  */
 
-import React from 'react'
-import { Plus, Search, Star, ChevronDown, Home } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Plus, Search, Star, ChevronDown, Home, Archive, ArchiveRestore, Copy, Trash2 } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { WorkflowWithStats } from '../../../types/workflow/workflow.types'
 
@@ -39,6 +39,19 @@ export interface WorkflowSidebarProps {
 
   // Actions
   onCreateWorkflow: () => void
+  onArchiveWorkflow?: (workflowId: string) => void
+  onUnarchiveWorkflow?: (workflowId: string) => void
+  onDuplicateWorkflow?: (workflowId: string) => void
+  onDeleteWorkflow?: (workflowId: string) => void
+}
+
+// Context menu state interface
+interface ContextMenuState {
+  isOpen: boolean
+  x: number
+  y: number
+  workflow: WorkflowWithStats | null
+  isArchived: boolean
 }
 
 export function WorkflowSidebar({
@@ -58,8 +71,77 @@ export function WorkflowSidebar({
   setIsCadenceExpanded,
   isArchivedExpanded,
   setIsArchivedExpanded,
-  onCreateWorkflow
+  onCreateWorkflow,
+  onArchiveWorkflow,
+  onUnarchiveWorkflow,
+  onDuplicateWorkflow,
+  onDeleteWorkflow
 }: WorkflowSidebarProps) {
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    workflow: null,
+    isArchived: false
+  })
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu(prev => ({ ...prev, isOpen: false }))
+      }
+    }
+
+    if (contextMenu.isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [contextMenu.isOpen])
+
+  // Handle right-click on workflow
+  const handleContextMenu = (event: React.MouseEvent, workflow: WorkflowWithStats, isArchived: boolean = false) => {
+    event.preventDefault()
+    setContextMenu({
+      isOpen: true,
+      x: event.clientX,
+      y: event.clientY,
+      workflow,
+      isArchived
+    })
+  }
+
+  // Handle context menu actions
+  const handleArchive = () => {
+    if (contextMenu.workflow && onArchiveWorkflow) {
+      onArchiveWorkflow(contextMenu.workflow.id)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
+  const handleUnarchive = () => {
+    if (contextMenu.workflow && onUnarchiveWorkflow) {
+      onUnarchiveWorkflow(contextMenu.workflow.id)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
+  const handleDuplicate = () => {
+    if (contextMenu.workflow && onDuplicateWorkflow) {
+      onDuplicateWorkflow(contextMenu.workflow.id)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
+  const handleDelete = () => {
+    if (contextMenu.workflow && onDeleteWorkflow) {
+      onDeleteWorkflow(contextMenu.workflow.id)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
       {/* Header */}
@@ -163,6 +245,7 @@ export function WorkflowSidebar({
                       <button
                         key={workflow.id}
                         onClick={() => onSelectWorkflow(workflow)}
+                        onContextMenu={(e) => handleContextMenu(e, workflow, false)}
                         className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                           selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
                         }`}
@@ -211,6 +294,7 @@ export function WorkflowSidebar({
                       <button
                         key={workflow.id}
                         onClick={() => onSelectWorkflow(workflow)}
+                        onContextMenu={(e) => handleContextMenu(e, workflow, false)}
                         className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                           selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
                         }`}
@@ -265,6 +349,7 @@ export function WorkflowSidebar({
                       <button
                         key={workflow.id}
                         onClick={() => onSelectWorkflow(workflow)}
+                        onContextMenu={(e) => handleContextMenu(e, workflow, true)}
                         className={`w-full text-left p-3 rounded-lg hover:bg-gray-50 transition-colors ${
                           selectedWorkflow?.id === workflow.id ? 'bg-blue-50' : ''
                         }`}
@@ -288,6 +373,61 @@ export function WorkflowSidebar({
           </>
         )}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu.isOpen && (
+        <div
+          ref={contextMenuRef}
+          className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y
+          }}
+        >
+          {contextMenu.isArchived ? (
+            // Unarchive option for archived workflows
+            <button
+              onClick={handleUnarchive}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+            >
+              <ArchiveRestore className="w-4 h-4" />
+              <span>Restore</span>
+            </button>
+          ) : (
+            // Archive option for active workflows
+            <button
+              onClick={handleArchive}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+            >
+              <Archive className="w-4 h-4" />
+              <span>Archive</span>
+            </button>
+          )}
+
+          {onDuplicateWorkflow && (
+            <button
+              onClick={handleDuplicate}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+            >
+              <Copy className="w-4 h-4" />
+              <span>Duplicate</span>
+            </button>
+          )}
+
+          {onDeleteWorkflow && (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                onClick={handleDelete}
+                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

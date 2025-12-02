@@ -64,6 +64,7 @@ interface WorkflowWithStats {
   is_favorited?: boolean
   stages?: WorkflowStage[]
   user_permission?: 'read' | 'admin'
+  can_archive?: boolean  // Only owners and admin collaborators can archive
   usage_stats?: any[]
   active_version_number?: number
   archived?: boolean
@@ -220,6 +221,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [workflowToPermanentlyDelete, setWorkflowToPermanentlyDelete] = useState<string | null>(null)
   const [showUnarchiveModal, setShowUnarchiveModal] = useState(false)
   const [workflowToUnarchive, setWorkflowToUnarchive] = useState<string | null>(null)
+
+  // Context menu state for workflow right-click
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean
+    x: number
+    y: number
+    workflow: WorkflowWithStats | null
+    isArchived: boolean
+  }>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    workflow: null,
+    isArchived: false
+  })
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+
   const [showDeleteStageModal, setShowDeleteStageModal] = useState(false)
   const [removeAdminConfirm, setRemoveAdminConfirm] = useState<{id: string, name: string} | null>(null)
   const [removeStakeholderConfirm, setRemoveStakeholderConfirm] = useState<{id: string, name: string} | null>(null)
@@ -1369,20 +1387,26 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         // Determine user permission (simplified to admin or read)
         let userPermission: 'read' | 'admin' = 'read'
+        let canArchive = false  // Only owners and admin collaborators can archive
+
         if (workflow.created_by === userId) {
-          // Owner = admin
+          // Owner = admin and can archive
           userPermission = 'admin'
+          canArchive = true
         } else if (collaborationMap.has(workflow.id)) {
           // User is a collaborator - use their permission level (takes precedence over stakeholder)
           const collabPermission = collaborationMap.get(workflow.id)
           // Map write/admin/owner to admin, everything else to read
           userPermission = (collabPermission === 'admin' || collabPermission === 'write' || collabPermission === 'owner') ? 'admin' : 'read'
+          // Only admin collaborators can archive (not write)
+          canArchive = (collabPermission === 'admin' || collabPermission === 'owner')
         } else if (stakeholderWorkflowIds.has(workflow.id)) {
           // User is a stakeholder - read-only access
           userPermission = 'read'
         } else if (workflow.name === 'Research Workflow') {
-          // For Research Workflow, all logged-in users can be admin
+          // For Research Workflow, all logged-in users can be admin but cannot archive
           userPermission = 'admin'
+          canArchive = false
         }
 
         // Get stages for this workflow and sort by sort_order
@@ -1401,6 +1425,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           is_favorited: favoritedWorkflowIds.has(workflow.id),
           stages: workflowStagesData,
           user_permission: userPermission,
+          can_archive: canArchive,
           usage_stats: workflowUsage, // Include detailed usage stats for progress calculation
           active_version_number: activeVersionMap.get(workflow.id) // Add active version number
         }
@@ -1509,10 +1534,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         const creator = workflow.users
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
 
-        // Determine user permission
-        let userPermission: 'read' | 'write' | 'admin' | 'owner' = 'read'
+        // Determine user permission - only owner can restore archived workflows
+        let userPermission: 'read' | 'admin' = 'read'
+        let canArchive = false
         if (workflow.created_by === userId) {
-          userPermission = 'owner'
+          userPermission = 'admin'
+          canArchive = true  // Owner can restore (unarchive)
         }
 
         // Get stages for this archived workflow (stages are preserved)
@@ -1530,6 +1557,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           is_favorited: favoritedWorkflowIds.has(workflow.id),
           stages: workflowStagesData,
           user_permission: userPermission,
+          can_archive: canArchive,
           usage_stats: workflowUsage
         }
       })
@@ -1673,9 +1701,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const archiveWorkflowMutation = useMutation({
     mutationFn: async (workflowId: string) => {
+      console.log('🗄️ Archive mutation started for workflow:', workflowId)
       const { data: { user } } = await supabase.auth.getUser()
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('workflows')
         .update({
           archived: true,
@@ -1683,10 +1712,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           archived_by: user?.id
         })
         .eq('id', workflowId)
+        .select()
 
+      console.log('🗄️ Archive mutation result:', { data, error })
       if (error) throw error
+      return data
     },
-    onSuccess: (_, deletedWorkflowId) => {
+    onSuccess: async (data, deletedWorkflowId) => {
+      console.log('🗄️ Archive mutation onSuccess:', { data, deletedWorkflowId })
       // Find the next workflow to select
       if (workflows && workflows.length > 1) {
         const deletedIndex = workflows.findIndex(w => w.id === deletedWorkflowId)
@@ -1709,7 +1742,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         setSelectedWorkflow(null)
       }
 
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+      // Invalidate both active and archived workflow queries using predicate for reliable matching
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'workflows-archived'
+        }
+      })
+      // Force refetch to ensure UI updates
+      await queryClient.refetchQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'workflows-archived'
+        }
+      })
       setShowDeleteConfirmModal(false)
       setWorkflowToDelete(null)
     },
@@ -1739,9 +1785,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       return { workflowId, isPermanent: false }
     },
     onSuccess: async (result) => {
-      // Invalidate queries to refetch data
-      await queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-      await queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
+      // Invalidate and refetch queries using predicate for reliable matching
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'workflows-archived'
+        }
+      })
+      await queryClient.refetchQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'workflows-archived'
+        }
+      })
 
       // Close the workflow view and clear selection
       setSelectedWorkflow(null)
@@ -1769,9 +1825,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (error) throw error
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-      queryClient.invalidateQueries({ queryKey: ['deleted-workflows'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'deleted-workflows'
+        }
+      })
     },
     onError: (error) => {
       console.error('Error restoring workflow:', error)
@@ -1792,9 +1852,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (error) throw error
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-      queryClient.invalidateQueries({ queryKey: ['workflows-archived'] })
+    onSuccess: async () => {
+      // Invalidate and refetch using predicate for reliable matching
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'workflows-archived'
+        }
+      })
+      await queryClient.refetchQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0]
+          return key === 'workflows-full' || key === 'workflows-archived'
+        }
+      })
       setSelectedWorkflow(null)
       setShowUnarchiveModal(false)
       setWorkflowToUnarchive(null)
@@ -2205,6 +2276,57 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       archiveWorkflowMutation.mutate(workflowId)
     }
   }
+
+  // Context menu handlers for workflow right-click
+  const handleWorkflowContextMenu = (event: React.MouseEvent, workflow: WorkflowWithStats, isArchived: boolean = false) => {
+    event.preventDefault()
+    setContextMenu({
+      isOpen: true,
+      x: event.clientX,
+      y: event.clientY,
+      workflow,
+      isArchived
+    })
+  }
+
+  const handleContextMenuArchive = () => {
+    console.log('🗄️ handleContextMenuArchive called, workflow:', contextMenu.workflow)
+    if (contextMenu.workflow) {
+      console.log('🗄️ Setting workflowToDelete:', contextMenu.workflow.id)
+      setWorkflowToDelete(contextMenu.workflow.id)
+      setShowDeleteConfirmModal(true)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
+  const handleContextMenuUnarchive = () => {
+    if (contextMenu.workflow) {
+      setWorkflowToUnarchive(contextMenu.workflow.id)
+      setShowUnarchiveModal(true)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
+  const handleContextMenuDuplicate = () => {
+    if (contextMenu.workflow) {
+      duplicateWorkflowMutation.mutate(contextMenu.workflow.id)
+    }
+    setContextMenu(prev => ({ ...prev, isOpen: false }))
+  }
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu(prev => ({ ...prev, isOpen: false }))
+      }
+    }
+
+    if (contextMenu.isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [contextMenu.isOpen])
 
   // Mutations for stage management
   const updateStageMutation = useMutation({
@@ -3572,6 +3694,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         <button
                           key={workflow.id}
                           onClick={() => handleSelectWorkflow(workflow)}
+                          onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, false)}
                           className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                             selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
                           }`}
@@ -3620,6 +3743,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         <button
                           key={workflow.id}
                           onClick={() => handleSelectWorkflow(workflow)}
+                          onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, false)}
                           className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                             selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
                           }`}
@@ -3677,6 +3801,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                             // Archived workflows already have full data loaded
                             setSelectedWorkflow(workflow)
                           }}
+                          onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, true)}
                           className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
                             selectedWorkflow?.id === workflow.id ? 'bg-gray-100' : ''
                           }`}
@@ -5345,6 +5470,49 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Workflow Context Menu */}
+      {contextMenu.isOpen && (
+        <div
+          ref={contextMenuRef}
+          className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y
+          }}
+        >
+          {/* Archive/Restore - only show if user can archive (owner or admin collaborator) */}
+          {contextMenu.workflow?.can_archive && (
+            contextMenu.isArchived ? (
+              // Restore option for archived workflows
+              <button
+                onClick={handleContextMenuUnarchive}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Restore</span>
+              </button>
+            ) : (
+              // Archive option for active workflows
+              <button
+                onClick={handleContextMenuArchive}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+              >
+                <Archive className="w-4 h-4" />
+                <span>Archive</span>
+              </button>
+            )
+          )}
+
+          <button
+            onClick={handleContextMenuDuplicate}
+            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+          >
+            <Copy className="w-4 h-4" />
+            <span>Duplicate</span>
+          </button>
         </div>
       )}
     </div>
