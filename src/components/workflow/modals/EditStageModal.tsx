@@ -29,7 +29,25 @@ export function EditStageModal({ stage, onClose, onSave }: EditStageModalProps) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
+
+    // Only include fields that actually changed
+    const updates: Partial<typeof formData> = {}
+    if (formData.stage_label !== stage.stage_label) {
+      updates.stage_label = formData.stage_label
+    }
+    if (formData.stage_description !== stage.stage_description) {
+      updates.stage_description = formData.stage_description
+    }
+    if (formData.standard_deadline_days !== stage.standard_deadline_days) {
+      updates.standard_deadline_days = formData.standard_deadline_days
+    }
+
+    // Only save if there are actual changes
+    if (Object.keys(updates).length > 0) {
+      onSave(updates)
+    } else {
+      onClose()
+    }
   }
 
   return (

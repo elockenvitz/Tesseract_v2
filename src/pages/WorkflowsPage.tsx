@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -35,8 +35,10 @@ import {
   AddAdminModal,
   AccessRequestModal,
   AddRuleModal,
-  EditRuleModal
+  EditRuleModal,
+  AddAssetPopulationRuleModal
 } from '../components/workflow/modals'
+import { CreateWorkflowWizard } from '../components/workflow/CreateWorkflowWizard'
 import { TabStateManager } from '../lib/tabStateManager'
 import { FILTER_TYPE_REGISTRY } from '../lib/universeFilters'
 import { formatVersion } from '../lib/versionUtils'
@@ -159,13 +161,22 @@ function processDynamicSuffix(suffix: string): string {
 
 export function WorkflowsPage({ className = '', tabId = 'workflows' }: WorkflowsPageProps) {
   const { user } = useAuth()
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>('all')
-  const [sortBy, setSortBy] = useState<'name' | 'usage' | 'created' | 'updated'>('usage')
+
+  // Initialize state from sessionStorage for immediate restoration
+  const getInitialState = () => {
+    const savedState = TabStateManager.loadTabState(tabId)
+    return savedState || {}
+  }
+  const initialState = getInitialState()
+
+  const [searchTerm, setSearchTerm] = useState(initialState.searchTerm || '')
+  const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>(initialState.filterBy || 'all')
+  const [sortBy, setSortBy] = useState<'name' | 'usage' | 'created' | 'updated'>(initialState.sortBy || 'usage')
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
-  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'branches' | 'models'>('overview')
+  const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(initialState.selectedWorkflowId || null)
+  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'branches' | 'models'>(initialState.activeView || 'overview')
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
   const [isPersistentExpanded, setIsPersistentExpanded] = useState(true)
   const [isCadenceExpanded, setIsCadenceExpanded] = useState(true)
@@ -212,7 +223,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showAddStakeholderModal, setShowAddStakeholderModal] = useState(false)
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false)
   const [showAddRuleModal, setShowAddRuleModal] = useState(false)
+  const [showAddAssetPopulationRuleModal, setShowAddAssetPopulationRuleModal] = useState(false)
   const [editingRule, setEditingRule] = useState<string | null>(null)
+  const [editingAssetPopulationRule, setEditingAssetPopulationRule] = useState<string | null>(null)
   const [showCreateBranchModal, setShowCreateBranchModal] = useState(false)
   const [preselectedSourceBranch, setPreselectedSourceBranch] = useState<string | null>(null)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
@@ -259,7 +272,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [branchToContinue, setBranchToContinue] = useState<{ id: string, name: string } | null>(null)
   const [branchToArchive, setBranchToArchive] = useState<{ id: string, name: string } | null>(null)
   const [branchToDelete, setBranchToDelete] = useState<{ id: string, name: string } | null>(null)
-  const [branchStatusFilter, setBranchStatusFilter] = useState<'all' | 'archived' | 'deleted'>('all')
+  const [branchStatusFilter, setBranchStatusFilter] = useState<'all' | 'archived' | 'deleted'>(initialState.branchStatusFilter || 'all')
   const [showTemplateVersions, setShowTemplateVersions] = useState(false)
   const [showCreateVersion, setShowCreateVersion] = useState(false)
   const [showVersionCreated, setShowVersionCreated] = useState(false)
@@ -275,6 +288,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     type: 'stage_added' | 'stage_edited' | 'stage_deleted' | 'stage_reordered' | 'checklist_added' | 'checklist_edited' | 'checklist_deleted' | 'rule_added' | 'rule_edited' | 'rule_deleted' | 'cadence_updated' | 'universe_updated' | 'workflow_updated'
     description: string
     timestamp: number
+    elementId: string // Unique identifier for the element being changed (e.g., 'workflow_name', 'stage_123')
   }>>([])
   const [showChangesList, setShowChangesList] = useState(false)
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false)
@@ -292,12 +306,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     color: ''
   })
   const [showInlineWorkflowCreator, setShowInlineWorkflowCreator] = useState(false)
+  const [showCreateWorkflowWizard, setShowCreateWorkflowWizard] = useState(false)
   const [newWorkflowData, setNewWorkflowData] = useState({
     name: '',
     description: '',
     color: '#3b82f6',
     is_public: false,
-    cadence_days: 365
+    cadence_timeframe: 'quarterly' as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
   })
 
   // Universe configuration state - simplified with flexible filters
@@ -312,32 +327,49 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   // Track initial universe rules when entering template edit mode
   const [initialUniverseRules, setInitialUniverseRules] = useState<typeof universeRulesState>([])
 
+  // Track original template values when entering edit mode for undo detection
+  const [originalTemplateValues, setOriginalTemplateValues] = useState<Record<string, any>>({})
+
+  // Draft mode state - track pending changes that haven't been saved to DB yet
+  const [draftChecklistItems, setDraftChecklistItems] = useState<{
+    added: any[]  // New items to be added (with temp IDs)
+    deleted: string[]  // IDs of items to be deleted
+    updated: Record<string, any>  // Updates keyed by item ID
+    reordered: Record<string, { id: string, sort_order: number }[]>  // Reorder by stage
+  }>({ added: [], deleted: [], updated: {}, reordered: {} })
+
+  // Draft mode state for stages
+  const [draftStages, setDraftStages] = useState<{
+    added: WorkflowStage[]  // New stages to be added (with temp IDs)
+    deleted: string[]  // IDs of stages to be deleted
+    updated: Record<string, Partial<WorkflowStage>>  // Updates keyed by stage ID
+    reordered: { id: string, sort_order: number }[]  // Reorder info
+  }>({ added: [], deleted: [], updated: {}, reordered: [] })
+
+  // Draft mode state for workflow metadata (name, description, color)
+  const [draftWorkflowMetadata, setDraftWorkflowMetadata] = useState<{
+    name?: string
+    description?: string
+    color?: string
+  } | null>(null)
+
+  // Draft mode state for cadence
+  const [draftCadence, setDraftCadence] = useState<{
+    cadence_timeframe?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
+    cadence_days?: number
+  } | null>(null)
+
+  // Draft mode state for automation rules
+  const [draftAutomationRules, setDraftAutomationRules] = useState<{
+    added: any[]
+    deleted: string[]
+    updated: Record<string, any>
+  }>({ added: [], deleted: [], updated: {} })
+
   // Track if universe has been initialized to prevent auto-save on load
   const universeInitialized = useRef(false)
 
   const queryClient = useQueryClient()
-
-  // Load saved state on component mount
-  useEffect(() => {
-    const savedState = TabStateManager.loadTabState(tabId)
-    if (savedState) {
-      if (savedState.selectedWorkflowId) {
-        // We'll restore the selected workflow after workflows are loaded
-      }
-      if (savedState.activeView) {
-        setActiveView(savedState.activeView)
-      }
-      if (savedState.searchTerm) {
-        setSearchTerm(savedState.searchTerm)
-      }
-      if (savedState.filterBy) {
-        setFilterBy(savedState.filterBy)
-      }
-      if (savedState.sortBy) {
-        setSortBy(savedState.sortBy)
-      }
-    }
-  }, [tabId])
 
   // Save state whenever key values change
   useEffect(() => {
@@ -346,10 +378,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       activeView,
       searchTerm,
       filterBy,
-      sortBy
+      sortBy,
+      selectedBranchId: selectedBranch?.id || null,
+      branchStatusFilter
     }
     TabStateManager.saveTabState(tabId, state)
-  }, [tabId, selectedWorkflow?.id, activeView, searchTerm, filterBy, sortBy])
+  }, [tabId, selectedWorkflow?.id, activeView, searchTerm, filterBy, sortBy, selectedBranch?.id, branchStatusFilter])
 
   // Parallel queries for better performance - remove dependencies
   const { data: workflowStages } = useQuery({
@@ -794,7 +828,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   })
 
   // Run in parallel instead of waiting for stages
-  const { data: workflowChecklistTemplates } = useQuery({
+  const { data: workflowChecklistTemplates, refetch: refetchChecklistTemplates } = useQuery({
     queryKey: ['workflow-checklist-templates'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -811,9 +845,82 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       return data || []
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 0, // Always refetch when invalidated
     gcTime: 10 * 60 * 1000 // 10 minutes
   })
+
+  // Compute effective checklist items by merging DB data with draft changes
+  const getEffectiveChecklistItems = useCallback(() => {
+    if (!workflowChecklistTemplates || !selectedWorkflow) return []
+
+    // Start with DB items filtered by workflow
+    let items = workflowChecklistTemplates.filter(c => c.workflow_id === selectedWorkflow.id)
+
+    // If not in edit mode, just return DB items
+    if (!isTemplateEditMode) return items
+
+    // Remove deleted items
+    items = items.filter(item => !draftChecklistItems.deleted.includes(item.id))
+
+    // Apply updates
+    items = items.map(item => {
+      const update = draftChecklistItems.updated[item.id]
+      return update ? { ...item, ...update } : item
+    })
+
+    // Apply reordering per stage
+    Object.entries(draftChecklistItems.reordered).forEach(([stageId, reorderInfo]) => {
+      const stageItems = items.filter(item => item.stage_id === stageId)
+      reorderInfo.forEach(({ id, sort_order }) => {
+        const item = stageItems.find(i => i.id === id)
+        if (item) {
+          item.sort_order = sort_order
+        }
+      })
+    })
+
+    // Add new items
+    items = [...items, ...draftChecklistItems.added]
+
+    // Sort by sort_order
+    return items.sort((a, b) => a.sort_order - b.sort_order)
+  }, [workflowChecklistTemplates, selectedWorkflow, isTemplateEditMode, draftChecklistItems])
+
+  // Compute effective stages by merging DB data with draft changes
+  const getEffectiveStages = useCallback((): WorkflowStage[] => {
+    if (!selectedWorkflow?.stages) return []
+
+    // Start with DB stages
+    let stages = [...selectedWorkflow.stages]
+
+    // If not in edit mode, just return DB stages
+    if (!isTemplateEditMode) return stages
+
+    // Remove deleted stages
+    stages = stages.filter(stage => !draftStages.deleted.includes(stage.id))
+
+    // Apply updates
+    stages = stages.map(stage => {
+      const update = draftStages.updated[stage.id]
+      return update ? { ...stage, ...update } : stage
+    })
+
+    // Apply reordering
+    if (draftStages.reordered.length > 0) {
+      draftStages.reordered.forEach(({ id, sort_order }) => {
+        const stage = stages.find(s => s.id === id)
+        if (stage) {
+          stage.sort_order = sort_order
+        }
+      })
+    }
+
+    // Add new stages
+    stages = [...stages, ...draftStages.added]
+
+    // Sort by sort_order
+    return stages.sort((a, b) => a.sort_order - b.sort_order)
+  }, [selectedWorkflow?.stages, isTemplateEditMode, draftStages])
 
   // Query for template versions
   const { data: templateVersions, refetch: refetchVersions } = useQuery({
@@ -1468,10 +1575,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (!userId) return []
 
-      // Get shared archived workflow IDs (as collaborator)
+      // Get shared archived workflow IDs (as collaborator) with permission level
       const { data: sharedArchivedIds } = await supabase
         .from('workflow_collaborations')
-        .select('workflow_id')
+        .select('workflow_id, permission')
         .eq('user_id', userId)
 
       // Get workflow IDs where user is a stakeholder
@@ -1484,6 +1591,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       const stakeholderIds = archivedStakeholderIds?.map(s => s.workflow_id) || []
       const sharedIds = [...new Set([...collaboratorIds, ...stakeholderIds])]
       const sharedFilter = sharedIds.length > 0 ? `,id.in.(${sharedIds.join(',')})` : ''
+
+      // Create a map of workflow_id to collaboration permission for archived workflows
+      const archivedCollaborationMap = new Map(
+        (sharedArchivedIds || []).map(c => [c.workflow_id, c.permission])
+      )
+      const archivedStakeholderSet = new Set(stakeholderIds)
 
       // Get archived workflows that user has access to (owned or shared)
       // Exclude deleted workflows from the archived list
@@ -1534,12 +1647,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         const creator = workflow.users
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
 
-        // Determine user permission - only owner can restore archived workflows
+        // Determine user permission - owner and admin collaborators can restore archived workflows
         let userPermission: 'read' | 'admin' = 'read'
         let canArchive = false
         if (workflow.created_by === userId) {
+          // Owner = admin and can restore
           userPermission = 'admin'
-          canArchive = true  // Owner can restore (unarchive)
+          canArchive = true
+        } else if (archivedCollaborationMap.has(workflow.id)) {
+          // User is a collaborator - use their permission level
+          const collabPermission = archivedCollaborationMap.get(workflow.id)
+          // Map write/admin/owner to admin, everything else to read
+          userPermission = (collabPermission === 'admin' || collabPermission === 'write' || collabPermission === 'owner') ? 'admin' : 'read'
+          // Only admin collaborators can restore (not write)
+          canArchive = (collabPermission === 'admin' || collabPermission === 'owner')
+        } else if (archivedStakeholderSet.has(workflow.id)) {
+          // User is a stakeholder - read-only access
+          userPermission = 'read'
         }
 
         // Get stages for this archived workflow (stages are preserved)
@@ -1566,20 +1690,33 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  // Restore selected workflow when workflows are loaded
+  // Restore selected workflow when workflows are loaded using pendingWorkflowId
   useEffect(() => {
+    if (!pendingWorkflowId) return // No workflow to restore
+    if (selectedWorkflow?.id === pendingWorkflowId) return // Already selected
     if (workflows && workflows.length > 0) {
+      // Check both active and archived workflows
+      const workflowToRestore = workflows.find(w => w.id === pendingWorkflowId) ||
+        archivedWorkflows?.find(w => w.id === pendingWorkflowId)
+      if (workflowToRestore) {
+        setSelectedWorkflow(workflowToRestore)
+        setPendingWorkflowId(null) // Clear pending after restoration
+      }
+    }
+  }, [workflows, archivedWorkflows, pendingWorkflowId, selectedWorkflow?.id])
+
+  // Restore selected branch when branches are loaded
+  useEffect(() => {
+    if (workflowBranches && workflowBranches.length > 0 && !selectedBranch) {
       const savedState = TabStateManager.loadTabState(tabId)
-      if (savedState?.selectedWorkflowId && !selectedWorkflow) {
-        // Check both active and archived workflows
-        const workflowToRestore = workflows.find(w => w.id === savedState.selectedWorkflowId) ||
-          archivedWorkflows?.find(w => w.id === savedState.selectedWorkflowId)
-        if (workflowToRestore) {
-          setSelectedWorkflow(workflowToRestore)
+      if (savedState?.selectedBranchId) {
+        const branchToRestore = workflowBranches.find(b => b.id === savedState.selectedBranchId)
+        if (branchToRestore) {
+          setSelectedBranch(branchToRestore)
         }
       }
     }
-  }, [workflows, archivedWorkflows, tabId, selectedWorkflow])
+  }, [workflowBranches, tabId, selectedBranch])
 
   // Update selectedWorkflow when workflows data changes (to pick up updated stages)
   useEffect(() => {
@@ -1609,15 +1746,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const handleCreateWorkflow = () => {
     setSelectedWorkflow(null) // Clear any selected workflow
-    setShowInlineWorkflowCreator(true)
-    // Reset form data
-    setNewWorkflowData({
-      name: '',
-      description: '',
-      color: '#3b82f6',
-      is_public: false,
-      cadence_days: 365
-    })
+    setShowCreateWorkflowWizard(true) // Show the wizard instead of inline form
   }
 
   const handleEditWorkflow = (workflowId: string) => {
@@ -1704,6 +1833,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       console.log('🗄️ Archive mutation started for workflow:', workflowId)
       const { data: { user } } = await supabase.auth.getUser()
 
+      // First, pause all active branches for this workflow
+      const { error: branchError } = await supabase
+        .from('workflows')
+        .update({ status: 'paused' })
+        .eq('parent_workflow_id', workflowId)
+        .eq('status', 'active')
+
+      if (branchError) {
+        console.error('🗄️ Error pausing branches:', branchError)
+        throw branchError
+      }
+
+      // Then archive the workflow itself
       const { data, error } = await supabase
         .from('workflows')
         .update({
@@ -1742,18 +1884,18 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         setSelectedWorkflow(null)
       }
 
-      // Invalidate both active and archived workflow queries using predicate for reliable matching
+      // Invalidate workflows and branches queries using predicate for reliable matching
       await queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0]
-          return key === 'workflows-full' || key === 'workflows-archived'
+          return key === 'workflows-full' || key === 'workflows-archived' || key === 'workflow-branches'
         }
       })
       // Force refetch to ensure UI updates
       await queryClient.refetchQueries({
         predicate: (query) => {
           const key = query.queryKey[0]
-          return key === 'workflows-full' || key === 'workflows-archived'
+          return key === 'workflows-full' || key === 'workflows-archived' || key === 'workflow-branches'
         }
       })
       setShowDeleteConfirmModal(false)
@@ -2156,61 +2298,394 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     }
   })
 
-  const handleCreateVersion = (versionName: string, versionType: 'major' | 'minor', description: string) => {
+  // Commit draft checklist changes to the database
+  const commitDraftChangesToDB = async () => {
     if (!selectedWorkflow) return
 
-    // First save workflow metadata if it has changed
-    if (editingWorkflowData.name.trim() &&
-        (editingWorkflowData.name !== selectedWorkflow.name ||
-         editingWorkflowData.description !== selectedWorkflow.description ||
-         editingWorkflowData.color !== selectedWorkflow.color)) {
-      updateWorkflowMutation.mutate({
-        workflowId: selectedWorkflow.id,
-        updates: {
-          name: editingWorkflowData.name.trim(),
-          description: editingWorkflowData.description.trim(),
-          color: editingWorkflowData.color
+    const user = await supabase.auth.getUser()
+    const userId = user.data.user?.id
+    if (!userId) throw new Error('Not authenticated')
+
+    // 1. Add new items
+    if (draftChecklistItems.added.length > 0) {
+      const itemsToInsert = draftChecklistItems.added.map(item => ({
+        item_text: item.item_text,
+        item_description: item.item_description,
+        is_required: item.is_required,
+        estimated_hours: item.estimated_hours,
+        tags: item.tags,
+        sort_order: item.sort_order,
+        workflow_id: item.workflow_id,
+        stage_id: item.stage_id,
+        created_by: userId
+      }))
+
+      const { error: insertError } = await supabase
+        .from('workflow_checklist_templates')
+        .insert(itemsToInsert)
+
+      if (insertError) {
+        console.error('Error inserting draft checklist items:', insertError)
+        throw insertError
+      }
+    }
+
+    // 2. Delete items
+    if (draftChecklistItems.deleted.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('workflow_checklist_templates')
+        .delete()
+        .in('id', draftChecklistItems.deleted)
+
+      if (deleteError) {
+        console.error('Error deleting checklist items:', deleteError)
+        throw deleteError
+      }
+    }
+
+    // 3. Apply reordering
+    for (const [stageId, reorderInfo] of Object.entries(draftChecklistItems.reordered)) {
+      const updates = reorderInfo.map(item =>
+        supabase
+          .from('workflow_checklist_templates')
+          .update({ sort_order: item.sort_order })
+          .eq('id', item.id)
+      )
+      const results = await Promise.all(updates)
+      const error = results.find(r => r.error)?.error
+      if (error) {
+        console.error('Error reordering checklist items:', error)
+        throw error
+      }
+    }
+
+    // 4. Apply updates
+    for (const [itemId, updates] of Object.entries(draftChecklistItems.updated)) {
+      const { error } = await supabase
+        .from('workflow_checklist_templates')
+        .update(updates)
+        .eq('id', itemId)
+
+      if (error) {
+        console.error('Error updating checklist item:', error)
+        throw error
+      }
+    }
+
+    // Clear checklist draft state after successful commit
+    setDraftChecklistItems({ added: [], deleted: [], updated: {}, reordered: {} })
+
+    // === STAGE CHANGES ===
+
+    // 5. Add new stages
+    if (draftStages.added.length > 0) {
+      const stagesToInsert = draftStages.added.map(stage => ({
+        workflow_id: selectedWorkflow.id,
+        stage_key: stage.stage_key,
+        stage_label: stage.stage_label,
+        stage_description: stage.stage_description,
+        stage_color: stage.stage_color || '#3b82f6',
+        stage_icon: stage.stage_icon || '',
+        sort_order: stage.sort_order,
+        standard_deadline_days: stage.standard_deadline_days,
+        suggested_priorities: stage.suggested_priorities || []
+      }))
+
+      const { error: stageInsertError } = await supabase
+        .from('workflow_stages')
+        .insert(stagesToInsert)
+
+      if (stageInsertError) {
+        console.error('Error inserting draft stages:', stageInsertError)
+        throw stageInsertError
+      }
+    }
+
+    // 6. Delete stages
+    if (draftStages.deleted.length > 0) {
+      const { error: stageDeleteError } = await supabase
+        .from('workflow_stages')
+        .delete()
+        .in('id', draftStages.deleted)
+
+      if (stageDeleteError) {
+        console.error('Error deleting stages:', stageDeleteError)
+        throw stageDeleteError
+      }
+    }
+
+    // 7. Apply stage reordering
+    if (draftStages.reordered.length > 0) {
+      const stageUpdates = draftStages.reordered.map(item =>
+        supabase
+          .from('workflow_stages')
+          .update({ sort_order: item.sort_order })
+          .eq('id', item.id)
+      )
+      const stageResults = await Promise.all(stageUpdates)
+      const stageError = stageResults.find(r => r.error)?.error
+      if (stageError) {
+        console.error('Error reordering stages:', stageError)
+        throw stageError
+      }
+    }
+
+    // 8. Apply stage updates
+    for (const [stageId, updates] of Object.entries(draftStages.updated)) {
+      const { error } = await supabase
+        .from('workflow_stages')
+        .update(updates)
+        .eq('id', stageId)
+
+      if (error) {
+        console.error('Error updating stage:', error)
+        throw error
+      }
+    }
+
+    // Clear stage draft state after successful commit
+    setDraftStages({ added: [], deleted: [], updated: {}, reordered: [] })
+
+    // === WORKFLOW METADATA CHANGES ===
+
+    // 9. Save workflow metadata (name, description, color) if changed
+    if (draftWorkflowMetadata || editingWorkflowData.name !== selectedWorkflow.name ||
+        editingWorkflowData.description !== selectedWorkflow.description ||
+        editingWorkflowData.color !== selectedWorkflow.color) {
+      const updates: Record<string, any> = {}
+      if (editingWorkflowData.name && editingWorkflowData.name !== selectedWorkflow.name) {
+        updates.name = editingWorkflowData.name.trim()
+      }
+      if (editingWorkflowData.description !== selectedWorkflow.description) {
+        updates.description = editingWorkflowData.description.trim()
+      }
+      if (editingWorkflowData.color && editingWorkflowData.color !== selectedWorkflow.color) {
+        updates.color = editingWorkflowData.color
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const { error: metadataError } = await supabase
+          .from('workflows')
+          .update(updates)
+          .eq('id', selectedWorkflow.id)
+
+        if (metadataError) {
+          console.error('Error updating workflow metadata:', metadataError)
+          throw metadataError
         }
-      })
+      }
     }
 
-    // Save universe rules if there are any changes
-    saveUniverseRules()
+    // Clear workflow metadata draft
+    setDraftWorkflowMetadata(null)
 
-    // Prepare workflow data for major version creation
-    const workflowData = {
-      name: editingWorkflowData.name || selectedWorkflow.name,
-      description: editingWorkflowData.description || selectedWorkflow.description,
-      color: editingWorkflowData.color || selectedWorkflow.color,
-      parent_workflow_id: selectedWorkflow.parent_workflow_id,
-      created_by: selectedWorkflow.created_by,
-      project_id: selectedWorkflow.project_id,
-      stages: selectedWorkflow.stages || [],
-      checklists: workflowChecklistTemplates?.filter(c => c.workflow_id === selectedWorkflow.id) || [],
-      rules: automationRules?.filter(r => r.workflow_id === selectedWorkflow.id) || []
+    // === CADENCE CHANGES ===
+
+    // 10. Save cadence if changed
+    if (draftCadence) {
+      const { error: cadenceError } = await supabase
+        .from('workflows')
+        .update({
+          cadence_timeframe: draftCadence.cadence_timeframe,
+          cadence_days: draftCadence.cadence_days
+        })
+        .eq('id', selectedWorkflow.id)
+
+      if (cadenceError) {
+        console.error('Error updating cadence:', cadenceError)
+        throw cadenceError
+      }
     }
 
-    // Then create the version
-    createVersionMutation.mutate({
-      workflowId: selectedWorkflow.id,
-      versionName,
-      description,
-      versionType,
-      workflowData
-    })
+    // Clear cadence draft
+    setDraftCadence(null)
 
-    // Clear changes and exit edit mode
-    setTemplateChanges([])
-    setIsTemplateEditMode(false)
+    // === AUTOMATION RULES CHANGES ===
+
+    // 11. Add new automation rules
+    if (draftAutomationRules.added.length > 0) {
+      const rulesToInsert = draftAutomationRules.added.map(rule => ({
+        workflow_id: selectedWorkflow.id,
+        rule_name: rule.rule_name,
+        rule_type: rule.rule_type,
+        rule_category: rule.rule_category || 'branch_creation',
+        condition_type: rule.condition_type,
+        condition_value: rule.condition_value,
+        action_type: rule.action_type,
+        action_value: rule.action_value,
+        is_active: rule.is_active ?? true
+      }))
+
+      const { error: ruleInsertError } = await supabase
+        .from('workflow_automation_rules')
+        .insert(rulesToInsert)
+
+      if (ruleInsertError) {
+        console.error('Error inserting draft automation rules:', ruleInsertError)
+        throw ruleInsertError
+      }
+    }
+
+    // 12. Delete automation rules
+    if (draftAutomationRules.deleted.length > 0) {
+      const { error: ruleDeleteError } = await supabase
+        .from('workflow_automation_rules')
+        .delete()
+        .in('id', draftAutomationRules.deleted)
+
+      if (ruleDeleteError) {
+        console.error('Error deleting automation rules:', ruleDeleteError)
+        throw ruleDeleteError
+      }
+    }
+
+    // 13. Update automation rules
+    for (const [ruleId, updates] of Object.entries(draftAutomationRules.updated)) {
+      const updateData: any = {
+        rule_name: updates.rule_name,
+        rule_type: updates.rule_type,
+        condition_type: updates.condition_type,
+        condition_value: updates.condition_value,
+        action_type: updates.action_type,
+        action_value: updates.action_value,
+        is_active: updates.is_active
+      }
+      // Include rule_category if provided
+      if (updates.rule_category) {
+        updateData.rule_category = updates.rule_category
+      }
+
+      const { error } = await supabase
+        .from('workflow_automation_rules')
+        .update(updateData)
+        .eq('id', ruleId)
+
+      if (error) {
+        console.error('Error updating automation rule:', error)
+        throw error
+      }
+    }
+
+    // Clear automation rules draft
+    setDraftAutomationRules({ added: [], deleted: [], updated: {} })
+
+    // Refetch to get fresh data with real IDs
+    await queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+    await queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
+    await queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+    await queryClient.invalidateQueries({ queryKey: ['workflows'] })
   }
 
-  // Helper function to add a change to the tracking list
-  const trackChange = (type: typeof templateChanges[0]['type'], description: string) => {
-    setTemplateChanges(prev => [...prev, {
-      type,
-      description,
-      timestamp: Date.now()
-    }])
+  const handleCreateVersion = async (versionName: string, versionType: 'major' | 'minor', description: string) => {
+    if (!selectedWorkflow) return
+
+    try {
+      // Commit all draft changes to the database (stages, checklists, metadata, cadence)
+      await commitDraftChangesToDB()
+
+      // Save universe rules if there are any changes
+      saveUniverseRules()
+
+      // Prepare workflow data for major version creation
+      // Use effective items which include the just-committed changes
+      const effectiveItems = getEffectiveChecklistItems()
+      const workflowData = {
+        name: editingWorkflowData.name || selectedWorkflow.name,
+        description: editingWorkflowData.description || selectedWorkflow.description,
+        color: editingWorkflowData.color || selectedWorkflow.color,
+        parent_workflow_id: selectedWorkflow.parent_workflow_id,
+        created_by: selectedWorkflow.created_by,
+        project_id: selectedWorkflow.project_id,
+        stages: selectedWorkflow.stages || [],
+        checklists: effectiveItems,
+        rules: automationRules?.filter(r => r.workflow_id === selectedWorkflow.id) || []
+      }
+
+      // Then create the version
+      createVersionMutation.mutate({
+        workflowId: selectedWorkflow.id,
+        versionName,
+        description,
+        versionType,
+        workflowData
+      })
+
+      // Clear changes and exit edit mode
+      setTemplateChanges([])
+      setIsTemplateEditMode(false)
+    } catch (error) {
+      console.error('Error saving changes:', error)
+      alert('Failed to save changes. Please try again.')
+    }
+  }
+
+  // Helper function to add, update, or remove a change in the tracking list
+  // If elementId already exists, updates the existing entry instead of adding a duplicate
+  // If currentValue equals the original value, removes the change (undo detection)
+  // If deleting something that was added in this session, removes both changes (cancel out)
+  const trackChange = (
+    type: typeof templateChanges[0]['type'],
+    description: string,
+    elementId: string,
+    currentValue?: any  // Optional: if provided, will compare against original to detect undo
+  ) => {
+    setTemplateChanges(prev => {
+      // Check if value has been reverted to original (undo detection)
+      const originalValue = originalTemplateValues[elementId]
+      if (currentValue !== undefined && originalValue !== undefined) {
+        // Compare values - if they match, this is an undo, remove the change
+        const valuesMatch = typeof currentValue === 'object'
+          ? JSON.stringify(currentValue) === JSON.stringify(originalValue)
+          : currentValue === originalValue
+
+        if (valuesMatch) {
+          // Remove this change from the list (undo detected)
+          return prev.filter(change => change.elementId !== elementId)
+        }
+      }
+
+      // Handle add/delete cancel-out logic
+      // If we're deleting something that was added in this session, remove both changes
+      if (type.includes('_deleted')) {
+        // Extract the base element ID from the delete elementId (e.g., "stage_deleted_123" -> "stage_123")
+        const baseType = type.replace('_deleted', '')  // e.g., "stage", "checklist", "rule"
+        const idMatch = elementId.match(/deleted_(.+)$/)
+        if (idMatch) {
+          const itemId = idMatch[1]
+          // Look for a corresponding "added" change for this item
+          const addedElementId = `${baseType}_${itemId}`
+          const addedIndex = prev.findIndex(
+            change => change.elementId === addedElementId && change.type.includes('_added')
+          )
+
+          if (addedIndex >= 0) {
+            // Found a matching "added" change - remove it and don't add the delete
+            // This cancels out add + delete = no change
+            return prev.filter((_, idx) => idx !== addedIndex)
+          }
+        }
+      }
+
+      const existingIndex = prev.findIndex(change => change.elementId === elementId)
+      if (existingIndex >= 0) {
+        // Update existing change
+        const updated = [...prev]
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          type,
+          description,
+          timestamp: Date.now()
+        }
+        return updated
+      }
+      // Add new change
+      return [...prev, {
+        type,
+        description,
+        timestamp: Date.now(),
+        elementId
+      }]
+    })
   }
 
   // Detect if changes constitute a major or minor version
@@ -2235,13 +2710,51 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const enterTemplateEditMode = () => {
     setIsTemplateEditMode(true)
     setTemplateChanges([])
-    // Initialize editing workflow data
+    // Reset draft state
+    setDraftChecklistItems({ added: [], deleted: [], updated: {}, reordered: {} })
+    setDraftStages({ added: [], deleted: [], updated: {}, reordered: [] })
+    setDraftWorkflowMetadata(null)
+    setDraftCadence(null)
+    // Initialize editing workflow data and capture original values for undo detection
     if (selectedWorkflow) {
       setEditingWorkflowData({
         name: selectedWorkflow.name,
         description: selectedWorkflow.description,
         color: selectedWorkflow.color
       })
+
+      // Capture original checklist order per stage for undo detection
+      const checklistOrderByStage: Record<string, string[]> = {}
+      if (workflowChecklistTemplates) {
+        const workflowChecklists = workflowChecklistTemplates.filter(c => c.workflow_id === selectedWorkflow.id)
+        // Group by stage_id and capture original order (sorted by sort_order)
+        workflowChecklists.forEach(item => {
+          if (!checklistOrderByStage[item.stage_id]) {
+            checklistOrderByStage[item.stage_id] = []
+          }
+        })
+        // Sort each stage's items by sort_order and store the ID order
+        Object.keys(checklistOrderByStage).forEach(stageId => {
+          const stageItems = workflowChecklists
+            .filter(c => c.stage_id === stageId)
+            .sort((a, b) => a.sort_order - b.sort_order)
+          checklistOrderByStage[stageId] = stageItems.map(item => item.id)
+        })
+      }
+
+      // Store original values for undo detection
+      const originalValues = {
+        workflow_name: selectedWorkflow.name,
+        workflow_description: selectedWorkflow.description,
+        workflow_color: selectedWorkflow.color,
+        workflow_cadence: selectedWorkflow.cadence_timeframe || 'quarterly',
+        // Store original checklist order by stage
+        ...Object.keys(checklistOrderByStage).reduce((acc, stageId) => {
+          acc[`checklist_order_${stageId}`] = checklistOrderByStage[stageId]
+          return acc
+        }, {} as Record<string, string[]>)
+      }
+      setOriginalTemplateValues(originalValues)
     }
     // Capture initial universe rules state for comparison
     setInitialUniverseRules(JSON.parse(JSON.stringify(universeRulesState)))
@@ -2252,8 +2765,22 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     // Now handled by ConfirmDialog modal
     setIsTemplateEditMode(false)
     setTemplateChanges([])
+    // Clear draft state - this discards all uncommitted changes
+    setDraftChecklistItems({ added: [], deleted: [], updated: {}, reordered: {} })
+    setDraftStages({ added: [], deleted: [], updated: {}, reordered: [] })
+    setDraftWorkflowMetadata(null)
+    setDraftCadence(null)
+    setDraftAutomationRules({ added: [], deleted: [], updated: {} })
     // Reset universe rules to initial state
     setUniverseRulesState(initialUniverseRules)
+    // Reset editing workflow data to original values
+    if (selectedWorkflow) {
+      setEditingWorkflowData({
+        name: selectedWorkflow.name,
+        description: selectedWorkflow.description,
+        color: selectedWorkflow.color
+      })
+    }
     // Refetch data to reset any optimistic updates
     queryClient.invalidateQueries({ queryKey: ['workflows'] })
     queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
@@ -2341,6 +2868,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       return { stageId, updates }
     },
     onSuccess: (result) => {
+      // Get the original stage before updating
+      const originalStage = selectedWorkflow?.stages?.find(s => s.id === result.stageId)
+
       // Update the selected workflow optimistically
       if (selectedWorkflow) {
         setSelectedWorkflow({
@@ -2352,17 +2882,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           ) || []
         })
       }
-      const stageName = selectedWorkflow?.stages?.find(s => s.id === result.stageId)?.name || result.updates.name || 'Stage'
+      const stageName = originalStage?.stage_label || result.updates.stage_label || 'Stage'
 
       // Build detailed description of what changed
       const changes: string[] = []
-      if (result.updates.name) changes.push('name')
-      if (result.updates.stage_description) changes.push('description')
-      if (result.updates.stage_color) changes.push('color')
-      if (result.updates.standard_deadline_days !== undefined) changes.push('deadline')
+      if (result.updates.stage_label) {
+        changes.push(`name: "${originalStage?.stage_label}" → "${result.updates.stage_label}"`)
+      }
+      if (result.updates.stage_description !== undefined) {
+        changes.push('description updated')
+      }
+      if (result.updates.stage_color) {
+        changes.push(`color → ${result.updates.stage_color}`)
+      }
+      if (result.updates.standard_deadline_days !== undefined) {
+        changes.push(`deadline: ${originalStage?.standard_deadline_days} → ${result.updates.standard_deadline_days} days`)
+      }
 
-      const changesText = changes.length > 0 ? ` (${changes.join(', ')})` : ''
-      trackChange('stage_edited', `Edited "${stageName}" stage${changesText}`)
+      const changesText = changes.length > 0 ? `: ${changes.join(', ')}` : ''
+      trackChange('stage_edited', `Stage "${stageName}"${changesText}`, `stage_${result.stageId}`)
     },
     onError: (error) => {
       console.error('Error updating stage:', error)
@@ -2397,7 +2935,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           ...selectedWorkflow,
           stages: [...(selectedWorkflow.stages || []), newStage]
         })
-        trackChange('stage_added', `Added new stage: ${newStage.name}`)
+        trackChange('stage_added', `Stage Added: "${newStage.name}"`, `stage_${newStage.id}`)
       }
 
       // Only invalidate the specific workflow query, not all workflows
@@ -2439,7 +2977,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           stages: selectedWorkflow.stages?.filter(s => s.id !== result.stageId) || []
         })
         if (deletedStage) {
-          trackChange('stage_deleted', `Deleted stage: ${deletedStage.name}`)
+          trackChange('stage_deleted', `Stage Deleted: "${deletedStage.name}"`, `stage_deleted_${result.stageId}`)
         }
       }
 
@@ -2485,9 +3023,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       // Create detailed change description
       if (result.movedStageName && result.direction) {
-        trackChange('stage_reordered', `Moved "${result.movedStageName}" stage ${result.direction}`)
+        trackChange('stage_reordered', `Stage Order: moved "${result.movedStageName}" ${result.direction}`, 'stage_order')
       } else {
-        trackChange('stage_reordered', 'Reordered workflow stages')
+        trackChange('stage_reordered', 'Stage Order: reordered workflow stages', 'stage_order')
       }
     },
     onError: (error) => {
@@ -2509,16 +3047,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+      queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
       const itemName = result.updates.name || 'checklist item'
 
       // Build detailed description of what changed
       const changes: string[] = []
-      if (result.updates.name) changes.push('name')
-      if (result.updates.description) changes.push('description')
-      if (result.updates.item_type) changes.push('type')
+      if (result.updates.name) changes.push(`name → "${result.updates.name}"`)
+      if (result.updates.description) changes.push('description updated')
+      if (result.updates.item_type) changes.push(`type → ${result.updates.item_type}`)
 
-      const changesText = changes.length > 0 ? ` (${changes.join(', ')})` : ''
-      trackChange('checklist_edited', `Edited "${itemName}"${changesText}`)
+      const changesText = changes.length > 0 ? `: ${changes.join(', ')}` : ''
+      trackChange('checklist_edited', `Checklist Item "${itemName}"${changesText}`, `checklist_${result.itemId}`)
     },
     onError: (error) => {
       console.error('Error updating checklist item:', error)
@@ -2533,7 +3072,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (!userId) throw new Error('Not authenticated')
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('workflow_checklist_templates')
         .insert({
           ...item,
@@ -2541,14 +3080,30 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           stage_id: stageId,
           created_by: userId
         })
+        .select()
 
       if (error) throw error
-      return { item }
+      return { item: data?.[0] || item, stageId }
     },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+      await queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
       setShowAddChecklistItem(null)
-      trackChange('checklist_added', `Added checklist item: ${result.item.name}`)
+      // Find the stage name for a better description
+      const stage = selectedWorkflow?.stages?.find(s => s.stage_key === result.stageId || s.id === result.stageId)
+      const stageName = stage?.stage_label || result.stageId || 'Unknown Stage'
+      const itemName = result.item.item_text || result.item.name || 'Checklist Item'
+      trackChange('checklist_added', `Checklist Item Added: "${itemName}" to "${stageName}"`, `checklist_${result.item.id || result.stageId}_${Date.now()}`)
+
+      // Update original checklist order to include the new item (for undo detection on reorder)
+      if (result.item?.id && result.stageId) {
+        const orderKey = `checklist_order_${result.stageId}`
+        const currentOrder = originalTemplateValues[orderKey] || []
+        setOriginalTemplateValues(prev => ({
+          ...prev,
+          [orderKey]: [...currentOrder, result.item.id]
+        }))
+      }
     },
     onError: (error) => {
       console.error('Error adding checklist item:', error)
@@ -2558,17 +3113,38 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const deleteChecklistItemMutation = useMutation({
     mutationFn: async (itemId: string) => {
+      // First get the item text and stage_id for the change description and undo tracking
+      const { data: itemData } = await supabase
+        .from('workflow_checklist_templates')
+        .select('item_text, stage_id')
+        .eq('id', itemId)
+        .single()
+
       const { error } = await supabase
         .from('workflow_checklist_templates')
         .delete()
         .eq('id', itemId)
 
       if (error) throw error
-      return { itemId }
+      return { itemId, itemName: itemData?.item_text || 'Checklist Item', stageId: itemData?.stage_id }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
-      trackChange('checklist_deleted', 'Deleted checklist item')
+      queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
+      // Find the stage name for a better description
+      const stage = selectedWorkflow?.stages?.find(s => s.stage_key === result.stageId || s.id === result.stageId)
+      const stageName = stage?.stage_label || result.stageId || 'Unknown Stage'
+      trackChange('checklist_deleted', `Checklist Item Deleted: "${result.itemName}" from "${stageName}"`, `checklist_deleted_${result.itemId}`)
+
+      // Update original checklist order to remove the deleted item (for undo detection on reorder)
+      if (result.stageId) {
+        const orderKey = `checklist_order_${result.stageId}`
+        const currentOrder = originalTemplateValues[orderKey] || []
+        setOriginalTemplateValues(prev => ({
+          ...prev,
+          [orderKey]: currentOrder.filter((id: string) => id !== result.itemId)
+        }))
+      }
     },
     onError: (error) => {
       console.error('Error deleting checklist item:', error)
@@ -2577,22 +3153,368 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   })
 
   const reorderChecklistItemsMutation = useMutation({
-    mutationFn: async ({ items }: { items: { id: string, sort_order: number }[] }) => {
-      const { error } = await supabase
-        .from('workflow_checklist_templates')
-        .upsert(items, { onConflict: 'id' })
+    mutationFn: async ({ items, stageId }: { items: { id: string, sort_order: number }[], stageId?: string }) => {
+      // Update each item's sort_order individually
+      const updates = items.map(item =>
+        supabase
+          .from('workflow_checklist_templates')
+          .update({ sort_order: item.sort_order })
+          .eq('id', item.id)
+      )
+
+      const results = await Promise.all(updates)
+      const error = results.find(r => r.error)?.error
 
       if (error) throw error
+      // Return the new order of item IDs (sorted by sort_order)
+      const newOrder = [...items].sort((a, b) => a.sort_order - b.sort_order).map(i => i.id)
+      return { stageId, newOrder }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
-      trackChange('checklist_edited', 'Reordered checklist items')
+      queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
+      // Track change with current order for undo detection
+      const elementId = `checklist_order_${result?.stageId || 'global'}`
+      // Find the stage name for a better description
+      const stage = selectedWorkflow?.stages?.find(s => s.stage_key === result?.stageId || s.id === result?.stageId)
+      const stageName = stage?.stage_label || result?.stageId || 'Unknown Stage'
+      trackChange('checklist_edited', `Checklist Reordered: "${stageName}" stage items`, elementId, result.newOrder)
     },
     onError: (error) => {
       console.error('Error reordering checklist items:', error)
       alert('Failed to reorder checklist items. Please try again.')
     }
   })
+
+  // Draft mode handlers - these update local state instead of DB when in edit mode
+  const handleAddChecklistItemDraft = useCallback(({ workflowId, stageId, item }: { workflowId: string, stageId: string, item: any }) => {
+    // Generate a temporary ID for the new item
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+
+    // Get existing items to calculate sort_order
+    const effectiveItems = getEffectiveChecklistItems()
+    const stageItems = effectiveItems.filter(i => i.stage_id === stageId)
+    const maxOrder = stageItems.reduce((max, i) => Math.max(max, i.sort_order || 0), 0)
+
+    const newItem = {
+      ...item,
+      id: tempId,
+      workflow_id: workflowId,
+      stage_id: stageId,
+      sort_order: maxOrder + 1,
+      created_at: new Date().toISOString()
+    }
+
+    setDraftChecklistItems(prev => ({
+      ...prev,
+      added: [...prev.added, newItem]
+    }))
+
+    setShowAddChecklistItem(null)
+
+    // Track the change
+    const stage = selectedWorkflow?.stages?.find(s => s.stage_key === stageId || s.id === stageId)
+    const stageName = stage?.stage_label || stageId || 'Unknown Stage'
+    const itemName = item.item_text || item.name || 'Checklist Item'
+    trackChange('checklist_added', `Checklist Item Added: "${itemName}" to "${stageName}"`, `checklist_${tempId}`)
+  }, [getEffectiveChecklistItems, selectedWorkflow, trackChange])
+
+  const handleDeleteChecklistItemDraft = useCallback((itemId: string) => {
+    // Check if this is a draft item (temp ID)
+    const isDraftItem = itemId.startsWith('temp_')
+
+    if (isDraftItem) {
+      // Remove from added list - this was never saved
+      const draftItem = draftChecklistItems.added.find(i => i.id === itemId)
+      setDraftChecklistItems(prev => ({
+        ...prev,
+        added: prev.added.filter(i => i.id !== itemId)
+      }))
+
+      // Remove the add change since we're deleting a draft item
+      setTemplateChanges(prev => prev.filter(c => c.elementId !== `checklist_${itemId}`))
+    } else {
+      // Mark existing DB item for deletion
+      // First get the item info from effective items for the change description
+      const effectiveItems = getEffectiveChecklistItems()
+      const item = effectiveItems.find(i => i.id === itemId)
+      const itemName = item?.item_text || 'Checklist Item'
+      const stageId = item?.stage_id
+
+      setDraftChecklistItems(prev => ({
+        ...prev,
+        deleted: [...prev.deleted, itemId]
+      }))
+
+      // Track the change
+      const stage = selectedWorkflow?.stages?.find(s => s.stage_key === stageId || s.id === stageId)
+      const stageName = stage?.stage_label || stageId || 'Unknown Stage'
+      trackChange('checklist_deleted', `Checklist Item Deleted: "${itemName}" from "${stageName}"`, `checklist_deleted_${itemId}`)
+    }
+  }, [draftChecklistItems.added, getEffectiveChecklistItems, selectedWorkflow, trackChange])
+
+  const handleReorderChecklistItemsDraft = useCallback(({ items, stageId }: { items: { id: string, sort_order: number }[], stageId?: string }) => {
+    if (!stageId) return
+
+    // Update draft reordering state
+    setDraftChecklistItems(prev => ({
+      ...prev,
+      reordered: {
+        ...prev.reordered,
+        [stageId]: items
+      }
+    }))
+
+    // Track change with current order for undo detection
+    const elementId = `checklist_order_${stageId}`
+    const newOrder = [...items].sort((a, b) => a.sort_order - b.sort_order).map(i => i.id)
+    const stage = selectedWorkflow?.stages?.find(s => s.stage_key === stageId || s.id === stageId)
+    const stageName = stage?.stage_label || stageId || 'Unknown Stage'
+    trackChange('checklist_edited', `Checklist Reordered: "${stageName}" stage items`, elementId, newOrder)
+  }, [selectedWorkflow, trackChange])
+
+  // Draft mode handlers for stages
+  const handleAddStageDraft = useCallback((stageData: Omit<WorkflowStage, 'id' | 'created_at' | 'updated_at'>) => {
+    // Generate a temporary ID for the new stage
+    const tempId = `temp_stage_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+
+    // Get existing stages to calculate sort_order
+    const effectiveStages = getEffectiveStages()
+    const maxOrder = effectiveStages.reduce((max, s) => Math.max(max, s.sort_order || 0), 0)
+
+    const newStage: WorkflowStage = {
+      ...stageData,
+      id: tempId,
+      sort_order: maxOrder + 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as WorkflowStage
+
+    setDraftStages(prev => ({
+      ...prev,
+      added: [...prev.added, newStage]
+    }))
+
+    setShowAddStage(false)
+
+    // Track the change
+    const stageName = stageData.stage_label || 'New Stage'
+    trackChange('stage_added', `Stage Added: "${stageName}"`, `stage_${tempId}`)
+  }, [getEffectiveStages, trackChange])
+
+  const handleUpdateStageDraft = useCallback((stageId: string, updates: Partial<WorkflowStage>) => {
+    // Check if this is a draft stage (temp ID)
+    const isDraftStage = stageId.startsWith('temp_stage_')
+
+    // Get the original stage for change description
+    const effectiveStages = getEffectiveStages()
+    const originalStage = effectiveStages.find(s => s.id === stageId)
+    const stageName = originalStage?.stage_label || updates.stage_label || 'Stage'
+
+    if (isDraftStage) {
+      // Update the draft stage directly in the added array
+      setDraftStages(prev => ({
+        ...prev,
+        added: prev.added.map(stage =>
+          stage.id === stageId ? { ...stage, ...updates } : stage
+        )
+      }))
+    } else {
+      // Merge with existing updates for this stage
+      setDraftStages(prev => ({
+        ...prev,
+        updated: {
+          ...prev.updated,
+          [stageId]: { ...prev.updated[stageId], ...updates }
+        }
+      }))
+    }
+
+    // Build change description - keep it simple
+    const changes: string[] = []
+    if (updates.stage_label && updates.stage_label !== originalStage?.stage_label) {
+      changes.push(`Renamed "${originalStage?.stage_label}" → "${updates.stage_label}"`)
+    }
+    if (updates.stage_description !== undefined && updates.stage_description !== originalStage?.stage_description) {
+      changes.push(`Updated "${stageName}" description`)
+    }
+    if (updates.standard_deadline_days !== undefined && updates.standard_deadline_days !== originalStage?.standard_deadline_days) {
+      changes.push(`Changed "${stageName}" deadline to ${updates.standard_deadline_days} days`)
+    }
+
+    // Each change gets its own entry for clarity
+    changes.forEach(change => {
+      trackChange('stage_edited', change, `stage_${stageId}_${Date.now()}`)
+    })
+  }, [getEffectiveStages, trackChange])
+
+  const handleDeleteStageDraft = useCallback((stageId: string) => {
+    // Check if this is a draft stage (temp ID)
+    const isDraftStage = stageId.startsWith('temp_stage_')
+
+    // Get the stage for change description
+    const effectiveStages = getEffectiveStages()
+    const stage = effectiveStages.find(s => s.id === stageId)
+    const stageName = stage?.stage_label || 'Stage'
+
+    if (isDraftStage) {
+      // Remove from added list - this was never saved
+      setDraftStages(prev => ({
+        ...prev,
+        added: prev.added.filter(s => s.id !== stageId)
+      }))
+
+      // Remove the add change since we're deleting a draft stage
+      setTemplateChanges(prev => prev.filter(c => c.elementId !== `stage_${stageId}`))
+    } else {
+      // Mark existing DB stage for deletion
+      setDraftStages(prev => ({
+        ...prev,
+        deleted: [...prev.deleted, stageId]
+      }))
+
+      // Track the change
+      trackChange('stage_deleted', `Stage Deleted: "${stageName}"`, `stage_deleted_${stageId}`)
+    }
+  }, [getEffectiveStages, trackChange])
+
+  const handleReorderStagesDraft = useCallback((reorderInfo: { id: string, sort_order: number }[]) => {
+    setDraftStages(prev => ({
+      ...prev,
+      reordered: reorderInfo
+    }))
+
+    // Track change
+    trackChange('stage_edited', 'Stages Reordered', 'stage_order')
+  }, [trackChange])
+
+  // === AUTOMATION RULES DRAFT HANDLERS ===
+
+  // Get effective automation rules (DB rules + draft changes)
+  const getEffectiveAutomationRules = useCallback(() => {
+    if (!selectedWorkflow) return []
+    const workflowRules = automationRules?.filter(r => r.workflow_id === selectedWorkflow.id) || []
+
+    if (!isTemplateEditMode) return workflowRules
+
+    // Filter out deleted rules
+    let rules = workflowRules.filter(rule => !draftAutomationRules.deleted.includes(rule.id))
+
+    // Apply updates to existing rules
+    rules = rules.map(rule => {
+      const update = draftAutomationRules.updated[rule.id]
+      return update ? { ...rule, ...update } : rule
+    })
+
+    // Add new draft rules
+    rules = [...rules, ...draftAutomationRules.added]
+
+    return rules
+  }, [selectedWorkflow, automationRules, isTemplateEditMode, draftAutomationRules])
+
+  const handleAddRuleDraft = useCallback((ruleData: any) => {
+    const tempId = `temp_rule_${Date.now()}`
+
+    const newRule = {
+      id: tempId,
+      workflow_id: selectedWorkflow?.id,
+      rule_name: ruleData.name,
+      rule_type: ruleData.type,
+      rule_category: ruleData.rule_category || 'branch_creation',
+      condition_type: ruleData.conditionType,
+      condition_value: ruleData.conditionValue,
+      action_type: ruleData.actionType,
+      action_value: ruleData.actionValue,
+      is_active: ruleData.isActive ?? true,
+      created_at: new Date().toISOString()
+    }
+
+    setDraftAutomationRules(prev => ({
+      ...prev,
+      added: [...prev.added, newRule]
+    }))
+
+    // Close the appropriate modal based on rule category
+    setShowAddRuleModal(false)
+    setShowAddAssetPopulationRuleModal(false)
+
+    const ruleTypeLabel = ruleData.rule_category === 'asset_population' ? 'asset population rule' : 'branch creation rule'
+    trackChange('rule_added', `Added ${ruleTypeLabel} "${ruleData.name}"`, `rule_${tempId}`)
+  }, [selectedWorkflow, trackChange])
+
+  const handleUpdateRuleDraft = useCallback((ruleId: string, updates: any) => {
+    const isDraftRule = ruleId.startsWith('temp_rule_')
+    const effectiveRules = getEffectiveAutomationRules()
+    const originalRule = effectiveRules.find(r => r.id === ruleId)
+    const ruleName = originalRule?.rule_name || updates.name || 'Rule'
+
+    if (isDraftRule) {
+      // Update the draft rule directly in the added array
+      setDraftAutomationRules(prev => ({
+        ...prev,
+        added: prev.added.map(rule =>
+          rule.id === ruleId ? {
+            ...rule,
+            rule_name: updates.name,
+            rule_type: updates.type,
+            rule_category: updates.rule_category || rule.rule_category,
+            condition_type: updates.conditionType,
+            condition_value: updates.conditionValue,
+            action_type: updates.actionType,
+            action_value: updates.actionValue,
+            is_active: updates.isActive
+          } : rule
+        )
+      }))
+    } else {
+      // Merge with existing updates for this rule
+      setDraftAutomationRules(prev => ({
+        ...prev,
+        updated: {
+          ...prev.updated,
+          [ruleId]: {
+            ...prev.updated[ruleId],
+            rule_name: updates.name,
+            rule_type: updates.type,
+            rule_category: updates.rule_category,
+            condition_type: updates.conditionType,
+            condition_value: updates.conditionValue,
+            action_type: updates.actionType,
+            action_value: updates.actionValue,
+            is_active: updates.isActive
+          }
+        }
+      }))
+    }
+
+    // Close both editing states
+    setEditingRule(null)
+    setEditingAssetPopulationRule(null)
+    trackChange('rule_edited', `Updated rule "${ruleName}"`, `rule_${ruleId}`)
+  }, [getEffectiveAutomationRules, trackChange])
+
+  const handleDeleteRuleDraft = useCallback((ruleId: string) => {
+    const isDraftRule = ruleId.startsWith('temp_rule_')
+    const effectiveRules = getEffectiveAutomationRules()
+    const rule = effectiveRules.find(r => r.id === ruleId)
+    const ruleName = rule?.rule_name || 'Rule'
+
+    if (isDraftRule) {
+      // Remove from added array
+      setDraftAutomationRules(prev => ({
+        ...prev,
+        added: prev.added.filter(r => r.id !== ruleId)
+      }))
+    } else {
+      // Add to deleted array
+      setDraftAutomationRules(prev => ({
+        ...prev,
+        deleted: [...prev.deleted, ruleId]
+      }))
+    }
+
+    trackChange('rule_deleted', `Deleted rule "${ruleName}"`, `rule_deleted_${ruleId}`)
+  }, [getEffectiveAutomationRules, trackChange])
 
   // Mutations for automation rules management
   const addRuleMutation = useMutation({
@@ -2603,6 +3525,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflow_id: workflowId,
           rule_name: rule.name,
           rule_type: rule.type,
+          rule_category: rule.rule_category || 'branch_creation',
           condition_type: rule.conditionType,
           condition_value: rule.conditionValue,
           action_type: rule.actionType,
@@ -2621,7 +3544,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setShowAddRuleModal(false)
-      trackChange('rule_added', `Added automation rule: ${data.rule_name}`)
+      setShowAddAssetPopulationRuleModal(false)
+      const ruleTypeLabel = data.rule_category === 'asset_population' ? 'Asset Population Rule' : 'Branch Creation Rule'
+      trackChange('rule_added', `${ruleTypeLabel} Added: "${data.rule_name}"`, `rule_${data.id}`)
     },
     onError: (error: any) => {
       console.error('Error adding automation rule:', error)
@@ -2631,17 +3556,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   const updateRuleMutation = useMutation({
     mutationFn: async ({ ruleId, updates }: { ruleId: string, updates: any }) => {
+      const updateData: any = {
+        rule_name: updates.name,
+        rule_type: updates.type,
+        condition_type: updates.conditionType,
+        condition_value: updates.conditionValue,
+        action_type: updates.actionType,
+        action_value: updates.actionValue,
+        is_active: updates.isActive
+      }
+      // Only update rule_category if provided
+      if (updates.rule_category) {
+        updateData.rule_category = updates.rule_category
+      }
+
       const { data, error } = await supabase
         .from('workflow_automation_rules')
-        .update({
-          rule_name: updates.name,
-          rule_type: updates.type,
-          condition_type: updates.conditionType,
-          condition_value: updates.conditionValue,
-          action_type: updates.actionType,
-          action_value: updates.actionValue,
-          is_active: updates.isActive
-        })
+        .update(updateData)
         .eq('id', ruleId)
         .select()
         .single()
@@ -2652,7 +3583,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setEditingRule(null)
-      trackChange('rule_edited', `Edited automation rule: ${data.rule_name}`)
+      setEditingAssetPopulationRule(null)
+      trackChange('rule_edited', `Automation Rule "${data.rule_name}": updated`, `rule_${data.id}`)
     },
     onError: (error) => {
       console.error('Error updating automation rule:', error)
@@ -2997,11 +3929,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setShowDeleteRuleModal(false)
       setRuleToDelete(null)
-      if (data && data.length > 0 && data[0].rule_name) {
-        trackChange('rule_deleted', `Deleted automation rule: ${data[0].rule_name}`)
-      } else {
-        trackChange('rule_deleted', 'Deleted automation rule')
-      }
+      const ruleId = data?.[0]?.id || 'unknown'
+      const ruleName = data?.[0]?.rule_name || 'automation rule'
+      trackChange('rule_deleted', `Automation Rule Deleted: "${ruleName}"`, `rule_deleted_${ruleId}`)
     },
     onError: (error) => {
       console.error('❌ Error deleting automation rule:', error)
@@ -3130,7 +4060,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     onSuccess: (rules) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', selectedWorkflow?.id] })
       // Auto-save: silent success
-      trackChange('universe_updated', `Updated universe rules (${rules.length} rule${rules.length !== 1 ? 's' : ''})`)
+      trackChange('universe_updated', `Universe Rules: ${rules.length} rule${rules.length !== 1 ? 's' : ''} configured`, 'universe_rules')
     },
     onError: (error) => {
       console.error('Error saving universe configuration:', error)
@@ -3275,12 +4205,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       description: string
       color: string
       is_public: boolean
-      cadence_days: number
+      cadence_timeframe: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
     }) => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
 
       if (!userId) throw new Error('Not authenticated')
+
+      // Map timeframe to days
+      const daysMap = {
+        'daily': 1,
+        'weekly': 7,
+        'monthly': 30,
+        'quarterly': 90,
+        'semi-annually': 180,
+        'annually': 365,
+        'persistent': 0
+      }
 
       const { data, error } = await supabase
         .from('workflows')
@@ -3289,7 +4230,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           description: workflowData.description,
           color: workflowData.color,
           is_public: workflowData.is_public,
-          cadence_days: workflowData.cadence_days,
+          cadence_timeframe: workflowData.cadence_timeframe,
+          cadence_days: daysMap[workflowData.cadence_timeframe],
           created_by: userId
         }])
         .select()
@@ -3341,7 +4283,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         description: '',
         color: '#3b82f6',
         is_public: false,
-        cadence_days: 365
+        cadence_timeframe: 'quarterly'
       })
     },
     onError: (error) => {
@@ -3500,7 +4442,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       description: '',
       color: '#3b82f6',
       is_public: false,
-      cadence_days: 365
+      cadence_timeframe: 'quarterly'
     })
   }
 
@@ -3901,17 +4843,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Cadence (Days)
+                              Cadence Category
                             </label>
-                            <input
-                              type="number"
-                              min="1"
-                              max="1095"
-                              value={newWorkflowData.cadence_days}
-                              onChange={(e) => setNewWorkflowData({ ...newWorkflowData, cadence_days: parseInt(e.target.value) || 365 })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="How often to restart workflow"
-                            />
+                            <select
+                              value={newWorkflowData.cadence_timeframe}
+                              onChange={(e) => setNewWorkflowData({ ...newWorkflowData, cadence_timeframe: e.target.value as typeof newWorkflowData.cadence_timeframe })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            >
+                              <option value="persistent">Persistent (No Reset)</option>
+                              <option value="daily">Daily</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="monthly">Monthly</option>
+                              <option value="quarterly">Quarterly</option>
+                              <option value="semi-annually">Semi-Annually</option>
+                              <option value="annually">Annually</option>
+                            </select>
                           </div>
                         </div>
                       </div>
@@ -3961,12 +4907,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                               <button
                                 key={color}
                                 onClick={() => {
-                                  const oldColor = editingWorkflowData.color
+                                  const originalColor = originalTemplateValues.workflow_color
                                   setEditingWorkflowData(prev => ({ ...prev, color }))
                                   setShowColorPicker(false)
-                                  if (selectedWorkflow && color !== oldColor) {
-                                    trackChange('workflow_updated', `Changed workflow color`)
-                                  }
+                                  // Track change with current value for undo detection
+                                  trackChange(
+                                    'workflow_updated',
+                                    `Workflow Color: "${originalColor}" → "${color}"`,
+                                    'workflow_color',
+                                    color
+                                  )
                                 }}
                                 className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
                                   editingWorkflowData.color === color ? 'border-gray-900 ring-2 ring-offset-2 ring-gray-900' : 'border-gray-300 hover:border-gray-400'
@@ -3988,9 +4938,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           value={editingWorkflowData.name}
                           onChange={(e) => setEditingWorkflowData(prev => ({ ...prev, name: e.target.value }))}
                           onBlur={(e) => {
-                            if (selectedWorkflow && e.target.value.trim() !== selectedWorkflow.name) {
-                              trackChange('workflow_updated', `Changed workflow name from "${selectedWorkflow.name}" to "${e.target.value.trim()}"`)
-                            }
+                            const newName = e.target.value.trim()
+                            const originalName = originalTemplateValues.workflow_name
+                            // Track change with current value for undo detection
+                            trackChange(
+                              'workflow_updated',
+                              `Workflow Name: "${originalName}" → "${newName}"`,
+                              'workflow_name',
+                              newName
+                            )
                           }}
                           className="block px-2 py-0.5 text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mb-1"
                           placeholder="Workflow name"
@@ -4001,9 +4957,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                           value={editingWorkflowData.description}
                           onChange={(e) => setEditingWorkflowData(prev => ({ ...prev, description: e.target.value }))}
                           onBlur={(e) => {
-                            if (selectedWorkflow && e.target.value.trim() !== selectedWorkflow.description) {
-                              trackChange('workflow_updated', `Changed workflow description`)
-                            }
+                            const newDesc = e.target.value.trim()
+                            const originalDesc = originalTemplateValues.workflow_description
+                            const displayOriginal = originalDesc && originalDesc.length > 30 ? originalDesc.substring(0, 30) + '...' : originalDesc
+                            const displayNew = newDesc.length > 30 ? newDesc.substring(0, 30) + '...' : newDesc
+                            // Track change with current value for undo detection
+                            trackChange(
+                              'workflow_updated',
+                              `Workflow Description: "${displayOriginal}" → "${displayNew}"`,
+                              'workflow_description',
+                              newDesc
+                            )
                           }}
                           className="block px-2 py-0.5 text-sm text-gray-600 bg-white border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                           placeholder="Description"
@@ -4026,28 +4990,52 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
                           {/* Changes Dropdown */}
                           {showChangesList && templateChanges.length > 0 && (
-                            <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                            <div className="absolute right-0 mt-2 w-[420px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
                               <div className="p-3 border-b border-gray-200 bg-gray-50">
-                                <h3 className="text-sm font-semibold text-gray-900">Pending Changes</h3>
+                                <h3 className="text-sm font-semibold text-gray-900">Pending Changes ({templateChanges.length})</h3>
                               </div>
                               <div className="p-2">
-                                {templateChanges.map((change, idx) => (
-                                  <div key={idx} className="px-3 py-2 hover:bg-gray-50 rounded text-sm">
-                                    <div className="flex items-start space-x-2">
-                                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                                        change.type.includes('added') ? 'bg-green-500' :
-                                        change.type.includes('deleted') ? 'bg-red-500' :
-                                        'bg-blue-500'
-                                      }`} />
-                                      <div className="flex-1">
-                                        <p className="text-gray-900">{change.description}</p>
-                                        <p className="text-xs text-gray-500 mt-0.5">
-                                          {new Date(change.timestamp).toLocaleTimeString()}
-                                        </p>
+                                {templateChanges.map((change, idx) => {
+                                  // Get category label and color based on change type
+                                  const getCategoryInfo = (type: string) => {
+                                    if (type.startsWith('stage_')) return { label: 'Stage', color: 'bg-purple-100 text-purple-700' }
+                                    if (type.startsWith('checklist_')) return { label: 'Checklist', color: 'bg-cyan-100 text-cyan-700' }
+                                    if (type.startsWith('rule_')) return { label: 'Rule', color: 'bg-orange-100 text-orange-700' }
+                                    if (type === 'universe_updated') return { label: 'Universe', color: 'bg-indigo-100 text-indigo-700' }
+                                    if (type === 'cadence_updated') return { label: 'Cadence', color: 'bg-teal-100 text-teal-700' }
+                                    if (type === 'workflow_updated') return { label: 'Workflow', color: 'bg-blue-100 text-blue-700' }
+                                    return { label: 'Other', color: 'bg-gray-100 text-gray-700' }
+                                  }
+                                  const categoryInfo = getCategoryInfo(change.type)
+
+                                  return (
+                                    <div key={change.elementId || idx} className="px-3 py-2 hover:bg-gray-50 rounded text-sm">
+                                      <div className="flex items-start space-x-2">
+                                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                                          change.type.includes('added') ? 'bg-green-500' :
+                                          change.type.includes('deleted') ? 'bg-red-500' :
+                                          'bg-blue-500'
+                                        }`} />
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${categoryInfo.color}`}>
+                                              {categoryInfo.label}
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                              {change.type.includes('added') ? 'Added' :
+                                               change.type.includes('deleted') ? 'Deleted' :
+                                               change.type.includes('reordered') ? 'Reordered' : 'Modified'}
+                                            </span>
+                                          </div>
+                                          <p className="text-gray-900">{change.description}</p>
+                                          <p className="text-xs text-gray-400 mt-0.5">
+                                            {new Date(change.timestamp).toLocaleTimeString()}
+                                          </p>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  )
+                                })}
                               </div>
                             </div>
                           )}
@@ -4057,7 +5045,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setShowCancelConfirmation(true)}
+                          onClick={() => {
+                            // If no changes, just exit without confirmation
+                            if (templateChanges.length === 0) {
+                              exitTemplateEditMode()
+                            } else {
+                              setShowCancelConfirmation(true)
+                            }
+                          }}
                           className="flex items-center space-x-2"
                         >
                           <X className="w-4 h-4" />
@@ -4141,7 +5136,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 p-6 bg-gray-50 overflow-y-auto">
+            <div className={`flex-1 bg-gray-50 overflow-y-auto ${activeView === 'stages' ? '' : 'p-6'}`}>
               {activeView === 'overview' && (
                 <OverviewView
                   workflow={selectedWorkflow}
@@ -4153,63 +5148,95 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {activeView === 'stages' && (
                 <StagesView
-                  workflow={selectedWorkflow}
-                  checklistItems={workflowChecklistTemplates}
+                  workflow={{ ...selectedWorkflow, stages: getEffectiveStages() }}
+                  checklistItems={getEffectiveChecklistItems()}
                   isEditMode={isTemplateEditMode}
                   canEdit={selectedWorkflow.user_permission === 'admin'}
                   draggedItemId={draggedChecklistItem}
                   dragOverItemId={dragOverItem}
                   onAddStage={() => setShowAddStage(true)}
                   onMoveStageUp={(stageId) => {
-                    const index = selectedWorkflow.stages?.findIndex(s => s.id === stageId)
-                    if (index !== undefined && index > 0 && selectedWorkflow.stages) {
-                      const stages = selectedWorkflow.stages
-                      const stageToMove = stages[index]
-                      const stageAbove = stages[index - 1]
-                      reorderStagesMutation.mutate({
-                        stages: [
-                          { id: stageToMove.id, sort_order: stageAbove.sort_order },
-                          { id: stageAbove.id, sort_order: stageToMove.sort_order }
-                        ],
-                        movedStageName: stageToMove.name,
-                        direction: 'up'
-                      })
+                    const effectiveStages = getEffectiveStages()
+                    const index = effectiveStages.findIndex(s => s.id === stageId)
+                    if (index !== undefined && index > 0) {
+                      const stageToMove = effectiveStages[index]
+                      const stageAbove = effectiveStages[index - 1]
+                      if (isTemplateEditMode) {
+                        // Create reorder info for all stages with swapped positions
+                        const reorderInfo = effectiveStages.map((s, i) => {
+                          if (s.id === stageToMove.id) return { id: s.id, sort_order: stageAbove.sort_order }
+                          if (s.id === stageAbove.id) return { id: s.id, sort_order: stageToMove.sort_order }
+                          return { id: s.id, sort_order: s.sort_order }
+                        })
+                        handleReorderStagesDraft(reorderInfo)
+                      } else {
+                        reorderStagesMutation.mutate({
+                          stages: [
+                            { id: stageToMove.id, sort_order: stageAbove.sort_order },
+                            { id: stageAbove.id, sort_order: stageToMove.sort_order }
+                          ],
+                          movedStageName: stageToMove.stage_label,
+                          direction: 'up'
+                        })
+                      }
                     }
                   }}
                   onMoveStageDown={(stageId) => {
-                    const index = selectedWorkflow.stages?.findIndex(s => s.id === stageId)
-                    if (index !== undefined && selectedWorkflow.stages && index < selectedWorkflow.stages.length - 1) {
-                      const stages = selectedWorkflow.stages
-                      const stageToMove = stages[index]
-                      const stageBelow = stages[index + 1]
-                      reorderStagesMutation.mutate({
-                        stages: [
-                          { id: stageToMove.id, sort_order: stageBelow.sort_order },
-                          { id: stageBelow.id, sort_order: stageToMove.sort_order }
-                        ],
-                        movedStageName: stageToMove.name,
-                        direction: 'down'
-                      })
+                    const effectiveStages = getEffectiveStages()
+                    const index = effectiveStages.findIndex(s => s.id === stageId)
+                    if (index !== undefined && index < effectiveStages.length - 1) {
+                      const stageToMove = effectiveStages[index]
+                      const stageBelow = effectiveStages[index + 1]
+                      if (isTemplateEditMode) {
+                        // Create reorder info for all stages with swapped positions
+                        const reorderInfo = effectiveStages.map((s, i) => {
+                          if (s.id === stageToMove.id) return { id: s.id, sort_order: stageBelow.sort_order }
+                          if (s.id === stageBelow.id) return { id: s.id, sort_order: stageToMove.sort_order }
+                          return { id: s.id, sort_order: s.sort_order }
+                        })
+                        handleReorderStagesDraft(reorderInfo)
+                      } else {
+                        reorderStagesMutation.mutate({
+                          stages: [
+                            { id: stageToMove.id, sort_order: stageBelow.sort_order },
+                            { id: stageBelow.id, sort_order: stageToMove.sort_order }
+                          ],
+                          movedStageName: stageToMove.stage_label,
+                          direction: 'down'
+                        })
+                      }
                     }
                   }}
                   onEditStage={(stageId) => setEditingStage(stageId)}
                   onDeleteStage={(stageId) => {
-                    const stage = selectedWorkflow.stages?.find(s => s.id === stageId)
+                    const effectiveStages = getEffectiveStages()
+                    const stage = effectiveStages.find(s => s.id === stageId)
                     if (stage) {
-                      setStageToDelete({
-                        id: stage.id,
-                        key: stage.stage_key,
-                        label: stage.stage_label
-                      })
-                      setShowDeleteStageModal(true)
+                      if (isTemplateEditMode) {
+                        // No confirmation needed in edit mode - changes can be discarded
+                        handleDeleteStageDraft(stageId)
+                      } else {
+                        setStageToDelete({
+                          id: stage.id,
+                          key: stage.stage_key,
+                          label: stage.stage_label
+                        })
+                        setShowDeleteStageModal(true)
+                      }
                     }
                   }}
                   onAddChecklistItem={(stageId) => setShowAddChecklistItem(stageId)}
                   onEditChecklistItem={(itemId) => setEditingChecklistItem(itemId)}
                   onDeleteChecklistItem={(itemId) => {
-                    const item = workflowChecklistTemplates?.find(t => t.id === itemId)
-                    if (item && confirm(`Are you sure you want to delete "${item.item_text}"?`)) {
-                      deleteChecklistItemMutation.mutate(itemId)
+                    const effectiveItems = getEffectiveChecklistItems()
+                    const item = effectiveItems.find(t => t.id === itemId)
+                    if (item) {
+                      if (isTemplateEditMode) {
+                        // No confirmation needed in edit mode - changes can be discarded
+                        handleDeleteChecklistItemDraft(itemId)
+                      } else if (confirm(`Are you sure you want to delete "${item.item_text}"?`)) {
+                        deleteChecklistItemMutation.mutate(itemId)
+                      }
                     }
                   }}
                   onDragStart={(itemId) => setDraggedChecklistItem(itemId)}
@@ -4218,21 +5245,29 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   onDragEnter={(itemId) => setDragOverItem(itemId)}
                   onDragLeave={() => setDragOverItem(null)}
                   onDrop={(draggedId, targetId) => {
-                    const stageChecklistTemplates = workflowChecklistTemplates?.filter(
+                    const effectiveItems = getEffectiveChecklistItems()
+                    const stageChecklistTemplates = effectiveItems.filter(
                       template => {
-                        const draggedTemplate = workflowChecklistTemplates.find(t => t.id === draggedId)
+                        const draggedTemplate = effectiveItems.find(t => t.id === draggedId)
                         return draggedTemplate && template.stage_id === draggedTemplate.stage_id
                       }
                     ) || []
                     const fakeEvent = { preventDefault: () => {} } as React.DragEvent
                     handleDrop(fakeEvent, targetId, stageChecklistTemplates)
                   }}
+                  onReorderItems={(items, stageId) => {
+                    if (isTemplateEditMode) {
+                      handleReorderChecklistItemsDraft({ items, stageId })
+                    } else {
+                      reorderChecklistItemsMutation.mutate({ items, stageId })
+                    }
+                  }}
                   renderContentTiles={(stageId) => (
                     <ContentTileManager
                       workflowId={selectedWorkflow.id}
                       stageId={stageId}
                       isEditable={isTemplateEditMode}
-                      onTileChange={(description) => trackChange('checklist_edited', description)}
+                      onTileChange={(description, elementId) => trackChange('checklist_edited', description, elementId)}
                     />
                   )}
                 />
@@ -4251,7 +5286,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   canEdit={selectedWorkflow.user_permission === 'admin'}
                   canRequestAccess={selectedWorkflow.user_permission === 'read' || selectedWorkflow.user_permission === 'write'}
                   onRequestAccess={() => setShowAccessRequestModal(true)}
-                  onInviteCollaborator={() => setShowInviteModal(true)}
+                  onAddAdmin={() => setShowInviteModal(true)}
                   onChangePermission={(userId, newPermission) => {
                     const collab = workflowCollaborators?.find((c: any) => c.user_id === userId)
                     if (collab) {
@@ -4288,9 +5323,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
               {activeView === 'cadence' && (
                 <CadenceView
-                  cadenceTimeframe={selectedWorkflow.cadence_timeframe || 'annually'}
-                  cadenceDays={selectedWorkflow.cadence_days ? [selectedWorkflow.cadence_days] : undefined}
-                  automationRules={automationRules?.filter(rule => rule.workflow_id === selectedWorkflow.id)}
+                  cadenceTimeframe={draftCadence?.cadence_timeframe || selectedWorkflow.cadence_timeframe || 'annually'}
+                  cadenceDays={draftCadence?.cadence_days ? [draftCadence.cadence_days] : selectedWorkflow.cadence_days ? [selectedWorkflow.cadence_days] : undefined}
+                  automationRules={getEffectiveAutomationRules()}
                   canEdit={selectedWorkflow.user_permission === 'admin'}
                   isEditMode={isTemplateEditMode}
                     onChangeCadence={async (timeframe) => {
@@ -4304,32 +5339,78 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         'persistent': 0
                       }
 
-                      const { data, error } = await supabase
-                        .from('workflows')
-                        .update({
+                      if (isTemplateEditMode) {
+                        // Use draft mode - don't save to DB yet
+                        const originalCadence = originalTemplateValues.workflow_cadence
+                        setDraftCadence({
                           cadence_timeframe: timeframe,
                           cadence_days: daysMap[timeframe]
                         })
-                        .eq('id', selectedWorkflow.id)
-                        .select()
-
-                      if (error) {
-                        alert(`Failed to update cadence group: ${error.message || error.code || 'Unknown error'}`)
+                        // Track change with current value for undo detection
+                        trackChange(
+                          'cadence_updated',
+                          `Cadence: "${originalCadence}" → "${timeframe}"`,
+                          'workflow_cadence',
+                          timeframe
+                        )
                       } else {
-                        queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-                        setSelectedWorkflow({
-                          ...selectedWorkflow,
-                          cadence_timeframe: timeframe,
-                          cadence_days: daysMap[timeframe]
-                        })
-                        trackChange('cadence_updated', `Updated cadence to: ${timeframe}`)
+                        // Not in edit mode - save directly to DB
+                        const { data, error } = await supabase
+                          .from('workflows')
+                          .update({
+                            cadence_timeframe: timeframe,
+                            cadence_days: daysMap[timeframe]
+                          })
+                          .eq('id', selectedWorkflow.id)
+                          .select()
+
+                        if (error) {
+                          alert(`Failed to update cadence group: ${error.message || error.code || 'Unknown error'}`)
+                        } else {
+                          queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+                          setSelectedWorkflow({
+                            ...selectedWorkflow,
+                            cadence_timeframe: timeframe,
+                            cadence_days: daysMap[timeframe]
+                          })
+                        }
                       }
                     }}
                     onAddRule={() => setShowAddRuleModal(true)}
                     onEditRule={(rule) => setEditingRule(rule.id)}
                     onDeleteRule={(ruleId, ruleName) => {
-                      setRuleToDelete({ id: ruleId, name: ruleName, type: 'automation' })
-                      setShowDeleteRuleModal(true)
+                      if (isTemplateEditMode) {
+                        // No confirmation needed in edit mode - changes can be discarded
+                        handleDeleteRuleDraft(ruleId)
+                      } else {
+                        setRuleToDelete({ id: ruleId, name: ruleName, type: 'automation' })
+                        setShowDeleteRuleModal(true)
+                      }
+                    }}
+                    onToggleRuleActive={async (ruleId, isActive) => {
+                      // Toggle can be done outside of edit mode - saves directly to DB
+                      const { error } = await supabase
+                        .from('workflow_automation_rules')
+                        .update({ is_active: isActive })
+                        .eq('id', ruleId)
+
+                      if (error) {
+                        console.error('Error toggling rule:', error)
+                        alert('Failed to update rule status')
+                      } else {
+                        queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+                      }
+                    }}
+                    onAddAssetPopulationRule={() => setShowAddAssetPopulationRuleModal(true)}
+                    onEditAssetPopulationRule={(rule) => setEditingAssetPopulationRule(rule.id)}
+                    onDeleteAssetPopulationRule={(ruleId, ruleName) => {
+                      if (isTemplateEditMode) {
+                        // No confirmation needed in edit mode - changes can be discarded
+                        handleDeleteRuleDraft(ruleId)
+                      } else {
+                        setRuleToDelete({ id: ruleId, name: ruleName, type: 'automation' })
+                        setShowDeleteRuleModal(true)
+                      }
                     }}
                   />
               )}
@@ -4751,10 +5832,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       {showAddStage && selectedWorkflow && (
         <AddStageModal
           workflowId={selectedWorkflow.id}
-          existingStages={selectedWorkflow.stages || []}
+          existingStages={getEffectiveStages()}
           onClose={() => setShowAddStage(false)}
           onSave={(stageData) => {
-            addStageMutation.mutate({ workflowId: selectedWorkflow.id, stage: stageData })
+            if (isTemplateEditMode) {
+              handleAddStageDraft(stageData)
+            } else {
+              addStageMutation.mutate({ workflowId: selectedWorkflow.id, stage: stageData })
+            }
           }}
         />
       )}
@@ -4762,10 +5847,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       {/* Edit Stage Modal */}
       {editingStage && selectedWorkflow && (
         <EditStageModal
-          stage={selectedWorkflow.stages?.find(s => s.id === editingStage)!}
+          stage={getEffectiveStages().find(s => s.id === editingStage)!}
           onClose={() => setEditingStage(null)}
           onSave={(updates) => {
-            updateStageMutation.mutate({ stageId: editingStage, updates })
+            if (isTemplateEditMode) {
+              handleUpdateStageDraft(editingStage, updates)
+            } else {
+              updateStageMutation.mutate({ stageId: editingStage, updates })
+            }
             setEditingStage(null)
           }}
         />
@@ -4776,14 +5865,22 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         <AddChecklistItemModal
           workflowId={selectedWorkflow.id}
           stageId={showAddChecklistItem}
-          existingItems={workflowChecklistTemplates?.filter(t => t.stage_id === showAddChecklistItem) || []}
+          existingItems={getEffectiveChecklistItems().filter(t => t.stage_id === showAddChecklistItem)}
           onClose={() => setShowAddChecklistItem(null)}
           onSave={(itemData) => {
-            addChecklistItemMutation.mutate({
-              workflowId: selectedWorkflow.id,
-              stageId: showAddChecklistItem,
-              item: itemData
-            })
+            if (isTemplateEditMode) {
+              handleAddChecklistItemDraft({
+                workflowId: selectedWorkflow.id,
+                stageId: showAddChecklistItem,
+                item: itemData
+              })
+            } else {
+              addChecklistItemMutation.mutate({
+                workflowId: selectedWorkflow.id,
+                stageId: showAddChecklistItem,
+                item: itemData
+              })
+            }
           }}
         />
       )}
@@ -4946,9 +6043,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           detectedVersionType={detectVersionType()}
           onCreateVersion={handleCreateVersion}
           previewData={{
-            stageCount: selectedWorkflow.stages?.length || 0,
-            checklistCount: workflowChecklistTemplates?.filter(c => c.workflow_id === selectedWorkflow.id).length || 0,
-            ruleCount: automationRules?.filter(r => r.workflow_id === selectedWorkflow.id).length || 0
+            stageCount: getEffectiveStages().length,
+            checklistCount: getEffectiveChecklistItems().length,
+            ruleCount: getEffectiveAutomationRules().length
           }}
         />
       )}
@@ -5002,7 +6099,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         />
       )}
 
-      {/* Add Rule Modal */}
+      {/* Add Rule Modal (Branch Creation) */}
       {showAddRuleModal && selectedWorkflow && (
         <AddRuleModal
           workflowId={selectedWorkflow.id}
@@ -5011,7 +6108,31 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           cadenceTimeframe={selectedWorkflow.cadence_timeframe}
           onClose={() => setShowAddRuleModal(false)}
           onSave={(ruleData) => {
-            addRuleMutation.mutate({ workflowId: selectedWorkflow.id, rule: ruleData })
+            // Ensure rule_category is set for branch creation rules
+            const ruleWithCategory = { ...ruleData, rule_category: 'branch_creation' }
+            if (isTemplateEditMode) {
+              handleAddRuleDraft(ruleWithCategory)
+            } else {
+              addRuleMutation.mutate({ workflowId: selectedWorkflow.id, rule: ruleWithCategory })
+            }
+          }}
+        />
+      )}
+
+      {/* Add Asset Population Rule Modal */}
+      {showAddAssetPopulationRuleModal && selectedWorkflow && (
+        <AddAssetPopulationRuleModal
+          workflowId={selectedWorkflow.id}
+          workflowName={selectedWorkflow.name}
+          workflowStages={selectedWorkflow.stages || []}
+          onClose={() => setShowAddAssetPopulationRuleModal(false)}
+          onSave={(ruleData) => {
+            // rule_category is already set by the modal
+            if (isTemplateEditMode) {
+              handleAddRuleDraft(ruleData)
+            } else {
+              addRuleMutation.mutate({ workflowId: selectedWorkflow.id, rule: ruleData })
+            }
           }}
         />
       )}
@@ -5019,13 +6140,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       {/* Edit Rule Modal */}
       {editingRule && selectedWorkflow && (
         <EditRuleModal
-          rule={automationRules?.find(r => r.id === editingRule)!}
+          rule={getEffectiveAutomationRules().find(r => r.id === editingRule)!}
           workflowName={selectedWorkflow.name}
           workflowStages={selectedWorkflow.stages || []}
           cadenceTimeframe={selectedWorkflow.cadence_timeframe}
           onClose={() => setEditingRule(null)}
           onSave={(updates) => {
-            updateRuleMutation.mutate({ ruleId: editingRule, updates })
+            if (isTemplateEditMode) {
+              handleUpdateRuleDraft(editingRule, updates)
+            } else {
+              updateRuleMutation.mutate({ ruleId: editingRule, updates })
+            }
           }}
         />
       )}
@@ -5305,7 +6430,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               </div>
               <p className="text-gray-700 mb-6">
                 Are you sure you want to archive <span className="font-semibold">{workflows?.find(w => w.id === workflowToDelete)?.name}</span>?
-                The workflow will be hidden from the UI but all data will be preserved. Assets will remain assigned but won't show as active.
+                Archiving this workflow will pause all active branches. The workflow will be hidden from the UI but all data will be preserved.
               </p>
               <div className="flex justify-end space-x-3">
                 <Button
@@ -5471,6 +6596,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             </div>
           </div>
         </div>
+      )}
+
+      {/* Create Workflow Wizard */}
+      {showCreateWorkflowWizard && (
+        <CreateWorkflowWizard
+          onClose={() => setShowCreateWorkflowWizard(false)}
+          onComplete={(workflowId) => {
+            setShowCreateWorkflowWizard(false)
+            // Refetch workflows - the new workflow will appear in the list
+            queryClient.invalidateQueries({ queryKey: ['workflows'] })
+            queryClient.invalidateQueries({ queryKey: ['my-workflows'] })
+            queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
+          }}
+        />
       )}
 
       {/* Workflow Context Menu */}

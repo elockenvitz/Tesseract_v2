@@ -73,23 +73,23 @@ export function ChecklistItemCard({
 }: ChecklistItemCardProps) {
   const showControls = canEdit && isEditMode
 
-  // Determine styling based on drag state
-  const getDragClasses = () => {
-    if (isDragging) return 'opacity-50 bg-blue-100'
-    if (isDragOver) return 'bg-blue-200 border-2 border-blue-400'
-    return 'bg-white hover:bg-gray-50'
-  }
-
   return (
     <div
-      draggable={showControls}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={onDragOver}
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      className={`p-3 rounded-lg border transition-all ${getDragClasses()}`}
+      onMouseDown={(e) => {
+        if (showControls && e.button === 0) {
+          onDragStart?.(e as any)
+        }
+      }}
+      onMouseEnter={() => {
+        onDragEnter?.(null as any)
+      }}
+      className={`p-3 rounded-lg border transition-all duration-150 ease-in-out ${
+        isDragging
+          ? 'bg-blue-100 border-blue-400 shadow-lg scale-[1.02] z-10 relative'
+          : isDragOver
+            ? 'bg-blue-50 border-blue-300 transform translate-y-1'
+            : 'bg-white hover:bg-gray-50 border-gray-200'
+      } ${showControls ? 'cursor-grab active:cursor-grabbing select-none' : ''}`}
     >
       <div className="flex items-start space-x-3">
         {/* Drag Handle */}

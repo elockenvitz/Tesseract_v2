@@ -32,9 +32,13 @@ export type { AddAdminModalProps } from './AddAdminModal'
 export { AccessRequestModal } from './AccessRequestModal'
 export type { AccessRequestModalProps } from './AccessRequestModal'
 
-// Automation Modals
+// Automation Modals - Branch Creation
 export { AddRuleModal } from './AddRuleModal'
 export type { AddRuleModalProps } from './AddRuleModal'
 
 export { EditRuleModal } from './EditRuleModal'
 export type { EditRuleModalProps } from './EditRuleModal'
+
+// Automation Modals - Asset Population
+export { AddAssetPopulationRuleModal } from './AddAssetPopulationRuleModal'
+export type { AddAssetPopulationRuleModalProps } from './AddAssetPopulationRuleModal'

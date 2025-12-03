@@ -37,11 +37,8 @@ export function AddStageModal({ workflowId, existingStages, onClose, onSave }: A
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Auto-generate stage_key from stage_label
-    const stage_key = formData.stage_label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
+    // Generate a unique stage_key using timestamp and random string
+    const stage_key = `stage_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
 
     onSave({
       ...formData,

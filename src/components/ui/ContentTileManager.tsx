@@ -13,7 +13,7 @@ interface ContentTileManagerProps {
   stageId: string
   className?: string
   isEditable?: boolean
-  onTileChange?: (description: string) => void
+  onTileChange?: (description: string, elementId: string) => void
 }
 
 interface ContentTileData {
@@ -99,7 +99,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
 
       const nextSortOrder = (contentTiles?.length || 0) + 1
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('workflow_stage_content_tiles')
         .insert({
           workflow_id: workflowId,
@@ -111,31 +111,39 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
           sort_order: nextSortOrder,
           created_by: userId
         })
+        .select()
 
       if (error) throw error
-      return { tileName: tileConfig.name }
+      return { tileName: tileConfig.name, tileId: data?.[0]?.id }
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
       setShowAddTile(false)
-      onTileChange?.(`Added content tile: ${result.tileName}`)
+      onTileChange?.(`Content Tile Added: "${result.tileName}"`, `content_tile_${result.tileId || stageId}`)
     }
   })
 
   // Mutation to delete a content tile
   const deleteTileMutation = useMutation({
     mutationFn: async (tileId: string) => {
+      // Get the tile name before deleting
+      const { data: tileData } = await supabase
+        .from('workflow_stage_content_tiles')
+        .select('title')
+        .eq('id', tileId)
+        .single()
+
       const { error } = await supabase
         .from('workflow_stage_content_tiles')
         .delete()
         .eq('id', tileId)
 
       if (error) throw error
-      return { tileId }
+      return { tileId, tileName: tileData?.title || 'content tile' }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
-      onTileChange?.('Deleted content tile')
+      onTileChange?.(`Content Tile Deleted: "${result.tileName}"`, `content_tile_deleted_${result.tileId}`)
     }
   })
 
@@ -150,24 +158,25 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
-      onTileChange?.('Reordered content tiles')
+      onTileChange?.('Content Tiles: reordered', `content_tile_order_${stageId}`)
     }
   })
 
   // Mutation to toggle tile enabled state
   const toggleTileMutation = useMutation({
-    mutationFn: async ({ tileId, enabled }: { tileId: string; enabled: boolean }) => {
+    mutationFn: async ({ tileId, enabled, tileName }: { tileId: string; enabled: boolean; tileName?: string }) => {
       const { error } = await supabase
         .from('workflow_stage_content_tiles')
         .update({ is_enabled: enabled })
         .eq('id', tileId)
 
       if (error) throw error
-      return { enabled }
+      return { enabled, tileId, tileName }
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-stage-content-tiles', workflowId, stageId] })
-      onTileChange?.(`${result.enabled ? 'Enabled' : 'Disabled'} content tile`)
+      const action = result.enabled ? 'enabled' : 'disabled'
+      onTileChange?.(`Content Tile "${result.tileName || 'tile'}": ${action}`, `content_tile_${result.tileId}`)
     }
   })
 
@@ -333,7 +342,8 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                                     variant="ghost"
                                     onClick={() => toggleTileMutation.mutate({
                                       tileId: tile.id,
-                                      enabled: !tile.is_enabled
+                                      enabled: !tile.is_enabled,
+                                      tileName: tile.title
                                     })}
                                   >
                                     {tile.is_enabled ? (

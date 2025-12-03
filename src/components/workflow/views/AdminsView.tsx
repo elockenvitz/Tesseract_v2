@@ -67,6 +67,9 @@ export interface AdminsViewProps {
   onChangePermission?: (userId: string, newPermission: 'admin' | 'write' | 'read') => void
   onRemoveCollaborator?: (userId: string, userName: string) => void
 
+  /** Callbacks for admin operations */
+  onAddAdmin?: () => void
+
   /** Callbacks for stakeholder operations */
   onAddStakeholder?: () => void
   onRemoveStakeholder?: (stakeholderId: string, userName: string) => void
@@ -90,6 +93,7 @@ export function AdminsView({
   isLoadingRequests = false,
   onChangePermission,
   onRemoveCollaborator,
+  onAddAdmin,
   onAddStakeholder,
   onRemoveStakeholder,
   onRequestAccess,
@@ -182,9 +186,17 @@ export function AdminsView({
       {/* Admins */}
       <Card>
         <div className="p-3">
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">
-            Administrators ({admins.length})
-          </h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-gray-900">
+              Administrators ({admins.length})
+            </h4>
+            {canEdit && onAddAdmin && (
+              <Button size="sm" variant="outline" onClick={onAddAdmin}>
+                <UserPlus className="w-3 h-3 mr-1" />
+                Add
+              </Button>
+            )}
+          </div>
           {isLoadingCollaborators ? (
             <div className="text-center py-3">
               <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>

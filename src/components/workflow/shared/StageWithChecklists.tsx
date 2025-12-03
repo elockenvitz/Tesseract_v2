@@ -7,7 +7,7 @@
  * Extracted from WorkflowsPage.tsx during Phase 3 refactoring.
  */
 
-import React from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, ListChecks } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
@@ -58,6 +58,9 @@ export interface StageWithChecklistsProps {
   onDragLeave?: () => void
   onDrop?: (targetItemId: string) => void
 
+  /** Called with reordered items when drag ends */
+  onReorder?: (items: { id: string, sort_order: number }[], stageId: string) => void
+
   /** Optional content tiles component */
   contentTilesComponent?: React.ReactNode
 }
@@ -84,11 +87,72 @@ export function StageWithChecklists({
   onDragEnter,
   onDragLeave,
   onDrop,
+  onReorder,
   contentTilesComponent
 }: StageWithChecklistsProps) {
   const isFirst = index === 0
   const isLast = index === totalStages - 1
   const showControls = canEdit && isEditMode
+
+  // Local state for smooth drag reordering
+  const [localItems, setLocalItems] = useState(checklistItems)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const [hasReordered, setHasReordered] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Sync local items with props - only when not actively reordering
+  useEffect(() => {
+    if (!draggingId && !hasReordered) {
+      setLocalItems(checklistItems)
+    }
+    // Reset hasReordered flag when props update with new data
+    if (hasReordered && JSON.stringify(checklistItems.map(i => i.id)) === JSON.stringify(localItems.map(i => i.id))) {
+      setHasReordered(false)
+    }
+  }, [checklistItems, draggingId, hasReordered])
+
+  // Handle mouse up globally to end drag
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (draggingId) {
+        // Mark that we've reordered so we don't reset to old props
+        setHasReordered(true)
+        // Save the reorder - pass the new order to parent with stageId
+        // Use stage_id from checklist items (database value) for consistency with original values tracking
+        const updates = localItems.map((item, idx) => ({
+          id: item.id,
+          sort_order: idx + 1
+        }))
+        const stageId = localItems[0]?.stage_id || stage.stage_key
+        onReorder?.(updates, stageId)
+        setDraggingId(null)
+        setHoverIndex(null)
+      }
+    }
+
+    if (draggingId) {
+      window.addEventListener('mouseup', handleMouseUp)
+      return () => window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [draggingId, localItems, onReorder, stage.stage_key])
+
+  // Reorder items when hovering during drag
+  const handleItemHover = useCallback((targetIndex: number) => {
+    if (!draggingId || hoverIndex === targetIndex) return
+
+    setHoverIndex(targetIndex)
+
+    setLocalItems(prev => {
+      const dragIndex = prev.findIndex(item => item.id === draggingId)
+      if (dragIndex === -1 || dragIndex === targetIndex) return prev
+
+      const newItems = [...prev]
+      const [draggedItem] = newItems.splice(dragIndex, 1)
+      newItems.splice(targetIndex, 0, draggedItem)
+      return newItems
+    })
+  }, [draggingId, hoverIndex])
 
   return (
     <Card>
@@ -184,26 +248,26 @@ export function StageWithChecklists({
           </div>
 
           {/* Checklist Items List */}
-          {checklistItems.length > 0 ? (
-            <div className="space-y-2">
-              {checklistItems.map((item, itemIndex) => (
+          {localItems.length > 0 ? (
+            <div ref={containerRef} className="space-y-2">
+              {localItems.map((item, itemIndex) => (
                 <ChecklistItemCard
                   key={item.id}
                   item={item}
                   index={itemIndex}
                   isEditMode={isEditMode}
                   canEdit={canEdit}
-                  isDragging={draggedItemId === item.id}
-                  isDragOver={dragOverItemId === item.id}
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move'
+                  isDragging={draggingId === item.id}
+                  isDragOver={false}
+                  onDragStart={() => {
+                    setDraggingId(item.id)
                     onDragStart?.(item.id)
                   }}
-                  onDragEnd={onDragEnd}
-                  onDragOver={onDragOver}
-                  onDragEnter={() => onDragEnter?.(item.id)}
-                  onDragLeave={onDragLeave}
-                  onDrop={() => onDrop?.(item.id)}
+                  onDragEnd={() => {}}
+                  onDragOver={() => {}}
+                  onDragEnter={() => handleItemHover(itemIndex)}
+                  onDragLeave={() => {}}
+                  onDrop={() => {}}
                   onEdit={() => onEditChecklistItem?.(item.id)}
                   onDelete={() => onDeleteChecklistItem?.(item.id)}
                 />

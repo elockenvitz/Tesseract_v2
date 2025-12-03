@@ -54,6 +54,9 @@ export interface StagesViewProps {
   onDragLeave?: () => void
   onDrop?: (draggedId: string, targetId: string) => void
 
+  /** Called with reordered items when drag ends */
+  onReorderItems?: (items: { id: string, sort_order: number }[], stageId: string) => void
+
   /** Optional function to render content tiles for each stage */
   renderContentTiles?: (stageId: string) => React.ReactNode
 }
@@ -79,6 +82,7 @@ export function StagesView({
   onDragEnter,
   onDragLeave,
   onDrop,
+  onReorderItems,
   renderContentTiles
 }: StagesViewProps) {
   const stages = workflow.stages || []
@@ -91,29 +95,37 @@ export function StagesView({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <h3 className="text-lg font-semibold text-gray-900">Workflow Stages</h3>
-          {canEdit && !isEditMode && (
-            <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Click <strong>"Edit Template"</strong> in the header to make changes to stages and checklists</span>
-            </div>
+    <div>
+      {/* Sticky Header */}
+      <div
+        className="sticky top-0 z-10 px-6 py-4 border-b border-gray-200"
+        style={{ backgroundColor: '#f9fafb' }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Workflow Stages
+              <span className="ml-2 text-sm font-normal text-gray-500">({stages.length})</span>
+            </h3>
+            {canEdit && !isEditMode && (
+              <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Click <strong>"Edit Template"</strong> in the header to make changes to stages and checklists</span>
+              </div>
+            )}
+          </div>
+          {showControls && onAddStage && (
+            <Button onClick={onAddStage}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Stage
+            </Button>
           )}
         </div>
-        {showControls && hasStages && onAddStage && (
-          <Button onClick={onAddStage}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Stage
-          </Button>
-        )}
       </div>
 
       {/* Stages List */}
       {hasStages ? (
-        <div className="space-y-3">
+        <div className="space-y-3 p-6">
           {stages.map((stage, index) => {
             const stageChecklists = getChecklistItemsForStage(stage.stage_key)
 
@@ -132,7 +144,7 @@ export function StagesView({
                 onMoveStageDown={() => onMoveStageDown?.(stage.id)}
                 onEditStage={() => onEditStage?.(stage.id)}
                 onDeleteStage={() => onDeleteStage?.(stage.id)}
-                onAddChecklistItem={() => onAddChecklistItem?.(stage.id)}
+                onAddChecklistItem={() => onAddChecklistItem?.(stage.stage_key)}
                 onEditChecklistItem={onEditChecklistItem}
                 onDeleteChecklistItem={onDeleteChecklistItem}
                 onDragStart={onDragStart}
@@ -145,6 +157,7 @@ export function StagesView({
                     onDrop?.(draggedItemId, targetItemId)
                   }
                 }}
+                onReorder={onReorderItems}
                 contentTilesComponent={renderContentTiles?.(stage.id)}
               />
             )
@@ -152,19 +165,21 @@ export function StagesView({
         </div>
       ) : (
         /* Empty State */
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-          <div className="max-w-md mx-auto">
-            <h4 className="text-lg font-medium text-gray-900 mb-2">No stages defined yet</h4>
-            <p className="text-sm text-gray-500 mb-4">
-              Stages define the steps in your workflow process. Each stage can have checklist items
-              that guide users through the work.
-            </p>
-            {showControls && onAddStage && (
-              <Button onClick={onAddStage}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add First Stage
-              </Button>
-            )}
+        <div className="p-6">
+          <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+            <div className="max-w-md mx-auto">
+              <h4 className="text-lg font-medium text-gray-900 mb-2">No stages defined yet</h4>
+              <p className="text-sm text-gray-500 mb-4">
+                Stages define the steps in your workflow process. Each stage can have checklist items
+                that guide users through the work.
+              </p>
+              {showControls && onAddStage && (
+                <Button onClick={onAddStage}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add First Stage
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
