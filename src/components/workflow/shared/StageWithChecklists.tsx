@@ -112,6 +112,16 @@ export function StageWithChecklists({
     }
   }, [checklistItems, draggingId, hasReordered])
 
+  // Reset local state when exiting edit mode (e.g., cancel/discard changes)
+  useEffect(() => {
+    if (!isEditMode) {
+      setLocalItems(checklistItems)
+      setHasReordered(false)
+      setDraggingId(null)
+      setHoverIndex(null)
+    }
+  }, [isEditMode, checklistItems])
+
   // Handle mouse up globally to end drag
   useEffect(() => {
     const handleMouseUp = () => {

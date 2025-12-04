@@ -3,6 +3,13 @@ import { X, GitBranch, Info, Tag, AlertCircle } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 
+interface TemplateChange {
+  type: string
+  description: string
+  timestamp: number
+  elementId: string
+}
+
 interface CreateVersionModalProps {
   isOpen: boolean
   onClose: () => void
@@ -15,6 +22,8 @@ interface CreateVersionModalProps {
     checklistCount: number
     ruleCount: number
   }
+  /** List of changes to auto-populate version notes */
+  changes?: TemplateChange[]
 }
 
 export function CreateVersionModal({
@@ -24,28 +33,99 @@ export function CreateVersionModal({
   currentVersionNumber,
   detectedVersionType,
   onCreateVersion,
-  previewData
+  previewData,
+  changes = []
 }: CreateVersionModalProps) {
   const [versionType, setVersionType] = useState<'major' | 'minor'>(detectedVersionType)
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<{ description?: string }>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Update version type when modal opens or detectedVersionType changes
+  // Store the initial values when modal opens to prevent updates during submission
+  const [initialVersionType, setInitialVersionType] = useState<'major' | 'minor'>(detectedVersionType)
+  const [initialPreviewData, setInitialPreviewData] = useState(previewData)
+
+  // Generate auto-populated notes from changes
+  const generateAutoNotes = (changes: TemplateChange[]): string => {
+    if (changes.length === 0) return ''
+
+    // Group changes by type for a cleaner summary
+    const changesByType: Record<string, string[]> = {}
+
+    changes.forEach(change => {
+      // Extract the category from description (e.g., "Stage Added:", "Checklist Item Deleted:")
+      const desc = change.description
+      if (!changesByType[change.type]) {
+        changesByType[change.type] = []
+      }
+      changesByType[change.type].push(desc)
+    })
+
+    // Build summary lines
+    const lines: string[] = []
+
+    // Process in a logical order
+    const typeOrder = [
+      'stage_added', 'stage_edited', 'stage_deleted', 'stage_reordered',
+      'checklist_added', 'checklist_edited', 'checklist_deleted',
+      'rule_added', 'rule_edited', 'rule_deleted',
+      'cadence_updated', 'universe_updated', 'workflow_updated'
+    ]
+
+    typeOrder.forEach(type => {
+      if (changesByType[type]) {
+        changesByType[type].forEach(desc => {
+          lines.push(`• ${desc}`)
+        })
+      }
+    })
+
+    // Add any types not in the order
+    Object.keys(changesByType).forEach(type => {
+      if (!typeOrder.includes(type)) {
+        changesByType[type].forEach(desc => {
+          lines.push(`• ${desc}`)
+        })
+      }
+    })
+
+    return lines.join('\n')
+  }
+
+  // Update version type and auto-populate description when modal opens
+  // Only update if not currently submitting to prevent UI changes during save
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isSubmitting) {
       setVersionType(detectedVersionType)
+      setInitialVersionType(detectedVersionType)
+      setInitialPreviewData(previewData)
+      // Auto-populate description from changes
+      const autoNotes = generateAutoNotes(changes)
+      setDescription(autoNotes)
     }
-  }, [isOpen, detectedVersionType])
+  }, [isOpen]) // Only depend on isOpen - capture initial state when modal opens
+
+  // Reset submitting state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsSubmitting(false)
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
-  // Calculate semantic version numbers
+  // Calculate semantic version numbers using initial values to prevent changes during save
   const currentMajor = Math.floor(currentVersionNumber / 100) || 1
   const currentMinor = currentVersionNumber % 100
 
-  const nextMajor = detectedVersionType === 'major' ? currentMajor + 1 : currentMajor
-  const nextMinor = detectedVersionType === 'major' ? 0 : currentMinor + 1
+  // Use initialVersionType to prevent UI changes during submission
+  const displayVersionType = isSubmitting ? initialVersionType : versionType
+  const nextMajor = displayVersionType === 'major' ? currentMajor + 1 : currentMajor
+  const nextMinor = displayVersionType === 'major' ? 0 : currentMinor + 1
   const nextVersionString = `v${nextMajor}.${nextMinor}`
+
+  // Use initial preview data during submission
+  const displayPreviewData = isSubmitting ? initialPreviewData : previewData
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,12 +142,12 @@ export function CreateVersionModal({
       return
     }
 
-    onCreateVersion(nextVersionString, versionType, description.trim())
+    // Set submitting state to lock the UI
+    setIsSubmitting(true)
 
-    // Reset form
-    setVersionType('minor')
-    setDescription('')
-    setErrors({})
+    // Call the create version handler - don't reset form here
+    // The modal will be closed by the parent, and form resets on next open via useEffect
+    onCreateVersion(nextVersionString, versionType, description.trim())
   }
 
   const handleClose = () => {
@@ -126,32 +206,32 @@ export function CreateVersionModal({
                 </span>
               </div>
               <div className={`p-4 rounded-lg border-2 ${
-                versionType === 'major'
+                displayVersionType === 'major'
                   ? 'border-amber-300 bg-amber-50'
                   : 'border-indigo-300 bg-indigo-50'
               }`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className={`font-semibold text-sm ${
-                      versionType === 'major' ? 'text-amber-900' : 'text-indigo-900'
+                      displayVersionType === 'major' ? 'text-amber-900' : 'text-indigo-900'
                     }`}>
-                      {versionType === 'major' ? 'Major Update' : 'Minor Update'}
+                      {displayVersionType === 'major' ? 'Major Update' : 'Minor Update'}
                     </div>
                     <div className={`text-xs mt-1 ${
-                      versionType === 'major' ? 'text-amber-700' : 'text-indigo-700'
+                      displayVersionType === 'major' ? 'text-amber-700' : 'text-indigo-700'
                     }`}>
-                      {versionType === 'major'
+                      {displayVersionType === 'major'
                         ? 'Stage changes detected (added, edited, deleted, or reordered)'
                         : 'Incremental changes to checklists, rules, cadence, or metadata'
                       }
                     </div>
                   </div>
                   <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    versionType === 'major'
+                    displayVersionType === 'major'
                       ? 'bg-amber-200 text-amber-800'
                       : 'bg-indigo-200 text-indigo-800'
                   }`}>
-                    {versionType === 'major' ? 'MAJOR' : 'MINOR'}
+                    {displayVersionType === 'major' ? 'MAJOR' : 'MINOR'}
                   </div>
                 </div>
               </div>
@@ -159,9 +239,14 @@ export function CreateVersionModal({
 
             {/* Description/Notes */}
             <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                Version Notes *
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                  Version Notes *
+                </label>
+                <span className="text-xs text-gray-500 italic">
+                  Auto-generated from changes • Edit as needed
+                </span>
+              </div>
               <textarea
                 id="description"
                 value={description}
@@ -172,8 +257,8 @@ export function CreateVersionModal({
                   }
                 }}
                 placeholder="Describe what changed in this version..."
-                rows={3}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none ${
+                rows={5}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none text-sm ${
                   errors.description ? 'border-red-500' : 'border-gray-300'
                 }`}
               />
@@ -190,9 +275,9 @@ export function CreateVersionModal({
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-600">Snapshot includes:</span>
                 <div className="flex items-center space-x-4">
-                  <span className="font-semibold text-indigo-600">{previewData.stageCount} stages</span>
-                  <span className="font-semibold text-indigo-600">{previewData.checklistCount} checklists</span>
-                  <span className="font-semibold text-indigo-600">{previewData.ruleCount} rules</span>
+                  <span className="font-semibold text-indigo-600">{displayPreviewData.stageCount} stages</span>
+                  <span className="font-semibold text-indigo-600">{displayPreviewData.checklistCount} checklists</span>
+                  <span className="font-semibold text-indigo-600">{displayPreviewData.ruleCount} rules</span>
                 </div>
               </div>
             </div>

@@ -12,6 +12,19 @@ interface VersionCreatedModalProps {
   onViewVersion?: () => void
 }
 
+// Format version number from storage format (e.g., 102) to display format (e.g., 1.2)
+const formatVersionNumber = (version: number): string => {
+  if (version < 100) {
+    // Single or double digit: treat as major.0
+    return `${version}.0`
+  } else {
+    // Three digits: first digit is major, last two digits are minor
+    const major = Math.floor(version / 100)
+    const minor = version % 100
+    return `${major}.${minor}`
+  }
+}
+
 export function VersionCreatedModal({
   isOpen,
   onClose,
@@ -22,6 +35,8 @@ export function VersionCreatedModal({
   onViewVersion
 }: VersionCreatedModalProps) {
   if (!isOpen) return null
+
+  const formattedVersion = formatVersionNumber(versionNumber)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
@@ -62,7 +77,7 @@ export function VersionCreatedModal({
               <span className="text-sm text-gray-600">Version</span>
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium text-gray-900">
-                  {versionNumber} - {versionName}
+                  v{formattedVersion}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-xs ${
                   versionType === 'major'
@@ -93,7 +108,7 @@ export function VersionCreatedModal({
               onClose()
             }}>
               <Eye className="w-4 h-4 mr-2" />
-              View Version
+              View Version History
             </Button>
           )}
         </div>

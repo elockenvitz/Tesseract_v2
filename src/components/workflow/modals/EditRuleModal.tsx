@@ -703,6 +703,24 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                   </div>
                 </div>
 
+                {/* Time of Day */}
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-3">Time of Day</h5>
+                  <div className="flex items-center space-x-3">
+                    <label className="text-sm text-gray-700">Trigger at:</label>
+                    <input
+                      type="time"
+                      value={formData.conditionValue.trigger_time || '09:00'}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, trigger_time: e.target.value }
+                      })}
+                      className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-xs text-gray-500">(Your local time)</span>
+                  </div>
+                </div>
+
                 {/* Range of Recurrence */}
                 <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
                   <h5 className="text-sm font-semibold text-gray-900 mb-3">Range of Recurrence</h5>

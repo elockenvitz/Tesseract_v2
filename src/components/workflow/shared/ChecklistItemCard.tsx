@@ -147,7 +147,11 @@ export function ChecklistItemCard({
                 {onEdit && (
                   <button
                     title="Edit Item"
-                    onClick={onEdit}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onEdit()
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     className="p-1.5 rounded hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
                   >
                     <Edit3 className="w-4 h-4" />
@@ -156,7 +160,11 @@ export function ChecklistItemCard({
                 {onDelete && (
                   <button
                     title="Delete Item"
-                    onClick={onDelete}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete()
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />

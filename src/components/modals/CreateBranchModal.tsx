@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
-import { X, Orbit, Network } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { X, Orbit, Network, Calendar, CalendarDays, CalendarRange, Clock } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { processDynamicSuffix } from '../../utils/workflow/workflowSuffixHelpers'
 
 interface WorkflowBranch {
   id: string
@@ -15,21 +16,68 @@ interface CreateBranchModalProps {
   workflowName: string
   existingBranches: WorkflowBranch[]
   preselectedSourceBranch?: string | null
+  defaultSuffixFormat?: string | null
   onClose: () => void
   onSubmit: (branchName: string, branchSuffix: string, copyProgress: boolean, sourceBranchId?: string) => void
 }
 
-export function CreateBranchModal({ workflowId, workflowName, existingBranches, preselectedSourceBranch, onClose, onSubmit }: CreateBranchModalProps) {
-  const [branchName, setBranchName] = useState(`${workflowName} - `)
+// Quick suffix options
+const QUICK_SUFFIX_OPTIONS = [
+  {
+    format: '{MONTH} {YEAR}',
+    label: 'Monthly',
+    icon: Calendar,
+    description: 'e.g., Dec 2025'
+  },
+  {
+    format: '{QUARTER} {YEAR}',
+    label: 'Quarterly',
+    icon: CalendarRange,
+    description: 'e.g., Q4 2025'
+  },
+  {
+    format: '{YEAR}',
+    label: 'Yearly',
+    icon: CalendarDays,
+    description: 'e.g., 2025'
+  },
+  {
+    format: '{DATE}',
+    label: 'Full Date',
+    icon: Clock,
+    description: 'e.g., Dec 3 2025'
+  }
+]
+
+export function CreateBranchModal({ workflowId, workflowName, existingBranches, preselectedSourceBranch, defaultSuffixFormat, onClose, onSubmit }: CreateBranchModalProps) {
   const [branchSuffix, setBranchSuffix] = useState('')
   const [branchSource, setBranchSource] = useState<'template' | 'branch'>(preselectedSourceBranch ? 'branch' : 'template')
   const [sourceBranchId, setSourceBranchId] = useState<string>(preselectedSourceBranch || '')
 
+  // Pre-populate with default suffix format if set
+  useEffect(() => {
+    if (defaultSuffixFormat) {
+      setBranchSuffix(defaultSuffixFormat)
+    }
+  }, [defaultSuffixFormat])
+
+  // Process and preview the suffix (handles dynamic placeholders)
+  const processedSuffix = processDynamicSuffix(branchSuffix.trim())
+
+  // Construct the full branch name from the base workflow name and processed suffix
+  const fullBranchName = processedSuffix
+    ? `${workflowName} - ${processedSuffix}`
+    : workflowName
+
+  // Check if suffix contains dynamic placeholders
+  const hasDynamicPlaceholders = /\{(MONTH|YEAR|YY|Q|QUARTER|DATE|DAY|START_MONTH|END_MONTH)\}/.test(branchSuffix)
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (branchName.trim()) {
+    if (branchSuffix.trim()) {
       const copyProgress = branchSource === 'branch'
-      onSubmit(branchName.trim(), branchSuffix.trim(), copyProgress, sourceBranchId || undefined)
+      // Pass the processed suffix (with placeholders resolved)
+      onSubmit(fullBranchName, processedSuffix, copyProgress, sourceBranchId || undefined)
     }
   }
 
@@ -54,33 +102,67 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Branch Name
-            </label>
-            <input
-              type="text"
-              value={branchName}
-              onChange={(e) => setBranchName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., Research Workflow - Nov 2025"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Suffix
+              Branch Suffix
             </label>
             <input
               type="text"
               value={branchSuffix}
               onChange={(e) => setBranchSuffix(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., {MONTH} {YEAR} or Q4 2025"
+              placeholder="e.g., Nov 2025 or Q4 2025"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Use dynamic placeholders like {'{MONTH}'}, {'{YEAR}'}, {'{QUARTER}'}
+
+            {/* Quick suffix options */}
+            <div className="mt-3">
+              <p className="text-xs text-gray-500 mb-2">Quick options:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {QUICK_SUFFIX_OPTIONS.map((option) => {
+                  const Icon = option.icon
+                  const isSelected = branchSuffix === option.format
+                  return (
+                    <button
+                      key={option.format}
+                      type="button"
+                      onClick={() => setBranchSuffix(option.format)}
+                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg border text-left transition-all ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-xs font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                          {processDynamicSuffix(option.format)}
+                        </div>
+                        <div className={`text-xs ${isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
+                          {option.label}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 mt-3">
+              Or use placeholders: {'{MONTH}'}, {'{YEAR}'}, {'{QUARTER}'}, {'{DATE}'}
             </p>
+
+            {branchSuffix.trim() && (
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  <span className="text-gray-500">Branch name:</span>{' '}
+                  <span className="font-medium text-gray-900">{fullBranchName}</span>
+                </p>
+                {hasDynamicPlaceholders && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Dynamic placeholders will be resolved to current date values
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">

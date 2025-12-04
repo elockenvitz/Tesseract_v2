@@ -9,11 +9,19 @@
  */
 
 import React from 'react'
-import { Plus, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, Save, X, AlertCircle, ChevronDown } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { WorkflowWithStats } from '../../../types/workflow/workflow.types'
 import { StageWithChecklists } from '../shared/StageWithChecklists'
 import { ChecklistItem } from '../shared/ChecklistItemCard'
+
+export interface TemplateChange {
+  type: string
+  description: string
+  timestamp: Date
+  elementId?: string
+  currentValue?: any
+}
 
 export interface StagesViewProps {
   /** The workflow to display stages for */
@@ -59,6 +67,18 @@ export interface StagesViewProps {
 
   /** Optional function to render content tiles for each stage */
   renderContentTiles?: (stageId: string) => React.ReactNode
+
+  /** Template edit mode controls */
+  onEnterEditMode?: () => void
+  onExitEditMode?: () => void
+  onSaveChanges?: () => void
+  onCancelChanges?: () => void
+
+  /** Template changes tracking */
+  templateChanges?: TemplateChange[]
+  showChangesList?: boolean
+  onToggleChangesList?: () => void
+  changesDropdownRef?: React.RefObject<HTMLDivElement>
 }
 
 export function StagesView({
@@ -83,7 +103,15 @@ export function StagesView({
   onDragLeave,
   onDrop,
   onReorderItems,
-  renderContentTiles
+  renderContentTiles,
+  onEnterEditMode,
+  onExitEditMode,
+  onSaveChanges,
+  onCancelChanges,
+  templateChanges = [],
+  showChangesList = false,
+  onToggleChangesList,
+  changesDropdownRef
 }: StagesViewProps) {
   const stages = workflow.stages || []
   const hasStages = stages.length > 0
@@ -92,6 +120,13 @@ export function StagesView({
   // Helper to get checklist items for a specific stage
   const getChecklistItemsForStage = (stageKey: string): ChecklistItem[] => {
     return checklistItems.filter(item => item.stage_id === stageKey)
+  }
+
+  // Helper to get category info for change types
+  const getCategoryInfo = (type: string) => {
+    if (type.startsWith('stage_')) return { label: 'Stage', color: 'bg-purple-100 text-purple-700' }
+    if (type.startsWith('checklist_')) return { label: 'Checklist', color: 'bg-cyan-100 text-cyan-700' }
+    return { label: 'Other', color: 'bg-gray-100 text-gray-700' }
   }
 
   return (
@@ -107,19 +142,116 @@ export function StagesView({
               Workflow Stages
               <span className="ml-2 text-sm font-normal text-gray-500">({stages.length})</span>
             </h3>
-            {canEdit && !isEditMode && (
-              <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>Click <strong>"Edit Template"</strong> in the header to make changes to stages and checklists</span>
-              </div>
+          </div>
+
+          {/* Right side buttons */}
+          <div className="flex items-center space-x-3">
+            {isEditMode ? (
+              <>
+                {/* Changes Counter with Dropdown */}
+                {templateChanges.length > 0 && (
+                  <div className="relative" ref={changesDropdownRef}>
+                    <button
+                      onClick={onToggleChangesList}
+                      className="flex items-center space-x-2 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors border border-amber-300"
+                      title="View changes"
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                      <span className="text-sm font-medium">{templateChanges.length} change{templateChanges.length !== 1 ? 's' : ''}</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showChangesList ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Changes Dropdown */}
+                    {showChangesList && (
+                      <div className="absolute right-0 mt-2 w-[380px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-80 overflow-y-auto">
+                        <div className="p-3 border-b border-gray-200 bg-gray-50">
+                          <h3 className="text-sm font-semibold text-gray-900">Pending Changes ({templateChanges.length})</h3>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Changes will create a new template version
+                          </p>
+                        </div>
+                        <div className="p-2">
+                          {templateChanges.map((change, idx) => {
+                            const categoryInfo = getCategoryInfo(change.type)
+                            return (
+                              <div key={change.elementId || idx} className="px-3 py-2 hover:bg-gray-50 rounded text-sm">
+                                <div className="flex items-start space-x-2">
+                                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                                    change.type.includes('added') ? 'bg-green-500' :
+                                    change.type.includes('deleted') ? 'bg-red-500' :
+                                    'bg-blue-500'
+                                  }`} />
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${categoryInfo.color}`}>
+                                        {categoryInfo.label}
+                                      </span>
+                                      <span className="text-xs text-gray-400">
+                                        {change.type.includes('added') ? 'Added' :
+                                         change.type.includes('deleted') ? 'Deleted' :
+                                         change.type.includes('reordered') ? 'Reordered' : 'Modified'}
+                                      </span>
+                                    </div>
+                                    <p className="text-gray-900">{change.description}</p>
+                                    <p className="text-xs text-gray-400 mt-0.5">
+                                      {new Date(change.timestamp).toLocaleTimeString()}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Add Stage Button */}
+                {onAddStage && (
+                  <Button variant="outline" size="sm" onClick={onAddStage}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Stage
+                  </Button>
+                )}
+
+                {/* Cancel Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onCancelChanges}
+                  className="flex items-center space-x-1"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Cancel</span>
+                </Button>
+
+                {/* Save Button */}
+                <Button
+                  size="sm"
+                  onClick={onSaveChanges}
+                  disabled={templateChanges.length === 0}
+                  className="flex items-center space-x-1"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save & Version</span>
+                </Button>
+              </>
+            ) : (
+              /* Edit Template Button - only shown when not in edit mode */
+              canEdit && onEnterEditMode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onEnterEditMode}
+                  className="flex items-center space-x-2"
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span>Edit Template</span>
+                </Button>
+              )
             )}
           </div>
-          {showControls && onAddStage && (
-            <Button onClick={onAddStage}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Stage
-            </Button>
-          )}
         </div>
       </div>
 

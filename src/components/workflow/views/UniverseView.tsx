@@ -76,7 +76,7 @@ export function UniverseView({
         rules={rules}
         onRulesChange={onRulesChange || (() => {})}
         onSave={onSave || (() => {})}
-        isEditable={isEditMode}
+        isEditable={canEdit}
         canEdit={canEdit}
         isEditMode={isEditMode}
         analysts={analysts}

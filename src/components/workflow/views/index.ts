@@ -21,7 +21,7 @@ export { OverviewView } from './OverviewView'
 export type { OverviewViewProps } from './OverviewView'
 
 export { StagesView } from './StagesView'
-export type { StagesViewProps } from './StagesView'
+export type { StagesViewProps, TemplateChange } from './StagesView'
 
 export { UniverseView } from './UniverseView'
 export type { UniverseViewProps, FilterRule, DropdownOption } from './UniverseView'
@@ -48,5 +48,6 @@ export { BranchesView } from './BranchesView'
 export type {
   BranchesViewProps,
   BranchStatus,
-  WorkflowBranch
+  WorkflowBranch,
+  TemplateVersion
 } from './BranchesView'

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { X, ArrowRight, Plus, Minus, Edit, ChevronDown, ChevronRight } from 'lucide-react'
+import { X, ArrowRight, Plus, Minus, Edit, ChevronDown, ChevronRight, Check } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -41,6 +41,14 @@ interface StageDiff {
   stage: any
   oldStage?: any
   changes?: string[]
+}
+
+interface ChecklistDiff {
+  type: DiffType
+  item: any
+  oldItem?: any
+  changes?: string[]
+  stageName?: string
 }
 
 interface Section {
@@ -176,19 +184,73 @@ export function VersionComparisonModal({
     }
   }, [olderVersion, newerVersion])
 
-  // Compare checklist templates
-  const checklistDiff = useMemo(() => {
+  // Compare checklist templates with full detail
+  const checklistDiffs = useMemo(() => {
+    const diffs: ChecklistDiff[] = []
     const oldChecklists = olderVersion.checklist_templates || []
     const newChecklists = newerVersion.checklist_templates || []
 
-    if (oldChecklists.length === 0 && newChecklists.length === 0) return null
-
-    const hasChanges = JSON.stringify(oldChecklists) !== JSON.stringify(newChecklists)
-    return {
-      hasChanges,
-      oldCount: oldChecklists.length,
-      newCount: newChecklists.length
+    // Get stage names for context
+    const getStageNameFromId = (stageId: string, stages: any[]) => {
+      const stage = stages.find(s => s.stage_key === stageId || s.id === stageId)
+      return stage?.stage_label || stage?.name || stageId
     }
+
+    // Find removed and modified checklist items
+    oldChecklists.forEach((oldItem: any) => {
+      // Match by item_id if available, otherwise by item_text + stage_id
+      const newItem = newChecklists.find((n: any) =>
+        (oldItem.item_id && n.item_id === oldItem.item_id) ||
+        (!oldItem.item_id && n.item_text === oldItem.item_text && n.stage_id === oldItem.stage_id)
+      )
+
+      const stageName = getStageNameFromId(oldItem.stage_id, olderVersion.stages || [])
+
+      if (!newItem) {
+        diffs.push({ type: 'removed', item: oldItem, stageName })
+      } else {
+        const changes: string[] = []
+        if (oldItem.item_text !== newItem.item_text) {
+          changes.push(`Text: "${oldItem.item_text}" → "${newItem.item_text}"`)
+        }
+        if (oldItem.is_required !== newItem.is_required) {
+          changes.push(`Required: ${oldItem.is_required ? 'Yes' : 'No'} → ${newItem.is_required ? 'Yes' : 'No'}`)
+        }
+        if (oldItem.sort_order !== newItem.sort_order) {
+          changes.push(`Order: ${oldItem.sort_order} → ${newItem.sort_order}`)
+        }
+        if (oldItem.stage_id !== newItem.stage_id) {
+          const oldStageName = getStageNameFromId(oldItem.stage_id, olderVersion.stages || [])
+          const newStageName = getStageNameFromId(newItem.stage_id, newerVersion.stages || [])
+          changes.push(`Stage: "${oldStageName}" → "${newStageName}"`)
+        }
+
+        if (changes.length > 0) {
+          diffs.push({ type: 'modified', item: newItem, oldItem, changes, stageName })
+        }
+      }
+    })
+
+    // Find added checklist items
+    newChecklists.forEach((newItem: any) => {
+      const oldItem = oldChecklists.find((o: any) =>
+        (newItem.item_id && o.item_id === newItem.item_id) ||
+        (!newItem.item_id && o.item_text === newItem.item_text && o.stage_id === newItem.stage_id)
+      )
+
+      if (!oldItem) {
+        const stageName = getStageNameFromId(newItem.stage_id, newerVersion.stages || [])
+        diffs.push({ type: 'added', item: newItem, stageName })
+      }
+    })
+
+    // Sort by stage and then by sort_order
+    return diffs.sort((a, b) => {
+      if (a.stageName !== b.stageName) {
+        return (a.stageName || '').localeCompare(b.stageName || '')
+      }
+      return (a.item.sort_order || 0) - (b.item.sort_order || 0)
+    })
   }, [olderVersion, newerVersion])
 
   const getDiffColor = (type: DiffType) => {
@@ -222,7 +284,7 @@ export function VersionComparisonModal({
     (universeRulesDiff?.hasChanges ? 1 : 0) +
     (cadenceDiff ? 1 : 0) +
     (automationRulesDiff?.hasChanges ? 1 : 0) +
-    (checklistDiff?.hasChanges ? 1 : 0)
+    checklistDiffs.length
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -425,7 +487,7 @@ export function VersionComparisonModal({
             )}
 
             {/* Checklist Templates Comparison */}
-            {checklistDiff && (
+            {checklistDiffs.length > 0 && (
               <div>
                 <button
                   onClick={() => toggleSection('checklists')}
@@ -437,25 +499,48 @@ export function VersionComparisonModal({
                     <ChevronRight className="w-5 h-5 text-gray-500" />
                   )}
                   <h3 className="text-lg font-semibold text-gray-900">
-                    Checklist Templates {checklistDiff.hasChanges && '(Modified)'}
+                    Checklist Items ({checklistDiffs.length} changes)
                   </h3>
                 </button>
 
                 {expandedSections.has('checklists') && (
-                  <div className={`p-4 rounded-lg border ${checklistDiff.hasChanges ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Checklist count changed</p>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {checklistDiff.oldCount} → {checklistDiff.newCount}
-                          </p>
+                  <div className="space-y-2">
+                    {checklistDiffs.map((diff, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-lg border ${getDiffColor(diff.type)}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-3 flex-1">
+                            {getDiffIcon(diff.type)}
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2 mb-1 flex-wrap">
+                                <h4 className="font-medium text-gray-900">{diff.item.item_text}</h4>
+                                {getDiffBadge(diff.type)}
+                                {diff.item.is_required && (
+                                  <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
+                                    Required
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                Stage: {diff.stageName}
+                              </p>
+                              {diff.type === 'modified' && diff.changes && (
+                                <div className="mt-2 space-y-1">
+                                  {diff.changes.map((change, cidx) => (
+                                    <div key={cidx} className="text-xs text-blue-700 flex items-center space-x-1">
+                                      <ArrowRight className="w-3 h-3" />
+                                      <span>{change}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      {checklistDiff.hasChanges && (
-                        <Badge className="bg-blue-100 text-blue-700 border-blue-300">Modified</Badge>
-                      )}
-                    </div>
+                    ))}
                   </div>
                 )}
               </div>

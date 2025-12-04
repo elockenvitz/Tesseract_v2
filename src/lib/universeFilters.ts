@@ -1,7 +1,6 @@
 import {
   Users, FileText, Target, Building2, Star, DollarSign,
-  TrendingUp, Calendar, Briefcase, Hash, Tag, BarChart3,
-  Activity, Globe, MapPin, User
+  Calendar, Briefcase, Globe, Tag
 } from 'lucide-react'
 
 export type FilterOperator =
@@ -126,7 +125,7 @@ export const FILTER_TYPE_REGISTRY: Record<string, FilterTypeDefinition> = {
     icon: Building2,
     color: 'green',
     valueType: 'multi_select',
-    availableOperators: ['includes', 'excludes', 'equals', 'not_equals'],
+    availableOperators: ['includes', 'excludes'],
     defaultOperator: 'includes',
     helpText: 'Filter by standard sector classifications'
   },
@@ -139,95 +138,26 @@ export const FILTER_TYPE_REGISTRY: Record<string, FilterTypeDefinition> = {
     icon: Star,
     color: 'amber',
     valueType: 'multi_select',
-    availableOperators: ['includes', 'excludes', 'equals'],
+    availableOperators: ['includes', 'excludes'],
     defaultOperator: 'includes',
     helpText: 'Filter by asset priority level (Critical, High, Medium, Low)'
   },
 
-  // FINANCIAL FILTERS
-  market_cap: {
-    id: 'market_cap',
-    name: 'Market Cap',
-    description: 'Filter by market capitalization',
+  // FINANCIAL METRIC FILTER (consolidated)
+  financial_metric: {
+    id: 'financial_metric',
+    name: 'Financial Metric',
+    description: 'Filter by financial metrics (Market Cap, Price, Volume, P/E, Dividend Yield)',
     category: 'financial',
     icon: DollarSign,
     color: 'emerald',
     valueType: 'number_range',
-    availableOperators: ['between', 'greater_than', 'less_than', 'equals'],
-    defaultOperator: 'between',
-    placeholder: 'Enter value in millions',
-    min: 0,
-    step: 100,
-    formatValue: (val) => `$${val}M`,
-    helpText: 'Filter by market capitalization range (in millions)'
-  },
-
-  price: {
-    id: 'price',
-    name: 'Stock Price',
-    description: 'Filter by current stock price',
-    category: 'financial',
-    icon: TrendingUp,
-    color: 'green',
-    valueType: 'number_range',
-    availableOperators: ['between', 'greater_than', 'less_than', 'equals'],
-    defaultOperator: 'between',
-    placeholder: 'Enter price',
+    availableOperators: ['greater_than', 'less_than', 'between'],
+    defaultOperator: 'greater_than',
+    placeholder: 'Enter value',
     min: 0,
     step: 0.01,
-    formatValue: (val) => `$${val}`,
-    helpText: 'Filter by stock price range'
-  },
-
-  volume: {
-    id: 'volume',
-    name: 'Trading Volume',
-    description: 'Filter by average daily volume',
-    category: 'financial',
-    icon: Activity,
-    color: 'blue',
-    valueType: 'number_range',
-    availableOperators: ['between', 'greater_than', 'less_than'],
-    defaultOperator: 'greater_than',
-    placeholder: 'Enter volume',
-    min: 0,
-    step: 1000,
-    formatValue: (val) => val.toLocaleString(),
-    helpText: 'Filter by average daily trading volume'
-  },
-
-  pe_ratio: {
-    id: 'pe_ratio',
-    name: 'P/E Ratio',
-    description: 'Filter by price-to-earnings ratio',
-    category: 'financial',
-    icon: BarChart3,
-    color: 'violet',
-    valueType: 'number_range',
-    availableOperators: ['between', 'greater_than', 'less_than', 'equals'],
-    defaultOperator: 'between',
-    placeholder: 'Enter P/E ratio',
-    min: 0,
-    step: 0.1,
-    helpText: 'Filter by P/E ratio range'
-  },
-
-  dividend_yield: {
-    id: 'dividend_yield',
-    name: 'Dividend Yield',
-    description: 'Filter by dividend yield percentage',
-    category: 'financial',
-    icon: DollarSign,
-    color: 'teal',
-    valueType: 'percentage',
-    availableOperators: ['between', 'greater_than', 'less_than'],
-    defaultOperator: 'greater_than',
-    placeholder: 'Enter percentage',
-    min: 0,
-    max: 100,
-    step: 0.1,
-    formatValue: (val) => `${val}%`,
-    helpText: 'Filter by dividend yield percentage'
+    helpText: 'Select a metric and set the value range'
   },
 
   // TEMPORAL FILTERS
@@ -244,46 +174,6 @@ export const FILTER_TYPE_REGISTRY: Record<string, FilterTypeDefinition> = {
     helpText: 'Filter by when the asset was last updated'
   },
 
-  coverage_start: {
-    id: 'coverage_start',
-    name: 'Coverage Start Date',
-    description: 'Filter by when coverage began',
-    category: 'temporal',
-    icon: Calendar,
-    color: 'pink',
-    valueType: 'date',
-    availableOperators: ['before', 'after', 'between'],
-    defaultOperator: 'after',
-    helpText: 'Filter by coverage initiation date'
-  },
-
-  // COVERAGE QUALITY FILTERS
-  has_notes: {
-    id: 'has_notes',
-    name: 'Has Research Notes',
-    description: 'Assets with or without research notes',
-    category: 'coverage',
-    icon: FileText,
-    color: 'slate',
-    valueType: 'boolean',
-    availableOperators: ['equals'],
-    defaultOperator: 'equals',
-    helpText: 'Filter assets that have research notes'
-  },
-
-  workflow_stage: {
-    id: 'workflow_stage',
-    name: 'Workflow Stage',
-    description: 'Filter by current workflow stage',
-    category: 'coverage',
-    icon: Activity,
-    color: 'indigo',
-    valueType: 'multi_select',
-    availableOperators: ['includes', 'excludes', 'equals'],
-    defaultOperator: 'includes',
-    helpText: 'Filter by which workflow stage assets are in'
-  },
-
   // GEOGRAPHIC FILTERS
   country: {
     id: 'country',
@@ -293,64 +183,9 @@ export const FILTER_TYPE_REGISTRY: Record<string, FilterTypeDefinition> = {
     icon: Globe,
     color: 'sky',
     valueType: 'multi_select',
-    availableOperators: ['includes', 'excludes', 'equals'],
-    defaultOperator: 'includes',
-    helpText: 'Filter by country of incorporation or headquarters'
-  },
-
-  exchange: {
-    id: 'exchange',
-    name: 'Stock Exchange',
-    description: 'Filter by listing exchange',
-    category: 'basic',
-    icon: Building2,
-    color: 'cyan',
-    valueType: 'multi_select',
-    availableOperators: ['includes', 'excludes', 'equals'],
-    defaultOperator: 'includes',
-    helpText: 'Filter by stock exchange (NYSE, NASDAQ, etc.)'
-  },
-
-  // CUSTOM FIELD FILTERS
-  custom_tag: {
-    id: 'custom_tag',
-    name: 'Custom Tags',
-    description: 'Filter by custom tags',
-    category: 'custom',
-    icon: Tag,
-    color: 'fuchsia',
-    valueType: 'multi_select',
-    availableOperators: ['includes', 'excludes', 'contains'],
-    defaultOperator: 'includes',
-    helpText: 'Filter by user-defined tags'
-  },
-
-  symbol: {
-    id: 'symbol',
-    name: 'Symbol/Ticker',
-    description: 'Filter by stock symbol',
-    category: 'basic',
-    icon: Hash,
-    color: 'gray',
-    valueType: 'multi_select',
     availableOperators: ['includes', 'excludes'],
     defaultOperator: 'includes',
-    placeholder: 'Type ticker symbols...',
-    helpText: 'Include or exclude specific ticker symbols'
-  },
-
-  company_name: {
-    id: 'company_name',
-    name: 'Company Name',
-    description: 'Filter by company name',
-    category: 'basic',
-    icon: Building2,
-    color: 'gray',
-    valueType: 'text',
-    availableOperators: ['contains', 'starts_with', 'equals'],
-    defaultOperator: 'contains',
-    placeholder: 'Enter company name',
-    helpText: 'Search by company name'
+    helpText: 'Filter by country of incorporation or headquarters'
   }
 }
 

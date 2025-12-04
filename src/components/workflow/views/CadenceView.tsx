@@ -211,42 +211,42 @@ export function CadenceView({
     switch (action_type) {
       case 'branch_copy':
         if (av.branch_suffix) {
-          return `Create branch with suffix "${av.branch_suffix}" (copy progress)`
+          return `Create a new branch with suffix "${av.branch_suffix}" and copy all current asset progress`
         }
-        return 'Create new branch (copy current progress)'
+        return 'Create a new branch and copy all current asset progress'
 
       case 'branch_nocopy':
         if (av.branch_suffix) {
-          return `Create branch with suffix "${av.branch_suffix}" (fresh start)`
+          return `Create a clean branch with suffix "${av.branch_suffix}"`
         }
-        return 'Create new branch (fresh start)'
+        return 'Create a clean branch with no asset progress'
 
       case 'move_stage':
-        return av.target_stage ? `Move to stage "${av.target_stage}"` : 'Move to specified stage'
+        return av.target_stage ? `Move all assets to the "${av.target_stage}" stage` : 'Move all assets to a specific stage'
 
       case 'advance_stage':
-        return 'Advance to next stage'
+        return 'Advance all assets to their next stage'
 
       case 'reset_workflow':
-        return av.target_stage ? `Reset to stage "${av.target_stage}"` : 'Reset workflow to beginning'
+        return av.target_stage ? `Reset all assets back to the "${av.target_stage}" stage` : 'Reset all assets to the first stage'
 
       case 'send_reminder':
-        return 'Send reminder notification'
+        return 'Send a reminder notification to team members'
 
       case 'add_universe_assets':
-        return 'Add all assets matching universe filters'
+        return 'Add all assets that match the universe filter rules'
 
       case 'add_specific_assets':
         if (av.asset_count) {
-          return `Add ${av.asset_count} specific assets`
+          return `Add ${av.asset_count} specific assets to the branch`
         }
-        return 'Add specific assets'
+        return 'Add selected assets to the branch'
 
       case 'remove_assets':
-        return 'Remove assets from branch'
+        return 'Remove specified assets from the branch'
 
       default:
-        return action_type?.replace(/_/g, ' ') || 'Action configured'
+        return action_type?.replace(/_/g, ' ') || 'Perform configured action'
     }
   }
 
@@ -328,26 +328,28 @@ export function CadenceView({
           </div>
         </div>
 
-        {canEdit && isEditMode && (
-          <div className="flex items-center space-x-1 ml-2">
+        {canEdit && (
+          <div className="flex items-center space-x-2 ml-3">
             {onEdit && (
               <Button
-                size="xs"
-                variant="outline"
+                size="sm"
+                variant="ghost"
                 title="Edit Rule"
                 onClick={() => onEdit(rule)}
+                className="hover:bg-blue-50"
               >
-                <Edit3 className="w-3 h-3" />
+                <Edit3 className="w-4 h-4 text-gray-600" />
               </Button>
             )}
             {onDelete && (
               <Button
-                size="xs"
-                variant="outline"
+                size="sm"
+                variant="ghost"
                 title="Delete Rule"
                 onClick={() => onDelete(rule.id, rule.rule_name)}
+                className="hover:bg-red-50"
               >
-                <Trash2 className="w-3 h-3 text-red-600" />
+                <Trash2 className="w-4 h-4 text-red-500" />
               </Button>
             )}
           </div>
@@ -391,16 +393,10 @@ export function CadenceView({
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Cadence & Automation</h3>
-          {canEdit && !isEditMode && (
-            <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Click <strong>"Edit Template"</strong> to add, edit, or delete rules. You can toggle rules active/inactive anytime.</span>
-            </div>
-          )}
         </div>
         <div className="flex items-center space-x-2">
           <span className="text-sm text-gray-600">Cadence:</span>
-          {canEdit && isEditMode && onChangeCadence ? (
+          {canEdit && onChangeCadence ? (
             <select
               value={cadenceTimeframe}
               onChange={(e) => onChangeCadence(e.target.value as CadenceTimeframe)}
@@ -435,7 +431,7 @@ export function CadenceView({
                 When to create new workflow branches
               </span>
             </div>
-            {canEdit && isEditMode && onAddRule && (
+            {canEdit && onAddRule && (
               <Button size="sm" onClick={onAddRule}>
                 <Plus className="w-4 h-4 mr-1" />
                 Add Rule
@@ -469,7 +465,7 @@ export function CadenceView({
                 <p className="text-xs text-gray-500 mb-3">
                   Create rules to automatically generate new workflow branches on a schedule (e.g., quarterly, monthly).
                 </p>
-                {canEdit && isEditMode && onAddRule && (
+                {canEdit && onAddRule && (
                   <Button size="sm" onClick={onAddRule}>
                     <Plus className="w-4 h-4 mr-1" />
                     Add Branch Rule
@@ -494,7 +490,7 @@ export function CadenceView({
                 When to add assets to branches
               </span>
             </div>
-            {canEdit && isEditMode && onAddAssetPopulationRule && (
+            {canEdit && onAddAssetPopulationRule && (
               <Button size="sm" onClick={onAddAssetPopulationRule}>
                 <Plus className="w-4 h-4 mr-1" />
                 Add Rule
@@ -524,7 +520,7 @@ export function CadenceView({
                 <p className="text-xs text-gray-500 mb-3">
                   Create rules to automatically add assets to branches based on triggers like branch creation, earnings dates, or other events.
                 </p>
-                {canEdit && isEditMode && onAddAssetPopulationRule && (
+                {canEdit && onAddAssetPopulationRule && (
                   <Button size="sm" onClick={onAddAssetPopulationRule}>
                     <Plus className="w-4 h-4 mr-1" />
                     Add Population Rule

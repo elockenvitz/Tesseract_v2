@@ -370,6 +370,26 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           { value: 'Technology', label: 'Technology' },
           { value: 'Utilities', label: 'Utilities' }
         ]
+      case 'priority':
+        return [
+          { value: 'critical', label: 'Critical' },
+          { value: 'high', label: 'High' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'low', label: 'Low' }
+        ]
+      case 'country':
+        return [
+          { value: 'US', label: 'United States' },
+          { value: 'CA', label: 'Canada' },
+          { value: 'GB', label: 'United Kingdom' },
+          { value: 'DE', label: 'Germany' },
+          { value: 'FR', label: 'France' },
+          { value: 'JP', label: 'Japan' },
+          { value: 'CN', label: 'China' },
+          { value: 'AU', label: 'Australia' },
+          { value: 'CH', label: 'Switzerland' },
+          { value: 'HK', label: 'Hong Kong' }
+        ]
       default:
         return []
     }
@@ -381,7 +401,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     setEditingFilter(null)
     setFilterType(type)
     setFilterOperator(definition?.defaultOperator || 'includes')
-    setFilterValues(definition?.valueType === 'multi_select' ? [] : null)
+    // Initialize filterValues based on filter type
+    if (type === 'financial_metric') {
+      setFilterValues({ metric: '', min: null, max: null })
+    } else if (definition?.valueType === 'multi_select') {
+      setFilterValues([])
+    } else {
+      setFilterValues(null)
+    }
     setFilterSearchTerm('')
     setShowFilterModal(true)
   }
@@ -581,6 +608,25 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
   // Format filter value for compact display
   const formatFilterValue = (rule: FilterRule): string => {
+    // Handle financial_metric filter
+    if (rule.type === 'financial_metric' && typeof rule.values === 'object' && rule.values !== null) {
+      const metricLabels: Record<string, string> = {
+        market_cap: 'Market Cap',
+        price: 'Stock Price',
+        volume: 'Trading Volume',
+        pe_ratio: 'P/E Ratio',
+        dividend_yield: 'Dividend Yield'
+      }
+      const parts = [metricLabels[rule.values.metric] || rule.values.metric]
+      if (rule.values.min !== null && rule.values.min !== undefined) {
+        parts.push(`Min: ${rule.values.min}`)
+      }
+      if (rule.values.max !== null && rule.values.max !== undefined) {
+        parts.push(`Max: ${rule.values.max}`)
+      }
+      return parts.join(', ')
+    }
+
     const options = getOptionsForFilter(rule.type)
     if (Array.isArray(rule.values)) {
       if (rule.values.length <= 2) {
@@ -1206,7 +1252,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       {/* Add Filter Section - Now at Top */}
       <div className={`${filters.length === 0 ? 'p-6 border-2 border-dashed border-gray-300 rounded-lg' : ''}`}>
         <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2`}>
-          {['analyst', 'list', 'theme', 'portfolio', 'sector'].map((ft) => {
+          {['analyst', 'list', 'theme', 'portfolio', 'sector', 'priority', 'financial_metric', 'country'].map((ft) => {
             const definition = getFilterDefinition(ft)
             if (!definition) return null
             const Icon = definition.icon
@@ -1434,7 +1480,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               {/* Operator Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Condition</label>
-                <div className="flex space-x-2">
+                <div className="flex flex-wrap gap-2">
                   {getFilterDefinition(filterType)?.availableOperators.map((op) => (
                     <button
                       key={op}
@@ -1452,52 +1498,132 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 </div>
               </div>
 
-              {/* Value Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Select Values</label>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={filterSearchTerm}
-                  onChange={(e) => setFilterSearchTerm(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                />
-                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
-                  {getOptionsForFilter(filterType)
-                    .filter(opt => opt.label && opt.label.toLowerCase().includes(filterSearchTerm.toLowerCase()))
-                    .map((option) => (
-                      <label
-                        key={option.value}
-                        className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={Array.isArray(filterValues) && filterValues.includes(option.value)}
-                          onChange={(e) => {
-                            const currentValues = Array.isArray(filterValues) ? filterValues : []
-                            if (e.target.checked) {
-                              setFilterValues([...currentValues, option.value])
-                            } else {
-                              setFilterValues(currentValues.filter(v => v !== option.value))
-                            }
-                          }}
-                          className="rounded text-blue-600"
-                        />
-                        <span className="text-sm text-gray-700">{option.label}</span>
-                      </label>
-                    ))}
+              {/* Value Selection - Different UI based on filter type */}
+              {filterType === 'financial_metric' ? (
+                <div className="space-y-4">
+                  {/* Metric Selector */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Metric</label>
+                    <select
+                      value={filterValues?.metric || ''}
+                      onChange={(e) => setFilterValues({ ...filterValues, metric: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Choose a metric...</option>
+                      <option value="market_cap">Market Cap</option>
+                      <option value="price">Stock Price</option>
+                      <option value="volume">Trading Volume</option>
+                      <option value="pe_ratio">P/E Ratio</option>
+                      <option value="dividend_yield">Dividend Yield</option>
+                    </select>
+                  </div>
+
+                  {/* Value Inputs */}
+                  {filterValues?.metric && (
+                    <>
+                      {filterOperator === 'greater_than' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Value</label>
+                          <input
+                            type="number"
+                            placeholder="Enter minimum"
+                            value={filterValues?.min || ''}
+                            onChange={(e) => setFilterValues({ ...filterValues, min: parseFloat(e.target.value) || null })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                      )}
+                      {filterOperator === 'less_than' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Value</label>
+                          <input
+                            type="number"
+                            placeholder="Enter maximum"
+                            value={filterValues?.max || ''}
+                            onChange={(e) => setFilterValues({ ...filterValues, max: parseFloat(e.target.value) || null })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                      )}
+                      {filterOperator === 'between' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Min</label>
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={filterValues?.min || ''}
+                              onChange={(e) => setFilterValues({ ...filterValues, min: parseFloat(e.target.value) || null })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Max</label>
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={filterValues?.max || ''}
+                              onChange={(e) => setFilterValues({ ...filterValues, max: parseFloat(e.target.value) || null })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                {Array.isArray(filterValues) && filterValues.length > 0 && (
-                  <p className="text-sm text-gray-500 mt-2">{filterValues.length} selected</p>
-                )}
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Values</label>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={filterSearchTerm}
+                    onChange={(e) => setFilterSearchTerm(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
+                  />
+                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                    {getOptionsForFilter(filterType)
+                      .filter(opt => opt.label && opt.label.toLowerCase().includes(filterSearchTerm.toLowerCase()))
+                      .map((option) => (
+                        <label
+                          key={option.value}
+                          className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Array.isArray(filterValues) && filterValues.includes(option.value)}
+                            onChange={(e) => {
+                              const currentValues = Array.isArray(filterValues) ? filterValues : []
+                              if (e.target.checked) {
+                                setFilterValues([...currentValues, option.value])
+                              } else {
+                                setFilterValues(currentValues.filter(v => v !== option.value))
+                              }
+                            }}
+                            className="rounded text-blue-600"
+                          />
+                          <span className="text-sm text-gray-700">{option.label}</span>
+                        </label>
+                      ))}
+                  </div>
+                  {Array.isArray(filterValues) && filterValues.length > 0 && (
+                    <p className="text-sm text-gray-500 mt-2">{filterValues.length} selected</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
               <Button variant="outline" onClick={() => setShowFilterModal(false)}>Cancel</Button>
               <Button
                 onClick={saveFilter}
-                disabled={!Array.isArray(filterValues) || filterValues.length === 0}
+                disabled={(() => {
+                  if (filterType === 'financial_metric') {
+                    return !filterValues?.metric || (!filterValues?.min && !filterValues?.max)
+                  }
+                  return !Array.isArray(filterValues) || filterValues.length === 0
+                })()}
               >
                 {editingFilter ? 'Update' : 'Add'} Filter
               </Button>

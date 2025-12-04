@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Plus, Trash2, Edit2, Eye, X, Search, UserPlus, UserMinus, ExternalLink, AlertCircle } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Plus, Trash2, Edit2, Eye, X, Search, UserPlus, UserMinus, ExternalLink } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -23,6 +23,12 @@ interface FilterRule {
   values: any
   combineWith?: 'AND' | 'OR'
 }
+
+// Logic expression token types (matching wizard)
+type LogicToken =
+  | { type: 'filter'; filterId: string }
+  | { type: 'operator'; value: 'AND' | 'OR' }
+  | { type: 'paren'; value: '(' | ')' }
 
 interface SimplifiedUniverseBuilderProps {
   workflowId: string
@@ -63,7 +69,152 @@ export function SimplifiedUniverseBuilder({
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
 
+  // Logic expression state (matching wizard)
+  const [logicExpression, setLogicExpression] = useState<LogicToken[]>([])
+  const [selectedTokens, setSelectedTokens] = useState<Set<number>>(new Set())
+
   const queryClient = useQueryClient()
+
+  // Initialize logic expression from rules
+  useEffect(() => {
+    if (rules.length === 0) {
+      setLogicExpression([])
+      return
+    }
+
+    // Build logic expression from rules
+    const expr: LogicToken[] = []
+    rules.forEach((rule, index) => {
+      if (index > 0) {
+        expr.push({ type: 'operator', value: rule.combineWith || 'AND' })
+      }
+      expr.push({ type: 'filter', filterId: rule.id })
+    })
+    setLogicExpression(expr)
+  }, [rules.length]) // Only rebuild when number of rules changes
+
+  // Get filter by ID
+  const getFilterById = (filterId: string): FilterRule | undefined => {
+    return rules.find(r => r.id === filterId)
+  }
+
+  // Toggle operator in logic expression
+  const toggleOperator = (index: number) => {
+    if (!isEditable) return
+    const token = logicExpression[index]
+    if (token.type === 'operator') {
+      const newExpr = [...logicExpression]
+      newExpr[index] = { type: 'operator', value: token.value === 'AND' ? 'OR' : 'AND' }
+      setLogicExpression(newExpr)
+
+      // Also update the rule's combineWith to stay in sync
+      // Find the filter token after this operator
+      for (let i = index + 1; i < logicExpression.length; i++) {
+        const nextToken = logicExpression[i]
+        if (nextToken.type === 'filter') {
+          const updatedRules = rules.map(r =>
+            r.id === nextToken.filterId
+              ? { ...r, combineWith: token.value === 'AND' ? 'OR' as const : 'AND' as const }
+              : r
+          )
+          onRulesChange(updatedRules)
+          break
+        }
+      }
+    }
+  }
+
+  // Toggle token selection
+  const toggleTokenSelection = (index: number) => {
+    if (!isEditable) return
+    const newSelection = new Set(selectedTokens)
+    if (newSelection.has(index)) {
+      newSelection.delete(index)
+    } else {
+      newSelection.add(index)
+    }
+    setSelectedTokens(newSelection)
+  }
+
+  // Group selected tokens with parentheses
+  const groupSelectedTokens = () => {
+    if (!isEditable || selectedTokens.size < 2) return
+
+    const indices = Array.from(selectedTokens).sort((a, b) => a - b)
+    const minIndex = indices[0]
+    const maxIndex = indices[indices.length - 1]
+
+    const newExpr = [...logicExpression]
+    newExpr.splice(maxIndex + 1, 0, { type: 'paren', value: ')' })
+    newExpr.splice(minIndex, 0, { type: 'paren', value: '(' })
+
+    setLogicExpression(newExpr)
+    setSelectedTokens(new Set())
+  }
+
+  // Remove parentheses pair
+  const removeParentheses = (openIndex: number) => {
+    if (!isEditable) return
+    const token = logicExpression[openIndex]
+    if (token?.type !== 'paren' || token?.value !== '(') return
+
+    let depth = 1
+    let closeIndex = -1
+    for (let i = openIndex + 1; i < logicExpression.length; i++) {
+      const t = logicExpression[i]
+      if (t.type === 'paren') {
+        if (t.value === '(') depth++
+        else if (t.value === ')') {
+          depth--
+          if (depth === 0) {
+            closeIndex = i
+            break
+          }
+        }
+      }
+    }
+
+    if (closeIndex > -1) {
+      const newExpr = logicExpression.filter((_, i) => i !== openIndex && i !== closeIndex)
+      setLogicExpression(newExpr)
+      setSelectedTokens(new Set())
+    }
+  }
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedTokens(new Set())
+  }
+
+  // Format filter value for compact display
+  const formatFilterValueCompact = (rule: FilterRule): string => {
+    if (rule.type === 'financial_metric' && typeof rule.values === 'object' && rule.values !== null) {
+      const metricLabels: Record<string, string> = {
+        market_cap: 'Market Cap',
+        price: 'Stock Price',
+        volume: 'Trading Volume',
+        pe_ratio: 'P/E Ratio',
+        dividend_yield: 'Dividend Yield'
+      }
+      const parts = [metricLabels[rule.values.metric] || rule.values.metric]
+      if (rule.values.min != null) parts.push(`>${rule.values.min}`)
+      if (rule.values.max != null) parts.push(`<${rule.values.max}`)
+      return parts.join(' ')
+    }
+
+    const options = getOptionsForFilter(rule.type)
+    if (Array.isArray(rule.values)) {
+      if (rule.values.length <= 2) {
+        return rule.values.map(v => {
+          const opt = options.find(o => o.value === v)
+          return opt?.label || v
+        }).join(', ')
+      }
+      const first = options.find(o => o.value === rule.values[0])?.label || rule.values[0]
+      return `${first} +${rule.values.length - 1}`
+    }
+    return String(rule.values)
+  }
 
   // Fetch universe overrides for this workflow
   const { data: universeOverrides = [] } = useQuery({
@@ -159,16 +310,6 @@ export function SimplifiedUniverseBuilder({
       r.id === updatedRule.id ? { ...updatedRule, combineWith: r.combineWith } : r
     )
     onRulesChange(newRules)
-    // Save is now handled by parent component's edit mode
-  }
-
-  // Update rule combinator
-  const updateRuleCombinator = (ruleId: string, combinator: 'AND' | 'OR') => {
-    onRulesChange(
-      rules.map(r =>
-        r.id === ruleId ? { ...r, combineWith: combinator } : r
-      )
-    )
     // Save is now handled by parent component's edit mode
   }
 
@@ -368,20 +509,29 @@ export function SimplifiedUniverseBuilder({
         })
         return allSymbolOptions
       case 'analyst':
-        // When in edit mode (modal is open), use typeahead results
-        // Otherwise, use full analysts list for display
-        if (showAddFilter && (selectedAnalystsCache.length > 0 || analystSuggestions.length > 0)) {
-          const allAnalystOptions = [...selectedAnalystsCache]
+        // When in modal, always use the full analysts list as the base
+        // and merge in any cached selections and search suggestions
+        if (showAddFilter) {
+          // Start with the full analysts list
+          const allAnalystOptions = [...analysts]
+
+          // Add cached selections that might not be in the analysts list
+          selectedAnalystsCache.forEach(cached => {
+            if (!allAnalystOptions.find(opt => opt.value === cached.value)) {
+              allAnalystOptions.push(cached)
+            }
+          })
+
+          // Add search suggestions that might not be in the list
           analystSuggestions.forEach(suggestion => {
             if (!allAnalystOptions.find(opt => opt.value === suggestion.value)) {
               allAnalystOptions.push(suggestion)
             }
           })
-          console.log('Returning cached analysts (edit mode):', allAnalystOptions)
+
           return allAnalystOptions
         }
         // Use full analysts list for display of saved rules
-        console.log('Returning full analysts list:', analysts)
         return analysts
       case 'list':
         return lists
@@ -405,10 +555,10 @@ export function SimplifiedUniverseBuilder({
         ]
       case 'priority':
         return [
-          { value: 'Critical', label: 'Critical' },
-          { value: 'High', label: 'High' },
-          { value: 'Medium', label: 'Medium' },
-          { value: 'Low', label: 'Low' }
+          { value: 'critical', label: 'Critical' },
+          { value: 'high', label: 'High' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'low', label: 'Low' }
         ]
       default:
         return []
@@ -433,7 +583,7 @@ export function SimplifiedUniverseBuilder({
         })
 
         return (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <input
               type="text"
               placeholder={
@@ -455,7 +605,7 @@ export function SimplifiedUniverseBuilder({
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
-            <div className="max-h-48 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+            <div className="h-48 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
               {filteredOptions.length > 0 ? (
                 filteredOptions.map((option) => (
                   <label
@@ -497,7 +647,7 @@ export function SimplifiedUniverseBuilder({
                           setCurrentValues(option.value)
                         }
                       }}
-                      className="rounded text-blue-600 focus:ring-blue-500"
+                      className="rounded text-blue-600 focus:ring-blue-500 flex-shrink-0"
                     />
                     <span className="text-sm text-gray-700">{option.label}</span>
                   </label>
@@ -508,18 +658,6 @@ export function SimplifiedUniverseBuilder({
                 </div>
               )}
             </div>
-            {definition.valueType === 'multi_select' && currentValues?.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSelectedOnly(!showSelectedOnly)
-                  setSearchTerm('') // Clear search when toggling
-                }}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
-              >
-                {showSelectedOnly ? 'Show all options' : `View ${currentValues.length} selected`}
-              </button>
-            )}
           </div>
         )
 
@@ -539,6 +677,112 @@ export function SimplifiedUniverseBuilder({
         )
 
       case 'number_range':
+        // Special handling for financial_metric filter - show metric selector first
+        if (definition.id === 'financial_metric') {
+          const metricOptions = [
+            { value: 'market_cap', label: 'Market Cap', placeholder: 'Enter value in millions', formatHint: '(in millions USD)' },
+            { value: 'price', label: 'Stock Price', placeholder: 'Enter price', formatHint: '(USD)' },
+            { value: 'volume', label: 'Trading Volume', placeholder: 'Enter volume', formatHint: '(shares)' },
+            { value: 'pe_ratio', label: 'P/E Ratio', placeholder: 'Enter P/E ratio', formatHint: '' },
+            { value: 'dividend_yield', label: 'Dividend Yield', placeholder: 'Enter percentage', formatHint: '(%)' }
+          ]
+          const selectedMetric = metricOptions.find(m => m.value === currentValues?.metric)
+
+          return (
+            <div className="space-y-4">
+              {/* Metric Selector */}
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Select Metric</label>
+                <select
+                  value={currentValues?.metric || ''}
+                  onChange={(e) => setCurrentValues({ ...currentValues, metric: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                >
+                  <option value="">Choose a metric...</option>
+                  {metricOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Value Input - only show after metric is selected */}
+              {currentValues?.metric && (
+                <>
+                  {currentOperator === 'greater_than' && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">
+                        Minimum Value {selectedMetric?.formatHint}
+                      </label>
+                      <input
+                        type="number"
+                        placeholder={selectedMetric?.placeholder || 'Enter minimum'}
+                        value={currentValues?.min || ''}
+                        onChange={(e) =>
+                          setCurrentValues({ ...currentValues, min: parseFloat(e.target.value) || null })
+                        }
+                        min={0}
+                        step={currentValues?.metric === 'price' ? 0.01 : 1}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                    </div>
+                  )}
+                  {currentOperator === 'less_than' && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">
+                        Maximum Value {selectedMetric?.formatHint}
+                      </label>
+                      <input
+                        type="number"
+                        placeholder={selectedMetric?.placeholder || 'Enter maximum'}
+                        value={currentValues?.max || ''}
+                        onChange={(e) =>
+                          setCurrentValues({ ...currentValues, max: parseFloat(e.target.value) || null })
+                        }
+                        min={0}
+                        step={currentValues?.metric === 'price' ? 0.01 : 1}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                    </div>
+                  )}
+                  {currentOperator === 'between' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Min {selectedMetric?.formatHint}</label>
+                        <input
+                          type="number"
+                          placeholder="Min"
+                          value={currentValues?.min || ''}
+                          onChange={(e) =>
+                            setCurrentValues({ ...currentValues, min: parseFloat(e.target.value) || null })
+                          }
+                          min={0}
+                          step={currentValues?.metric === 'price' ? 0.01 : 1}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Max {selectedMetric?.formatHint}</label>
+                        <input
+                          type="number"
+                          placeholder="Max"
+                          value={currentValues?.max || ''}
+                          onChange={(e) =>
+                            setCurrentValues({ ...currentValues, max: parseFloat(e.target.value) || null })
+                          }
+                          min={0}
+                          step={currentValues?.metric === 'price' ? 0.01 : 1}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )
+        }
+
+        // Standard number_range handling for other filters
         // Show different inputs based on operator
         if (currentOperator === 'equals') {
           return (
@@ -715,12 +959,6 @@ export function SimplifiedUniverseBuilder({
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <h3 className="text-lg font-semibold text-gray-900">Universe Filters</h3>
-          {canEdit && !isEditMode && (
-            <div className="flex items-center space-x-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Click <strong>"Edit Template"</strong> in the header to make changes to universe rules</span>
-            </div>
-          )}
         </div>
         <div className="flex items-center space-x-2">
           <Button
@@ -764,47 +1002,146 @@ export function SimplifiedUniverseBuilder({
           )}
         </Card>
       ) : (
-        <div className="space-y-2">
-          {rules.map((rule, index) => {
-            const definition = getFilterDefinition(rule.type)
-            if (!definition) return null
-
-            const Icon = definition.icon
-
-            return (
-              <div key={rule.id}>
-                {/* Rule Combinator */}
-                {index > 0 && (
-                  <div className="flex justify-center my-2">
-                    <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
+        <div className="space-y-4">
+          {/* Logic Builder Section - Show when there are 2+ filters */}
+          {rules.length >= 2 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-gray-700">Filter Logic</h4>
+                <div className="flex items-center gap-2">
+                  {isEditable && selectedTokens.size >= 2 && (
+                    <>
                       <button
-                        onClick={() => isEditable && updateRuleCombinator(rule.id, 'AND')}
-                        disabled={!isEditable}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          rule.combineWith === 'AND'
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-600 hover:text-gray-900'
-                        } ${!isEditable ? 'cursor-not-allowed opacity-50' : ''}`}
+                        type="button"
+                        onClick={groupSelectedTokens}
+                        className="text-xs px-2 py-1 bg-purple-600 text-white hover:bg-purple-700 rounded font-medium"
                       >
-                        AND
+                        ( ) Group Selected
                       </button>
                       <button
-                        onClick={() => isEditable && updateRuleCombinator(rule.id, 'OR')}
-                        disabled={!isEditable}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          rule.combineWith === 'OR'
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-600 hover:text-gray-900'
-                        } ${!isEditable ? 'cursor-not-allowed opacity-50' : ''}`}
+                        type="button"
+                        onClick={clearSelection}
+                        className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-200 rounded"
                       >
-                        OR
+                        Clear
                       </button>
-                    </div>
-                  </div>
-                )}
+                    </>
+                  )}
+                  {isEditable && selectedTokens.size > 0 && selectedTokens.size < 2 && (
+                    <span className="text-xs text-gray-500">Select more to group</span>
+                  )}
+                </div>
+              </div>
 
-                {/* Rule Card */}
-                <div className="flex items-center space-x-4 p-4 bg-white rounded-lg border-2 border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
+              {/* Logic Expression Display */}
+              <div className="flex flex-wrap items-center gap-1.5 p-3 bg-white border border-gray-200 rounded-lg min-h-[48px]">
+                {logicExpression.map((token, index) => {
+                  const isSelected = selectedTokens.has(index)
+
+                  if (token.type === 'filter') {
+                    const filter = getFilterById(token.filterId)
+                    if (!filter) return null
+                    const def = getFilterDefinition(filter.type)
+                    const fullDetails = `${def?.name || filter.type} ${OPERATOR_LABELS[filter.operator]} ${formatFilterValueCompact(filter)}`
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => toggleTokenSelection(index)}
+                        className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium transition-all ${
+                          isSelected
+                            ? 'bg-purple-200 text-purple-900 ring-2 ring-purple-400'
+                            : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                        } ${!isEditable ? 'cursor-default' : 'cursor-pointer'}`}
+                        title={fullDetails}
+                        disabled={!isEditable}
+                      >
+                        {def?.name || filter.type}
+                      </button>
+                    )
+                  } else if (token.type === 'operator') {
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={(e) => {
+                          if (!isEditable) return
+                          if (e.shiftKey) {
+                            toggleTokenSelection(index)
+                          } else {
+                            toggleOperator(index)
+                          }
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold transition-all ${
+                          isSelected
+                            ? 'bg-purple-200 text-purple-900 ring-2 ring-purple-400'
+                            : token.value === 'AND'
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                        } ${isEditable ? 'cursor-pointer' : 'cursor-default'}`}
+                        title={isEditable ? "Click to toggle AND/OR, Shift+Click to select" : undefined}
+                        disabled={!isEditable}
+                      >
+                        {token.value}
+                      </button>
+                    )
+                  } else if (token.type === 'paren') {
+                    const isOpenParen = token.value === '('
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={(e) => {
+                          if (!isEditable) return
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (isOpenParen) {
+                            removeParentheses(index)
+                          } else {
+                            let depth = 1
+                            for (let i = index - 1; i >= 0; i--) {
+                              const t = logicExpression[i]
+                              if (t.type === 'paren') {
+                                if (t.value === ')') depth++
+                                else if (t.value === '(') {
+                                  depth--
+                                  if (depth === 0) {
+                                    removeParentheses(i)
+                                    break
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }}
+                        className={`font-bold text-lg px-0.5 transition-colors text-purple-600 ${isEditable ? 'hover:text-red-600 hover:bg-red-50 cursor-pointer' : 'cursor-default'} rounded`}
+                        title={isEditable ? "Click to remove this ( ) pair" : undefined}
+                        disabled={!isEditable}
+                      >
+                        {token.value}
+                      </button>
+                    )
+                  }
+                  return null
+                })}
+              </div>
+
+              <p className="text-xs text-gray-500 mt-2">
+                {isEditable ? 'Click AND/OR to toggle. Click filters to select, then group with parentheses.' : 'View-only mode'}
+              </p>
+            </div>
+          )}
+
+          {/* Filter Cards */}
+          <div className="space-y-2">
+            {rules.map((rule) => {
+              const definition = getFilterDefinition(rule.type)
+              if (!definition) return null
+
+              const Icon = definition.icon
+
+              return (
+                <div key={rule.id} className="flex items-center space-x-4 p-4 bg-white rounded-lg border-2 border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
                   <Icon className={`w-6 h-6 text-${definition.color}-500 flex-shrink-0`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2 flex-wrap gap-2">
@@ -821,15 +1158,11 @@ export function SimplifiedUniverseBuilder({
                         {(() => {
                           // Handle array values (multi-select)
                           if (Array.isArray(rule.values)) {
-                            // Get the options for this filter type to look up labels
                             const options = getOptionsForFilter(rule.type)
-                            console.log('Display rule:', { type: rule.type, values: rule.values, options })
                             const labels = rule.values.map(val => {
                               const option = options.find(opt => opt.value === val)
-                              console.log('Looking up:', { val, option, found: !!option })
                               return option ? option.label : val
                             })
-
                             return labels.length > 3
                               ? `${labels.slice(0, 3).join(', ')} +${labels.length - 3} more`
                               : labels.join(', ')
@@ -838,28 +1171,26 @@ export function SimplifiedUniverseBuilder({
                           // Handle range values (objects with min/max)
                           if (typeof rule.values === 'object' && rule.values !== null) {
                             const parts = []
-                            if (rule.values.value !== null && rule.values.value !== undefined) {
-                              parts.push(definition.formatValue ? definition.formatValue(rule.values.value) : rule.values.value)
+                            if (rule.type === 'financial_metric' && rule.values.metric) {
+                              const metricLabels: Record<string, string> = {
+                                market_cap: 'Market Cap',
+                                price: 'Stock Price',
+                                volume: 'Trading Volume',
+                                pe_ratio: 'P/E Ratio',
+                                dividend_yield: 'Dividend Yield'
+                              }
+                              parts.push(metricLabels[rule.values.metric] || rule.values.metric)
                             }
                             if (rule.values.min !== null && rule.values.min !== undefined) {
-                              parts.push(`Min: ${definition.formatValue ? definition.formatValue(rule.values.min) : rule.values.min}`)
+                              parts.push(`Min: ${rule.values.min}`)
                             }
                             if (rule.values.max !== null && rule.values.max !== undefined) {
-                              parts.push(`Max: ${definition.formatValue ? definition.formatValue(rule.values.max) : rule.values.max}`)
-                            }
-                            if (rule.values.start) {
-                              parts.push(`Start: ${rule.values.start}`)
-                            }
-                            if (rule.values.end) {
-                              parts.push(`End: ${rule.values.end}`)
+                              parts.push(`Max: ${rule.values.max}`)
                             }
                             return parts.join(', ')
                           }
 
-                          // Handle single values
-                          return definition.formatValue
-                            ? definition.formatValue(rule.values)
-                            : rule.values
+                          return String(rule.values)
                         })()}
                       </span>
                     </div>
@@ -885,9 +1216,9 @@ export function SimplifiedUniverseBuilder({
                     </div>
                   )}
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -1116,37 +1447,59 @@ export function SimplifiedUniverseBuilder({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 flex justify-end space-x-2 flex-shrink-0">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddFilter(false)
-                  resetModal()
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={saveFilter}
-                disabled={(() => {
-                  if (!selectedFilterType || currentValues === null || currentValues === undefined) return true
+            <div className="p-4 border-t border-gray-200 flex justify-between items-center flex-shrink-0">
+              <div>
+                {selectedFilterType && Array.isArray(currentValues) && currentValues.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSelectedOnly(!showSelectedOnly)
+                      setSearchTerm('') // Clear search when toggling
+                    }}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
+                  >
+                    {showSelectedOnly ? 'Show all options' : `View ${currentValues.length} selected`}
+                  </button>
+                )}
+              </div>
+              <div className="flex space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowAddFilter(false)
+                    resetModal()
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={saveFilter}
+                  disabled={(() => {
+                    if (!selectedFilterType || currentValues === null || currentValues === undefined) return true
 
-                  const filterDef = getFilterDefinition(selectedFilterType)
-                  if (!filterDef) return true
+                    const filterDef = getFilterDefinition(selectedFilterType)
+                    if (!filterDef) return true
 
-                  // For range types, require at least one value
-                  if (filterDef.valueType === 'number_range' || filterDef.valueType === 'date_range') {
-                    return !currentValues.min && !currentValues.max && !currentValues.start && !currentValues.end
-                  }
+                    // For financial_metric, require metric selection and at least one value
+                    if (selectedFilterType === 'financial_metric') {
+                      if (!currentValues.metric) return true
+                      return !currentValues.min && !currentValues.max
+                    }
 
-                  // For arrays, require at least one item
-                  if (Array.isArray(currentValues)) return currentValues.length === 0
+                    // For range types, require at least one value
+                    if (filterDef.valueType === 'number_range' || filterDef.valueType === 'date_range') {
+                      return !currentValues.min && !currentValues.max && !currentValues.start && !currentValues.end
+                    }
 
-                  return false
-                })()}
-              >
-                {editingRule ? 'Update' : 'Add'} Filter
-              </Button>
+                    // For arrays, require at least one item
+                    if (Array.isArray(currentValues)) return currentValues.length === 0
+
+                    return false
+                  })()}
+                >
+                  {editingRule ? 'Update' : 'Add'} Filter
+                </Button>
+              </div>
             </div>
           </Card>
         </div>

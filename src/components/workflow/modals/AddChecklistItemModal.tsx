@@ -5,7 +5,7 @@
  * Extracted from WorkflowsPage.tsx during Phase 5 refactoring.
  */
 
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from '../../ui/Button'
 
 export interface AddChecklistItemModalProps {
@@ -31,6 +31,12 @@ export function AddChecklistItemModal({ workflowId, stageId, existingItems, onCl
     sort_order: existingItems.length + 1,
     is_required: false
   })
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-focus the input when modal opens
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,6 +56,7 @@ export function AddChecklistItemModal({ workflowId, stageId, existingItems, onCl
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
             <input
+              ref={inputRef}
               type="text"
               value={formData.item_text}
               onChange={(e) => setFormData({ ...formData, item_text: e.target.value })}

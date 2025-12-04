@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, GitBranch, CheckCircle, Clock, Eye, Plus, ChevronDown, ChevronRight, GitCompare, RotateCcw } from 'lucide-react'
+import { X, GitBranch, CheckCircle, Clock, Eye, Plus, ChevronDown, ChevronRight, GitCompare } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { VersionComparisonModal } from './VersionComparisonModal'
@@ -225,17 +225,6 @@ export function TemplateVersionsModal({
                               <Eye className="w-3 h-3 mr-1" />
                               View
                             </Button>
-                            {canActivateVersion && !version.is_active && onActivateVersion && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => onActivateVersion(version.id)}
-                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-300"
-                              >
-                                <RotateCcw className="w-3 h-3 mr-1" />
-                                Activate
-                              </Button>
-                            )}
                           </div>
                         )}
                       </div>

@@ -85,6 +85,19 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           console.log(`✅ Symbol filter found ${symbolAssets?.length || 0} assets for symbols:`, rule.values)
           return symbolAssets?.map(a => a.id) || []
 
+        case 'portfolio':
+          const { data: portfolioHoldings, error: portfolioError } = await supabase
+            .from('portfolio_holdings')
+            .select('asset_id')
+            .in('portfolio_id', rule.values)
+          if (portfolioError) {
+            console.error('❌ Portfolio query error:', portfolioError)
+          }
+          // Get unique asset IDs from holdings
+          const uniquePortfolioAssets = [...new Set(portfolioHoldings?.map(h => h.asset_id) || [])]
+          console.log(`✅ Portfolio filter found ${uniquePortfolioAssets.length} assets for portfolios:`, rule.values)
+          return uniquePortfolioAssets
+
         default:
           console.warn(`⚠️ Unknown filter type for array values: ${rule.type}`)
           return []
