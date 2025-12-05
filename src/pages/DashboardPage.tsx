@@ -38,15 +38,47 @@ import { TDFTab } from '../components/tabs/TDFTab'
 import { CalendarPage } from './CalendarPage'
 import { PrioritizerPage } from './PrioritizerPage'
 import { CoveragePage } from './CoveragePage'
+import { OrganizationPage } from './OrganizationPage'
 import { ThoughtsFeed } from '../components/thoughts'
 import { ContentSection } from '../components/dashboard/ContentSection'
 
+// Helper to get initial tab state synchronously (avoids flash on refresh)
+function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
+  const savedState = TabStateManager.loadMainTabState()
+  if (savedState && savedState.tabs && savedState.tabs.length > 0) {
+    // Ensure dashboard tab always exists
+    const hasDashboard = savedState.tabs.some(tab => tab.id === 'dashboard')
+    if (!hasDashboard) {
+      savedState.tabs.unshift({
+        id: 'dashboard',
+        title: 'Dashboard',
+        type: 'dashboard',
+        isActive: false
+      })
+    }
+    return {
+      tabs: savedState.tabs.map(tab => ({
+        ...tab,
+        isActive: tab.id === savedState.activeTabId
+      })),
+      activeTabId: savedState.activeTabId
+    }
+  }
+  // Default state
+  return {
+    tabs: [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }],
+    activeTabId: 'dashboard'
+  }
+}
+
+// Cache the initial state so we only read from storage once
+const cachedInitialState = getInitialTabState()
+
 export function DashboardPage() {
-  const [tabs, setTabs] = useState<Tab[]>([
-    { id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }
-  ])
-  const [activeTabId, setActiveTabId] = useState('dashboard')
-  const [isInitialized, setIsInitialized] = useState(false)
+  // Initialize state synchronously from sessionStorage to avoid flash
+  const [tabs, setTabs] = useState<Tab[]>(cachedInitialState.tabs)
+  const [activeTabId, setActiveTabId] = useState(cachedInitialState.activeTabId)
+  const [isInitialized, setIsInitialized] = useState(true) // Already initialized from storage
 
   const { data: assets, isLoading: assetsLoading } = useQuery({
     queryKey: ['assets'],
@@ -431,30 +463,8 @@ export function DashboardPage() {
     }
   })
 
-  // Initialize tab state from persistence on component mount
-  useEffect(() => {
-    const savedState = TabStateManager.loadMainTabState()
-    if (savedState) {
-      // Ensure dashboard tab always exists
-      const hasDashboard = savedState.tabs.some(tab => tab.id === 'dashboard')
-      if (!hasDashboard) {
-        savedState.tabs.unshift({
-          id: 'dashboard',
-          title: 'Dashboard',
-          type: 'dashboard',
-          isActive: false
-        })
-      }
-
-      // Restore tabs and active tab
-      setTabs(savedState.tabs.map(tab => ({
-        ...tab,
-        isActive: tab.id === savedState.activeTabId
-      })))
-      setActiveTabId(savedState.activeTabId)
-    }
-    setIsInitialized(true)
-  }, [])
+  // Tab state is now initialized synchronously in useState initializers
+  // No useEffect needed for restoring tabs - this prevents flash on refresh
 
   // Save tab state whenever tabs or activeTabId changes (but only after initialization)
   useEffect(() => {
@@ -698,6 +708,8 @@ export function DashboardPage() {
         return <PrioritizerPage onItemSelect={handleSearchResult} />
       case 'coverage':
         return <CoveragePage initialView={activeTab.data?.initialView} />
+      case 'organization':
+        return <OrganizationPage />
       default:
         return renderDashboardContent()
     }

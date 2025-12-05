@@ -104,6 +104,16 @@ export function CadenceView({
     return labels[timeframe] || timeframe
   }
 
+  // Format time string from 24h to 12h format
+  const formatTime = (time: string): string => {
+    if (!time) return ''
+    const [hours, minutes] = time.split(':')
+    const hour = parseInt(hours, 10)
+    const ampm = hour >= 12 ? 'PM' : 'AM'
+    const hour12 = hour % 12 || 12
+    return `${hour12}:${minutes} ${ampm}`
+  }
+
   // Get human-readable condition description from condition_value object
   const getConditionDescription = (rule: AutomationRule): string => {
     const { condition_type, condition_value } = rule
@@ -112,51 +122,52 @@ export function CadenceView({
     // Handle time-based recurrence patterns
     if (condition_type === 'time_interval' && cv.pattern_type) {
       const capitalize = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+      const timeStr = cv.trigger_time ? ` at ${formatTime(cv.trigger_time)}` : ''
 
       switch (cv.pattern_type) {
         case 'daily':
           if (cv.daily_type === 'every_weekday') {
-            return 'Every weekday'
+            return `Every weekday${timeStr}`
           }
-          return cv.interval === 1 ? 'Every day' : `Every ${cv.interval} days`
+          return cv.interval === 1 ? `Every day${timeStr}` : `Every ${cv.interval} days${timeStr}`
 
         case 'weekly':
           const days = cv.days_of_week || []
           const dayNames = days.map((d: string) => capitalize(d.slice(0, 3))).join(', ')
           if (cv.interval === 1) {
-            return `Weekly on ${dayNames || 'selected days'}`
+            return `Weekly on ${dayNames || 'selected days'}${timeStr}`
           }
-          return `Every ${cv.interval} weeks on ${dayNames || 'selected days'}`
+          return `Every ${cv.interval} weeks on ${dayNames || 'selected days'}${timeStr}`
 
         case 'monthly':
           if (cv.monthly_type === 'day_of_month') {
             const dayNum = cv.day_number || 1
             const suffix = dayNum === 1 ? 'st' : dayNum === 2 ? 'nd' : dayNum === 3 ? 'rd' : 'th'
             return cv.interval === 1
-              ? `Monthly on the ${dayNum}${suffix}`
-              : `Every ${cv.interval} months on the ${dayNum}${suffix}`
+              ? `Monthly on the ${dayNum}${suffix}${timeStr}`
+              : `Every ${cv.interval} months on the ${dayNum}${suffix}${timeStr}`
           } else if (cv.monthly_type === 'position_of_month') {
-            return `The ${cv.position || 'first'} ${capitalize(cv.day_name || 'day')} of every ${cv.interval === 1 ? 'month' : `${cv.interval} months`}`
+            return `The ${cv.position || 'first'} ${capitalize(cv.day_name || 'day')} of every ${cv.interval === 1 ? 'month' : `${cv.interval} months`}${timeStr}`
           }
-          return 'Monthly'
+          return `Monthly${timeStr}`
 
         case 'quarterly':
           if (cv.quarterly_type === 'day_of_quarter') {
             return cv.interval === 1
-              ? `Day ${cv.day_number || 1} of each quarter`
-              : `Day ${cv.day_number || 1} every ${cv.interval} quarters`
+              ? `Day ${cv.day_number || 1} of each quarter${timeStr}`
+              : `Day ${cv.day_number || 1} every ${cv.interval} quarters${timeStr}`
           } else if (cv.quarterly_type === 'position_of_quarter') {
-            return `The ${cv.position || 'first'} ${capitalize(cv.day_name || 'day')} of each quarter`
+            return `The ${cv.position || 'first'} ${capitalize(cv.day_name || 'day')} of each quarter${timeStr}`
           }
-          return 'Quarterly'
+          return `Quarterly${timeStr}`
 
         case 'yearly':
           if (cv.yearly_type === 'specific_date') {
-            return `Annually on ${capitalize(cv.month || 'January')} ${cv.day_number || 1}`
+            return `Annually on ${capitalize(cv.month || 'January')} ${cv.day_number || 1}${timeStr}`
           } else if (cv.yearly_type === 'position_of_year') {
-            return `The ${cv.position || 'first'} ${capitalize(cv.day_name || 'day')} of ${capitalize(cv.month || 'January')} each year`
+            return `The ${cv.position || 'first'} ${capitalize(cv.day_name || 'day')} of ${capitalize(cv.month || 'January')} each year${timeStr}`
           }
-          return 'Yearly'
+          return `Yearly${timeStr}`
 
         default:
           return capitalize(cv.pattern_type)

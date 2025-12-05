@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb } from 'lucide-react'
+import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -413,7 +413,23 @@ export function Header({
                       <Users className="h-4 w-4 mr-3 text-gray-400" />
                       Coverage Management
                     </button>
-                    
+
+                    <button
+                      onClick={() => {
+                        setShowUserMenu(false)
+                        onSearchResult({
+                          id: 'organization',
+                          title: 'Organization',
+                          type: 'organization',
+                          data: null
+                        })
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                    >
+                      <Building2 className="h-4 w-4 mr-3 text-gray-400" />
+                      Organization
+                    </button>
+
                     <button
                       onClick={() => {
                         setShowUserMenu(false)
@@ -472,6 +488,7 @@ export function Header({
           </div>
         </div>
       )}
+
     </header>
   )
 }
