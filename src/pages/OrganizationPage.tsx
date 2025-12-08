@@ -44,10 +44,15 @@ import {
   AtSign,
   ExternalLink,
   LogIn,
-  Send
+  Send,
+  Link2,
+  Info,
+  Calendar,
+  FileText
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { AddTeamMemberModal } from '../components/portfolios/AddTeamMemberModal'
 
 interface Organization {
   id: string
@@ -76,6 +81,7 @@ interface UserProfile {
   email: string
   full_name: string | null
   avatar_url: string | null
+  coverage_admin?: boolean
 }
 
 interface OrganizationMembership {
@@ -116,6 +122,21 @@ interface PortfolioMembership {
   access_permissions: any
   user?: UserProfile
   portfolio?: Portfolio
+}
+
+interface PortfolioTeamMember {
+  id: string
+  portfolio_id: string
+  user_id: string
+  role: string
+  focus: string | null
+  created_at: string
+  user?: {
+    id: string
+    email: string
+    first_name?: string
+    last_name?: string
+  }
 }
 
 interface AccessRequest {
@@ -245,8 +266,23 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   // Org chart node state
   const [showAddNodeModal, setShowAddNodeModal] = useState(false)
   const [addNodeParentId, setAddNodeParentId] = useState<string | null>(null)
+  const [insertBetweenChildIds, setInsertBetweenChildIds] = useState<string[] | null>(null) // Children to re-parent when inserting
   const [editingNode, setEditingNode] = useState<OrgChartNode | null>(null)
   const [showAddNodeMemberModal, setShowAddNodeMemberModal] = useState<OrgChartNode | null>(null)
+  const [viewingNodeDetails, setViewingNodeDetails] = useState<OrgChartNode | null>(null)
+  const [deleteNodeConfirm, setDeleteNodeConfirm] = useState<{ isOpen: boolean; node: OrgChartNode | null }>({ isOpen: false, node: null })
+
+  // Org chart panning state
+  const orgChartContainerRef = useRef<HTMLDivElement>(null)
+  const [isPanning, setIsPanning] = useState(false)
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 })
+  const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 })
+
+  // Portfolio team member state
+  const [showAddPortfolioTeamMemberModal, setShowAddPortfolioTeamMemberModal] = useState(false)
+  const [selectedPortfolioForTeam, setSelectedPortfolioForTeam] = useState<Portfolio | null>(null)
+  const [editingPortfolioTeamMember, setEditingPortfolioTeamMember] = useState<PortfolioTeamMember | null>(null)
+  const [deletePortfolioTeamConfirm, setDeletePortfolioTeamConfirm] = useState<{isOpen: boolean, member: PortfolioTeamMember | null}>({ isOpen: false, member: null })
 
   // Fetch organization data
   const { data: organization } = useQuery({
@@ -295,7 +331,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       const userIds = memberships.map(m => m.user_id).filter(Boolean)
       const { data: users, error: usersError } = await supabase
         .from('users')
-        .select('id, email, first_name, last_name')
+        .select('id, email, first_name, last_name, coverage_admin')
         .in('id', userIds)
 
       if (usersError) throw usersError
@@ -313,7 +349,8 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
             email: user?.email || '',
             full_name: user?.first_name && user?.last_name
               ? `${user.first_name} ${user.last_name}`
-              : user?.email?.split('@')[0] || 'Unknown'
+              : user?.email?.split('@')[0] || 'Unknown',
+            coverage_admin: user?.coverage_admin || false
           }
         }
       }) as OrganizationMembership[]
@@ -404,6 +441,100 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           avatar_url: m.user?.raw_user_meta_data?.avatar_url
         }
       })) as PortfolioMembership[]
+    }
+  })
+
+  // Fetch portfolio team members (unified with Portfolio Tab)
+  const { data: portfolioTeamMembers = [], refetch: refetchPortfolioTeamMembers } = useQuery({
+    queryKey: ['portfolio-team-all'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_team')
+        .select(`
+          id,
+          portfolio_id,
+          user_id,
+          role,
+          focus,
+          created_at,
+          user:users!inner (
+            id,
+            email,
+            first_name,
+            last_name
+          )
+        `)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      return (data || []).filter((r: any) => r.user !== null) as PortfolioTeamMember[]
+    }
+  })
+
+  // Delete portfolio team member mutation
+  const deletePortfolioTeamMemberMutation = useMutation({
+    mutationFn: async (memberId: string) => {
+      const { error } = await supabase
+        .from('portfolio_team')
+        .delete()
+        .eq('id', memberId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+      // Also invalidate portfolio-specific queries used by Portfolio Tab
+      if (deletePortfolioTeamConfirm.member?.portfolio_id) {
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', deletePortfolioTeamConfirm.member.portfolio_id] })
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team', deletePortfolioTeamConfirm.member.portfolio_id] })
+      }
+      setDeletePortfolioTeamConfirm({ isOpen: false, member: null })
+    },
+    onError: (error) => {
+      console.error('Failed to delete team member:', error)
+    }
+  })
+
+  // Update portfolio team member mutation
+  const updatePortfolioTeamMemberMutation = useMutation({
+    mutationFn: async ({ memberId, role, focus }: { memberId: string; role: string; focus: string | null }) => {
+      const { error } = await supabase
+        .from('portfolio_team')
+        .update({ role, focus })
+        .eq('id', memberId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+    },
+    onError: (error) => {
+      console.error('Failed to update team member:', error)
+    }
+  })
+
+  // Add portfolio team member mutation
+  const addPortfolioTeamMemberMutation = useMutation({
+    mutationFn: async ({ portfolioId, userId, role, focus }: { portfolioId: string; userId: string; role?: string; focus?: string }) => {
+      const { data, error } = await supabase
+        .from('portfolio_team')
+        .insert({
+          portfolio_id: portfolioId,
+          user_id: userId,
+          role: role || 'Analyst',
+          focus: focus || null
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+    },
+    onError: (error: any) => {
+      alert(`Failed to add team member: ${error.message}`)
     }
   })
 
@@ -507,6 +638,48 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   // Get members for a specific node
   const getNodeMembers = (nodeId: string) => {
     return orgChartNodeMembers.filter(m => m.node_id === nodeId)
+  }
+
+  // Compute shared portfolios - portfolios that appear under multiple teams
+  // Returns a map of portfolio_id -> array of team names that share it
+  const sharedPortfoliosMap = React.useMemo(() => {
+    const portfolioTeams = new Map<string, { nodeIds: string[], teamNames: string[] }>()
+
+    // Find all portfolio nodes and their parent team names
+    orgChartNodes.forEach(node => {
+      if (node.node_type === 'portfolio' && node.settings?.portfolio_id) {
+        const portfolioId = node.settings.portfolio_id
+        // Find parent node to get team name
+        const parent = orgChartNodes.find(n => n.id === node.parent_id)
+        const teamName = parent?.name || 'Unknown Team'
+
+        if (!portfolioTeams.has(portfolioId)) {
+          portfolioTeams.set(portfolioId, { nodeIds: [], teamNames: [] })
+        }
+        const entry = portfolioTeams.get(portfolioId)!
+        entry.nodeIds.push(node.id)
+        entry.teamNames.push(teamName)
+      }
+    })
+
+    // Filter to only portfolios shared by multiple teams
+    const shared = new Map<string, string[]>()
+    portfolioTeams.forEach((value, portfolioId) => {
+      if (value.nodeIds.length > 1) {
+        // Map each node ID to the other teams it's shared with
+        value.nodeIds.forEach((nodeId, index) => {
+          const otherTeams = value.teamNames.filter((_, i) => i !== index)
+          shared.set(nodeId, otherTeams)
+        })
+      }
+    })
+
+    return shared
+  }, [orgChartNodes])
+
+  // Get shared teams for a node (returns array of team names this portfolio is shared with)
+  const getSharedTeams = (nodeId: string): string[] => {
+    return sharedPortfoliosMap.get(nodeId) || []
   }
 
   // Build tree structure from flat nodes
@@ -794,6 +967,48 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     }
   })
 
+  // Update user permissions mutation
+  const updateUserPermissionsMutation = useMutation({
+    mutationFn: async ({ userId, permissions }: { userId: string; permissions: { coverage_admin?: boolean; is_org_admin?: boolean } }) => {
+      console.log('Updating permissions for user:', userId, permissions)
+
+      // Update user-level permissions (coverage_admin) in users table
+      if (permissions.coverage_admin !== undefined) {
+        const { error: userError } = await supabase
+          .from('users')
+          .update({ coverage_admin: permissions.coverage_admin })
+          .eq('id', userId)
+
+        if (userError) {
+          console.error('Error updating coverage_admin:', userError)
+          throw userError
+        }
+      }
+
+      // Update org-level permissions (is_org_admin) in organization_memberships table
+      if (permissions.is_org_admin !== undefined && organization) {
+        const { error: membershipError } = await supabase
+          .from('organization_memberships')
+          .update({ is_org_admin: permissions.is_org_admin })
+          .eq('user_id', userId)
+          .eq('organization_id', organization.id)
+
+        if (membershipError) {
+          console.error('Error updating is_org_admin:', membershipError)
+          throw membershipError
+        }
+      }
+    },
+    onSuccess: () => {
+      console.log('Permissions updated successfully')
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
+    },
+    onError: (error: any) => {
+      console.error('Failed to update permissions:', error)
+      alert(`Failed to update permissions: ${error?.message || 'Unknown error'}`)
+    }
+  })
+
   // Create org chart node mutation
   const createNodeMutation = useMutation({
     mutationFn: async (nodeData: {
@@ -805,6 +1020,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       color: string
       icon: string
       portfolio_id?: string
+      childIdsToReparent?: string[] // For inserting between nodes
     }) => {
       if (!organization) throw new Error('No organization found')
 
@@ -832,8 +1048,59 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       let teamId: string | null = null
 
       if (nodeData.parent_id && typeof nodeData.parent_id === 'string' && nodeData.parent_id.startsWith('team:')) {
-        // This is a team reference - store team_id in settings, not as parent_id
+        // This is a team reference - we need to create/find an org_chart_node for this team
         teamId = nodeData.parent_id.replace('team:', '')
+
+        // First check if an org_chart_node already exists for this team
+        const { data: existingNode } = await supabase
+          .from('org_chart_nodes')
+          .select('id')
+          .eq('organization_id', organization.id)
+          .eq('node_type', 'team')
+          .contains('settings', { team_id: teamId })
+          .single()
+
+        if (existingNode) {
+          // Use existing node as parent
+          actualParentId = existingNode.id
+        } else {
+          // Get the team details to create a node for it
+          const { data: team } = await supabase
+            .from('teams')
+            .select('id, name')
+            .eq('id', teamId)
+            .single()
+
+          if (team) {
+            // Create an org_chart_node for this team first
+            const { data: newTeamNode, error: teamNodeError } = await supabase
+              .from('org_chart_nodes')
+              .insert({
+                organization_id: organization.id,
+                node_type: 'team',
+                name: team.name,
+                color: '#6366f1',
+                icon: 'users',
+                sort_order: 0,
+                settings: { team_id: teamId },
+                created_by: user?.id
+              })
+              .select()
+              .single()
+
+            if (teamNodeError) throw teamNodeError
+
+            // Update the team to reference this org_chart_node
+            await supabase
+              .from('teams')
+              .update({ org_chart_node_id: newTeamNode.id })
+              .eq('id', teamId)
+
+            actualParentId = newTeamNode.id
+          }
+        }
+        // Clear teamId since we've handled it by creating/finding the parent node
+        teamId = null
       } else if (nodeData.parent_id) {
         actualParentId = nodeData.parent_id
       }
@@ -881,12 +1148,26 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
         .single()
 
       if (error) throw error
-      return data
+      return { newNode: data, childIdsToReparent: nodeData.childIdsToReparent }
     },
-    onSuccess: () => {
+    onSuccess: async (result) => {
+      // If we're inserting between nodes, re-parent the children to the new node
+      if (result.childIdsToReparent && result.childIdsToReparent.length > 0) {
+        const { error } = await supabase
+          .from('org_chart_nodes')
+          .update({ parent_id: result.newNode.id })
+          .in('id', result.childIdsToReparent)
+
+        if (error) {
+          console.error('Error re-parenting children:', error)
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['org-chart-nodes'] })
+      queryClient.invalidateQueries({ queryKey: ['teams'] })
       setShowAddNodeModal(false)
       setAddNodeParentId(null)
+      setInsertBetweenChildIds(null)
     },
     onError: (error) => {
       console.error('Error creating org chart node:', error)
@@ -930,6 +1211,25 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   // Delete org chart node mutation
   const deleteNodeMutation = useMutation({
     mutationFn: async (nodeId: string) => {
+      // First, get the node to find its parent_id
+      const { data: nodeToDelete, error: fetchError } = await supabase
+        .from('org_chart_nodes')
+        .select('parent_id')
+        .eq('id', nodeId)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      // Re-parent any child nodes to the deleted node's parent
+      const { error: reparentError } = await supabase
+        .from('org_chart_nodes')
+        .update({ parent_id: nodeToDelete.parent_id })
+        .eq('parent_id', nodeId)
+        .eq('is_active', true)
+
+      if (reparentError) throw reparentError
+
+      // Now soft-delete the node
       const { error } = await supabase
         .from('org_chart_nodes')
         .update({ is_active: false })
@@ -1014,6 +1314,40 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     return portfolioMemberships.filter(pm => pm.portfolio_id === portfolioId)
   }
 
+  // Get portfolio team members (from portfolio_team table - unified with Portfolio Tab)
+  const getPortfolioTeamMembers = (portfolioId: string) => {
+    return portfolioTeamMembers.filter(ptm => ptm.portfolio_id === portfolioId)
+  }
+
+  // Recursively collect all portfolio team members from a node and its descendants
+  const getAllPortfolioTeamMembersForNode = (node: OrgChartNode): PortfolioTeamMember[] => {
+    const result: PortfolioTeamMember[] = []
+
+    // If this is a portfolio node, get its portfolio_team members
+    const linkedPortfolioId = node.node_type === 'portfolio' ? node.settings?.portfolio_id : null
+    if (linkedPortfolioId) {
+      const members = getPortfolioTeamMembers(linkedPortfolioId)
+      result.push(...members)
+    }
+
+    // Recursively collect from children
+    if (node.children && node.children.length > 0) {
+      node.children.forEach(child => {
+        result.push(...getAllPortfolioTeamMembersForNode(child))
+      })
+    }
+
+    return result
+  }
+
+  // Helper to get display name from portfolio team member
+  const getTeamMemberDisplayName = (member: PortfolioTeamMember) => {
+    if (member.user?.first_name || member.user?.last_name) {
+      return `${member.user.first_name || ''} ${member.user.last_name || ''}`.trim()
+    }
+    return member.user?.email?.split('@')[0] || 'Unknown'
+  }
+
   const getUserTeams = (userId: string) => {
     return teamMemberships.filter(tm => tm.user_id === userId)
   }
@@ -1077,8 +1411,53 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
 
   const teamColors = ['#3b82f6', '#10b981', '#8b5cf6', '#ef4444', '#f97316', '#ec4899', '#6366f1', '#14b8a6']
 
+  // Org chart panning handlers
+  const handlePanStart = (e: React.MouseEvent) => {
+    // Only start panning on left-click and if clicking on the background
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    // Don't start panning if clicking on interactive elements
+    if (target.closest('button') || target.closest('input') || target.closest('[data-no-pan]')) return
+
+    const container = orgChartContainerRef.current
+    if (!container) return
+
+    setIsPanning(true)
+    setPanStart({ x: e.clientX, y: e.clientY })
+    setScrollStart({ x: container.scrollLeft, y: container.scrollTop })
+    e.preventDefault()
+  }
+
+  const handlePanMove = (e: React.MouseEvent) => {
+    if (!isPanning) return
+    const container = orgChartContainerRef.current
+    if (!container) return
+
+    const deltaX = e.clientX - panStart.x
+    const deltaY = e.clientY - panStart.y
+
+    container.scrollLeft = scrollStart.x - deltaX
+    container.scrollTop = scrollStart.y - deltaY
+  }
+
+  const handlePanEnd = () => {
+    setIsPanning(false)
+  }
+
+  // Handle mouse leaving the container
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (isPanning) {
+        setIsPanning(false)
+      }
+    }
+
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => window.removeEventListener('mouseup', handleMouseUp)
+  }, [isPanning])
+
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className={`h-full flex flex-col ${activeTab === 'teams' ? 'bg-white' : 'bg-gray-50'}`}>
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -1090,9 +1469,6 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
               <h1 className="text-xl font-semibold text-gray-900">
                 {organization?.name || 'Organization'}
               </h1>
-              <p className="text-sm text-gray-500">
-                {orgMembers.length} members · {teams.length} teams · {portfolios.length} portfolios
-              </p>
             </div>
           </div>
           <div className="flex items-center space-x-3">
@@ -1157,16 +1533,25 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className={activeTab === 'people' ? '' : 'max-w-5xl mx-auto'}>
+      <div
+        ref={activeTab === 'teams' ? orgChartContainerRef : undefined}
+        className={`flex-1 overflow-auto ${activeTab === 'teams' ? 'p-0 bg-white scrollbar-hide select-none' : 'p-6'}`}
+        style={activeTab === 'teams' ? { cursor: isPanning ? 'grabbing' : 'grab' } : undefined}
+        onMouseDown={activeTab === 'teams' ? handlePanStart : undefined}
+        onMouseMove={activeTab === 'teams' ? handlePanMove : undefined}
+        onMouseUp={activeTab === 'teams' ? handlePanEnd : undefined}
+        onMouseLeave={activeTab === 'teams' ? handlePanEnd : undefined}
+        onClick={activeTab === 'teams' ? () => setExpandedMembersNodeId(null) : undefined}
+      >
+        <div className={activeTab === 'people' ? '' : activeTab === 'teams' ? 'min-w-max p-6' : activeTab === 'portfolios' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto'}>
           {/* Teams Tab - Interactive Org Chart */}
           {activeTab === 'teams' && (
             <div>
               {/* Org Chart Header - Organization Root Node */}
               <div className="flex flex-col items-center">
                 <div className="relative group/org">
-                  {/* Hover overlay for admin - Add button */}
-                  {isOrgAdmin && (
+                  {/* Hover overlay for admin - Add button (only show when no nodes exist) */}
+                  {isOrgAdmin && nodeTree.length === 0 && (
                     <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover/org:opacity-100 transition-all duration-200 z-10">
                       <button
                         onClick={() => {
@@ -1187,369 +1572,143 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                       <Building2 className="w-6 h-6 text-indigo-600" />
                     </div>
                     <h3 className="font-semibold text-gray-900">{organization?.name || 'Organization'}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">{orgMembers.length} members · {teams.length} teams</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{orgMembers.length} members</p>
                   </div>
                 </div>
 
-                {/* Vertical connector from root to horizontal line */}
-                {(filteredTeams.length > 0 || nodeTree.length > 0 || isCreatingTeam) && (
-                  <div className="w-0.5 h-8 bg-gray-300" />
+                {/* Vertical connector from root to horizontal line - with insert button */}
+                {nodeTree.length > 0 && (
+                  <div className="relative group/connector">
+                    <div className="w-0.5 h-8 bg-gray-300" />
+                    {/* Insert button - appears on hover */}
+                    {isOrgAdmin && (
+                      <button
+                        onClick={() => {
+                          setAddNodeParentId(null)
+                          setInsertBetweenChildIds(nodeTree.map(n => n.id))
+                          setShowAddNodeModal(true)
+                        }}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-indigo-500 hover:bg-indigo-600 rounded-full flex items-center justify-center opacity-0 group-hover/connector:opacity-100 transition-opacity shadow-md z-10"
+                        title="Insert node between"
+                      >
+                        <Plus className="w-3 h-3 text-white" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Children container with proper connectors */}
-              {(filteredTeams.length > 0 || nodeTree.length > 0 || isCreatingTeam) && (
+              {nodeTree.length > 0 && (
                 <div className="flex flex-col items-center">
-                  {/* Horizontal connector line - calculate based on actual children */}
-                  {(() => {
-                    const childCount = filteredTeams.length + nodeTree.length + (isCreatingTeam ? 1 : 0)
-                    if (childCount <= 1) return null
-                    return (
-                      <div
-                        className="h-0.5 bg-gray-300"
-                        style={{
-                          width: `${(childCount - 1) * 240}px`,
-                          maxWidth: '90vw'
-                        }}
-                      />
-                    )
-                  })()}
-
-                  {/* Children nodes with vertical connectors */}
-                  <div className="flex flex-wrap justify-center gap-x-5">
-                    {/* Inline Team Creation Card */}
-                    {isCreatingTeam && (
-                      <div className="flex flex-col items-center">
-                        {/* Vertical connector from horizontal line */}
-                        <div className="w-0.5 h-8 bg-gray-300" />
-                        <div className="bg-white border-2 border-indigo-300 rounded-xl shadow-md p-4 w-[220px]">
-                          <div className="flex items-center space-x-2 mb-3">
-                            <div
-                              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                              style={{ backgroundColor: `${newTeamColor}20` }}
-                            >
-                              <Users className="w-4 h-4" style={{ color: newTeamColor }} />
-                            </div>
-                            <input
-                              ref={newTeamInputRef}
-                              type="text"
-                              value={newTeamName}
-                              onChange={(e) => setNewTeamName(e.target.value)}
-                              placeholder="Team name"
-                              className="flex-1 px-2 py-1 text-sm font-medium border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleCreateInlineTeam()
-                                if (e.key === 'Escape') cancelInlineTeamCreation()
-                              }}
-                            />
-                          </div>
-                          <textarea
-                            value={newTeamDescription}
-                            onChange={(e) => setNewTeamDescription(e.target.value)}
-                            placeholder="Description (optional)"
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
-                            rows={2}
-                          />
-                          <div className="mb-3">
-                            <div className="flex flex-wrap gap-1.5 justify-center">
-                              {teamColors.map(c => (
-                                <button
-                                  key={c}
-                                  onClick={() => setNewTeamColor(c)}
-                                  className={`w-5 h-5 rounded-full border-2 transition-transform ${
-                                    newTeamColor === c ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-105'
-                                  }`}
-                                  style={{ backgroundColor: c }}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-end space-x-2">
-                            <button
-                              onClick={cancelInlineTeamCreation}
-                              className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={handleCreateInlineTeam}
-                              disabled={!newTeamName.trim() || createTeamMutation.isPending}
-                              className="px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                              {createTeamMutation.isPending ? 'Creating...' : 'Create'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Team Cards */}
-                    {filteredTeams.map(team => {
-                      const members = getTeamMembers(team.id)
-                      const teamPortfolios = getTeamPortfolios(team.id)
-                      const isExpanded = expandedTeams.has(team.id)
-                      const teamAdmins = members.filter(m => m.is_team_admin)
+                  {/* Children nodes with T-connectors */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+                    {/* Org Chart Nodes - hierarchical structure */}
+                    {nodeTree.map((node, nodeIndex) => {
+                      const isFirstNode = nodeIndex === 0
+                      const isLastNode = nodeIndex === nodeTree.length - 1
 
                       return (
-                        <div key={team.id} className="flex flex-col items-center group/card">
-                          {/* Vertical connector from horizontal line */}
-                          <div className="w-0.5 h-8 bg-gray-300" />
-                          <div className="relative">
-                            {/* Hover overlay actions for admins */}
-                            {isOrgAdmin && (
-                              <div className="absolute top-2 right-2 opacity-0 group-hover/card:opacity-100 transition-all duration-200 z-10 flex items-center space-x-1">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setEditingTeam(team)
-                                  }}
-                                  className="p-1.5 bg-white rounded-md shadow-sm hover:bg-gray-50 transition-colors"
-                                  title="Edit team"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5 text-gray-500" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    // Use team's org_chart_node_id if available, otherwise pass team_id specially
-                                    setAddNodeParentId(team.org_chart_node_id || `team:${team.id}`)
-                                    setShowAddNodeModal(true)
-                                  }}
-                                  className="p-1.5 bg-white rounded-md shadow-sm hover:bg-gray-50 transition-colors"
-                                  title="Add child node"
-                                >
-                                  <Plus className="w-3.5 h-3.5 text-gray-500" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (confirm(`Are you sure you want to delete "${team.name}"?`)) {
-                                      deleteTeamMutation.mutate(team.id)
-                                    }
-                                  }}
-                                  className="p-1.5 bg-white rounded-md shadow-sm hover:bg-red-50 transition-colors"
-                                  title="Delete team"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                </button>
-                              </div>
+                        <div key={node.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '220px', flexShrink: 0, marginLeft: nodeIndex > 0 ? '20px' : '0' }}>
+                          {/* T-connector with overlapping lines */}
+                          <div style={{ position: 'relative', width: '100%', height: '24px', overflow: 'visible' }}>
+                            {/* Left horizontal segment - extends into the margin gap */}
+                            {!isFirstNode && (
+                              <div style={{
+                                position: 'absolute',
+                                top: '0',
+                                left: '-20px',
+                                width: 'calc(50% + 21px)',
+                                height: '2px',
+                                backgroundColor: '#d1d5db'
+                              }} />
                             )}
-
-                            {/* Team Node Card */}
-                            <div
-                              className={`bg-white border-2 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md w-[220px] ${
-                                isExpanded ? 'border-gray-300' : 'border-gray-200'
-                              }`}
-                              style={{ borderTopColor: team.color, borderTopWidth: '3px' }}
-                              onClick={() => toggleTeamExpanded(team.id)}
-                            >
-                              <div className="p-4 text-center">
-                                {/* Icon */}
-                                <div
-                                  className="inline-flex items-center justify-center w-10 h-10 rounded-xl mb-2"
-                                  style={{ backgroundColor: `${team.color}20` }}
-                                >
-                                  <Users className="w-5 h-5" style={{ color: team.color }} />
-                                </div>
-
-                                {/* Name */}
-                                <h4 className="font-semibold text-gray-900 text-sm">{team.name}</h4>
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  {members.length} member{members.length !== 1 ? 's' : ''} · {teamPortfolios.length} portfolio{teamPortfolios.length !== 1 ? 's' : ''}
-                                </p>
-
-                                {/* Expand indicator */}
-                                <div className="mt-2">
-                                  {isExpanded ? (
-                                    <ChevronDown className="w-4 h-4 text-gray-400 mx-auto" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-gray-400 mx-auto" />
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Expanded Content */}
-                              {isExpanded && (
-                                <div className="border-t border-gray-100 p-3 bg-gray-50 rounded-b-xl">
-                                  {/* Description */}
-                                  {team.description && (
-                                    <p className="text-xs text-gray-600 mb-3">{team.description}</p>
-                                  )}
-
-                                  {/* Members Section */}
-                                  <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                      <span className="text-xs font-medium text-gray-500">Members</span>
-                                      {isOrgAdmin && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setSelectedTeam(team)
-                                            setShowAddMemberModal(true)
-                                          }}
-                                          className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center"
-                                        >
-                                          <UserPlus className="w-3 h-3 mr-0.5" />
-                                          Add
-                                        </button>
-                                      )}
-                                    </div>
-
-                                    {members.length === 0 ? (
-                                      <p className="text-xs text-gray-400 italic">No members yet</p>
-                                    ) : (
-                                      <div className="flex flex-wrap gap-1">
-                                        {members.map(member => (
-                                          <div
-                                            key={member.id}
-                                            className="flex items-center space-x-1 px-2 py-1 bg-white rounded text-xs group/member"
-                                          >
-                                            <div
-                                              className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-medium text-white flex-shrink-0"
-                                              style={{ backgroundColor: team.color }}
-                                            >
-                                              {member.user?.full_name?.charAt(0) || '?'}
-                                            </div>
-                                            <span className="text-gray-700 truncate max-w-[60px]">
-                                              {member.user?.full_name}
-                                            </span>
-                                            {member.is_team_admin && (
-                                              <Crown className="w-2.5 h-2.5 text-amber-500 flex-shrink-0" />
-                                            )}
-                                            {isOrgAdmin && (
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  removeTeamMemberMutation.mutate(member.id)
-                                                }}
-                                                className="opacity-0 group-hover/member:opacity-100 hover:text-red-500 transition-opacity"
-                                              >
-                                                <X className="w-2.5 h-2.5" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Portfolios Section */}
-                                  {teamPortfolios.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-gray-200">
-                                      <span className="text-xs font-medium text-gray-500 mb-1.5 block">Portfolios</span>
-                                      <div className="flex flex-wrap gap-1">
-                                        {teamPortfolios.map(portfolio => (
-                                          <div
-                                            key={portfolio.id}
-                                            className="flex items-center space-x-1 px-2 py-1 bg-white rounded text-xs"
-                                          >
-                                            <FolderOpen className="w-3 h-3 text-green-500" />
-                                            <span className="text-gray-700">{portfolio.name}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+                            {/* Right horizontal segment - extends into the margin gap */}
+                            {!isLastNode && (
+                              <div style={{
+                                position: 'absolute',
+                                top: '0',
+                                right: '-20px',
+                                width: 'calc(50% + 21px)',
+                                height: '2px',
+                                backgroundColor: '#d1d5db'
+                              }} />
+                            )}
+                            {/* Center vertical drop */}
+                            <div style={{
+                              position: 'absolute',
+                              top: '0',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              width: '2px',
+                              height: '100%',
+                              backgroundColor: '#d1d5db'
+                            }} />
                           </div>
-
-                          {/* Child nodes for this team */}
-                          {(() => {
-                            const teamChildNodes = getTeamChildNodes(team.id)
-                            if (teamChildNodes.length === 0) return null
-
-                            return (
-                              <div className="flex flex-col items-center mt-0">
-                                {/* Vertical connector down from team */}
-                                <div className="w-0.5 h-8 bg-gray-300" />
-
-                                {/* Horizontal connector spanning children */}
-                                {teamChildNodes.length > 1 && (
-                                  <div
-                                    className="h-0.5 bg-gray-300"
-                                    style={{ width: `${(teamChildNodes.length - 1) * 240}px`, maxWidth: '90vw' }}
-                                  />
-                                )}
-
-                                {/* Child nodes with vertical connectors */}
-                                <div className="flex flex-wrap gap-x-5 justify-center">
-                                  {teamChildNodes.map(childNode => (
-                                    <div key={childNode.id} className="flex flex-col items-center">
-                                      {/* Vertical connector from horizontal line */}
-                                      <div className="w-0.5 h-8 bg-gray-300" />
-                                      <OrgChartNodeCard
-                                        node={childNode}
-                                        isOrgAdmin={isOrgAdmin}
-                                        onEdit={(n) => setEditingNode(n)}
-                                        onAddChild={(parentId) => {
-                                          setAddNodeParentId(parentId)
-                                          setShowAddNodeModal(true)
-                                        }}
-                                        onDelete={(nodeId) => {
-                                          if (confirm(`Are you sure you want to delete this node?`)) {
-                                            deleteNodeMutation.mutate(nodeId)
-                                          }
-                                        }}
-                                        onAddMember={(n) => setShowAddNodeMemberModal(n)}
-                                        onRemoveMember={(memberId) => removeNodeMemberMutation.mutate(memberId)}
-                                        getNodeMembers={getNodeMembers}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          })()}
+                          <OrgChartNodeCard
+                            node={node}
+                            isOrgAdmin={isOrgAdmin}
+                            onEdit={(n) => setEditingNode(n)}
+                            onAddChild={(parentId) => {
+                              setAddNodeParentId(parentId)
+                              setShowAddNodeModal(true)
+                            }}
+                            onAddSibling={(parentId) => {
+                              setAddNodeParentId(parentId)
+                              setShowAddNodeModal(true)
+                            }}
+                            onDelete={() => {
+                              setDeleteNodeConfirm({ isOpen: true, node })
+                            }}
+                            onAddMember={(n) => setShowAddNodeMemberModal(n)}
+                            onRemoveMember={(memberId) => removeNodeMemberMutation.mutate(memberId)}
+                            getNodeMembers={getNodeMembers}
+                            getSharedTeams={getSharedTeams}
+                            getTeamMembers={getTeamMembers}
+                            getTeamPortfolios={getTeamPortfolios}
+                            getPortfolioTeamMembers={getPortfolioTeamMembers}
+                            onAddTeamMember={(teamId) => {
+                              const team = teams.find(t => t.id === teamId)
+                              if (team) {
+                                setSelectedTeam(team)
+                                setShowAddMemberModal(true)
+                              }
+                            }}
+                            onRemoveTeamMember={(memberId) => removeTeamMemberMutation.mutate(memberId)}
+                            onInsertBetween={(parentId, childIds) => {
+                              setAddNodeParentId(parentId)
+                              setInsertBetweenChildIds(childIds)
+                              setShowAddNodeModal(true)
+                            }}
+                            onViewDetails={(n) => setViewingNodeDetails(n)}
+                            parentId={null}
+                          />
                         </div>
                       )
                     })}
-
-                    {/* Org Chart Nodes - hierarchical structure */}
-                    {nodeTree.map(node => (
-                      <div key={node.id} className="flex flex-col items-center">
-                        {/* Vertical connector from horizontal line */}
-                        <div className="w-0.5 h-8 bg-gray-300" />
-                        <OrgChartNodeCard
-                          node={node}
-                          isOrgAdmin={isOrgAdmin}
-                          onEdit={(n) => setEditingNode(n)}
-                          onAddChild={(parentId) => {
-                            setAddNodeParentId(parentId)
-                            setShowAddNodeModal(true)
-                          }}
-                          onDelete={(nodeId) => {
-                            if (confirm(`Are you sure you want to delete this ${node.node_type}?`)) {
-                              deleteNodeMutation.mutate(nodeId)
-                            }
-                          }}
-                          onAddMember={(n) => setShowAddNodeMemberModal(n)}
-                          onRemoveMember={(memberId) => removeNodeMemberMutation.mutate(memberId)}
-                          getNodeMembers={getNodeMembers}
-                        />
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Empty State - shown when no teams and not creating */}
-              {filteredTeams.length === 0 && !isCreatingTeam && nodeTree.length === 0 && (
+              {/* Empty State - shown when no nodes exist */}
+              {nodeTree.length === 0 && (
                 <div className="flex justify-center mt-8">
                   <div className="text-center py-8 px-12 bg-white rounded-lg border border-dashed border-gray-300">
                     <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <h3 className="text-sm font-medium text-gray-900 mb-1">No teams yet</h3>
+                    <h3 className="text-sm font-medium text-gray-900 mb-1">No nodes yet</h3>
                     <p className="text-xs text-gray-500 mb-3">
-                      {isOrgAdmin ? 'Create your first team or organization node' : 'No teams have been created yet'}
+                      {isOrgAdmin ? 'Create your first organization node' : 'No organization nodes have been created yet'}
                     </p>
                     {isOrgAdmin && (
                       <button
-                        onClick={() => setIsCreatingTeam(true)}
+                        onClick={() => {
+                          setAddNodeParentId(null)
+                          setShowAddNodeModal(true)
+                        }}
                         className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
                       >
                         <Plus className="w-3 h-3 inline mr-1" />
-                        Create Team
+                        Add Node
                       </button>
                     )}
                   </div>
@@ -1612,104 +1771,136 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                         <p className="text-sm text-gray-500">No active users match your search</p>
                       </div>
                     ) : (
-                      <div className="grid gap-3">
+                      <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
                         {activeMembers.map(member => {
                           const userTeams = getUserTeams(member.user_id)
                           const userPortfolios = getUserPortfolios(member.user_id)
 
                           return (
-                            <Card key={member.id} className="p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start space-x-3">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-sm font-medium text-white">
+                            <div key={member.id} className="px-4 py-3 hover:bg-gray-50 transition-colors">
+                              <div className="flex items-center justify-between">
+                                {/* Left: User info */}
+                                <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-xs font-medium text-white flex-shrink-0">
                                     {member.user?.full_name?.charAt(0) || '?'}
                                   </div>
-                                  <div className="flex-1">
-                                    <div className="flex items-center space-x-2 flex-wrap">
-                                      <span className="font-medium text-gray-900">{member.user?.full_name}</span>
-                                      {member.is_org_admin && (
-                                        <span className="px-2 py-0.5 text-xs bg-indigo-100 text-indigo-700 rounded-full flex items-center">
-                                          <Crown className="w-3 h-3 mr-1" />
-                                          Org Admin
-                                        </span>
-                                      )}
-                                      <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full flex items-center">
-                                        <LogIn className="w-3 h-3 mr-1" />
-                                        Platform Access
-                                      </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="font-medium text-gray-900 text-sm truncate">{member.user?.full_name}</span>
+                                      <span className="text-xs text-gray-400 truncate hidden sm:inline">{member.user?.email}</span>
                                     </div>
-                                    <p className="text-sm text-gray-500">{member.user?.email}</p>
                                     {member.title && (
-                                      <p className="text-sm text-gray-600 mt-1">{member.title}</p>
-                                    )}
-
-                                    {/* Team Roles */}
-                                    {userTeams.length > 0 && (
-                                      <div className="mt-3">
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Team Roles</span>
-                                        <div className="flex flex-wrap gap-1 mt-1">
-                                          {userTeams.map(tm => (
-                                            <span
-                                              key={tm.id}
-                                              className="px-2 py-1 text-xs rounded-md flex items-center"
-                                              style={{
-                                                backgroundColor: `${tm.team?.color || '#6366f1'}15`,
-                                                color: tm.team?.color || '#6366f1'
-                                              }}
-                                            >
-                                              <Users className="w-3 h-3 mr-1" />
-                                              {tm.team?.name}
-                                              {tm.is_team_admin && (
-                                                <Crown className="w-3 h-3 ml-1 text-amber-500" />
-                                              )}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Portfolio Access */}
-                                    {userPortfolios.length > 0 && (
-                                      <div className="mt-2">
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Portfolios</span>
-                                        <div className="flex flex-wrap gap-1 mt-1">
-                                          {userPortfolios.map(pm => (
-                                            <span
-                                              key={pm.id}
-                                              className="px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-md flex items-center"
-                                            >
-                                              <Briefcase className="w-3 h-3 mr-1" />
-                                              {pm.portfolio?.name}
-                                              {pm.is_portfolio_manager && ' (PM)'}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
+                                      <p className="text-xs text-gray-500 truncate">{member.title}</p>
                                     )}
                                   </div>
                                 </div>
 
-                                {/* Admin Actions */}
-                                {isOrgAdmin && member.user_id !== user?.id && (
-                                  <div className="flex items-center space-x-1">
-                                    <button
-                                      onClick={() => setShowSuspendModal(member)}
-                                      className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                                      title="Suspend access"
+                                {/* Center: Badges */}
+                                <div className="hidden md:flex items-center space-x-1.5 flex-shrink-0 mx-4">
+                                  {member.is_org_admin && (
+                                    <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded flex items-center">
+                                      <Crown className="w-2.5 h-2.5 mr-0.5" />
+                                      Admin
+                                    </span>
+                                  )}
+                                  {member.user?.coverage_admin && (
+                                    <span className="px-1.5 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded flex items-center">
+                                      <Shield className="w-2.5 h-2.5 mr-0.5" />
+                                      Coverage
+                                    </span>
+                                  )}
+                                  {userTeams.slice(0, 2).map(tm => (
+                                    <span
+                                      key={tm.id}
+                                      className="px-1.5 py-0.5 text-[10px] rounded flex items-center"
+                                      style={{
+                                        backgroundColor: `${tm.team?.color || '#6366f1'}15`,
+                                        color: tm.team?.color || '#6366f1'
+                                      }}
                                     >
-                                      <UserX className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => setShowRemovalRequestModal(member)}
-                                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                      title="Request removal"
+                                      {tm.team?.name}
+                                    </span>
+                                  ))}
+                                  {userTeams.length > 2 && (
+                                    <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
+                                      +{userTeams.length - 2}
+                                    </span>
+                                  )}
+                                  {userPortfolios.slice(0, 2).map(pm => (
+                                    <span
+                                      key={pm.id}
+                                      className="px-1.5 py-0.5 text-[10px] bg-green-50 text-green-700 rounded flex items-center"
                                     >
-                                      <Send className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                )}
+                                      {pm.portfolio?.name}
+                                    </span>
+                                  ))}
+                                  {userPortfolios.length > 2 && (
+                                    <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
+                                      +{userPortfolios.length - 2}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Right: Permission toggles & Actions */}
+                                <div className="flex items-center space-x-2 flex-shrink-0">
+                                  {/* Permission toggles for org admins */}
+                                  {isOrgAdmin && member.user_id !== user?.id ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault()
+                                          e.stopPropagation()
+                                          console.log('Org Admin button clicked for user:', member.user_id, 'current value:', member.is_org_admin)
+                                          updateUserPermissionsMutation.mutate({
+                                            userId: member.user_id,
+                                            permissions: { is_org_admin: !member.is_org_admin }
+                                          })
+                                        }}
+                                        disabled={updateUserPermissionsMutation.isPending}
+                                        className={`p-1.5 rounded transition-colors ${
+                                          member.is_org_admin
+                                            ? 'bg-indigo-100 text-indigo-700'
+                                            : 'text-gray-300 hover:text-indigo-600 hover:bg-indigo-50'
+                                        }`}
+                                        title={member.is_org_admin ? 'Remove Org Admin' : 'Make Org Admin'}
+                                      >
+                                        <Crown className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault()
+                                          e.stopPropagation()
+                                          console.log('Coverage Admin button clicked for user:', member.user_id, 'current value:', member.user?.coverage_admin)
+                                          updateUserPermissionsMutation.mutate({
+                                            userId: member.user_id,
+                                            permissions: { coverage_admin: !member.user?.coverage_admin }
+                                          })
+                                        }}
+                                        disabled={updateUserPermissionsMutation.isPending}
+                                        className={`p-1.5 rounded transition-colors ${
+                                          member.user?.coverage_admin
+                                            ? 'bg-purple-100 text-purple-700'
+                                            : 'text-gray-300 hover:text-purple-600 hover:bg-purple-50'
+                                        }`}
+                                        title={member.user?.coverage_admin ? 'Remove Coverage Admin' : 'Make Coverage Admin'}
+                                      >
+                                        <Shield className="w-4 h-4" />
+                                      </button>
+                                      <div className="w-px h-5 bg-gray-200" />
+                                      <button
+                                        onClick={() => setShowSuspendModal(member)}
+                                        className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                        title="Suspend access"
+                                      >
+                                        <UserX className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
                               </div>
-                            </Card>
+                            </div>
                           )
                         })}
                       </div>
@@ -1723,37 +1914,34 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                         <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-500" />
                         Suspended Users ({suspendedMembers.length})
                       </h3>
-                      <div className="grid gap-3">
+                      <div className="bg-amber-50 rounded-lg border border-amber-200 divide-y divide-amber-100">
                         {suspendedMembers.map(member => (
-                          <Card key={member.id} className="p-4 bg-amber-50 border-amber-200">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start space-x-3">
-                                <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center text-sm font-medium text-gray-500">
-                                  {member.user?.full_name?.charAt(0) || '?'}
-                                </div>
-                                <div>
-                                  <div className="flex items-center space-x-2">
-                                    <span className="font-medium text-gray-700">{member.user?.full_name}</span>
-                                    <span className="px-2 py-0.5 text-xs bg-amber-200 text-amber-800 rounded-full">
-                                      Suspended
-                                    </span>
-                                  </div>
-                                  <p className="text-sm text-gray-500">{member.user?.email}</p>
-                                </div>
+                          <div key={member.id} className="px-4 py-3 flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-medium text-gray-500">
+                                {member.user?.full_name?.charAt(0) || '?'}
                               </div>
-                              {isOrgAdmin && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => unsuspendUserMutation.mutate(member.id)}
-                                  disabled={unsuspendUserMutation.isPending}
-                                >
-                                  <Shield className="w-3 h-3 mr-1" />
-                                  Restore
-                                </Button>
-                              )}
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-medium text-gray-700 text-sm">{member.user?.full_name}</span>
+                                  <span className="px-1.5 py-0.5 text-[10px] bg-amber-200 text-amber-800 rounded">
+                                    Suspended
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500">{member.user?.email}</p>
+                              </div>
                             </div>
-                          </Card>
+                            {isOrgAdmin && (
+                              <button
+                                onClick={() => unsuspendUserMutation.mutate(member.id)}
+                                disabled={unsuspendUserMutation.isPending}
+                                className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 rounded transition-colors flex items-center"
+                              >
+                                <Shield className="w-3 h-3 mr-1" />
+                                Restore
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -1875,18 +2063,41 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                 </div>
               ) : (
                 filteredPortfolios.map(portfolio => {
-                  const members = getPortfolioMembers(portfolio.id)
+                  const teamMembers = getPortfolioTeamMembers(portfolio.id)
                   const team = teams.find(t => t.id === portfolio.team_id)
+
+                  // Group members by role
+                  const membersByRole: { [role: string]: PortfolioTeamMember[] } = {}
+                  teamMembers.forEach(m => {
+                    if (!membersByRole[m.role]) membersByRole[m.role] = []
+                    membersByRole[m.role].push(m)
+                  })
 
                   return (
                     <Card key={portfolio.id} className="p-4">
                       <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-3">
-                          <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                        <div className="flex items-start space-x-3 flex-1">
+                          <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
                             <Briefcase className="w-5 h-5 text-green-600" />
                           </div>
-                          <div>
-                            <h3 className="font-medium text-gray-900">{portfolio.name}</h3>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <h3 className="font-medium text-gray-900">{portfolio.name}</h3>
+                              {isOrgAdmin && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedPortfolioForTeam(portfolio)
+                                    setEditingPortfolioTeamMember(null)
+                                    setShowAddPortfolioTeamMemberModal(true)
+                                  }}
+                                >
+                                  <UserPlus className="w-3.5 h-3.5 mr-1" />
+                                  Add Member
+                                </Button>
+                              )}
+                            </div>
                             {portfolio.description && (
                               <p className="text-sm text-gray-500">{portfolio.description}</p>
                             )}
@@ -1897,21 +2108,58 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                                 </span>
                               )}
                               <span className="text-xs text-gray-500">
-                                {members.length} members
+                                {teamMembers.length} team member{teamMembers.length !== 1 ? 's' : ''}
                               </span>
                             </div>
-                            {members.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {members.map(m => (
-                                  <span
-                                    key={m.id}
-                                    className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full"
-                                  >
-                                    {m.user?.full_name}
-                                    {m.is_portfolio_manager && ' (PM)'}
-                                  </span>
+
+                            {/* Team Members by Role */}
+                            {Object.keys(membersByRole).length > 0 && (
+                              <div className="mt-3 space-y-2">
+                                {Object.entries(membersByRole).map(([role, members]) => (
+                                  <div key={role}>
+                                    <div className="text-xs font-medium text-gray-500 mb-1">{role}</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {members.map(m => (
+                                        <div
+                                          key={m.id}
+                                          className="group inline-flex items-center px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full"
+                                        >
+                                          <span>{getTeamMemberDisplayName(m)}</span>
+                                          {m.focus && (
+                                            <span className="ml-1 text-gray-400">({m.focus})</span>
+                                          )}
+                                          {isOrgAdmin && (
+                                            <div className="hidden group-hover:flex items-center ml-1 space-x-0.5">
+                                              <button
+                                                onClick={() => {
+                                                  setSelectedPortfolioForTeam(portfolio)
+                                                  setEditingPortfolioTeamMember(m)
+                                                  setShowAddPortfolioTeamMemberModal(true)
+                                                }}
+                                                className="p-0.5 hover:bg-gray-200 rounded"
+                                                title="Edit"
+                                              >
+                                                <Edit3 className="w-3 h-3 text-gray-500" />
+                                              </button>
+                                              <button
+                                                onClick={() => setDeletePortfolioTeamConfirm({ isOpen: true, member: m })}
+                                                className="p-0.5 hover:bg-red-100 rounded"
+                                                title="Remove"
+                                              >
+                                                <X className="w-3 h-3 text-red-500" />
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                 ))}
                               </div>
+                            )}
+
+                            {teamMembers.length === 0 && (
+                              <p className="mt-2 text-xs text-gray-400 italic">No team members assigned</p>
                             )}
                           </div>
                         </div>
@@ -2112,7 +2360,12 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
             membershipId: showSuspendModal.id,
             reason
           })}
+          onRequestRemoval={(reason) => submitRemovalRequestMutation.mutate({
+            targetUserId: showSuspendModal.user_id,
+            reason
+          })}
           isLoading={suspendUserMutation.isPending}
+          isRemovalLoading={submitRemovalRequestMutation.isPending}
         />
       )}
 
@@ -2134,22 +2387,15 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
         <AddNodeModal
           parentId={addNodeParentId}
           portfolios={portfolios}
+          childIdsToReparent={insertBetweenChildIds}
+          insertMode={!!insertBetweenChildIds}
           onClose={() => {
             setShowAddNodeModal(false)
             setAddNodeParentId(null)
+            setInsertBetweenChildIds(null)
           }}
           onSave={(data) => createNodeMutation.mutate(data)}
           isLoading={createNodeMutation.isPending}
-        />
-      )}
-
-      {/* Edit Node Modal */}
-      {editingNode && (
-        <EditNodeModal
-          node={editingNode}
-          onClose={() => setEditingNode(null)}
-          onSave={(data) => updateNodeMutation.mutate(data)}
-          isLoading={updateNodeMutation.isPending}
         />
       )}
 
@@ -2172,6 +2418,170 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           }}
           isLoading={addNodeMemberMutation.isPending}
         />
+      )}
+
+      {/* Node Detail Modal */}
+      {viewingNodeDetails && (
+        <NodeDetailModal
+          node={viewingNodeDetails}
+          members={getNodeMembers(viewingNodeDetails.id)}
+          portfolioTeamMembers={getAllPortfolioTeamMembersForNode(viewingNodeDetails)}
+          onClose={() => setViewingNodeDetails(null)}
+          isAdmin={isOrgAdmin}
+          availableUsers={orgMembers}
+          onSaveNode={(data) => updateNodeMutation.mutate(data)}
+          onAddMember={(nodeId, userId, role, focus) => {
+            // For portfolio nodes, add to portfolio_team table
+            if (viewingNodeDetails.node_type === 'portfolio' && viewingNodeDetails.settings?.portfolio_id) {
+              addPortfolioTeamMemberMutation.mutate({
+                portfolioId: viewingNodeDetails.settings.portfolio_id,
+                userId,
+                role,
+                focus
+              })
+            } else {
+              // For other nodes, add to org_chart_node_members
+              addNodeMemberMutation.mutate({
+                node_id: nodeId,
+                user_id: userId,
+                role,
+                focus
+              })
+            }
+          }}
+          onUpdateMember={(memberId, role, focus) => {
+            updatePortfolioTeamMemberMutation.mutate({ memberId, role, focus })
+          }}
+          onRemoveMember={(memberId) => {
+            // For portfolio nodes, remove from portfolio_team table
+            if (viewingNodeDetails.node_type === 'portfolio') {
+              deletePortfolioTeamMemberMutation.mutate(memberId)
+            } else {
+              removeNodeMemberMutation.mutate(memberId)
+            }
+          }}
+          isSaving={updateNodeMutation.isPending}
+        />
+      )}
+
+      {/* Delete Node Confirmation Modal */}
+      {deleteNodeConfirm.isOpen && deleteNodeConfirm.node && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete {deleteNodeConfirm.node.node_type.charAt(0).toUpperCase() + deleteNodeConfirm.node.node_type.slice(1)}</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to delete <span className="font-semibold text-gray-900">"{deleteNodeConfirm.node.name}"</span>?
+              </p>
+              {deleteNodeConfirm.node.children && deleteNodeConfirm.node.children.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-amber-800">
+                    <span className="font-medium">Note:</span> This {deleteNodeConfirm.node.node_type} has {deleteNodeConfirm.node.children.length} child node{deleteNodeConfirm.node.children.length !== 1 ? 's' : ''}.
+                    They will be moved up to the parent level and will not be deleted.
+                  </p>
+                </div>
+              )}
+              <p className="text-sm text-gray-500">
+                The {deleteNodeConfirm.node.node_type} will be removed from the organization structure.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-100 flex justify-end space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteNodeConfirm({ isOpen: false, node: null })}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => {
+                  if (deleteNodeConfirm.node) {
+                    deleteNodeMutation.mutate(deleteNodeConfirm.node.id)
+                  }
+                  setDeleteNodeConfirm({ isOpen: false, node: null })
+                }}
+                loading={deleteNodeMutation.isPending}
+              >
+                Delete {deleteNodeConfirm.node.node_type.charAt(0).toUpperCase() + deleteNodeConfirm.node.node_type.slice(1)}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Portfolio Team Member Modal */}
+      {showAddPortfolioTeamMemberModal && selectedPortfolioForTeam && (
+        <AddTeamMemberModal
+          isOpen={showAddPortfolioTeamMemberModal}
+          onClose={() => {
+            setShowAddPortfolioTeamMemberModal(false)
+            setSelectedPortfolioForTeam(null)
+            setEditingPortfolioTeamMember(null)
+          }}
+          portfolioId={selectedPortfolioForTeam.id}
+          portfolioName={selectedPortfolioForTeam.name}
+          editingMember={editingPortfolioTeamMember ? {
+            id: editingPortfolioTeamMember.id,
+            user_id: editingPortfolioTeamMember.user_id,
+            role: editingPortfolioTeamMember.role,
+            focus: editingPortfolioTeamMember.focus
+          } : null}
+          onMemberAdded={() => {
+            // Invalidate both the org-wide query and the portfolio-specific queries
+            queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+            if (selectedPortfolioForTeam) {
+              queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', selectedPortfolioForTeam.id] })
+              queryClient.invalidateQueries({ queryKey: ['portfolio-team', selectedPortfolioForTeam.id] })
+            }
+          }}
+        />
+      )}
+
+      {/* Delete Portfolio Team Member Confirmation */}
+      {deletePortfolioTeamConfirm.isOpen && deletePortfolioTeamConfirm.member && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setDeletePortfolioTeamConfirm({ isOpen: false, member: null })} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Remove Team Member</h3>
+              </div>
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to remove <strong>{getTeamMemberDisplayName(deletePortfolioTeamConfirm.member)}</strong> ({deletePortfolioTeamConfirm.member.role}) from this portfolio?
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button variant="outline" onClick={() => setDeletePortfolioTeamConfirm({ isOpen: false, member: null })}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => deletePortfolioTeamMemberMutation.mutate(deletePortfolioTeamConfirm.member!.id)}
+                  loading={deletePortfolioTeamMemberMutation.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -2220,18 +2630,83 @@ interface OrgChartNodeCardProps {
   isOrgAdmin: boolean
   onEdit: (node: OrgChartNode) => void
   onAddChild: (parentId: string) => void
+  onAddSibling?: (parentId: string | null) => void
   onDelete: (nodeId: string) => void
   onAddMember: (node: OrgChartNode) => void
   onRemoveMember: (memberId: string) => void
   getNodeMembers: (nodeId: string) => OrgChartNodeMember[]
+  getSharedTeams?: (nodeId: string) => string[]
+  getTeamMembers?: (teamId: string) => TeamMember[]
+  getTeamPortfolios?: (teamId: string) => Portfolio[]
+  getPortfolioTeamMembers?: (portfolioId: string) => PortfolioTeamMember[]
+  onAddTeamMember?: (teamId: string) => void
+  onRemoveTeamMember?: (memberId: string) => void
+  onInsertBetween?: (parentId: string, childIds: string[]) => void
+  onViewDetails: (node: OrgChartNode) => void
   depth?: number
+  parentId?: string | null
 }
 
-function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onDelete, onAddMember, onRemoveMember, getNodeMembers, depth = 0 }: OrgChartNodeCardProps) {
-  const members = getNodeMembers(node.id)
+function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, onDelete, onAddMember, onRemoveMember, getNodeMembers, getSharedTeams, getTeamMembers, getTeamPortfolios, getPortfolioTeamMembers, onAddTeamMember, onRemoveTeamMember, onInsertBetween, onViewDetails, depth = 0, parentId }: OrgChartNodeCardProps) {
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+        setShowAddMenu(false)
+      }
+    }
+    if (showAddMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showAddMenu])
+
+  // For portfolio nodes, get members from portfolio_team table
+  const linkedPortfolioId = node.node_type === 'portfolio' ? node.settings?.portfolio_id : null
+  const portfolioMembers = linkedPortfolioId && getPortfolioTeamMembers ? getPortfolioTeamMembers(linkedPortfolioId) : []
   const [isExpanded, setIsExpanded] = useState(true)
-  const [showMembers, setShowMembers] = useState(false)
+  const [showSharedTooltip, setShowSharedTooltip] = useState(false)
   const hasChildren = node.children && node.children.length > 0
+  const sharedTeams = getSharedTeams?.(node.id) || []
+  const isSharedPortfolio = node.node_type === 'portfolio' && sharedTeams.length > 0
+
+  // For team nodes linked to teams table
+  const linkedTeamId = node.node_type === 'team' ? node.settings?.team_id : null
+  const teamPortfolios = linkedTeamId && getTeamPortfolios ? getTeamPortfolios(linkedTeamId) : []
+
+  // Recursively collect all portfolio team members from this node and all descendants
+  const collectAllPortfolioMembers = (n: OrgChartNode): PortfolioTeamMember[] => {
+    const result: PortfolioTeamMember[] = []
+
+    // If this is a portfolio node, get its portfolio_team members
+    const nodeLinkedPortfolioId = n.node_type === 'portfolio' ? n.settings?.portfolio_id : null
+    if (nodeLinkedPortfolioId && getPortfolioTeamMembers) {
+      const members = getPortfolioTeamMembers(nodeLinkedPortfolioId)
+      result.push(...members)
+    }
+
+    // Recursively collect from children
+    if (n.children && n.children.length > 0) {
+      n.children.forEach(child => {
+        result.push(...collectAllPortfolioMembers(child))
+      })
+    }
+
+    return result
+  }
+
+  // Get all portfolio team members from this node and descendants
+  const allPortfolioMembers = collectAllPortfolioMembers(node)
+
+  // Calculate total unique member count (by user_id to avoid duplicates)
+  const uniqueUserIds = new Set<string>()
+  allPortfolioMembers.forEach(m => {
+    if (m.user_id) uniqueUserIds.add(m.user_id)
+  })
+  const totalMemberCount = uniqueUserIds.size
 
   // Get icon based on node type
   const getNodeIcon = () => {
@@ -2253,173 +2728,231 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onDelete, onAd
   }
 
   return (
-    <div className="relative group/node">
-      {/* Hover overlay actions for admins */}
-      {isOrgAdmin && (
-        <div className="absolute top-2 right-2 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-10 flex items-center space-x-1">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onAddMember(node)
-            }}
-            className="p-1.5 bg-white rounded-md shadow-sm hover:bg-gray-50 transition-colors"
-            title="Add member"
-          >
-            <UserPlus className="w-3.5 h-3.5 text-gray-500" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit(node)
-            }}
-            className="p-1.5 bg-white rounded-md shadow-sm hover:bg-gray-50 transition-colors"
-            title={`Edit ${getTypeLabel()}`}
-          >
-            <Edit3 className="w-3.5 h-3.5 text-gray-500" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onAddChild(node.id)
-            }}
-            className="p-1.5 bg-white rounded-md shadow-sm hover:bg-gray-50 transition-colors"
-            title="Add child"
-          >
-            <Plus className="w-3.5 h-3.5 text-gray-500" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(node.id)
-            }}
-            className="p-1.5 bg-white rounded-md shadow-sm hover:bg-red-50 transition-colors"
-            title={`Delete ${getTypeLabel()}`}
-          >
-            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-          </button>
-        </div>
-      )}
-
-      {/* Node Card */}
-      <div
-        className={`bg-white border-2 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md w-[220px] ${
-          isExpanded && hasChildren ? 'border-gray-300' : 'border-gray-200'
-        }`}
-        style={{ borderTopColor: node.color, borderTopWidth: '3px' }}
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-        <div className="p-4 text-center">
-          {/* Icon */}
-          <div
-            className="inline-flex items-center justify-center w-10 h-10 rounded-xl mb-2"
-            style={{ backgroundColor: `${node.color}20` }}
-          >
-            {getNodeIcon()}
-          </div>
-
-          {/* Name */}
-          <h4 className="font-semibold text-gray-900 text-sm">{node.name}</h4>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {getTypeLabel()}
-            {hasChildren && ` · ${node.children!.length} item${node.children!.length !== 1 ? 's' : ''}`}
-            {members.length > 0 && ` · ${members.length} member${members.length !== 1 ? 's' : ''}`}
-          </p>
-
-          {/* Members toggle button */}
-          {members.length > 0 && (
+    <div className="inline-flex flex-col items-center">
+      {/* Node Card Container */}
+      <div className="relative group/node">
+        {/* Hover overlay actions for admins */}
+        {isOrgAdmin && (
+          <div className="absolute -top-1 -right-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-20 flex items-center space-x-0.5 bg-white rounded-lg shadow-md p-1">
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                setShowMembers(!showMembers)
+                onDelete(node.id)
               }}
-              className="mt-2 flex items-center justify-center space-x-1 text-xs text-indigo-600 hover:text-indigo-800 mx-auto"
+              className="p-1.5 hover:bg-red-50 rounded transition-colors"
+              title={`Delete ${getTypeLabel()}`}
             >
-              <Users className="w-3 h-3" />
-              <span>{showMembers ? 'Hide' : 'Show'} members</span>
+              <Trash2 className="w-3.5 h-3.5 text-red-400" />
             </button>
-          )}
+          </div>
+        )}
 
-          {/* Members list */}
-          {showMembers && members.length > 0 && (
-            <div className="mt-3 text-left border-t border-gray-100 pt-2">
-              {members.map(member => (
-                <div key={member.id} className="flex items-center justify-between py-1 group/member">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-gray-700 truncate">{member.user?.full_name || member.user?.email}</p>
-                    <p className="text-xs text-gray-500">{member.role}{member.focus ? ` · ${member.focus}` : ''}</p>
-                  </div>
-                  {isOrgAdmin && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (confirm(`Remove ${member.user?.full_name || member.user?.email} from this node?`)) {
-                          onRemoveMember(member.id)
-                        }
-                      }}
-                      className="p-1 opacity-0 group-hover/member:opacity-100 hover:bg-red-50 rounded transition-all"
-                      title="Remove member"
-                    >
-                      <X className="w-3 h-3 text-red-400" />
-                    </button>
-                  )}
+        {/* Node Card */}
+        <div
+          className={`relative bg-white border-2 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md ${
+            isExpanded && hasChildren ? 'border-gray-300' : 'border-gray-200'
+          }`}
+          style={{ borderTopColor: node.color, borderTopWidth: '3px', width: '220px', minHeight: '120px' }}
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          {/* Collaborative portfolio indicator - positioned in upper-left corner */}
+          {isSharedPortfolio && (
+            <div
+              className="absolute top-2 left-2 z-10"
+              onMouseEnter={() => setShowSharedTooltip(true)}
+              onMouseLeave={() => setShowSharedTooltip(false)}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-600 rounded-full">
+                <Link2 className="w-3 h-3" />
+              </div>
+              {/* Tooltip */}
+              {showSharedTooltip && (
+                <div className="absolute z-30 top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
+                  <div className="font-medium mb-1">Shared with:</div>
+                  {sharedTeams.map((teamName, idx) => (
+                    <div key={idx} className="text-gray-300">{teamName}</div>
+                  ))}
+                  {/* Arrow */}
+                  <div className="absolute bottom-full left-2 border-4 border-transparent border-b-gray-900" />
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Expand indicator for nodes with children */}
-          {hasChildren && (
-            <div className="mt-2">
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4 text-gray-400 mx-auto" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-gray-400 mx-auto" />
               )}
             </div>
           )}
+          <div className="p-4 text-center">
+            {/* Icon */}
+            <div
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl mb-3"
+              style={{ backgroundColor: `${node.color}20` }}
+            >
+              {getNodeIcon()}
+            </div>
 
-          {/* Description if present */}
-          {node.description && !hasChildren && !showMembers && (
-            <p className="text-xs text-gray-500 mt-2 line-clamp-2">{node.description}</p>
-          )}
+            {/* Name */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onViewDetails(node)
+              }}
+              className="block w-full font-semibold text-gray-900 text-sm hover:text-indigo-600 hover:underline"
+            >
+              {node.name}
+            </button>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {getTypeLabel()}
+              {totalMemberCount > 0 && ` · ${totalMemberCount} member${totalMemberCount !== 1 ? 's' : ''}`}
+              {linkedTeamId && teamPortfolios.length > 0 && ` · ${teamPortfolios.length} portfolio${teamPortfolios.length !== 1 ? 's' : ''}`}
+            </p>
+
+
+            {/* Expand indicator for nodes with children */}
+            {hasChildren && (
+              <div className="mt-2">
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-gray-400 mx-auto" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-gray-400 mx-auto" />
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Expanded Children */}
-      {isExpanded && hasChildren && (
-        <div className="flex flex-col items-center mt-0">
-          {/* Vertical connector down from this node */}
-          <div className="w-0.5 h-8 bg-gray-300" />
-
-          {/* Horizontal connector spanning children */}
-          {node.children!.length > 1 && (
-            <div
-              className="h-0.5 bg-gray-300"
-              style={{ width: `${(node.children!.length - 1) * 240}px`, maxWidth: '90vw' }}
-            />
+      {/* Add button below node - always visible on hover for admins */}
+      {isOrgAdmin && (
+        <div className="relative group/addbutton" style={{ width: '24px', height: hasChildren && isExpanded ? '24px' : '32px', display: 'flex', justifyContent: 'center' }}>
+          {/* Vertical connector line */}
+          {hasChildren && isExpanded && (
+            <div style={{ width: '2px', height: '100%', backgroundColor: '#d1d5db' }} />
           )}
+          {/* Add button */}
+          <div ref={addMenuRef} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowAddMenu(!showAddMenu)
+              }}
+              className={`w-5 h-5 bg-indigo-500 hover:bg-indigo-600 rounded-full flex items-center justify-center shadow-md transition-opacity ${showAddMenu ? 'opacity-100' : 'opacity-0 group-hover/addbutton:opacity-100'}`}
+              title="Add node"
+            >
+              <Plus className="w-3 h-3 text-white" />
+            </button>
+            {/* Dropdown menu */}
+            {showAddMenu && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px] z-30">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onAddChild(node.id)
+                    setShowAddMenu(false)
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                >
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                  <span>Add child below</span>
+                </button>
+                {onAddSibling && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onAddSibling(parentId || null)
+                      setShowAddMenu(false)
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                  >
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                    <span>Add sibling</span>
+                  </button>
+                )}
+                {hasChildren && onInsertBetween && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onInsertBetween(node.id, node.children!.map(c => c.id))
+                      setShowAddMenu(false)
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                  >
+                    <MoreHorizontal className="w-4 h-4 text-gray-400" />
+                    <span>Insert between</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-          {/* Child nodes with vertical connectors */}
-          <div className="flex flex-wrap gap-x-5 justify-center">
-            {node.children!.map(childNode => (
-              <div key={childNode.id} className="flex flex-col items-center">
-                {/* Vertical connector from horizontal line */}
-                <div className="w-0.5 h-8 bg-gray-300" />
+      {/* Expanded Children with connectors */}
+      {isExpanded && hasChildren && (
+        <>
+
+          {/* Children wrapper */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+            {node.children!.map((childNode, index) => (
+              <div key={childNode.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '220px', flexShrink: 0, marginLeft: index > 0 ? '20px' : '0' }}>
+                {/* T-connector with overlapping lines */}
+                <div style={{ position: 'relative', width: '100%', height: '24px', overflow: 'visible' }}>
+                  {/* Left horizontal segment - extends into the margin gap */}
+                  {index > 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '0',
+                      left: '-20px',
+                      width: 'calc(50% + 21px)',
+                      height: '2px',
+                      backgroundColor: '#d1d5db'
+                    }} />
+                  )}
+                  {/* Right horizontal segment - extends into the margin gap */}
+                  {index < node.children!.length - 1 && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '0',
+                      right: '-20px',
+                      width: 'calc(50% + 21px)',
+                      height: '2px',
+                      backgroundColor: '#d1d5db'
+                    }} />
+                  )}
+                  {/* Center vertical drop */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '0',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '2px',
+                    height: '100%',
+                    backgroundColor: '#d1d5db'
+                  }} />
+                </div>
+                {/* Child node */}
                 <OrgChartNodeCard
                   node={childNode}
                   isOrgAdmin={isOrgAdmin}
                   onEdit={onEdit}
                   onAddChild={onAddChild}
+                  onAddSibling={onAddSibling}
                   onDelete={onDelete}
                   onAddMember={onAddMember}
                   onRemoveMember={onRemoveMember}
                   getNodeMembers={getNodeMembers}
+                  getSharedTeams={getSharedTeams}
+                  getTeamMembers={getTeamMembers}
+                  getTeamPortfolios={getTeamPortfolios}
+                  getPortfolioTeamMembers={getPortfolioTeamMembers}
+                  onAddTeamMember={onAddTeamMember}
+                  onRemoveTeamMember={onRemoveTeamMember}
+                  onInsertBetween={onInsertBetween}
+                  onViewDetails={onViewDetails}
                   depth={depth + 1}
+                  parentId={node.id}
                 />
               </div>
             ))}
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -2947,44 +3480,75 @@ interface SuspendUserModalProps {
   member: OrganizationMembership
   onClose: () => void
   onSuspend: (reason: string) => void
+  onRequestRemoval: (reason: string) => void
   isLoading: boolean
+  isRemovalLoading: boolean
 }
 
-function SuspendUserModal({ member, onClose, onSuspend, isLoading }: SuspendUserModalProps) {
+function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoading, isRemovalLoading }: SuspendUserModalProps) {
   const [reason, setReason] = useState('')
+  const [actionType, setActionType] = useState<'suspend' | 'remove'>('suspend')
   const [showConfirmation, setShowConfirmation] = useState(false)
+
+  const currentLoading = actionType === 'suspend' ? isLoading : isRemovalLoading
 
   if (showConfirmation) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
           <div className="flex items-center space-x-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              actionType === 'suspend' ? 'bg-amber-100' : 'bg-red-100'
+            }`}>
+              <AlertTriangle className={`w-5 h-5 ${actionType === 'suspend' ? 'text-amber-600' : 'text-red-600'}`} />
             </div>
             <h3 className="text-lg font-semibold text-gray-900">Are you sure?</h3>
           </div>
-          <p className="text-sm text-gray-600 mb-4">
-            You are about to suspend <span className="font-semibold text-gray-900">{member.user?.full_name}</span>'s access to the platform.
-          </p>
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-            <p className="text-sm text-amber-800">
-              <strong>This action will:</strong>
-            </p>
-            <ul className="text-sm text-amber-700 list-disc list-inside mt-1">
-              <li>Immediately revoke their platform access</li>
-              <li>Prevent them from logging in</li>
-              <li>This can be undone by restoring the user</li>
-            </ul>
-          </div>
+
+          {actionType === 'suspend' ? (
+            <>
+              <p className="text-sm text-gray-600 mb-4">
+                You are about to suspend <span className="font-semibold text-gray-900">{member.user?.full_name}</span>'s access to the platform.
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-amber-800">
+                  <strong>This action will:</strong>
+                </p>
+                <ul className="text-sm text-amber-700 list-disc list-inside mt-1">
+                  <li>Immediately revoke their platform access</li>
+                  <li>Prevent them from logging in</li>
+                  <li>This can be undone by restoring the user</li>
+                </ul>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600 mb-4">
+                You are about to request permanent removal of <span className="font-semibold text-gray-900">{member.user?.full_name}</span> from the platform.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-red-800">
+                  <strong>This will send a request to platform administrators to:</strong>
+                </p>
+                <ul className="text-sm text-red-700 list-disc list-inside mt-1">
+                  <li>Permanently delete the user's account</li>
+                  <li>Remove all their data and access</li>
+                  <li>This action cannot be undone once approved</li>
+                </ul>
+              </div>
+            </>
+          )}
+
           <div className="flex justify-end space-x-3">
             <Button variant="outline" onClick={() => setShowConfirmation(false)}>Go Back</Button>
             <Button
-              onClick={() => onSuspend(reason)}
-              disabled={isLoading}
-              className="bg-amber-600 hover:bg-amber-700"
+              onClick={() => actionType === 'suspend' ? onSuspend(reason) : onRequestRemoval(reason)}
+              disabled={currentLoading}
+              className={actionType === 'suspend' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}
             >
-              {isLoading ? 'Suspending...' : 'Yes, Suspend Access'}
+              {currentLoading
+                ? (actionType === 'suspend' ? 'Suspending...' : 'Submitting...')
+                : (actionType === 'suspend' ? 'Yes, Suspend Access' : 'Yes, Request Removal')}
             </Button>
           </div>
         </div>
@@ -2999,20 +3563,71 @@ function SuspendUserModal({ member, onClose, onSuspend, isLoading }: SuspendUser
           <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
             <UserX className="w-5 h-5 text-amber-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Suspend User Access</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Manage User Access</h3>
         </div>
         <p className="text-sm text-gray-600 mb-4">
-          Suspending <span className="font-medium">{member.user?.full_name}</span> will immediately revoke their access to the platform. They can be restored later.
+          Choose an action for <span className="font-medium">{member.user?.full_name}</span>
         </p>
+
+        {/* Action Type Toggle */}
+        <div className="space-y-2 mb-4">
+          <label className="block text-sm font-medium text-gray-700">Action</label>
+          <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50">
+            <button
+              type="button"
+              onClick={() => setActionType('suspend')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                actionType === 'suspend'
+                  ? 'bg-white text-amber-700 shadow-sm border border-amber-200'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <UserX className="w-4 h-4 inline mr-1.5" />
+              Suspend Access
+            </button>
+            <button
+              type="button"
+              onClick={() => setActionType('remove')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                actionType === 'remove'
+                  ? 'bg-white text-red-700 shadow-sm border border-red-200'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Trash2 className="w-4 h-4 inline mr-1.5" />
+              Request Removal
+            </button>
+          </div>
+        </div>
+
+        {/* Description based on action type */}
+        <div className={`rounded-lg p-3 mb-4 ${
+          actionType === 'suspend' ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'
+        }`}>
+          <p className={`text-xs ${actionType === 'suspend' ? 'text-amber-700' : 'text-red-700'}`}>
+            {actionType === 'suspend'
+              ? 'Suspending will immediately revoke platform access. This can be undone later by restoring the user.'
+              : 'This will send a request to platform administrators to permanently delete this user. This action cannot be undone once approved.'}
+          </p>
+        </div>
+
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for suspension *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {actionType === 'suspend' ? 'Reason for suspension' : 'Reason for removal request'} *
+            </label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 ${
+                actionType === 'suspend'
+                  ? 'border-gray-300 focus:ring-amber-500 focus:border-amber-500'
+                  : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
+              }`}
               rows={3}
-              placeholder="Please provide a reason for suspending this user..."
+              placeholder={actionType === 'suspend'
+                ? 'Please provide a reason for suspending this user...'
+                : 'Please explain why this user should be permanently removed...'}
             />
           </div>
         </div>
@@ -3021,7 +3636,7 @@ function SuspendUserModal({ member, onClose, onSuspend, isLoading }: SuspendUser
           <Button
             onClick={() => setShowConfirmation(true)}
             disabled={!reason.trim()}
-            className="bg-amber-600 hover:bg-amber-700"
+            className={actionType === 'suspend' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}
           >
             Continue
           </Button>
@@ -3129,6 +3744,8 @@ function RemovalRequestModal({ member, onClose, onSubmit, isLoading }: RemovalRe
 interface AddNodeModalProps {
   parentId: string | null
   portfolios: Portfolio[]
+  childIdsToReparent?: string[] | null // For inserting between nodes
+  insertMode?: boolean // True when inserting between nodes
   onClose: () => void
   onSave: (data: {
     parent_id: string | null
@@ -3139,6 +3756,7 @@ interface AddNodeModalProps {
     color: string
     icon: string
     portfolio_id?: string
+    childIdsToReparent?: string[]
   }) => void
   isLoading: boolean
 }
@@ -3153,8 +3771,8 @@ const NODE_TYPE_OPTIONS: { value: OrgNodeType; label: string; description: strin
 
 const NODE_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#8b5cf6', '#ef4444', '#f97316', '#ec4899', '#14b8a6']
 
-function AddNodeModal({ parentId, portfolios, onClose, onSave, isLoading }: AddNodeModalProps) {
-  const [nodeType, setNodeType] = useState<OrgNodeType>('team')
+function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, onClose, onSave, isLoading }: AddNodeModalProps) {
+  const [nodeType, setNodeType] = useState<OrgNodeType>(insertMode ? 'department' : 'team')
   const [customTypeLabel, setCustomTypeLabel] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -3181,7 +3799,8 @@ function AddNodeModal({ parentId, portfolios, onClose, onSave, isLoading }: AddN
         description: selectedPortfolio.description || undefined,
         color: '#10b981', // Green for portfolios
         icon: 'briefcase',
-        portfolio_id: selectedPortfolioId
+        portfolio_id: selectedPortfolioId,
+        childIdsToReparent: childIdsToReparent || undefined
       })
       return
     }
@@ -3196,7 +3815,8 @@ function AddNodeModal({ parentId, portfolios, onClose, onSave, isLoading }: AddN
       name: name.trim(),
       description: description.trim() || undefined,
       color,
-      icon: NODE_TYPE_OPTIONS.find(o => o.value === nodeType)?.icon || 'folder'
+      icon: NODE_TYPE_OPTIONS.find(o => o.value === nodeType)?.icon || 'folder',
+      childIdsToReparent: childIdsToReparent || undefined
     })
   }
 
@@ -3208,9 +3828,13 @@ function AddNodeModal({ parentId, portfolios, onClose, onSave, isLoading }: AddN
             <Plus className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Add to Organization</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {insertMode ? 'Insert Node Between' : 'Add to Organization'}
+            </h3>
             <p className="text-sm text-gray-500">
-              {parentId ? 'Add a child node' : 'Add to the root level'}
+              {insertMode
+                ? 'Insert a new parent node above existing nodes'
+                : parentId ? 'Add a child node' : 'Add to the root level'}
             </p>
           </div>
         </div>
@@ -3506,6 +4130,499 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
           >
             {isLoading ? 'Saving...' : 'Save'}
           </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Node Detail Modal - shows detailed information about a node with integrated edit mode
+interface NodeDetailModalProps {
+  node: OrgChartNode
+  members: OrgChartNodeMember[]
+  portfolioTeamMembers: PortfolioTeamMember[]
+  onClose: () => void
+  isAdmin: boolean
+  availableUsers: any[]
+  onSaveNode: (data: { id: string; name: string; description?: string; color: string; icon: string; custom_type_label?: string }) => void
+  onAddMember: (nodeId: string, userId: string, role?: string, focus?: string) => void
+  onUpdateMember: (memberId: string, role: string, focus: string | null) => void
+  onRemoveMember: (memberId: string) => void
+  isSaving: boolean
+}
+
+function NodeDetailModal({
+  node,
+  members,
+  portfolioTeamMembers,
+  onClose,
+  isAdmin,
+  availableUsers,
+  onSaveNode,
+  onAddMember,
+  onUpdateMember,
+  onRemoveMember,
+  isSaving
+}: NodeDetailModalProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(node.name)
+  const [editDescription, setEditDescription] = useState(node.description || '')
+  const [editColor, setEditColor] = useState(node.color)
+  const [editCustomTypeLabel, setEditCustomTypeLabel] = useState(node.custom_type_label || '')
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
+  const [editMemberRole, setEditMemberRole] = useState('')
+  const [editMemberFocus, setEditMemberFocus] = useState('')
+  const [showAddMember, setShowAddMember] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState('')
+  const [memberRole, setMemberRole] = useState('')
+  const [memberFocus, setMemberFocus] = useState('')
+
+  // For portfolio nodes, show all member entries (a user can have multiple roles/focuses)
+  // For non-portfolio nodes, dedupe by user_id
+  const displayMembers = React.useMemo(() => {
+    if (node.node_type === 'portfolio') {
+      // Show all entries - same user can have multiple roles/focuses
+      return portfolioTeamMembers
+    } else {
+      // For non-portfolio nodes, dedupe by user_id
+      const memberMap = new Map<string, PortfolioTeamMember>()
+      portfolioTeamMembers.forEach(m => {
+        if (m.user_id && !memberMap.has(m.user_id)) {
+          memberMap.set(m.user_id, m)
+        }
+      })
+      return Array.from(memberMap.values())
+    }
+  }, [portfolioTeamMembers, node.node_type])
+
+  // All users are available - same user can be added with different role/focus
+  const availableUsersFiltered = availableUsers
+
+  // Get icon based on node type
+  const getNodeIcon = () => {
+    const iconColor = isEditing ? editColor : node.color
+    switch (node.node_type) {
+      case 'division': return <Building2 className="w-6 h-6" style={{ color: iconColor }} />
+      case 'department': return <FolderOpen className="w-6 h-6" style={{ color: iconColor }} />
+      case 'team': return <Users className="w-6 h-6" style={{ color: iconColor }} />
+      case 'portfolio': return <Briefcase className="w-6 h-6" style={{ color: iconColor }} />
+      default: return <FolderOpen className="w-6 h-6" style={{ color: iconColor }} />
+    }
+  }
+
+  // Get type label
+  const getTypeLabel = () => {
+    if (node.node_type === 'custom' && node.custom_type_label) {
+      return node.custom_type_label
+    }
+    return node.node_type.charAt(0).toUpperCase() + node.node_type.slice(1)
+  }
+
+  const handleSave = () => {
+    if (!editName.trim()) return
+    if (node.node_type === 'custom' && !editCustomTypeLabel.trim()) return
+
+    onSaveNode({
+      id: node.id,
+      name: editName.trim(),
+      description: editDescription.trim() || undefined,
+      color: editColor,
+      icon: node.icon,
+      custom_type_label: node.node_type === 'custom' ? editCustomTypeLabel.trim() : undefined
+    })
+    setIsEditing(false)
+  }
+
+  const handleAddMember = () => {
+    if (!selectedUserId) return
+    onAddMember(node.id, selectedUserId, memberRole || undefined, memberFocus || undefined)
+    setSelectedUserId('')
+    setMemberRole('')
+    setMemberFocus('')
+    setShowAddMember(false)
+  }
+
+  const handleCancelEdit = () => {
+    setEditName(node.name)
+    setEditDescription(node.description || '')
+    setEditColor(node.color)
+    setEditCustomTypeLabel(node.custom_type_label || '')
+    setIsEditing(false)
+  }
+
+  const currentColor = isEditing ? editColor : node.color
+  const isPortfolioNode = node.node_type === 'portfolio'
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center space-x-4">
+              <div
+                className="w-14 h-14 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${currentColor}20` }}
+              >
+                {getNodeIcon()}
+              </div>
+              <div className="flex-1">
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="text-xl font-semibold text-gray-900 w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="Enter name"
+                  />
+                ) : (
+                  <h3 className="text-xl font-semibold text-gray-900">{node.name}</h3>
+                )}
+                <p className="text-sm text-gray-500">{getTypeLabel()}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[60vh]">
+          {/* Custom Type Label (only for custom type in edit mode) */}
+          {isEditing && node.node_type === 'custom' && (
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Type Label *</h4>
+              <input
+                type="text"
+                value={editCustomTypeLabel}
+                onChange={(e) => setEditCustomTypeLabel(e.target.value)}
+                placeholder="e.g., Business Unit, Region"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          )}
+
+          {/* Description */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+              <FileText className="w-4 h-4 mr-2 text-gray-400" />
+              Description
+            </h4>
+            {isEditing ? (
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Add a description..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                rows={3}
+              />
+            ) : (
+              <p className="text-gray-600 bg-gray-50 rounded-lg p-3">
+                {node.description || 'No description'}
+              </p>
+            )}
+          </div>
+
+          {/* Color (only in edit mode) */}
+          {isEditing && (
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Color</h4>
+              <div className="flex flex-wrap gap-2">
+                {NODE_COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setEditColor(c)}
+                    className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                      editColor === c ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Members */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-700 flex items-center">
+                <Users className="w-4 h-4 mr-2 text-gray-400" />
+                Members ({displayMembers.length})
+              </h4>
+              {isEditing && isAdmin && (
+                <button
+                  onClick={() => setShowAddMember(!showAddMember)}
+                  className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center"
+                >
+                  <UserPlus className="w-4 h-4 mr-1" />
+                  Add Member
+                </button>
+              )}
+            </div>
+
+            {/* Add Member Form */}
+            {isEditing && showAddMember && (
+              <div className="bg-indigo-50 rounded-lg p-3 mb-3 space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Select User</label>
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="">Choose a user...</option>
+                    {availableUsersFiltered.map(user => {
+                      const displayName = user.user?.full_name || user.user?.email?.split('@')[0] || 'Unknown'
+                      return (
+                        <option key={user.user_id} value={user.user_id}>{displayName}</option>
+                      )
+                    })}
+                  </select>
+                </div>
+                {isPortfolioNode && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Role (optional)</label>
+                      <select
+                        value={memberRole}
+                        onChange={(e) => setMemberRole(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="">Select role...</option>
+                        <option value="Portfolio Manager">Portfolio Manager</option>
+                        <option value="Analyst">Analyst</option>
+                        <option value="Trader">Trader</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['Generalist', 'Technology', 'Healthcare', 'Energy', 'Financials', 'Consumer', 'Industrials', 'Utilities', 'Materials', 'Real Estate', 'Quant', 'Technical'].map(focus => {
+                          const currentFocuses = memberFocus ? memberFocus.split(', ').filter(Boolean) : []
+                          const isSelected = currentFocuses.includes(focus)
+                          return (
+                            <button
+                              key={focus}
+                              type="button"
+                              onClick={() => {
+                                let newFocuses: string[]
+                                if (isSelected) {
+                                  newFocuses = currentFocuses.filter(f => f !== focus)
+                                } else {
+                                  newFocuses = [...currentFocuses, focus]
+                                }
+                                setMemberFocus(newFocuses.join(', '))
+                              }}
+                              className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                                isSelected
+                                  ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                              }`}
+                            >
+                              {focus}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-end space-x-2">
+                  <button
+                    onClick={() => setShowAddMember(false)}
+                    className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddMember}
+                    disabled={!selectedUserId}
+                    className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {displayMembers.length > 0 ? (
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                {displayMembers.map(member => {
+                  const displayName = member.user?.first_name || member.user?.last_name
+                    ? `${member.user.first_name || ''} ${member.user.last_name || ''}`.trim()
+                    : member.user?.email?.split('@')[0] || 'Unknown'
+                  const initial = displayName.charAt(0).toUpperCase()
+                  const isEditingThisMember = editingMemberId === member.id
+
+                  // If editing this member, show inline edit form with auto-save
+                  if (isEditingThisMember && isEditing && isPortfolioNode) {
+                    const focusOptions = ['Generalist', 'Technology', 'Healthcare', 'Energy', 'Financials', 'Consumer', 'Industrials', 'Utilities', 'Materials', 'Real Estate', 'Quant', 'Technical']
+                    const currentFocuses = editMemberFocus ? editMemberFocus.split(', ').filter(Boolean) : []
+
+                    const toggleFocus = (focus: string) => {
+                      let newFocuses: string[]
+                      if (currentFocuses.includes(focus)) {
+                        newFocuses = currentFocuses.filter(f => f !== focus)
+                      } else {
+                        newFocuses = [...currentFocuses, focus]
+                      }
+                      const newFocusString = newFocuses.join(', ')
+                      setEditMemberFocus(newFocusString)
+                      // Auto-save on focus change
+                      onUpdateMember(member.id, editMemberRole, newFocusString || null)
+                    }
+
+                    return (
+                      <div key={member.id} className="bg-white border border-indigo-200 rounded-lg p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium text-white"
+                              style={{ backgroundColor: currentColor }}
+                            >
+                              {initial}
+                            </div>
+                            <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setEditingMemberId(null)
+                              setEditMemberRole('')
+                              setEditMemberFocus('')
+                            }}
+                            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                            title="Done editing"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Role dropdown - auto-saves */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                          <select
+                            value={editMemberRole}
+                            onChange={(e) => {
+                              const newRole = e.target.value
+                              setEditMemberRole(newRole)
+                              // Auto-save on role change
+                              onUpdateMember(member.id, newRole, editMemberFocus || null)
+                            }}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          >
+                            <option value="">Select role...</option>
+                            <option value="Portfolio Manager">Portfolio Manager</option>
+                            <option value="Analyst">Analyst</option>
+                            <option value="Trader">Trader</option>
+                          </select>
+                        </div>
+
+                        {/* Focus multi-select checkboxes - auto-saves */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {focusOptions.map(focus => (
+                              <button
+                                key={focus}
+                                onClick={() => toggleFocus(focus)}
+                                className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                                  currentFocuses.includes(focus)
+                                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                }`}
+                              >
+                                {focus}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div key={member.id} className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium text-white"
+                          style={{ backgroundColor: currentColor }}
+                        >
+                          {initial}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                          {isPortfolioNode && member.role && <p className="text-xs text-gray-500">{member.role}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {isPortfolioNode && member.focus && (
+                          <div className="flex flex-wrap gap-1">
+                            {member.focus.split(', ').map((f, idx) => (
+                              <span key={idx} className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">{f}</span>
+                            ))}
+                          </div>
+                        )}
+                        {isEditing && isAdmin && isPortfolioNode && (
+                          <button
+                            onClick={() => {
+                              setEditingMemberId(member.id)
+                              setEditMemberRole(member.role || '')
+                              setEditMemberFocus(member.focus || '')
+                            }}
+                            className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+                            title="Edit member"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {isEditing && isAdmin && (
+                          <button
+                            onClick={() => onRemoveMember(member.id)}
+                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                            title="Remove member"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">No members assigned yet</p>
+            )}
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-gray-100 flex justify-end space-x-3">
+          {isEditing ? (
+            <>
+              <Button variant="outline" onClick={handleCancelEdit}>Cancel</Button>
+              <Button
+                onClick={handleSave}
+                disabled={!editName.trim() || (node.node_type === 'custom' && !editCustomTypeLabel.trim()) || isSaving}
+              >
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose}>Close</Button>
+              {isAdmin && (
+                <Button onClick={() => setIsEditing(true)}>
+                  <Edit3 className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

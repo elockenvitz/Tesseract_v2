@@ -1,14 +1,12 @@
 // src/components/portfolios/AddTeamMemberModal.tsx
 import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Plus, Users } from 'lucide-react'
+import { X, Plus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
-import { Card } from '../ui/Card'
-import { SearchableSelect } from '../ui/SearchableSelect' // Import the new component
+import { SearchableSelect } from '../ui/SearchableSelect'
 
 interface AddTeamMemberModalProps {
   isOpen: boolean
@@ -67,19 +65,18 @@ export function AddTeamMemberModal({
   ]
 
   const focusOptions = [
-    { value: '', label: 'Select Focus (Optional)' },
-    { value: 'Generalist', label: 'Generalist' },
-    { value: 'Technology', label: 'Technology' },
-    { value: 'Healthcare', label: 'Healthcare' },
-    { value: 'Energy', label: 'Energy' },
-    { value: 'Financials', label: 'Financials' },
-    { value: 'Consumer', label: 'Consumer' },
-    { value: 'Industrials', label: 'Industrials' },
-    { value: 'Utilities', label: 'Utilities' },
-    { value: 'Materials', label: 'Materials' },
-    { value: 'Real Estate', label: 'Real Estate' },
-    { value: 'Quant', label: 'Quant' },
-    { value: 'Technical', label: 'Technical' },
+    'Generalist',
+    'Technology',
+    'Healthcare',
+    'Energy',
+    'Financials',
+    'Consumer',
+    'Industrials',
+    'Utilities',
+    'Materials',
+    'Real Estate',
+    'Quant',
+    'Technical',
   ]
 
   // Moved getUserDisplayName function definition here
@@ -192,6 +189,8 @@ export function AddTeamMemberModal({
         queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', portfolioId] }),
         queryClient.invalidateQueries({ queryKey: ['portfolio-team-history', portfolioId] }),
         queryClient.invalidateQueries({ queryKey: ['team-users-by-id'] }),
+        // Also invalidate the org-wide query used by OrganizationPage
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] }),
       ])
 
       // reset form
@@ -252,13 +251,38 @@ export function AddTeamMemberModal({
               options={roleOptions}
             />
 
-            {/* Focus */}
-            <Select
-              label="Focus"
-              value={focus || ''}
-              onChange={(e) => setFocus(e.target.value || null)}
-              options={focusOptions}
-            />
+            {/* Focus - Multi-select pills */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Focus (select multiple)</label>
+              <div className="flex flex-wrap gap-2">
+                {focusOptions.map(focusOption => {
+                  const currentFocuses = focus ? focus.split(', ').filter(Boolean) : []
+                  const isSelected = currentFocuses.includes(focusOption)
+                  return (
+                    <button
+                      key={focusOption}
+                      type="button"
+                      onClick={() => {
+                        let newFocuses: string[]
+                        if (isSelected) {
+                          newFocuses = currentFocuses.filter(f => f !== focusOption)
+                        } else {
+                          newFocuses = [...currentFocuses, focusOption]
+                        }
+                        setFocus(newFocuses.length > 0 ? newFocuses.join(', ') : null)
+                      }}
+                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                        isSelected
+                          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      {focusOption}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           {/* Actions */}

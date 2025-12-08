@@ -228,6 +228,9 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', portfolio.id] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team', portfolio.id] })
+      // Also invalidate the org-wide query used by OrganizationPage
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
       setDeleteConfirm({ isOpen: false, teamMemberId: null, userName: '', role: '' })
     },
     onError: (error) => {

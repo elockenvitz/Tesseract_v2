@@ -1,62 +1,13 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { User, Edit2, Save, Edit3, Calendar, X } from 'lucide-react'
+import { User, Calendar } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
-import { Input } from '../components/ui/Input'
 import { formatDistanceToNow } from 'date-fns'
 
 export function ProfilePage() {
-  const [isEditing, setIsEditing] = useState(false)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
   const { user, loading: isLoading } = useAuth()
-  const queryClient = useQueryClient()
 
   // User details are already loaded in the user object from useAuth
   const userDetails = user as any
-
-  // Update form fields when user data loads
-  useState(() => {
-    if (userDetails) {
-      setFirstName(userDetails.first_name || '')
-      setLastName(userDetails.last_name || '')
-      setEmail(userDetails.email || '')
-    }
-  }, [userDetails])
-
-  // Update profile mutation
-  const updateProfileMutation = useMutation({
-    mutationFn: async (updates: { first_name?: string; last_name?: string }) => {
-      const { error } = await supabase
-        .from('users')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', user?.id)
-      
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-profile', user?.id] })
-      queryClient.invalidateQueries({ queryKey: ['user-details', user?.id] })
-      setIsEditing(false)
-    }
-  })
-
-  const handleSave = () => {
-    updateProfileMutation.mutate({
-      first_name: firstName.trim(),
-      last_name: lastName.trim()
-    })
-  }
-
-  const handleCancel = () => {
-    setFirstName(userDetails?.first_name || '')
-    setLastName(userDetails?.last_name || '')
-    setIsEditing(false)
-  }
 
   const getUserInitials = () => {
     if (userDetails?.first_name && userDetails?.last_name) {
@@ -128,8 +79,8 @@ export function ProfilePage() {
           <h2 className="text-xl font-semibold text-gray-900">{getDisplayName()}</h2>
           <p className="text-gray-600">{userDetails?.email}</p>
           <div className="flex items-center justify-center gap-2 mt-1">
-            <p className="text-sm text-gray-500 capitalize">
-              {userDetails?.user_role || 'Investor'}
+            <p className="text-sm text-gray-500">
+              {userDetails?.user_type || 'Investor'}
             </p>
             {userDetails?.coverage_admin && (
               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800">
@@ -139,62 +90,34 @@ export function ProfilePage() {
           </div>
         </div>
 
-        {/* Profile Form */}
+        {/* Personal Information - Read Only */}
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div>
             <h3 className="text-lg font-medium text-gray-900">Personal Information</h3>
-            {!isEditing ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditing(true)}
-              >
-                <Edit3 className="h-4 w-4 mr-2" />
-                Edit Profile
-              </Button>
-            ) : (
-              <div className="flex space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancel}
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSave}
-                  loading={updateProfileMutation.isPending}
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Changes
-                </Button>
-              </div>
-            )}
+            <p className="text-sm text-gray-500 mt-1">Contact your administrator to update your profile information</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Input
-              label="First Name"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              disabled={!isEditing}
-            />
-            <Input
-              label="Last Name"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              disabled={!isEditing}
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+                {userDetails?.first_name || '-'}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+                {userDetails?.last_name || '-'}
+              </div>
+            </div>
           </div>
 
-          <Input
-            label="Email Address"
-            value={email}
-            disabled={true}
-            helperText="Email cannot be changed. Contact support if you need to update your email."
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+              {userDetails?.email || '-'}
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -222,9 +145,9 @@ export function ProfilePage() {
               <User className="h-5 w-5 text-success-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Role</p>
-              <p className="text-sm text-gray-900 capitalize">{userDetails?.user_role || 'Investor'}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Contact support to change</p>
+              <p className="text-sm font-medium text-gray-600">User Type</p>
+              <p className="text-sm text-gray-900">{userDetails?.user_type || 'Investor'}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Contact administrator to change</p>
             </div>
           </div>
         </div>

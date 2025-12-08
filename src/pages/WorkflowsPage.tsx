@@ -394,7 +394,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   }, [tabId, selectedWorkflow?.id, activeView, searchTerm, filterBy, sortBy, selectedBranch?.id, branchStatusFilter])
 
   // Parallel queries for better performance - remove dependencies
-  const { data: workflowStages, refetch: refetchStages } = useQuery({
+  const { data: workflowStages, refetch: refetchStages, isLoading: stagesLoading } = useQuery({
     queryKey: ['workflow-stages'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -1285,17 +1285,127 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Manual save function for universe rules
   const saveUniverseRules = () => {
+    console.log('🌌 saveUniverseRules called')
+    console.log('🌌 selectedWorkflow?.id:', selectedWorkflow?.id)
+    console.log('🌌 universeRulesState:', universeRulesState)
     if (selectedWorkflow?.id) {
       saveUniverseMutation.mutate({ workflowId: selectedWorkflow.id })
     }
   }
 
-  // Handler to track universe rule changes
+  // Handler to track universe rule changes - AUTO-SAVES immediately
   const handleUniverseRulesChange = (newRules: typeof universeRulesState) => {
-    // Always update the state first
+    console.log('🌌 handleUniverseRulesChange called with:', newRules)
+    // Update state
     setUniverseRulesState(newRules)
 
-    // Only track if in template edit mode
+    // Update initial rules reference so future comparisons work correctly
+    setInitialUniverseRules(newRules)
+
+    // Auto-save immediately to database (no edit mode required for universe rules)
+    if (selectedWorkflow?.id) {
+      console.log('🌌 Auto-saving universe rules for workflow:', selectedWorkflow.id)
+      // Use a direct save that doesn't depend on state timing
+      saveUniverseRulesDirect(selectedWorkflow.id, newRules)
+    }
+  }
+
+  // Direct save function that takes rules as parameter (avoids state timing issues)
+  const saveUniverseRulesDirect = async (workflowId: string, rules: typeof universeRulesState) => {
+    try {
+      const user = await supabase.auth.getUser()
+      const userId = user.data.user?.id
+      if (!userId) {
+        console.error('🌌 User not authenticated')
+        return
+      }
+
+      // First, delete all existing universe rules for this workflow
+      const { error: deleteError } = await supabase
+        .from('workflow_universe_rules')
+        .delete()
+        .eq('workflow_id', workflowId)
+
+      if (deleteError) {
+        console.error('🌌 Delete error:', deleteError)
+        return
+      }
+
+      // Convert rules to database format
+      const rulesToInsert: any[] = []
+
+      rules.forEach((rule, index) => {
+        let rule_type: string = rule.type
+        let rule_config: any = {}
+
+        // Convert legacy types to database format
+        switch (rule.type) {
+          case 'analyst':
+            rule_type = 'coverage'
+            rule_config = { analyst_user_ids: Array.isArray(rule.values) ? rule.values : [rule.values] }
+            break
+          case 'list':
+            rule_type = 'list'
+            rule_config = { list_ids: Array.isArray(rule.values) ? rule.values : [rule.values] }
+            break
+          case 'theme':
+            rule_type = 'theme'
+            rule_config = { theme_ids: Array.isArray(rule.values) ? rule.values : [rule.values], include_assets: true }
+            break
+          case 'sector':
+            rule_type = 'sector'
+            rule_config = { sectors: Array.isArray(rule.values) ? rule.values : [rule.values] }
+            break
+          case 'priority':
+            rule_type = 'priority'
+            rule_config = { levels: Array.isArray(rule.values) ? rule.values : [rule.values] }
+            break
+          default:
+            // For new filter types, store the operator and values directly
+            rule_config = {
+              operator: rule.operator,
+              values: rule.values
+            }
+        }
+
+        rulesToInsert.push({
+          workflow_id: workflowId,
+          rule_type,
+          rule_config,
+          combination_operator: rule.combineWith?.toLowerCase() || 'or',
+          sort_order: index,
+          is_active: true,
+          created_by: userId
+        })
+      })
+
+      // Insert new rules if there are any
+      console.log('🌌 rulesToInsert:', rulesToInsert)
+      if (rulesToInsert.length > 0) {
+        const { error: insertError } = await supabase
+          .from('workflow_universe_rules')
+          .insert(rulesToInsert)
+
+        if (insertError) {
+          console.error('🌌 Insert error:', insertError)
+          return
+        }
+        console.log('🌌 Successfully auto-saved', rulesToInsert.length, 'universe rules')
+      } else {
+        console.log('🌌 Cleared all universe rules (none to insert)')
+      }
+
+      // Invalidate query to refresh
+      queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', workflowId] })
+    } catch (error) {
+      console.error('🌌 Error auto-saving universe rules:', error)
+    }
+  }
+
+  // Legacy handler for tracking changes in edit mode (keeping for backwards compatibility)
+  const handleUniverseRulesChangeWithTracking = (newRules: typeof universeRulesState) => {
+    setUniverseRulesState(newRules)
+
     if (!isTemplateEditMode) {
       return
     }
@@ -1372,8 +1482,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError } = useQuery({
-    queryKey: ['workflows-full', filterBy, sortBy],
-    // Note: workflowStages is accessed from closure, not query key, to avoid unnecessary refetches
+    queryKey: ['workflows-full', filterBy, sortBy, !!workflowStages],
+    enabled: !!workflowStages, // Only run when workflowStages are loaded
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -4243,6 +4353,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   // Universe configuration mutation - updated for flexible filter approach
   const saveUniverseMutation = useMutation({
     mutationFn: async ({ workflowId }: { workflowId: string }) => {
+      console.log('🌌 saveUniverseMutation executing for workflow:', workflowId)
+      console.log('🌌 universeRulesState at mutation time:', universeRulesState)
+
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
       if (!userId) throw new Error('User not authenticated')
@@ -4304,17 +4417,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       })
 
       // Insert new rules if there are any
+      console.log('🌌 rulesToInsert:', rulesToInsert)
       if (rulesToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('workflow_universe_rules')
           .insert(rulesToInsert)
 
-        if (insertError) throw insertError
+        if (insertError) {
+          console.error('🌌 Insert error:', insertError)
+          throw insertError
+        }
+        console.log('🌌 Successfully inserted rules')
+      } else {
+        console.log('🌌 No rules to insert (rulesToInsert is empty)')
       }
 
       return rulesToInsert
     },
     onSuccess: (rules) => {
+      console.log('🌌 saveUniverseMutation onSuccess, rules:', rules)
       queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', selectedWorkflow?.id] })
       // Auto-save: silent success
       trackChange('universe_updated', `Universe Rules: ${rules.length} rule${rules.length !== 1 ? 's' : ''} configured`, 'universe_rules')
@@ -5716,7 +5837,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             </div>
 
             <div className="flex-1 p-6 bg-gray-50 overflow-y-auto">
-              {isLoading ? (
+              {isLoading || stagesLoading ? (
                 /* Loading State */
                 <div className="space-y-6 animate-pulse">
                   {/* Loading Skeleton for Cadence Map Card */}
