@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, History, Calendar, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle } from 'lucide-react'
+import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, History, Calendar, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle, UserPlus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
@@ -39,6 +39,9 @@ interface CoverageRecord {
   role?: string | null
   notes?: string | null
   portfolio_id?: string | null
+  team_id?: string | null
+  visibility?: 'team' | 'division' | 'firm'
+  is_lead?: boolean
   assets: {
     id: string
     symbol: string
@@ -49,6 +52,11 @@ interface CoverageRecord {
     id: string
     name: string
   } | null
+  teams?: {
+    id: string
+    name: string
+    node_type: string
+  } | null
 }
 
 export function CoverageManager({ isOpen, onClose, initialView = 'active', mode = 'modal' }: CoverageManagerProps) {
@@ -58,7 +66,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [selectedAnalystId, setSelectedAnalystId] = useState<string | null>(null)
   const [selectedStatCard, setSelectedStatCard] = useState<'analysts' | 'covered' | 'gaps' | 'average' | null>(null)
-  const [matrixGroupBy, setMatrixGroupBy] = useState<'sector' | 'analyst' | 'portfolio' | 'role'>('sector')
+  const [matrixGroupBy, setMatrixGroupBy] = useState<'sector' | 'analyst' | 'portfolio' | 'role' | 'team'>('sector')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
   // Determine if the component should be visible (page mode is always visible)
@@ -170,8 +178,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     assetSymbol: string
     currentUserId: string | null
     currentAnalystName: string | null
+    currentRole: string | null
     requestedUserId: string
-    requestType: 'add' | 'change' | 'remove'
+    requestedRole: string
+    requestType: 'add' | 'change' | 'remove' | 'role_change'
     reason: string
   } | null>(null)
   const [rescindingRequest, setRescindingRequest] = useState<{
@@ -186,6 +196,38 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     role: string
     portfolioIds: string[]
     notes: string
+    teamId: string | null
+    visibility: 'team' | 'division' | 'firm'
+    isLead: boolean
+  } | null>(null)
+  const [primaryExistsConfirm, setPrimaryExistsConfirm] = useState<{
+    isOpen: boolean
+    assetId: string
+    assetSymbol: string
+    existingPrimaryUserId: string
+    existingPrimaryName: string
+    existingPrimaryCoverageId: string
+    newAnalystId: string
+    newAnalystName: string
+    startDate: string
+    portfolioIds: string[]
+    notes: string
+  } | null>(null)
+  const [existingCoverageConfirm, setExistingCoverageConfirm] = useState<{
+    isOpen: boolean
+    assetId: string
+    assetSymbol: string
+    existingCoverage: Array<{ id: string; user_id: string; analyst_name: string }>
+    newAnalystId: string
+    newAnalystName: string
+    startDate: string
+    endDate: string
+    notes: string
+    isLead: boolean
+  } | null>(null)
+  const [editingVisibility, setEditingVisibility] = useState<{
+    coverageId: string
+    currentVisibility: 'team' | 'division' | 'firm'
   } | null>(null)
   const [assetSearchQuery, setAssetSearchQuery] = useState('')
   const [analystSearchQuery, setAnalystSearchQuery] = useState('')
@@ -211,10 +253,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       console.log('📋 Raw coverage data:', rawCoverage)
       console.log('❌ Raw coverage error:', rawError)
       
-      // Now let's try the join - include role, notes, portfolio info
+      // Now let's try the join - include role, notes, portfolio info, and team info
       const { data, error } = await supabase
         .from('coverage')
-        .select('*, assets(*), portfolios(id, name)')
+        .select('*, assets(*), portfolios(id, name), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type)')
         .order('updated_at', { ascending: false })
       
       if (error) {
@@ -324,8 +366,80 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     enabled: isVisible
   })
 
+  // Fetch all teams (org chart nodes of type 'team') for team-scoped coverage
+  const { data: allTeams } = useQuery({
+    queryKey: ['all-teams-for-coverage'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, node_type, parent_id')
+        .eq('node_type', 'team')
+        .order('name')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: isVisible
+  })
+
+  // Fetch organization-level coverage settings
+  const { data: coverageSettings } = useQuery({
+    queryKey: ['coverage-settings'],
+    queryFn: async () => {
+      // First get the organization from user's membership
+      const { data: orgMembership, error: orgError } = await supabase
+        .from('organization_memberships')
+        .select('organization_id')
+        .eq('user_id', user?.id)
+        .single()
+
+      if (orgError || !orgMembership?.organization_id) {
+        return null
+      }
+
+      const { data, error } = await supabase
+        .from('coverage_settings')
+        .select('*')
+        .eq('organization_id', orgMembership.organization_id)
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error
+      return data || null
+    },
+    enabled: isVisible && !!user?.id
+  })
+
+  // Fetch user's team memberships from org_chart_node_members
+  const { data: userTeams } = useQuery({
+    queryKey: ['user-team-memberships', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      // Get the user's team memberships
+      const { data: memberships, error: membershipError } = await supabase
+        .from('org_chart_node_members')
+        .select('node_id')
+        .eq('user_id', user.id)
+
+      if (membershipError) throw membershipError
+      if (!memberships || memberships.length === 0) return []
+
+      // Get the team details for these memberships
+      const teamIds = memberships.map(m => m.node_id)
+      const { data: teams, error: teamsError } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, node_type, parent_id')
+        .in('id', teamIds)
+        .eq('node_type', 'team')
+
+      if (teamsError) throw teamsError
+      return teams || []
+    },
+    enabled: isVisible && !!user?.id
+  })
+
   // Fetch all major coverage events for history tab
-  const { data: allCoverageEvents, isLoading: historyLoading } = useQuery({
+  const { data: allCoverageEvents, isLoading: historyLoading, isFetching: historyFetching } = useQuery({
     queryKey: ['all-coverage-events'],
     queryFn: async () => {
       console.log('[Coverage History] Fetching coverage events...')
@@ -335,7 +449,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
           *,
           assets(id, symbol, company_name)
         `)
-        .in('change_type', ['created', 'analyst_changed', 'deleted', 'dates_changed'])
+        .in('change_type', ['created', 'analyst_changed', 'deleted', 'dates_changed', 'coverage_added', 'historical_added'])
         .limit(100)
 
       if (error) {
@@ -349,7 +463,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   })
 
   // Fetch coverage requests
-  const { data: coverageRequests, isLoading: requestsLoading } = useQuery({
+  const { data: coverageRequests, isLoading: requestsLoading, isFetching: requestsFetching } = useQuery({
     queryKey: ['coverage-requests', user?.id],
     queryFn: async () => {
       let query = supabase
@@ -554,6 +668,39 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     }
   })
 
+  // Update coverage visibility mutation
+  const updateVisibilityMutation = useMutation({
+    mutationFn: async ({ coverageId, visibility }: { coverageId: string; visibility: 'team' | 'division' | 'firm' }) => {
+      const { error } = await supabase
+        .from('coverage')
+        .update({ visibility, updated_at: new Date().toISOString() })
+        .eq('id', coverageId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
+      queryClient.invalidateQueries({ queryKey: ['coverage'] })
+      setEditingVisibility(null)
+    }
+  })
+
+  // Helper to check if user can change visibility based on settings
+  const canChangeVisibility = (coverage: CoverageRecord): boolean => {
+    const permission = coverageSettings?.visibility_change_permission || 'anyone'
+
+    if (permission === 'anyone') return true
+    if (permission === 'coverage_admin') return !!user?.coverage_admin
+    if (permission === 'team_lead') {
+      // Check if user is coverage admin or team lead for this coverage's team
+      if (user?.coverage_admin) return true
+      // Check if user is an admin of the team
+      const isTeamLead = userTeams?.some(t => t.id === coverage.team_id && t.is_admin)
+      return !!isTeamLead
+    }
+    return false
+  }
+
   // Create coverage request mutation (for non-admins)
   const createCoverageRequestMutation = useMutation({
     mutationFn: async (request: {
@@ -741,7 +888,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   // Mutation to save all pending timeline changes
   const saveTimelineChangesMutation = useMutation({
     mutationFn: async () => {
-      const updates: Promise<any>[] = []
+      const errors: string[] = []
 
       // Process analyst changes, date changes, deletions, and new coverages
       for (const [coverageId, changes] of Object.entries(pendingTimelineChanges)) {
@@ -756,40 +903,62 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
         if (Object.keys(updateData).length > 0) {
           updateData.changed_by = user?.id
-          updates.push(
-            supabase.from('coverage').update(updateData).eq('id', coverageId)
-          )
+          const { error } = await supabase.from('coverage').update(updateData).eq('id', coverageId)
+          if (error) {
+            console.error('Error updating coverage:', error)
+            errors.push(`Update failed: ${error.message}`)
+          }
         }
       }
 
       // Process deletions
       for (const coverageId of pendingTimelineDeletes) {
-        updates.push(supabase.from('coverage').delete().eq('id', coverageId))
+        const { error } = await supabase.from('coverage').delete().eq('id', coverageId)
+        if (error) {
+          console.error('Error deleting coverage:', error)
+          errors.push(`Delete failed: ${error.message}`)
+        }
       }
 
       // Process new coverages
       for (const newCoverage of pendingNewCoverages) {
-        const { id, fromCoverageId, ...insertData} = newCoverage
-        updates.push(supabase.from('coverage').insert(insertData))
+        const { id, fromCoverageId, ...insertData } = newCoverage
+        console.log('Inserting new coverage:', insertData)
+        const { error } = await supabase.from('coverage').insert(insertData)
+        if (error) {
+          console.error('Error inserting coverage:', error)
+          errors.push(`Insert failed: ${error.message}`)
+        }
       }
 
-      await Promise.all(updates)
+      if (errors.length > 0) {
+        throw new Error(errors.join('\n'))
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
       queryClient.invalidateQueries({ queryKey: ['coverage'] })
       queryClient.invalidateQueries({ queryKey: ['coverage-change-history'] })
       queryClient.invalidateQueries({ queryKey: ['all-coverage-events'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-coverage-history'] })
 
       // Clear pending changes
       setPendingTimelineChanges({})
       setPendingTimelineDeletes(new Set())
       setPendingNewCoverages([])
 
-      setViewHistoryAssetId(null)
+      // Keep timeline open to show the result, just close modals
       setAddingTransition(null)
       setAddingHistoricalPeriod(null)
       setChangingCurrentCoverage(null)
+    },
+    onError: (error: Error) => {
+      console.error('Failed to save timeline changes:', error)
+      setErrorModal({
+        isOpen: true,
+        title: 'Failed to Save Changes',
+        message: error.message || 'An error occurred while saving changes. Please try again.'
+      })
     }
   })
 
@@ -856,34 +1025,26 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     if (activeView === 'active') {
       records = records.filter(coverage => coverage.is_active)
 
-      // For active view, ensure only one active coverage per asset (currently active based on today's date)
+      // Filter to only include coverage that has already started (start_date <= today)
       const today = new Date()
       const todayStr = today.toISOString().split('T')[0] // YYYY-MM-DD format
 
-      const assetMap = new Map()
-      records.forEach(coverage => {
-        const assetId = coverage.asset_id
+      records = records.filter(coverage => {
         const startDateStr = coverage.start_date.split('T')[0] // YYYY-MM-DD format
-
         // Only include coverage that has already started (start_date <= today)
         if (startDateStr > todayStr) {
           console.log(`Skipping future coverage: ${coverage.analyst_name} for ${coverage.assets?.symbol}, start_date: ${startDateStr}, today: ${todayStr}`)
-          return // Skip future coverage
+          return false // Skip future coverage
         }
-
-        const existing = assetMap.get(assetId)
-        if (!existing) {
-          assetMap.set(assetId, coverage)
-        } else {
-          const existingStartDateStr = existing.start_date.split('T')[0]
-
-          // Keep the one with the most recent start date that has already started
-          if (startDateStr > existingStartDateStr) {
-            assetMap.set(assetId, coverage)
-          }
-        }
+        return true
       })
-      records = Array.from(assetMap.values())
+
+      // Sort by asset symbol, then by analyst name for consistent display
+      records = records.sort((a, b) => {
+        const symbolCompare = (a.assets?.symbol || '').localeCompare(b.assets?.symbol || '')
+        if (symbolCompare !== 0) return symbolCompare
+        return (a.analyst_name || '').localeCompare(b.analyst_name || '')
+      })
     } else if (activeView === 'history') {
       // Only show coverage that was previously active (not future coverage that never became active)
       records = records.filter(coverage => !coverage.is_active && coverage.end_date !== null)
@@ -958,8 +1119,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   </p>
                 </div>
 
-                {/* View Mode Buttons */}
-                {!viewHistoryAssetId && (
+                {/* View Mode Buttons - only show for active view */}
+                {!viewHistoryAssetId && activeView === 'active' && (
                   <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
                     <button
                       onClick={() => setViewMode('list')}
@@ -1015,9 +1176,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           analystId: '',
                           startDate: getLocalDateString(),
                           endDate: '',
-                          role: 'primary',
+                          role: '',
                           portfolioIds: [],
-                          notes: ''
+                          notes: '',
+                          teamId: userTeams?.[0]?.id || null,
+                          visibility: coverageSettings?.default_visibility || 'team',
+                          isLead: false
                         })
                         setAssetSearchQuery('')
                         setAnalystSearchQuery('')
@@ -1039,6 +1203,28 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </Button>
                   </>
                 )}
+                {!viewHistoryAssetId && !user?.coverage_admin && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setRequestingChange({
+                        assetId: '',
+                        assetSymbol: '',
+                        currentUserId: null,
+                        currentAnalystName: null,
+                        currentRole: null,
+                        requestedUserId: '',
+                        requestedRole: 'primary',
+                        requestType: 'add',
+                        reason: ''
+                      })
+                    }}
+                    variant="outline"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Request Coverage
+                  </Button>
+                )}
                 {mode === 'modal' && onClose && (
                   <button
                     onClick={onClose}
@@ -1052,21 +1238,21 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
           </div>
 
           <div className="overflow-hidden flex-1 relative flex">
-            {/* Show Timeline View as slide-over panel */}
-            {viewHistoryAssetId && assetCoverageHistory && assetCoverageHistory.length > 0 && (
-              <div className="absolute right-0 top-0 bottom-0 w-[450px] bg-white border-l border-gray-200 shadow-xl animate-slide-in-right flex flex-col z-10">
+            {/* Show Timeline View - takes over full space */}
+            {viewHistoryAssetId && assetCoverageHistory && assetCoverageHistory.length > 0 ? (
+              <div className="absolute inset-0 bg-white flex flex-col z-10">
                   {/* Timeline Header */}
                   <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900">Coverage Timeline</h4>
-                      <p className="text-xs text-gray-500">{assetCoverageHistory[0]?.assets?.symbol} - {assetCoverageHistory[0]?.assets?.company_name}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">{assetCoverageHistory[0]?.assets?.symbol}</h4>
+                        <p className="text-xs text-gray-500">{assetCoverageHistory[0]?.assets?.company_name}</p>
+                      </div>
                       {/* Timeline Action Buttons */}
                       {user?.coverage_admin && (() => {
                         const currentCoverage = assetCoverageHistory.find(c => !c.ended_at || c.ended_at >= getLocalDateString())
                         return currentCoverage ? (
-                          <>
+                          <div className="flex items-center gap-1 ml-2 pl-4 border-l border-gray-300">
                             <button
                               onClick={() => {
                                 setAddingTransition({
@@ -1079,7 +1265,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   newAnalystId: ''
                                 })
                               }}
-                              className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
                               title="Add Transition"
                             >
                               <ArrowRightLeft className="h-4 w-4" />
@@ -1092,7 +1278,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   effectiveDate: getLocalDateString()
                                 })
                               }}
-                              className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition-colors"
                               title="Change Current Coverage"
                             >
                               <RefreshCw className="h-4 w-4" />
@@ -1122,6 +1308,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   : ''
 
                                 setAddingHistoricalPeriod({
+                                  assetId: viewHistoryAssetId!,
                                   analystId: '',
                                   startDate: suggestedStartDate,
                                   endDate: suggestedEndDate
@@ -1144,26 +1331,26 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             >
                               <X className="h-4 w-4" />
                             </button>
-                          </>
+                          </div>
                         ) : null
                       })()}
-                      <button
-                        onClick={() => {
-                          setPendingTimelineChanges({})
-                          setPendingTimelineDeletes(new Set())
-                          setPendingNewCoverages([])
-                          setViewHistoryAssetId(null)
-                          setAddingTransition(null)
-                          setChangingCurrentCoverage(null)
-                          setAddingHistoricalPeriod(null)
-                          setShowAllChanges(false)
-                        }}
-                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
-                        title="Hide Timeline"
-                      >
-                        <ChevronRight className="h-5 w-5" />
-                      </button>
                     </div>
+                    <button
+                      onClick={() => {
+                        setPendingTimelineChanges({})
+                        setPendingTimelineDeletes(new Set())
+                        setPendingNewCoverages([])
+                        setViewHistoryAssetId(null)
+                        setAddingTransition(null)
+                        setChangingCurrentCoverage(null)
+                        setAddingHistoricalPeriod(null)
+                        setShowAllChanges(false)
+                      }}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                      title="Hide Timeline"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
                   </div>
                   {/* Timeline Content */}
                   <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -1313,6 +1500,29 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         const sortedTimeline = [...assetCoverageHistory, ...pendingNewCoverages]
                           .sort((a, b) => b.start_date.localeCompare(a.start_date))
 
+                        // Detect overlapping coverage periods
+                        const getOverlaps = (recordId: string, startDate: string, endDate: string | null) => {
+                          const overlappingRecords: string[] = []
+                          for (const other of sortedTimeline) {
+                            if (other.id === recordId) continue
+                            if (pendingTimelineDeletes.has(other.id)) continue
+
+                            // Apply pending changes to get actual dates
+                            const otherPending = pendingTimelineChanges[other.id]
+                            const otherStart = otherPending?.startDate ?? other.start_date
+                            const otherEnd = otherPending?.endDate !== undefined ? otherPending.endDate : other.end_date
+
+                            // Check for overlap: periods overlap if one starts before the other ends
+                            const thisEnd = endDate || '9999-12-31' // Use far future for ongoing coverage
+                            const thatEnd = otherEnd || '9999-12-31'
+
+                            if (startDate <= thatEnd && thisEnd >= otherStart) {
+                              overlappingRecords.push(other.id)
+                            }
+                          }
+                          return overlappingRecords
+                        }
+
                         const displayTimeline = showAllTimelinePeriods ? sortedTimeline : sortedTimeline.slice(0, 3)
                         const hasMore = sortedTimeline.length > 3
 
@@ -1369,6 +1579,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           // Check if this coverage is being ended (has a pending end date change)
                           const isEnding = isCurrent && pendingChange?.endDate !== undefined
 
+                          // Check for overlaps with other coverage periods
+                          const overlappingIds = getOverlaps(record.id, record.start_date, record.end_date)
+                          const hasOverlap = overlappingIds.length > 0
+                          const overlappingAnalysts = overlappingIds
+                            .map(id => {
+                              const rec = sortedTimeline.find(r => r.id === id)
+                              return rec?.analyst_name
+                            })
+                            .filter(Boolean)
+
                           const borderColor = isEnding ? 'border-red-500' : isCurrent ? 'border-green-500' : isFuture ? 'border-purple-500' : 'border-gray-300'
                           const dotColor = isEnding ? 'bg-red-500' : isCurrent ? 'bg-green-500' : isFuture ? 'bg-purple-500' : 'bg-gray-300'
                           const bgColor = isEnding ? 'bg-red-50 border-red-200' : isCurrent ? 'bg-green-50 border-green-200' : 'bg-white'
@@ -1378,7 +1598,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               <div className={`absolute left-0 top-[10px] bottom-2 w-1 ${dotColor}`} />
                               <div className={`absolute left-[-4px] top-[2px] w-[9px] h-[9px] rounded-full ${dotColor}`} />
 
-                              <div className={`p-4 rounded-lg border shadow-sm hover:shadow-md transition-shadow ${bgColor}`}>
+                              <div className={`p-4 rounded-lg border shadow-sm hover:shadow-md transition-shadow ${bgColor} ${hasOverlap ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}>
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
                                     {/* Analyst Name */}
@@ -1442,6 +1662,14 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                       </span>
                                     )}
                                     {isFuture && <Badge variant="purple" size="sm">Future</Badge>}
+                                    {hasOverlap && (
+                                      <span
+                                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300"
+                                        title={`Overlaps with: ${overlappingAnalysts.join(', ')}`}
+                                      >
+                                        <span className="mr-1">⚠</span> Overlap
+                                      </span>
+                                    )}
                                   </div>
 
                                   {/* Date Range */}
@@ -1695,6 +1923,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   </button>
                                 )}
                                 </div>
+
+                                {/* Overlap details */}
+                                {hasOverlap && overlappingAnalysts.length > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-amber-200 text-xs text-amber-700 flex items-start gap-1.5">
+                                    <span className="text-amber-500">⚠</span>
+                                    <span>
+                                      Overlaps with: {overlappingAnalysts.join(', ')}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )
@@ -1817,6 +2055,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                             <div className="absolute left-0 top-1.5 flex flex-col items-center">
                                               <div className={`w-2.5 h-2.5 rounded-full border-2 border-white ${
                                                 change.change_type === 'created' ? 'bg-green-500' :
+                                                change.change_type === 'coverage_added' ? 'bg-purple-500' :
+                                                change.change_type === 'historical_added' ? 'bg-gray-500' :
                                                 change.change_type === 'analyst_changed' ? 'bg-blue-500' :
                                                 change.change_type === 'dates_changed' ? 'bg-yellow-500' :
                                                 'bg-red-500'
@@ -1863,6 +2103,18 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                   </p>
                                                 )}
 
+                                                {change.change_type === 'coverage_added' && (
+                                                  <p className="text-sm text-gray-900">
+                                                    <span className="font-semibold text-purple-700">{change.new_analyst_name}</span> added as additional coverage <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  </p>
+                                                )}
+
+                                                {change.change_type === 'historical_added' && (
+                                                  <p className="text-sm text-gray-900">
+                                                    Historical period added for <span className="font-semibold text-gray-700">{change.new_analyst_name}</span> <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  </p>
+                                                )}
+
                                                 {/* Expand/collapse indicator */}
                                                 <div className="flex items-center justify-end mt-1">
                                                   <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -1898,6 +2150,20 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                   {change.change_type === 'deleted' && (
                                                     <div className="text-gray-600">
                                                       Previously: {formatDate(change.old_start_date)} {change.old_end_date ? `— ${formatDate(change.old_end_date)}` : '— Present'}
+                                                    </div>
+                                                  )}
+
+                                                  {change.change_type === 'coverage_added' && (
+                                                    <div className="text-gray-600">
+                                                      Period: {formatDate(change.new_start_date)} {change.new_end_date ? `— ${formatDate(change.new_end_date)}` : '— Present'}
+                                                      <p className="mt-1 text-purple-600">Added alongside existing coverage</p>
+                                                    </div>
+                                                  )}
+
+                                                  {change.change_type === 'historical_added' && (
+                                                    <div className="text-gray-600">
+                                                      Period: {formatDate(change.new_start_date)} — {formatDate(change.new_end_date)}
+                                                      <p className="mt-1 text-gray-500">Added as historical record</p>
                                                     </div>
                                                   )}
 
@@ -1975,7 +2241,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             assetSymbol: asset?.symbol || '',
                             currentUserId: currentCoverage?.user_id || null,
                             currentAnalystName: currentCoverage?.analyst_name || null,
+                            currentRole: currentCoverage?.role || null,
                             requestedUserId: '',
+                            requestedRole: currentCoverage?.role || 'primary',
                             requestType: currentCoverage ? 'change' : 'add',
                             reason: ''
                           })
@@ -1986,13 +2254,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
                   )}
                 </div>
-            )}
-
-            {/* Main Content Area - List View (always visible) */}
-            <div className={clsx(
-              "flex-1 overflow-hidden transition-all duration-300 flex flex-col",
-              viewHistoryAssetId && assetCoverageHistory && assetCoverageHistory.length > 0 ? "mr-[450px]" : ""
-            )}>
+            ) : (
+            /* Main Content Area - List View (hidden when timeline is open) */
+            <div className="flex-1 overflow-hidden flex flex-col">
               <div className={clsx(
                 "p-6 flex-1 flex flex-col",
                 viewMode === 'workload' ? "overflow-hidden" : "overflow-y-auto space-y-6"
@@ -2100,33 +2364,33 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
               </div>
-              <div className="inline-flex rounded-lg border border-gray-300 p-1 bg-gray-50">
+              <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
                 <button
                   onClick={() => setActiveView('active')}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                     activeView === 'active'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
                   }`}
                 >
                   Active
                 </button>
                 <button
                   onClick={() => setActiveView('history')}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                     activeView === 'history'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
                   }`}
                 >
                   History
                 </button>
                 <button
                   onClick={() => setActiveView('requests')}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors relative ${
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-all relative ${
                     activeView === 'requests'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
                   }`}
                 >
                   Requests
@@ -2168,8 +2432,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
                     <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
                       <div className="col-span-3">Asset</div>
-                      <div className="col-span-3">Analyst</div>
-                      <div className="col-span-3">Sector</div>
+                      <div className="col-span-2">Analyst</div>
+                      <div className="col-span-2">Visibility</div>
+                      <div className="col-span-2">Sector</div>
                       <div className="col-span-3 text-right">Actions</div>
                     </div>
                   </div>
@@ -2195,32 +2460,72 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           </div>
 
                           {/* Analyst with Role Badge */}
-                          <div className="col-span-3">
+                          <div className="col-span-2">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-700">
+                              <span className="text-sm text-gray-700 truncate">
                                 {coverage.analyst_name}
                               </span>
-                              {coverage.role && (
+                              {/* Show role badge only when hierarchy is enabled */}
+                              {coverageSettings?.enable_hierarchy && coverage.role && (
                                 <span className={clsx(
                                   'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full',
-                                  coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
-                                  coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
-                                  coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700',
-                                  !['primary', 'secondary', 'tertiary'].includes(coverage.role) && 'bg-purple-100 text-purple-800'
+                                  'bg-purple-100 text-purple-800'
                                 )}>
-                                  {coverage.role === 'primary' && <Star className="h-3 w-3" />}
-                                  {coverage.role === 'secondary' && <Shield className="h-3 w-3" />}
-                                  {coverage.role === 'tertiary' && <UserCheck className="h-3 w-3" />}
-                                  {!['primary', 'secondary', 'tertiary'].includes(coverage.role) && <User className="h-3 w-3" />}
+                                  <User className="h-3 w-3" />
                                   {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
                                 </span>
                               )}
                             </div>
                           </div>
 
+                          {/* Visibility */}
+                          <div className="col-span-2">
+                            {editingVisibility?.coverageId === coverage.id ? (
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={editingVisibility.currentVisibility}
+                                  onChange={(e) => {
+                                    const newVisibility = e.target.value as 'team' | 'division' | 'firm'
+                                    updateVisibilityMutation.mutate({
+                                      coverageId: coverage.id,
+                                      visibility: newVisibility
+                                    })
+                                  }}
+                                  className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                  autoFocus
+                                  onBlur={() => setEditingVisibility(null)}
+                                >
+                                  <option value="team">Team</option>
+                                  <option value="division">Division</option>
+                                  <option value="firm">Firm</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => canChangeVisibility(coverage) && setEditingVisibility({
+                                  coverageId: coverage.id,
+                                  currentVisibility: coverage.visibility || 'team'
+                                })}
+                                disabled={!canChangeVisibility(coverage)}
+                                className={clsx(
+                                  'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full transition-colors',
+                                  coverage.visibility === 'firm' && 'bg-green-100 text-green-800',
+                                  coverage.visibility === 'division' && 'bg-blue-100 text-blue-800',
+                                  (!coverage.visibility || coverage.visibility === 'team') && 'bg-gray-100 text-gray-700',
+                                  canChangeVisibility(coverage) && 'hover:ring-2 hover:ring-primary-300 cursor-pointer',
+                                  !canChangeVisibility(coverage) && 'cursor-default'
+                                )}
+                                title={canChangeVisibility(coverage) ? 'Click to change visibility' : 'You do not have permission to change visibility'}
+                              >
+                                <Eye className="h-3 w-3" />
+                                {coverage.visibility === 'firm' ? 'Firm' : coverage.visibility === 'division' ? 'Division' : 'Team'}
+                              </button>
+                            )}
+                          </div>
+
                           {/* Sector */}
-                          <div className="col-span-3">
-                            <span className="text-sm text-gray-600">
+                          <div className="col-span-2">
+                            <span className="text-sm text-gray-600 truncate block">
                               {coverage.assets?.sector || '—'}
                             </span>
                           </div>
@@ -2235,27 +2540,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               >
                                 <History className="h-4 w-4" />
                               </button>
-                              {user?.coverage_admin ? (
-                                <button
-                                  onClick={() => handleDeleteCoverage(
-                                    coverage.id,
-                                    coverage.assets?.symbol || 'Unknown',
-                                    coverage.analyst_name
-                                  )}
-                                  className="p-1 text-gray-400 hover:text-error-600 transition-colors"
-                                  disabled={deleteCoverageMutation.isPending}
-                                  title="Delete Coverage"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              ) : (
+                              {!user?.coverage_admin && (
                                 <button
                                   onClick={() => setRequestingChange({
                                     assetId: coverage.asset_id,
                                     assetSymbol: coverage.assets?.symbol || 'Unknown',
                                     currentUserId: coverage.user_id,
                                     currentAnalystName: coverage.analyst_name,
+                                    currentRole: coverage.role || null,
                                     requestedUserId: '',
+                                    requestedRole: coverage.role || 'primary',
                                     requestType: 'change',
                                     reason: ''
                                   })}
@@ -2303,15 +2597,20 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               </div>
 
                               {/* No Analyst */}
-                              <div className="col-span-3">
+                              <div className="col-span-2">
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                   No Coverage
                                 </span>
                               </div>
 
+                              {/* Visibility - empty for uncovered */}
+                              <div className="col-span-2">
+                                <span className="text-xs text-gray-400">—</span>
+                              </div>
+
                               {/* Sector */}
-                              <div className="col-span-3">
-                                <span className="text-sm text-gray-600">
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600 truncate block">
                                   {asset.sector || '—'}
                                 </span>
                               </div>
@@ -2319,7 +2618,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               {/* Actions */}
                               <div className="col-span-3">
                                 <div className="flex items-center gap-2 justify-end">
-                                  {user?.coverage_admin && (
+                                  {user?.coverage_admin ? (
                                     <button
                                       onClick={() => {
                                         setAddingCoverage({
@@ -2327,9 +2626,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           analystId: '',
                                           startDate: getLocalDateString(),
                                           endDate: '',
-                                          role: 'primary',
+                                          role: '',
                                           portfolioIds: [],
-                                          notes: ''
+                                          notes: '',
+                                          teamId: userTeams?.[0]?.id || null,
+                                          visibility: coverageSettings?.default_visibility || 'team',
+                                          isLead: false
                                         })
                                         setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
                                         setAnalystSearchQuery('')
@@ -2340,6 +2642,24 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                       title="Add Coverage"
                                     >
                                       Add Coverage
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => setRequestingChange({
+                                        assetId: asset.id,
+                                        assetSymbol: asset.symbol,
+                                        currentUserId: null,
+                                        currentAnalystName: null,
+                                        currentRole: null,
+                                        requestedUserId: '',
+                                        requestedRole: 'primary',
+                                        requestType: 'add',
+                                        reason: ''
+                                      })}
+                                      className="px-3 py-1 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
+                                      title="Request Coverage"
+                                    >
+                                      Request Coverage
                                     </button>
                                   )}
                                 </div>
@@ -2352,19 +2672,118 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   </div>
                 </>
               ) : (
-                <div className="p-12 text-center">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Users className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    {coverageRecords?.length === 0 ? 'No coverage assignments yet' : 'No coverage matches your search'}
-                  </h3>
-                  <p className="text-gray-500 mb-4">
-                    {coverageRecords?.length === 0
-                      ? 'Start by assigning analysts to cover specific assets.'
-                      : 'Try adjusting your search criteria.'
+                <div className="p-8">
+                  {/* Check if there are matching uncovered assets when searching */}
+                  {searchQuery && (() => {
+                    const matchingUncoveredAssets = assets?.filter(asset => {
+                      const isMatch = asset.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        asset.company_name.toLowerCase().includes(searchQuery.toLowerCase())
+                      const hasCoverage = coverageRecords?.some(c => c.asset_id === asset.id)
+                      return isMatch && !hasCoverage
+                    }) || []
+
+                    if (matchingUncoveredAssets.length > 0) {
+                      return (
+                        <div>
+                          <div className="text-center mb-6">
+                            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                              <AlertCircle className="h-6 w-6 text-amber-600" />
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-1">
+                              No coverage found for "{searchQuery}"
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              The following assets match your search but have no coverage assigned
+                            </p>
+                          </div>
+                          <div className="space-y-2 max-w-md mx-auto">
+                            {matchingUncoveredAssets.slice(0, 5).map(asset => (
+                              <div
+                                key={asset.id}
+                                className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg"
+                              >
+                                <div>
+                                  <span className="font-medium text-gray-900">{asset.symbol}</span>
+                                  <span className="text-gray-500 ml-2 text-sm">{asset.company_name}</span>
+                                </div>
+                                {user?.coverage_admin ? (
+                                  <button
+                                    onClick={() => {
+                                      setAddingCoverage({
+                                        assetId: asset.id,
+                                        analystId: '',
+                                        startDate: getLocalDateString(),
+                                        endDate: '',
+                                        role: '',
+                                        portfolioIds: [],
+                                        notes: '',
+                                        teamId: userTeams?.[0]?.id || null,
+                                        visibility: coverageSettings?.default_visibility || 'team',
+                                        isLead: false
+                                      })
+                                      setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
+                                      setAnalystSearchQuery('')
+                                      setShowAssetDropdown(false)
+                                      setShowAnalystDropdown(false)
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
+                                  >
+                                    Add Coverage
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => setRequestingChange({
+                                      assetId: asset.id,
+                                      assetSymbol: asset.symbol,
+                                      currentUserId: null,
+                                      currentAnalystName: null,
+                                      currentRole: null,
+                                      requestedUserId: '',
+                                      requestedRole: 'primary',
+                                      requestType: 'add',
+                                      reason: ''
+                                    })}
+                                    className="px-3 py-1.5 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
+                                  >
+                                    Request Coverage
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            {matchingUncoveredAssets.length > 5 && (
+                              <p className="text-xs text-gray-500 text-center mt-2">
+                                And {matchingUncoveredAssets.length - 5} more matching assets...
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )
                     }
-                  </p>
+                    return null
+                  })()}
+
+                  {/* Default empty state */}
+                  {(!searchQuery || !(assets?.some(asset => {
+                    const isMatch = asset.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      asset.company_name.toLowerCase().includes(searchQuery.toLowerCase())
+                    const hasCoverage = coverageRecords?.some(c => c.asset_id === asset.id)
+                    return isMatch && !hasCoverage
+                  }))) && (
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Users className="h-8 w-8 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        {coverageRecords?.length === 0 ? 'No coverage assignments yet' : 'No coverage matches your search'}
+                      </h3>
+                      <p className="text-gray-500 mb-4">
+                        {coverageRecords?.length === 0
+                          ? 'Start by assigning analysts to cover specific assets.'
+                          : 'Try adjusting your search criteria.'
+                        }
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               </Card>
@@ -2637,7 +3056,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               <tr>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                                {coverageSettings?.enable_hierarchy && (
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                                )}
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Since</th>
                               </tr>
@@ -2661,24 +3082,19 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     <td className="px-4 py-2.5">
                                       <span className="text-sm text-gray-600 truncate max-w-[150px] block">{coverage.assets?.company_name}</span>
                                     </td>
-                                    <td className="px-4 py-2.5">
-                                      {coverage.role ? (
-                                        <span className={clsx(
-                                          'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full',
-                                          coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
-                                          coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
-                                          coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700',
-                                          !['primary', 'secondary', 'tertiary'].includes(coverage.role) && 'bg-purple-100 text-purple-800'
-                                        )}>
-                                          {coverage.role === 'primary' && <Star className="h-3 w-3" />}
-                                          {coverage.role === 'secondary' && <Shield className="h-3 w-3" />}
-                                          {coverage.role === 'tertiary' && <UserCheck className="h-3 w-3" />}
-                                          {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                        </span>
-                                      ) : (
-                                        <span className="text-xs text-gray-400">—</span>
-                                      )}
-                                    </td>
+                                    {/* Role column - only show when hierarchy is enabled */}
+                                    {coverageSettings?.enable_hierarchy && (
+                                      <td className="px-4 py-2.5">
+                                        {coverage.role ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                                            <User className="h-3 w-3" />
+                                            {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                    )}
                                     <td className="px-4 py-2.5">
                                       <span className="text-sm text-gray-500">{coverage.assets?.sector || '—'}</span>
                                     </td>
@@ -2774,7 +3190,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Analyst</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                                {coverageSettings?.enable_hierarchy && (
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                                )}
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Since</th>
                               </tr>
                             </thead>
@@ -2786,18 +3204,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     <td className="px-4 py-2.5 font-medium text-gray-900">{coverage.assets?.symbol}</td>
                                     <td className="px-4 py-2.5 text-sm text-gray-600 truncate max-w-[150px]">{coverage.assets?.company_name}</td>
                                     <td className="px-4 py-2.5 text-sm text-gray-600">{coverage.analyst_name}</td>
-                                    <td className="px-4 py-2.5">
-                                      {coverage.role && (
-                                        <span className={clsx(
-                                          'px-2 py-0.5 text-xs font-medium rounded-full',
-                                          coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
-                                          coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
-                                          coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
-                                        )}>
-                                          {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                        </span>
-                                      )}
-                                    </td>
+                                    {coverageSettings?.enable_hierarchy && (
+                                      <td className="px-4 py-2.5">
+                                        {coverage.role ? (
+                                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                                            {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
+                                          </span>
+                                        ) : null}
+                                      </td>
+                                    )}
                                     <td className="px-4 py-2.5 text-sm text-gray-500">
                                       {coverage.start_date ? new Date(coverage.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                                     </td>
@@ -2835,9 +3250,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                             analystId: '',
                                             startDate: getLocalDateString(),
                                             endDate: '',
-                                            role: 'primary',
+                                            role: '',
                                             portfolioIds: [],
-                                            notes: ''
+                                            notes: '',
+                                            teamId: userTeams?.[0]?.id || null,
+                                            visibility: coverageSettings?.default_visibility || 'team',
+                                            isLead: false
                                           })
                                           setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
                                         }}
@@ -2957,6 +3375,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           { value: 'sector', label: 'Sector' },
                           { value: 'analyst', label: 'Analyst' },
                           { value: 'portfolio', label: 'Portfolio' },
+                          { value: 'team', label: 'Team' },
                           { value: 'role', label: 'Role' }
                         ].map(option => (
                           <button
@@ -2994,6 +3413,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             if (matrixGroupBy === 'sector') allGroupKeys.add(c.assets?.sector || 'Uncategorized')
                             else if (matrixGroupBy === 'analyst') allGroupKeys.add(c.analyst_name)
                             else if (matrixGroupBy === 'portfolio') allGroupKeys.add(c.portfolios?.name || 'No Portfolio')
+                            else if (matrixGroupBy === 'team') allGroupKeys.add(c.teams?.name || 'Firm-wide')
                             else if (matrixGroupBy === 'role') allGroupKeys.add(c.role || 'Unassigned')
                           })
                           setCollapsedGroups(allGroupKeys)
@@ -3022,6 +3442,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         case 'sector': return coverage.assets?.sector || 'Uncategorized'
                         case 'analyst': return coverage.analyst_name
                         case 'portfolio': return coverage.portfolios?.name || 'No Portfolio'
+                        case 'team': return coverage.teams?.name || 'Firm-wide'
                         case 'role': return coverage.role || 'Unassigned'
                         default: return 'Uncategorized'
                       }
@@ -3199,29 +3620,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                               <td key={analyst} className="px-2 py-2 text-center">
                                                 {coverage ? (
                                                   <div className="flex justify-center">
-                                                    {coverage.role === 'primary' && (
-                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-yellow-100 text-yellow-700 rounded-full" title={`Primary - ${analyst}`}>
-                                                        <Star className="h-3.5 w-3.5" />
-                                                      </span>
-                                                    )}
-                                                    {coverage.role === 'secondary' && (
-                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-700 rounded-full" title={`Secondary - ${analyst}`}>
-                                                        <Shield className="h-3.5 w-3.5" />
-                                                      </span>
-                                                    )}
-                                                    {coverage.role === 'tertiary' && (
-                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-gray-100 text-gray-600 rounded-full" title={`Tertiary - ${analyst}`}>
-                                                        <UserCheck className="h-3.5 w-3.5" />
-                                                      </span>
-                                                    )}
-                                                    {!coverage.role && (
-                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-700 rounded-full" title={`Assigned - ${analyst}`}>
-                                                        <CheckCircle className="h-3.5 w-3.5" />
-                                                      </span>
-                                                    )}
-                                                    {coverage.role && !['primary', 'secondary', 'tertiary'].includes(coverage.role) && (
+                                                    {/* When hierarchy is enabled, show role badge */}
+                                                    {coverageSettings?.enable_hierarchy && coverage.role ? (
                                                       <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-100 text-purple-700 rounded-full" title={`${coverage.role} - ${analyst}`}>
                                                         <User className="h-3.5 w-3.5" />
+                                                      </span>
+                                                    ) : (
+                                                      /* When hierarchy is disabled, show simple checkmark - no differentiation */
+                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-700 rounded-full" title={`Assigned - ${analyst}`}>
+                                                        <CheckCircle className="h-3.5 w-3.5" />
                                                       </span>
                                                     )}
                                                   </div>
@@ -3246,23 +3653,19 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   {/* Legend */}
                   <div className="flex items-center justify-center gap-6 py-2">
                     <div className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center justify-center w-5 h-5 bg-yellow-100 text-yellow-700 rounded-full">
-                        <Star className="h-3 w-3" />
+                      <span className="inline-flex items-center justify-center w-5 h-5 bg-green-100 text-green-700 rounded-full">
+                        <CheckCircle className="h-3 w-3" />
                       </span>
-                      <span className="text-xs text-gray-600">Primary</span>
+                      <span className="text-xs text-gray-600">Assigned</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-100 text-blue-700 rounded-full">
-                        <Shield className="h-3 w-3" />
-                      </span>
-                      <span className="text-xs text-gray-600">Secondary</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center justify-center w-5 h-5 bg-gray-100 text-gray-600 rounded-full">
-                        <UserCheck className="h-3 w-3" />
-                      </span>
-                      <span className="text-xs text-gray-600">Tertiary</span>
-                    </div>
+                    {coverageSettings?.enable_hierarchy && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center justify-center w-5 h-5 bg-purple-100 text-purple-700 rounded-full">
+                          <User className="h-3 w-3" />
+                        </span>
+                        <span className="text-xs text-gray-600">Role Assigned</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5">
                       <AlertCircle className="h-4 w-4 text-red-500" />
                       <span className="text-xs text-gray-600">Uncovered</span>
@@ -3824,16 +4227,14 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
             {/* History View - Coverage Events */}
             {activeView === 'history' && (
-              <Card padding="none" className={`min-h-[500px] ${historyLoading || !allCoverageEvents || allCoverageEvents.length === 0 ? 'flex items-center justify-center' : ''}`}>
-                {historyLoading ? (
-                  <div className="p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                      <History className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Loading history...</h3>
-                    <p className="text-gray-500">Fetching coverage events</p>
+              <Card padding="none" className={`min-h-[500px] relative ${!allCoverageEvents || allCoverageEvents.length === 0 ? 'flex items-center justify-center' : ''}`}>
+                {/* Loading overlay with blur */}
+                {(historyFetching) && (
+                  <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                   </div>
-                ) : !allCoverageEvents || allCoverageEvents.length === 0 ? (
+                )}
+                {!allCoverageEvents || allCoverageEvents.length === 0 ? (
                   <div className="p-12 text-center">
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <History className="h-8 w-8 text-gray-400" />
@@ -3979,7 +4380,20 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             return dateComparison
                           })
 
-                        return finalEvents
+                        // Apply search filter if there's a query
+                        const filteredEvents = searchQuery
+                          ? finalEvents.filter(event => {
+                              const query = searchQuery.toLowerCase()
+                              return (
+                                event.assets?.symbol?.toLowerCase().includes(query) ||
+                                event.assets?.company_name?.toLowerCase().includes(query) ||
+                                event.new_analyst_name?.toLowerCase().includes(query) ||
+                                event.old_analyst_name?.toLowerCase().includes(query)
+                              )
+                            })
+                          : finalEvents
+
+                        return filteredEvents
                       })().map((event) => {
                         const formatDate = (dateStr: string | null) => {
                           if (!dateStr) {
@@ -4066,6 +4480,18 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           dateToDisplay = event.new_start_date || event.old_start_date
                           eventDate = formatDate(dateToDisplay)
                           badgeColor = 'bg-gray-100 text-gray-700'
+                        } else if (event.change_type === 'coverage_added') {
+                          eventType = 'Coverage Added'
+                          details = `${event.new_analyst_name} added as additional analyst`
+                          dateToDisplay = event.new_start_date
+                          eventDate = formatDate(event.new_start_date)
+                          badgeColor = 'bg-purple-100 text-purple-700'
+                        } else if (event.change_type === 'historical_added') {
+                          eventType = 'Historical Added'
+                          details = `${event.new_analyst_name} (${formatDate(event.new_start_date)} — ${formatDate(event.new_end_date)})`
+                          dateToDisplay = event.new_start_date
+                          eventDate = formatDate(event.new_start_date)
+                          badgeColor = 'bg-gray-100 text-gray-700'
                         }
 
                         // Skip events that don't have a displayable date
@@ -4106,6 +4532,27 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           </div>
                         )
                       }).filter(Boolean)}
+                      {/* No results message when search filters out all events */}
+                      {searchQuery && (() => {
+                        // Check if the filtering resulted in no displayable events
+                        const hasResults = allCoverageEvents.some(event => {
+                          const query = searchQuery.toLowerCase()
+                          return (
+                            event.assets?.symbol?.toLowerCase().includes(query) ||
+                            event.assets?.company_name?.toLowerCase().includes(query) ||
+                            event.new_analyst_name?.toLowerCase().includes(query) ||
+                            event.old_analyst_name?.toLowerCase().includes(query)
+                          )
+                        })
+                        if (!hasResults) {
+                          return (
+                            <div className="px-6 py-12 text-center">
+                              <p className="text-gray-500">No history found for "{searchQuery}"</p>
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
                     </div>
                   </>
                 )}
@@ -4114,16 +4561,14 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
             {/* Requests View */}
             {activeView === 'requests' && (
-              <Card padding="none" className={`min-h-[500px] ${requestsLoading || !coverageRequests || coverageRequests.length === 0 ? 'flex items-center justify-center' : ''}`}>
-                {requestsLoading ? (
-                  <div className="p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                      <Shield className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Loading requests...</h3>
-                    <p className="text-gray-500">Fetching coverage requests</p>
+              <Card padding="none" className={`min-h-[500px] relative ${!coverageRequests || coverageRequests.length === 0 ? 'flex items-center justify-center' : ''}`}>
+                {/* Loading overlay with blur */}
+                {(requestsFetching) && (
+                  <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                   </div>
-                ) : !coverageRequests || coverageRequests.length === 0 ? (
+                )}
+                {!coverageRequests || coverageRequests.length === 0 ? (
                   <div className="p-12 text-center">
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <Shield className="h-8 w-8 text-gray-400" />
@@ -4149,7 +4594,17 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Request Rows */}
-                    {coverageRequests.map((request) => (
+                    {coverageRequests.filter((request) => {
+                      if (!searchQuery) return true
+                      const query = searchQuery.toLowerCase()
+                      return (
+                        request.assets?.symbol?.toLowerCase().includes(query) ||
+                        request.assets?.company_name?.toLowerCase().includes(query) ||
+                        request.current_analyst_name?.toLowerCase().includes(query) ||
+                        request.requested_analyst_name?.toLowerCase().includes(query) ||
+                        request.requester_name?.toLowerCase().includes(query)
+                      )
+                    }).map((request) => (
                       <div key={request.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
                         <div className="grid grid-cols-12 gap-4 items-center">
                           {/* Asset Info */}
@@ -4298,12 +4753,28 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         )}
                       </div>
                     ))}
+                    {/* No results message when search filters out all requests */}
+                    {searchQuery && !coverageRequests.some((request) => {
+                      const query = searchQuery.toLowerCase()
+                      return (
+                        request.assets?.symbol?.toLowerCase().includes(query) ||
+                        request.assets?.company_name?.toLowerCase().includes(query) ||
+                        request.current_analyst_name?.toLowerCase().includes(query) ||
+                        request.requested_analyst_name?.toLowerCase().includes(query) ||
+                        request.requester_name?.toLowerCase().includes(query)
+                      )
+                    }) && (
+                      <div className="px-6 py-12 text-center">
+                        <p className="text-gray-500">No requests found for "{searchQuery}"</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>
             )}
               </div>
             </div>
+            )}
           </div>
 
           {/* Footer - only shown for main view in modal mode */}
@@ -4769,82 +5240,28 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 </p>
               </div>
 
-              {/* Role Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Role *
-                </label>
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {['primary', 'secondary', 'tertiary'].map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => setAddingCoverage({
-                          ...addingCoverage,
-                          role: role
-                        })}
-                        className={clsx(
-                          'px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors capitalize',
-                          addingCoverage.role === role
-                            ? 'bg-primary-100 border-primary-500 text-primary-700'
-                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                        )}
-                      >
-                        {role}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2">
+
+              {/* Lead Analyst Toggle - Only show when hierarchy is enabled */}
+              {coverageSettings?.enable_hierarchy && (
+                <div>
+                  <label className="flex items-center gap-3 cursor-pointer">
                     <input
-                      type="text"
-                      placeholder="Or enter custom role..."
-                      value={!['primary', 'secondary', 'tertiary'].includes(addingCoverage.role) ? addingCoverage.role : ''}
+                      type="checkbox"
+                      checked={addingCoverage.isLead}
                       onChange={(e) => setAddingCoverage({
                         ...addingCoverage,
-                        role: e.target.value
+                        isLead: e.target.checked
                       })}
-                      className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                     />
-                  </div>
-                </div>
-              </div>
-
-              {/* Portfolio Assignment */}
-              {portfolios && portfolios.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Assign to Portfolios (Optional)
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Lead Analyst</span>
+                      <p className="text-xs text-gray-500">Mark as the primary analyst for this coverage</p>
+                    </div>
                   </label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
-                    {portfolios.map((portfolio) => (
-                      <label
-                        key={portfolio.id}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={addingCoverage.portfolioIds.includes(portfolio.id)}
-                          onChange={(e) => {
-                            const newPortfolioIds = e.target.checked
-                              ? [...addingCoverage.portfolioIds, portfolio.id]
-                              : addingCoverage.portfolioIds.filter(id => id !== portfolio.id)
-                            setAddingCoverage({
-                              ...addingCoverage,
-                              portfolioIds: newPortfolioIds
-                            })
-                          }}
-                          className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                        />
-                        <span className="text-sm text-gray-700">{portfolio.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Select portfolios this coverage should be associated with
-                  </p>
                 </div>
               )}
+
 
               {/* Notes */}
               <div>
@@ -4892,7 +5309,74 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         : selectedUser.email?.split('@')[0] || 'Unknown')
                       : 'Unknown'
 
-                    // Insert coverage record(s) - one per portfolio if portfolios are selected
+                    // Check for any existing active coverage on this asset (by other analysts)
+                    const existingActiveCoverage = coverageRecords?.filter(
+                      c => c.asset_id === addingCoverage.assetId &&
+                           c.is_active &&
+                           c.user_id !== addingCoverage.analystId
+                    ) || []
+
+                    if (existingActiveCoverage.length > 0) {
+                      // Get the asset symbol for display
+                      const assetSymbol = existingActiveCoverage[0].assets?.symbol ||
+                        assets?.find(a => a.id === addingCoverage.assetId)?.symbol ||
+                        'this asset'
+
+                      // Show confirmation dialog asking if user wants to transition or add additional
+                      setExistingCoverageConfirm({
+                        isOpen: true,
+                        assetId: addingCoverage.assetId,
+                        assetSymbol,
+                        existingCoverage: existingActiveCoverage.map(c => ({
+                          id: c.id,
+                          user_id: c.user_id,
+                          analyst_name: c.analyst_name
+                        })),
+                        newAnalystId: addingCoverage.analystId,
+                        newAnalystName: analystName,
+                        startDate: addingCoverage.startDate,
+                        endDate: addingCoverage.endDate,
+                        notes: addingCoverage.notes,
+                        isLead: addingCoverage.isLead
+                      })
+                      return
+                    }
+
+                    // Check if adding as lead analyst and a lead already exists for this team/asset combo (when hierarchy is enabled)
+                    if (coverageSettings?.enable_hierarchy && addingCoverage.isLead) {
+                      const existingLead = coverageRecords?.find(
+                        c => c.asset_id === addingCoverage.assetId &&
+                             c.is_active &&
+                             (c.is_lead || c.role === 'primary') &&
+                             c.user_id !== addingCoverage.analystId &&
+                             c.team_id === addingCoverage.teamId
+                      )
+
+                      if (existingLead) {
+                        // Get the asset symbol for display
+                        const assetSymbol = existingLead.assets?.symbol ||
+                          assets?.find(a => a.id === addingCoverage.assetId)?.symbol ||
+                          'this asset'
+
+                        // Show confirmation dialog
+                        setPrimaryExistsConfirm({
+                          isOpen: true,
+                          assetId: addingCoverage.assetId,
+                          assetSymbol,
+                          existingPrimaryUserId: existingLead.user_id,
+                          existingPrimaryName: existingLead.analyst_name,
+                          existingPrimaryCoverageId: existingLead.id,
+                          newAnalystId: addingCoverage.analystId,
+                          newAnalystName: analystName,
+                          startDate: addingCoverage.startDate,
+                          portfolioIds: addingCoverage.portfolioIds,
+                          notes: addingCoverage.notes
+                        })
+                        return
+                      }
+                    }
+
+                    // Insert coverage record - visibility is based on organization settings
                     const baseRecord = {
                       asset_id: addingCoverage.assetId,
                       user_id: addingCoverage.analystId,
@@ -4901,27 +5385,17 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       end_date: addingCoverage.endDate || null,
                       is_active: !addingCoverage.endDate || addingCoverage.endDate >= getLocalDateString(),
                       changed_by: user?.id,
-                      role: addingCoverage.role || null,
-                      notes: addingCoverage.notes || null
+                      role: coverageSettings?.enable_hierarchy ? (addingCoverage.role || null) : null,
+                      notes: addingCoverage.notes || null,
+                      team_id: userTeams?.[0]?.id || null,
+                      visibility: coverageSettings?.default_visibility || 'team',
+                      is_lead: coverageSettings?.enable_hierarchy ? addingCoverage.isLead : false
                     }
 
-                    // If portfolios are selected, create a record for each portfolio
-                    // Otherwise, create a single record without portfolio assignment
-                    if (addingCoverage.portfolioIds.length > 0) {
-                      const records = addingCoverage.portfolioIds.map(portfolioId => ({
-                        ...baseRecord,
-                        portfolio_id: portfolioId
-                      }))
-                      const { error } = await supabase
-                        .from('coverage')
-                        .insert(records)
-                      if (error) throw error
-                    } else {
-                      const { error } = await supabase
-                        .from('coverage')
-                        .insert(baseRecord)
-                      if (error) throw error
-                    }
+                    const { error } = await supabase
+                      .from('coverage')
+                      .insert(baseRecord)
+                    if (error) throw error
 
                     // Refresh the coverage data
                     queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
@@ -5104,9 +5578,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {requestingChange && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setRequestingChange(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="relative bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Request Coverage Change</h3>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {requestingChange.requestType === 'add' ? 'Request New Coverage' :
+                 requestingChange.requestType === 'role_change' ? 'Request Role Change' :
+                 'Request Coverage Change'}
+              </h3>
               <button
                 onClick={() => setRequestingChange(null)}
                 className="text-gray-400 hover:text-gray-600"
@@ -5115,52 +5593,165 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               </button>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">
-              Request a coverage change for <span className="font-medium">{requestingChange.assetSymbol}</span>
-            </p>
+            {/* Request Type Selector */}
+            {requestingChange.currentAnalystName && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Request Type
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRequestingChange({
+                      ...requestingChange,
+                      requestType: 'change'
+                    })}
+                    className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                      requestingChange.requestType === 'change'
+                        ? 'bg-primary-50 border-primary-300 text-primary-700'
+                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                    }`}
+                  >
+                    Change Analyst
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequestingChange({
+                      ...requestingChange,
+                      requestType: 'role_change',
+                      requestedUserId: requestingChange.currentUserId || ''
+                    })}
+                    className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                      requestingChange.requestType === 'role_change'
+                        ? 'bg-primary-50 border-primary-300 text-primary-700'
+                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                    }`}
+                  >
+                    Change Role
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Current Analyst
-                </label>
-                <input
-                  type="text"
-                  value={requestingChange.currentAnalystName || 'None'}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Requested Analyst
-                </label>
-                <select
-                  value={requestingChange.requestedUserId}
-                  onChange={(e) => setRequestingChange({
-                    ...requestingChange,
-                    requestedUserId: e.target.value
-                  })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">Select analyst...</option>
-                  {users?.map((u) => {
-                    const displayName = u.first_name && u.last_name
-                      ? `${u.first_name} ${u.last_name}`
-                      : u.email?.split('@')[0] || 'Unknown'
-                    return (
-                      <option key={u.id} value={u.id}>
-                        {displayName}
+              {/* Asset Selection - Only show if no asset is pre-selected */}
+              {!requestingChange.assetSymbol && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Asset
+                  </label>
+                  <select
+                    value={requestingChange.assetId}
+                    onChange={(e) => {
+                      const selectedAsset = assets?.find(a => a.id === e.target.value)
+                      setRequestingChange({
+                        ...requestingChange,
+                        assetId: e.target.value,
+                        assetSymbol: selectedAsset?.symbol || ''
+                      })
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="">Select asset...</option>
+                    {assets?.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.symbol} - {asset.company_name}
                       </option>
-                    )
-                  })}
-                </select>
-              </div>
+                    ))}
+                  </select>
+                </div>
+              )}
 
+              {/* Show selected asset if pre-selected */}
+              {requestingChange.assetSymbol && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <span className="text-sm text-gray-500">Asset:</span>
+                  <span className="ml-2 text-sm font-medium text-gray-900">{requestingChange.assetSymbol}</span>
+                </div>
+              )}
+
+              {/* Current Coverage Info - Only show if there's current coverage */}
+              {requestingChange.currentAnalystName && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-sm text-gray-500">Current Analyst:</span>
+                      <span className="ml-2 text-sm font-medium text-gray-900">{requestingChange.currentAnalystName}</span>
+                    </div>
+                    {requestingChange.currentRole && (
+                      <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded capitalize">
+                        {requestingChange.currentRole}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Analyst Selection - Show for 'add' and 'change' types */}
+              {(requestingChange.requestType === 'add' || requestingChange.requestType === 'change') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {requestingChange.requestType === 'add' ? 'Assign Analyst' : 'New Analyst'}
+                  </label>
+                  <select
+                    value={requestingChange.requestedUserId}
+                    onChange={(e) => setRequestingChange({
+                      ...requestingChange,
+                      requestedUserId: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="">Select analyst...</option>
+                    {users?.map((u) => {
+                      const displayName = u.first_name && u.last_name
+                        ? `${u.first_name} ${u.last_name}`
+                        : u.email?.split('@')[0] || 'Unknown'
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {displayName}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {/* Role Selection - Only show when hierarchy is enabled in coverage settings */}
+              {coverageSettings?.enable_hierarchy && (requestingChange.requestType === 'add' || requestingChange.requestType === 'role_change') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {requestingChange.requestType === 'role_change' ? 'New Role' : 'Role'}
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {(coverageSettings.hierarchy_levels || [{ name: 'Lead Analyst', exclusive: true }, { name: 'Analyst', exclusive: false }]).map((level: { name: string; exclusive: boolean } | string) => {
+                      // Handle both old string format and new object format
+                      const roleName = typeof level === 'string' ? level : level.name
+                      return (
+                        <button
+                          key={roleName}
+                          type="button"
+                          onClick={() => setRequestingChange({
+                            ...requestingChange,
+                            requestedRole: roleName.toLowerCase()
+                          })}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                            requestingChange.requestedRole === roleName.toLowerCase()
+                              ? 'bg-primary-50 border-primary-300 text-primary-700'
+                              : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                          }`}
+                        >
+                          {roleName}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Reason */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reason for Change
+                  Reason for Request
                 </label>
                 <textarea
                   value={requestingChange.reason}
@@ -5168,7 +5759,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     ...requestingChange,
                     reason: e.target.value
                   })}
-                  placeholder="Explain why this change is needed..."
+                  placeholder={
+                    requestingChange.requestType === 'add'
+                      ? "Explain why this coverage is needed..."
+                      : requestingChange.requestType === 'role_change'
+                      ? "Explain why the role change is needed..."
+                      : "Explain why this change is needed..."
+                  }
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
@@ -5181,35 +5778,72 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               </Button>
               <Button
                 onClick={() => {
-                  if (!requestingChange.requestedUserId || !requestingChange.reason) {
+                  // Validation
+                  if (!requestingChange.assetId) {
                     setErrorModal({
                       isOpen: true,
                       title: 'Missing Information',
-                      message: 'Please select an analyst and provide a reason for the change.'
+                      message: 'Please select an asset.'
                     })
                     return
                   }
 
-                  const selectedUser = users?.find(u => u.id === requestingChange.requestedUserId)
-                  if (!selectedUser) return
+                  if ((requestingChange.requestType === 'add' || requestingChange.requestType === 'change') && !requestingChange.requestedUserId) {
+                    setErrorModal({
+                      isOpen: true,
+                      title: 'Missing Information',
+                      message: 'Please select an analyst.'
+                    })
+                    return
+                  }
 
-                  const requestedAnalystName = selectedUser.first_name && selectedUser.last_name
-                    ? `${selectedUser.first_name} ${selectedUser.last_name}`
-                    : selectedUser.email?.split('@')[0] || 'Unknown'
+                  if (!requestingChange.reason) {
+                    setErrorModal({
+                      isOpen: true,
+                      title: 'Missing Information',
+                      message: 'Please provide a reason for the request.'
+                    })
+                    return
+                  }
+
+                  // Get analyst name
+                  let requestedAnalystName = requestingChange.currentAnalystName || 'Unknown'
+                  if (requestingChange.requestType !== 'role_change') {
+                    const selectedUser = users?.find(u => u.id === requestingChange.requestedUserId)
+                    if (selectedUser) {
+                      requestedAnalystName = selectedUser.first_name && selectedUser.last_name
+                        ? `${selectedUser.first_name} ${selectedUser.last_name}`
+                        : selectedUser.email?.split('@')[0] || 'Unknown'
+                    }
+                  }
+
+                  // Build reason with role info for role changes
+                  let fullReason = requestingChange.reason
+                  if (requestingChange.requestType === 'role_change') {
+                    fullReason = `Role change from "${requestingChange.currentRole || 'none'}" to "${requestingChange.requestedRole}". ${requestingChange.reason}`
+                  } else if (requestingChange.requestType === 'add') {
+                    fullReason = `New coverage as ${requestingChange.requestedRole}. ${requestingChange.reason}`
+                  }
 
                   createCoverageRequestMutation.mutate({
                     asset_id: requestingChange.assetId,
                     current_user_id: requestingChange.currentUserId,
                     current_analyst_name: requestingChange.currentAnalystName,
-                    requested_user_id: requestingChange.requestedUserId,
+                    requested_user_id: requestingChange.requestType === 'role_change'
+                      ? requestingChange.currentUserId
+                      : requestingChange.requestedUserId,
                     requested_analyst_name: requestedAnalystName,
                     request_type: requestingChange.requestType,
-                    reason: requestingChange.reason
+                    reason: fullReason
                   })
 
                   setRequestingChange(null)
                 }}
-                disabled={!requestingChange.requestedUserId || !requestingChange.reason}
+                disabled={
+                  !requestingChange.assetId ||
+                  !requestingChange.reason ||
+                  ((requestingChange.requestType === 'add' || requestingChange.requestType === 'change') && !requestingChange.requestedUserId)
+                }
               >
                 Submit Request
               </Button>
@@ -5347,6 +5981,285 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               >
                 Close
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Primary Already Exists Confirmation Modal */}
+      {primaryExistsConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setPrimaryExistsConfirm(null)} />
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Primary Analyst Already Exists</h3>
+              <button
+                onClick={() => setPrimaryExistsConfirm(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div className="text-sm text-amber-800">
+                  <span className="font-medium">{primaryExistsConfirm.existingPrimaryName}</span> is currently the primary analyst for <span className="font-medium">{primaryExistsConfirm.assetSymbol}</span>.
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600">
+                Would you like to transition coverage from <span className="font-medium">{primaryExistsConfirm.existingPrimaryName}</span> to <span className="font-medium">{primaryExistsConfirm.newAnalystName}</span>?
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                This will end the current primary's coverage on {primaryExistsConfirm.startDate} and start {primaryExistsConfirm.newAnalystName}'s coverage as primary on the same date.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setPrimaryExistsConfirm(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  try {
+                    // Calculate the day before the new start date for ending the old coverage
+                    const startDateObj = new Date(primaryExistsConfirm.startDate)
+                    const dayBefore = new Date(startDateObj)
+                    dayBefore.setDate(dayBefore.getDate() - 1)
+                    const dayBeforeStr = getLocalDateString(dayBefore)
+
+                    // End the existing primary coverage
+                    const { error: endError } = await supabase
+                      .from('coverage')
+                      .update({
+                        end_date: dayBeforeStr,
+                        is_active: dayBeforeStr >= getLocalDateString() ? true : false,
+                        changed_by: user?.id
+                      })
+                      .eq('id', primaryExistsConfirm.existingPrimaryCoverageId)
+
+                    if (endError) throw endError
+
+                    // Create the new primary coverage - visibility is based on organization settings
+                    const baseRecord = {
+                      asset_id: primaryExistsConfirm.assetId,
+                      user_id: primaryExistsConfirm.newAnalystId,
+                      analyst_name: primaryExistsConfirm.newAnalystName,
+                      start_date: primaryExistsConfirm.startDate,
+                      end_date: null,
+                      is_active: true,
+                      changed_by: user?.id,
+                      role: 'primary',
+                      notes: primaryExistsConfirm.notes || null,
+                      team_id: userTeams?.[0]?.id || null,
+                      visibility: coverageSettings?.default_visibility || 'team'
+                    }
+
+                    const { error } = await supabase
+                      .from('coverage')
+                      .insert(baseRecord)
+                    if (error) throw error
+
+                    // Refresh the coverage data
+                    queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
+                    queryClient.invalidateQueries({ queryKey: ['coverage'] })
+                    queryClient.invalidateQueries({ queryKey: ['asset-coverage-history'] })
+                    queryClient.invalidateQueries({ queryKey: ['all-coverage-events'] })
+
+                    setPrimaryExistsConfirm(null)
+                    setAddingCoverage(null)
+                  } catch (error: any) {
+                    setErrorModal({
+                      isOpen: true,
+                      title: 'Error Transitioning Coverage',
+                      message: error.message || 'Failed to transition coverage. Please try again.'
+                    })
+                  }
+                }}
+              >
+                <ArrowRightLeft className="h-4 w-4 mr-2" />
+                Transition Coverage
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Existing Coverage Confirmation Modal - Transition vs Add Additional */}
+      {existingCoverageConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setExistingCoverageConfirm(null)} />
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Existing Coverage Found</h3>
+              <button
+                onClick={() => setExistingCoverageConfirm(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">{existingCoverageConfirm.assetSymbol} is currently covered by:</p>
+                  <ul className="list-disc list-inside">
+                    {existingCoverageConfirm.existingCoverage.map((c) => (
+                      <li key={c.id}>{c.analyst_name}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600 mb-2">
+                How would you like to add <span className="font-medium">{existingCoverageConfirm.newAnalystName}</span> to cover <span className="font-medium">{existingCoverageConfirm.assetSymbol}</span>?
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Transition Coverage Option */}
+              <button
+                onClick={async () => {
+                  try {
+                    // Calculate the day before the new start date for ending existing coverage
+                    const startDateObj = new Date(existingCoverageConfirm.startDate)
+                    const dayBefore = new Date(startDateObj)
+                    dayBefore.setDate(dayBefore.getDate() - 1)
+                    const dayBeforeStr = getLocalDateString(dayBefore)
+
+                    // End all existing active coverage for this asset
+                    for (const existing of existingCoverageConfirm.existingCoverage) {
+                      const { error: endError } = await supabase
+                        .from('coverage')
+                        .update({
+                          end_date: dayBeforeStr,
+                          is_active: dayBeforeStr >= getLocalDateString() ? true : false,
+                          changed_by: user?.id
+                        })
+                        .eq('id', existing.id)
+
+                      if (endError) throw endError
+                    }
+
+                    // Create the new coverage record
+                    const baseRecord = {
+                      asset_id: existingCoverageConfirm.assetId,
+                      user_id: existingCoverageConfirm.newAnalystId,
+                      analyst_name: existingCoverageConfirm.newAnalystName,
+                      start_date: existingCoverageConfirm.startDate,
+                      end_date: existingCoverageConfirm.endDate || null,
+                      is_active: !existingCoverageConfirm.endDate || existingCoverageConfirm.endDate >= getLocalDateString(),
+                      changed_by: user?.id,
+                      role: coverageSettings?.enable_hierarchy ? (existingCoverageConfirm.isLead ? 'primary' : null) : null,
+                      notes: existingCoverageConfirm.notes || null,
+                      team_id: userTeams?.[0]?.id || null,
+                      visibility: coverageSettings?.default_visibility || 'team',
+                      is_lead: coverageSettings?.enable_hierarchy ? existingCoverageConfirm.isLead : false
+                    }
+
+                    const { error } = await supabase
+                      .from('coverage')
+                      .insert(baseRecord)
+                    if (error) throw error
+
+                    // Refresh the coverage data
+                    queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
+                    queryClient.invalidateQueries({ queryKey: ['coverage'] })
+                    queryClient.invalidateQueries({ queryKey: ['asset-coverage-history'] })
+                    queryClient.invalidateQueries({ queryKey: ['all-coverage-events'] })
+
+                    setExistingCoverageConfirm(null)
+                    setAddingCoverage(null)
+                  } catch (error: any) {
+                    setErrorModal({
+                      isOpen: true,
+                      title: 'Error Transitioning Coverage',
+                      message: error.message || 'Failed to transition coverage. Please try again.'
+                    })
+                  }
+                }}
+                className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary-100 rounded-lg group-hover:bg-primary-200 transition-colors">
+                    <ArrowRightLeft className="h-5 w-5 text-primary-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Transition Coverage</p>
+                    <p className="text-sm text-gray-500">End existing coverage and start new</p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Add Additional Coverage Option */}
+              <button
+                onClick={async () => {
+                  try {
+                    // Just add the new coverage without ending existing
+                    const baseRecord = {
+                      asset_id: existingCoverageConfirm.assetId,
+                      user_id: existingCoverageConfirm.newAnalystId,
+                      analyst_name: existingCoverageConfirm.newAnalystName,
+                      start_date: existingCoverageConfirm.startDate,
+                      end_date: existingCoverageConfirm.endDate || null,
+                      is_active: !existingCoverageConfirm.endDate || existingCoverageConfirm.endDate >= getLocalDateString(),
+                      changed_by: user?.id,
+                      role: coverageSettings?.enable_hierarchy ? (existingCoverageConfirm.isLead ? 'primary' : null) : null,
+                      notes: existingCoverageConfirm.notes || null,
+                      team_id: userTeams?.[0]?.id || null,
+                      visibility: coverageSettings?.default_visibility || 'team',
+                      is_lead: coverageSettings?.enable_hierarchy ? existingCoverageConfirm.isLead : false
+                    }
+
+                    const { error } = await supabase
+                      .from('coverage')
+                      .insert(baseRecord)
+                    if (error) throw error
+
+                    // Refresh the coverage data
+                    queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
+                    queryClient.invalidateQueries({ queryKey: ['coverage'] })
+                    queryClient.invalidateQueries({ queryKey: ['asset-coverage-history'] })
+                    queryClient.invalidateQueries({ queryKey: ['all-coverage-events'] })
+
+                    setExistingCoverageConfirm(null)
+                    setAddingCoverage(null)
+                  } catch (error: any) {
+                    setErrorModal({
+                      isOpen: true,
+                      title: 'Error Adding Coverage',
+                      message: error.message || 'Failed to add coverage. Please try again.'
+                    })
+                  }
+                }}
+                className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg group-hover:bg-green-200 transition-colors">
+                    <UserPlus className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Add Additional Coverage</p>
+                    <p className="text-sm text-gray-500">Keep existing coverage alongside new</p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Cancel */}
+              <button
+                onClick={() => setExistingCoverageConfirm(null)}
+                className="w-full p-3 text-center text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

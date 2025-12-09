@@ -17,6 +17,7 @@ interface CoverageDisplayProps {
   coverage: CoverageRecord[]
   className?: string
   showPortfolio?: boolean
+  showHeader?: boolean
 }
 
 // Default role configurations for system roles
@@ -41,7 +42,7 @@ const systemRoleConfig: Record<string, { label: string; icon: typeof Star; color
   },
 }
 
-export function CoverageDisplay({ coverage, className, showPortfolio = false }: CoverageDisplayProps) {
+export function CoverageDisplay({ coverage, className, showPortfolio = false, showHeader = true }: CoverageDisplayProps) {
   // Sort by role: primary first, then secondary, then tertiary, then custom roles, then no role
   const sortedCoverage = [...(coverage || [])].sort((a, b) => {
     const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
@@ -52,7 +53,9 @@ export function CoverageDisplay({ coverage, className, showPortfolio = false }: 
 
   return (
     <div className={clsx('space-y-2', className)}>
-      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Coverage</p>
+      {showHeader && (
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Coverage</p>
+      )}
       {sortedCoverage && sortedCoverage.length > 0 ? (
         <div className="space-y-1.5">
           {sortedCoverage.map((analyst) => {

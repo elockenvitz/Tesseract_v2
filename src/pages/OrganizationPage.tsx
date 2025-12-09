@@ -48,7 +48,9 @@ import {
   Link2,
   Info,
   Calendar,
-  FileText
+  FileText,
+  Lock,
+  Unlock
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -634,6 +636,63 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       })) as OrgChartNodeMember[]
     }
   })
+
+  // Fetch coverage settings for the organization
+  const { data: coverageSettings, refetch: refetchCoverageSettings } = useQuery({
+    queryKey: ['coverage-settings', organization?.id],
+    queryFn: async () => {
+      if (!organization?.id) return null
+      const { data, error } = await supabase
+        .from('coverage_settings')
+        .select('*')
+        .eq('organization_id', organization.id)
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error // PGRST116 = no rows found
+      return data
+    },
+    enabled: !!organization?.id
+  })
+
+  // Coverage settings state for editing
+  const [editingCoverageSettings, setEditingCoverageSettings] = useState<{
+    default_visibility: 'team' | 'division' | 'firm'
+    enable_hierarchy: boolean
+    hierarchy_levels: Array<{ name: string; exclusive: boolean }>
+    visibility_change_permission: 'anyone' | 'team_lead' | 'coverage_admin'
+    allow_multiple_coverage: boolean
+  } | null>(null)
+  const [showCoverageSettingsConfirm, setShowCoverageSettingsConfirm] = useState(false)
+  const [isCoverageSettingsLocked, setIsCoverageSettingsLocked] = useState(true)
+
+  // Helper to convert old string[] format to new object format
+  const normalizeHierarchyLevels = (levels: any): Array<{ name: string; exclusive: boolean }> => {
+    if (!levels || !Array.isArray(levels)) {
+      return [{ name: 'Lead Analyst', exclusive: true }, { name: 'Analyst', exclusive: false }]
+    }
+    // Check if already in object format
+    if (levels.length > 0 && typeof levels[0] === 'object' && 'name' in levels[0]) {
+      return levels
+    }
+    // Convert from string array to object array
+    return levels.map((name: string, index: number) => ({
+      name: name || '',
+      exclusive: index === 0 // First level is exclusive by default
+    }))
+  }
+
+  // Initialize editing state when coverage settings are loaded
+  useEffect(() => {
+    if (coverageSettings && !editingCoverageSettings) {
+      setEditingCoverageSettings({
+        default_visibility: coverageSettings.default_visibility || 'team',
+        enable_hierarchy: coverageSettings.enable_hierarchy || false,
+        hierarchy_levels: normalizeHierarchyLevels(coverageSettings.hierarchy_levels),
+        visibility_change_permission: coverageSettings.visibility_change_permission || 'coverage_admin',
+        allow_multiple_coverage: coverageSettings.allow_multiple_coverage !== false // default true
+      })
+    }
+  }, [coverageSettings])
 
   // Get members for a specific node
   const getNodeMembers = (nodeId: string) => {
@@ -1280,6 +1339,53 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+    }
+  })
+
+  // Save coverage settings mutation
+  const saveCoverageSettingsMutation = useMutation({
+    mutationFn: async (settings: {
+      default_visibility: 'team' | 'division' | 'firm'
+      enable_hierarchy: boolean
+      hierarchy_levels: Array<{ name: string; exclusive: boolean }>
+      visibility_change_permission: 'anyone' | 'team_lead' | 'coverage_admin'
+      allow_multiple_coverage: boolean
+    }) => {
+      if (!organization?.id) throw new Error('No organization found')
+
+      const { data: existing } = await supabase
+        .from('coverage_settings')
+        .select('id')
+        .eq('organization_id', organization.id)
+        .single()
+
+      if (existing) {
+        // Update existing settings
+        const { error } = await supabase
+          .from('coverage_settings')
+          .update({
+            ...settings,
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id
+          })
+          .eq('organization_id', organization.id)
+
+        if (error) throw error
+      } else {
+        // Insert new settings
+        const { error } = await supabase
+          .from('coverage_settings')
+          .insert({
+            organization_id: organization.id,
+            ...settings,
+            updated_by: user?.id
+          })
+
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['coverage-settings'] })
     }
   })
 
@@ -2294,6 +2400,263 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                   ))}
                 </div>
               </Card>
+
+              {/* Coverage Settings - Only for coverage admins */}
+              {user?.coverage_admin && (
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-gray-900">Coverage Settings</h3>
+                        {isCoverageSettingsLocked && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                            <Lock className="h-3 w-3" />
+                            Locked
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">Configure how coverage works across your organization</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {editingCoverageSettings && (
+                        <>
+                          {isCoverageSettingsLocked ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setIsCoverageSettingsLocked(false)}
+                              className="flex items-center gap-2"
+                            >
+                              <Lock className="h-4 w-4" />
+                              Unlock to Edit
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  // Reset to original settings and lock
+                                  if (coverageSettings) {
+                                    setEditingCoverageSettings({
+                                      default_visibility: coverageSettings.default_visibility || 'team',
+                                      enable_hierarchy: coverageSettings.enable_hierarchy || false,
+                                      hierarchy_levels: normalizeHierarchyLevels(coverageSettings.hierarchy_levels),
+                                      visibility_change_permission: coverageSettings.visibility_change_permission || 'coverage_admin',
+                                      allow_multiple_coverage: coverageSettings.allow_multiple_coverage !== false
+                                    })
+                                  }
+                                  setIsCoverageSettingsLocked(true)
+                                }}
+                                className="flex items-center gap-2"
+                              >
+                                <X className="h-4 w-4" />
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => setShowCoverageSettingsConfirm(true)}
+                                loading={saveCoverageSettingsMutation.isPending}
+                              >
+                                Save Changes
+                              </Button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {editingCoverageSettings && (
+                    <div className="space-y-6">
+                      {/* Default Visibility */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Default Coverage Visibility
+                        </label>
+                        <p className="text-xs text-gray-500 mb-3">
+                          When a user adds new coverage, this is the default visibility level
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { value: 'team', label: 'Team Only', desc: 'Only team members can see coverage' },
+                            { value: 'division', label: 'Division', desc: 'All teams in the division can see' },
+                            { value: 'firm', label: 'Firm-wide', desc: 'Everyone in the organization can see' }
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              disabled={isCoverageSettingsLocked}
+                              onClick={() => setEditingCoverageSettings({
+                                ...editingCoverageSettings,
+                                default_visibility: option.value as 'team' | 'division' | 'firm'
+                              })}
+                              className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                                editingCoverageSettings.default_visibility === option.value
+                                  ? 'bg-indigo-100 border-indigo-500 text-indigo-700'
+                                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                              } ${isCoverageSettingsLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              title={option.desc}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Enable Hierarchy */}
+                      <div className={isCoverageSettingsLocked ? 'opacity-60' : ''}>
+                        <label className={`flex items-center gap-3 ${isCoverageSettingsLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <input
+                            type="checkbox"
+                            checked={editingCoverageSettings.enable_hierarchy}
+                            disabled={isCoverageSettingsLocked}
+                            onChange={(e) => setEditingCoverageSettings({
+                              ...editingCoverageSettings,
+                              enable_hierarchy: e.target.checked
+                            })}
+                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-gray-700">Enable Coverage Hierarchy</span>
+                            <p className="text-xs text-gray-500">Allow defining analyst roles/levels for coverage (e.g., Lead Analyst, Analyst)</p>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* When hierarchy is DISABLED - show single coverage option */}
+                      {!editingCoverageSettings.enable_hierarchy && (
+                        <div className={isCoverageSettingsLocked ? 'opacity-60' : ''}>
+                          <label className={`flex items-center gap-3 ${isCoverageSettingsLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                            <input
+                              type="checkbox"
+                              checked={!editingCoverageSettings.allow_multiple_coverage}
+                              disabled={isCoverageSettingsLocked}
+                              onChange={(e) => setEditingCoverageSettings({
+                                ...editingCoverageSettings,
+                                allow_multiple_coverage: !e.target.checked
+                              })}
+                              className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="text-sm font-medium text-gray-700">Single Analyst Per Security</span>
+                              <p className="text-xs text-gray-500">Only one analyst can cover each security at a time (within visibility level)</p>
+                            </div>
+                          </label>
+                        </div>
+                      )}
+
+                      {/* Hierarchy Levels - Only show if hierarchy is enabled */}
+                      {editingCoverageSettings.enable_hierarchy && (
+                        <div className={isCoverageSettingsLocked ? 'opacity-60' : ''}>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Coverage Hierarchy Levels
+                          </label>
+                          <p className="text-xs text-gray-500 mb-3">
+                            Define the hierarchy levels for coverage roles (first level is highest). Mark levels as "exclusive" if only one analyst can hold that role per security.
+                          </p>
+                          <div className="space-y-2">
+                            {editingCoverageSettings.hierarchy_levels.map((level, index) => (
+                              <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                                <span className="text-xs text-gray-400 w-6">{index + 1}.</span>
+                                <input
+                                  type="text"
+                                  value={level.name}
+                                  disabled={isCoverageSettingsLocked}
+                                  onChange={(e) => {
+                                    const newLevels = [...editingCoverageSettings.hierarchy_levels]
+                                    newLevels[index] = { ...newLevels[index], name: e.target.value }
+                                    setEditingCoverageSettings({
+                                      ...editingCoverageSettings,
+                                      hierarchy_levels: newLevels
+                                    })
+                                  }}
+                                  className={`flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isCoverageSettingsLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                  placeholder="Role name..."
+                                />
+                                <label className={`flex items-center gap-1.5 whitespace-nowrap ${isCoverageSettingsLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={level.exclusive}
+                                    disabled={isCoverageSettingsLocked}
+                                    onChange={(e) => {
+                                      const newLevels = [...editingCoverageSettings.hierarchy_levels]
+                                      newLevels[index] = { ...newLevels[index], exclusive: e.target.checked }
+                                      setEditingCoverageSettings({
+                                        ...editingCoverageSettings,
+                                        hierarchy_levels: newLevels
+                                      })
+                                    }}
+                                    className="h-3.5 w-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                  />
+                                  <span className="text-xs text-gray-600">Exclusive</span>
+                                </label>
+                                {editingCoverageSettings.hierarchy_levels.length > 1 && !isCoverageSettingsLocked && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newLevels = editingCoverageSettings.hierarchy_levels.filter((_, i) => i !== index)
+                                      setEditingCoverageSettings({
+                                        ...editingCoverageSettings,
+                                        hierarchy_levels: newLevels
+                                      })
+                                    }}
+                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            {!isCoverageSettingsLocked && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingCoverageSettings({
+                                  ...editingCoverageSettings,
+                                  hierarchy_levels: [...editingCoverageSettings.hierarchy_levels, { name: '', exclusive: false }]
+                                })}
+                                className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 mt-2"
+                              >
+                                <Plus className="w-4 h-4" />
+                                Add Level
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Visibility Change Permission */}
+                      <div className={isCoverageSettingsLocked ? 'opacity-60' : ''}>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Who Can Change Visibility
+                        </label>
+                        <p className="text-xs text-gray-500 mb-3">
+                          Control who can modify the visibility of coverage records
+                        </p>
+                        <select
+                          value={editingCoverageSettings.visibility_change_permission}
+                          disabled={isCoverageSettingsLocked}
+                          onChange={(e) => setEditingCoverageSettings({
+                            ...editingCoverageSettings,
+                            visibility_change_permission: e.target.value as 'anyone' | 'team_lead' | 'coverage_admin'
+                          })}
+                          className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isCoverageSettingsLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        >
+                          <option value="anyone">Anyone (all users can change visibility)</option>
+                          <option value="team_lead">Team Leads & Admins</option>
+                          <option value="coverage_admin">Coverage Admins Only</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {!editingCoverageSettings && (
+                    <div className="text-center py-4 text-gray-500">
+                      Loading coverage settings...
+                    </div>
+                  )}
+                </Card>
+              )}
             </div>
           )}
         </div>
@@ -2341,6 +2704,131 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           isLoading={submitAccessRequestMutation.isPending}
         />
       )}
+
+      {/* Coverage Settings Confirmation Modal */}
+      {showCoverageSettingsConfirm && editingCoverageSettings && coverageSettings && (() => {
+        // Calculate what actually changed
+        const originalSettings = {
+          default_visibility: coverageSettings.default_visibility || 'team',
+          enable_hierarchy: coverageSettings.enable_hierarchy || false,
+          hierarchy_levels: normalizeHierarchyLevels(coverageSettings.hierarchy_levels),
+          visibility_change_permission: coverageSettings.visibility_change_permission || 'coverage_admin',
+          allow_multiple_coverage: coverageSettings.allow_multiple_coverage !== false
+        }
+
+        const changes: Array<{ label: string; from: string; to: string }> = []
+
+        if (editingCoverageSettings.default_visibility !== originalSettings.default_visibility) {
+          changes.push({
+            label: 'Default Visibility',
+            from: originalSettings.default_visibility,
+            to: editingCoverageSettings.default_visibility
+          })
+        }
+
+        if (editingCoverageSettings.enable_hierarchy !== originalSettings.enable_hierarchy) {
+          changes.push({
+            label: 'Coverage Hierarchy',
+            from: originalSettings.enable_hierarchy ? 'Enabled' : 'Disabled',
+            to: editingCoverageSettings.enable_hierarchy ? 'Enabled' : 'Disabled'
+          })
+        }
+
+        if (editingCoverageSettings.allow_multiple_coverage !== originalSettings.allow_multiple_coverage) {
+          changes.push({
+            label: 'Single Analyst Per Security',
+            from: !originalSettings.allow_multiple_coverage ? 'Yes' : 'No',
+            to: !editingCoverageSettings.allow_multiple_coverage ? 'Yes' : 'No'
+          })
+        }
+
+        if (editingCoverageSettings.visibility_change_permission !== originalSettings.visibility_change_permission) {
+          const formatPermission = (p: string) => p.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          changes.push({
+            label: 'Visibility Change Permission',
+            from: formatPermission(originalSettings.visibility_change_permission),
+            to: formatPermission(editingCoverageSettings.visibility_change_permission)
+          })
+        }
+
+        // Check if hierarchy levels changed
+        const origLevels = JSON.stringify(originalSettings.hierarchy_levels)
+        const newLevels = JSON.stringify(editingCoverageSettings.hierarchy_levels)
+        if (origLevels !== newLevels) {
+          changes.push({
+            label: 'Hierarchy Levels',
+            from: originalSettings.hierarchy_levels.map(l => l.name).join(', ') || 'None',
+            to: editingCoverageSettings.hierarchy_levels.map(l => l.name).join(', ') || 'None'
+          })
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowCoverageSettingsConfirm(false)} />
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Confirm Coverage Settings Change</h3>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <p className="text-sm text-gray-600 mb-4">
+                    You are about to change organization-wide coverage settings. These changes will affect how all users interact with coverage data.
+                  </p>
+
+                  {changes.length > 0 ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-sm font-medium text-amber-800 mb-3">The following will change:</p>
+                      <div className="space-y-2">
+                        {changes.map((change, idx) => (
+                          <div key={idx} className="text-sm">
+                            <span className="font-medium text-gray-700">{change.label}:</span>
+                            <div className="flex items-center gap-2 mt-0.5 ml-2">
+                              <span className="text-red-600 line-through">{change.from}</span>
+                              <span className="text-gray-400">→</span>
+                              <span className="text-green-600 font-medium">{change.to}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <p className="text-sm text-gray-600">No changes detected.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowCoverageSettingsConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    disabled={changes.length === 0}
+                    onClick={() => {
+                      saveCoverageSettingsMutation.mutate(editingCoverageSettings)
+                      setShowCoverageSettingsConfirm(false)
+                      setIsCoverageSettingsLocked(true)
+                    }}
+                    loading={saveCoverageSettingsMutation.isPending}
+                  >
+                    Confirm Changes
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Add Contact Modal */}
       {showAddContactModal && (

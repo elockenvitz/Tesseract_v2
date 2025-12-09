@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List } from 'lucide-react'
+import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
@@ -1783,8 +1783,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     <div className="space-y-4">
                       {/* Coverage */}
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Coverage</h4>
-                        <CoverageDisplay assetId={asset.id} coverage={coverage || []} />
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-gray-700">Coverage</h4>
+                          {onNavigate && (
+                            <button
+                              onClick={() => {
+                                setShowTickerDropdown(false)
+                                onNavigate({
+                                  id: 'coverage',
+                                  title: 'Coverage',
+                                  type: 'coverage',
+                                  data: { assetId: asset.id, assetSymbol: asset.symbol }
+                                })
+                              }}
+                              className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                            >
+                              <span>Go to Coverage</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        <CoverageDisplay assetId={asset.id} coverage={coverage || []} showHeader={false} />
                       </div>
 
                       {/* Sector */}
