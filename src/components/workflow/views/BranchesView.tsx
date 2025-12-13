@@ -7,12 +7,123 @@
  * Extracted from WorkflowsPage.tsx during Phase 3 refactoring.
  */
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { GitBranch, Plus, ChevronRight, ChevronDown, Eye, Play, Pause, Archive, ArchiveX, Trash2, RotateCcw, Edit3, Orbit, Copy, Network, PenLine, Check, X, Loader2, Clock, GitCompare } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { formatVersion } from '../../../lib/versionUtils'
 import { VersionComparisonModal } from '../../modals/VersionComparisonModal'
+
+/** Generate a high-level change summary comparing a version with the previous one */
+function generateChangeSummary(
+  currentVersion: TemplateVersion,
+  previousVersion: TemplateVersion | null
+): string {
+  // Only show "Initial version" for the actual first version
+  if (!previousVersion && currentVersion.version_number === 1) {
+    const stageCount = currentVersion.stages?.length || 0
+    const checklistCount = currentVersion.checklist_templates?.length || 0
+    return `Initial version with ${stageCount} stages and ${checklistCount} checklist items`
+  }
+
+  // If no previous version found but not version 1, fall back to description
+  if (!previousVersion) {
+    return currentVersion.description || 'New major version'
+  }
+
+  const changes: string[] = []
+
+  // Compare stages (handle both property naming conventions)
+  const oldStages = previousVersion.stages || []
+  const newStages = currentVersion.stages || []
+
+  const getStageKey = (s: any) => s.stage_key || s.key || s.id
+  const getStageName = (s: any) => s.stage_label || s.name
+  const getStageColor = (s: any) => s.stage_color || s.color
+  const getStageOrder = (s: any) => s.sort_order ?? s.order_index
+
+  const oldStageKeys = new Set(oldStages.map((s: any) => getStageKey(s)))
+  const newStageKeys = new Set(newStages.map((s: any) => getStageKey(s)))
+
+  const addedStages = newStages.filter((s: any) => !oldStageKeys.has(getStageKey(s))).length
+  const removedStages = oldStages.filter((s: any) => !newStageKeys.has(getStageKey(s))).length
+  const modifiedStages = newStages.filter((s: any) => {
+    const key = getStageKey(s)
+    const oldStage = oldStages.find((os: any) => getStageKey(os) === key)
+    if (!oldStage) return false
+    return getStageName(oldStage) !== getStageName(s) ||
+           getStageColor(oldStage) !== getStageColor(s) ||
+           getStageOrder(oldStage) !== getStageOrder(s)
+  }).length
+
+  if (addedStages > 0) changes.push(`+${addedStages} stage${addedStages > 1 ? 's' : ''}`)
+  if (removedStages > 0) changes.push(`-${removedStages} stage${removedStages > 1 ? 's' : ''}`)
+  if (modifiedStages > 0) changes.push(`${modifiedStages} stage${modifiedStages > 1 ? 's' : ''} modified`)
+
+  // Compare checklists
+  const oldChecklists = previousVersion.checklist_templates || []
+  const newChecklists = currentVersion.checklist_templates || []
+
+  const getChecklistKey = (c: any) => c.item_id || `${c.item_text}-${c.stage_id}`
+  const oldChecklistMap = new Map(oldChecklists.map((c: any) => [getChecklistKey(c), c]))
+  const newChecklistMap = new Map(newChecklists.map((c: any) => [getChecklistKey(c), c]))
+
+  const addedChecklists = newChecklists.filter((c: any) => !oldChecklistMap.has(getChecklistKey(c))).length
+  const removedChecklists = oldChecklists.filter((c: any) => !newChecklistMap.has(getChecklistKey(c))).length
+
+  // Check for modified checklists (reordered, moved to different stage, text changed, etc.)
+  const modifiedChecklists = newChecklists.filter((newItem: any) => {
+    const key = getChecklistKey(newItem)
+    const oldItem = oldChecklistMap.get(key)
+    if (!oldItem) return false
+    return oldItem.sort_order !== newItem.sort_order ||
+           oldItem.stage_id !== newItem.stage_id ||
+           oldItem.item_text !== newItem.item_text ||
+           oldItem.is_required !== newItem.is_required
+  }).length
+
+  if (addedChecklists > 0) changes.push(`+${addedChecklists} checklist item${addedChecklists > 1 ? 's' : ''}`)
+  if (removedChecklists > 0) changes.push(`-${removedChecklists} checklist item${removedChecklists > 1 ? 's' : ''}`)
+  if (modifiedChecklists > 0) changes.push(`${modifiedChecklists} checklist item${modifiedChecklists > 1 ? 's' : ''} updated`)
+
+  // Compare automation rules
+  const oldRules = previousVersion.automation_rules || []
+  const newRules = currentVersion.automation_rules || []
+  if (oldRules.length !== newRules.length || JSON.stringify(oldRules) !== JSON.stringify(newRules)) {
+    const diff = newRules.length - oldRules.length
+    if (diff > 0) changes.push(`+${diff} automation rule${diff > 1 ? 's' : ''}`)
+    else if (diff < 0) changes.push(`${diff} automation rule${Math.abs(diff) > 1 ? 's' : ''}`)
+    else changes.push('automation rules updated')
+  }
+
+  // Compare universe rules
+  const oldUniverse = (previousVersion as any).universe_rules || []
+  const newUniverse = (currentVersion as any).universe_rules || []
+  if (oldUniverse.length !== newUniverse.length || JSON.stringify(oldUniverse) !== JSON.stringify(newUniverse)) {
+    const diff = newUniverse.length - oldUniverse.length
+    if (diff > 0) changes.push(`+${diff} universe rule${diff > 1 ? 's' : ''}`)
+    else if (diff < 0) changes.push(`${diff} universe rule${Math.abs(diff) > 1 ? 's' : ''}`)
+    else changes.push('universe rules updated')
+  }
+
+  // Compare cadence settings
+  const oldCadence = (previousVersion as any).cadence_timeframe
+  const newCadence = (currentVersion as any).cadence_timeframe
+  const oldKickoff = (previousVersion as any).kickoff_cadence
+  const newKickoff = (currentVersion as any).kickoff_cadence
+  if (oldCadence !== newCadence || oldKickoff !== newKickoff) {
+    changes.push('cadence updated')
+  }
+
+  if (changes.length === 0) {
+    // Truly no detected changes - describe current state
+    const stageCount = currentVersion.stages?.length || 0
+    const checklistCount = currentVersion.checklist_templates?.length || 0
+    return `${stageCount} stages, ${checklistCount} checklists`
+  }
+
+  return changes.join(', ')
+}
 
 export type BranchStatus = 'active' | 'inactive' | 'archived' | 'deleted'
 
@@ -159,6 +270,30 @@ export function BranchesView({
   const [compareMode, setCompareMode] = useState(false)
   const [selectedVersions, setSelectedVersions] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
+
+  // Collapsed major version groups - initialize with all collapsed except most recent
+  const [collapsedMajorVersions, setCollapsedMajorVersions] = useState<Set<number>>(() => {
+    const majors = new Set<number>()
+    templateVersions.forEach(v => {
+      if (v.major_version != null) majors.add(v.major_version)
+    })
+    // Find the highest major version
+    const sortedMajors = Array.from(majors).sort((a, b) => b - a)
+    // Collapse all except the first (highest) major version
+    return new Set(sortedMajors.slice(1))
+  })
+
+  const toggleMajorVersionCollapse = (majorVersion: number) => {
+    setCollapsedMajorVersions(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(majorVersion)) {
+        newSet.delete(majorVersion)
+      } else {
+        newSet.add(majorVersion)
+      }
+      return newSet
+    })
+  }
 
   const toggleVersionSelection = (versionId: string) => {
     setSelectedVersions(prev => {
@@ -400,9 +535,19 @@ export function BranchesView({
                       </div>
                     )}
 
-                    {/* Created date */}
-                    <div className="flex items-center gap-3 text-xs text-gray-600">
-                      <span>Created {new Date(branch.created_at).toLocaleDateString()}</span>
+                    {/* Created date and archived/deleted info */}
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="text-gray-600">Created {new Date(branch.created_at).toLocaleDateString()}</span>
+                      {branch.is_archived && branch.archived_at && (
+                        <span className="text-orange-600">
+                          Archived {new Date(branch.archived_at).toLocaleDateString()}
+                        </span>
+                      )}
+                      {branch.is_deleted && branch.deleted_at && (
+                        <span className="text-red-600">
+                          Deleted {new Date(branch.deleted_at).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
 
                     {/* Asset statistics */}
@@ -416,18 +561,6 @@ export function BranchesView({
                           <span className="text-blue-600 font-medium">{branch.completed_assets} completed</span>
                         )}
                       </div>
-                    )}
-
-                    {/* Archived/deleted info */}
-                    {branch.is_archived && branch.archived_at && (
-                      <p className="text-xs text-orange-600">
-                        Archived {new Date(branch.archived_at).toLocaleDateString()}
-                      </p>
-                    )}
-                    {branch.is_deleted && branch.deleted_at && (
-                      <p className="text-xs text-red-600">
-                        Deleted {new Date(branch.deleted_at).toLocaleDateString()}
-                      </p>
                     )}
                   </div>
                 </div>
@@ -530,6 +663,22 @@ export function BranchesView({
     )
   }
 
+  // Find the active/latest template version number
+  const activeTemplateVersion = React.useMemo(() => {
+    // First try to find the explicitly active version from templateVersions
+    const activeVersion = templateVersions.find(v => v.is_active)
+    if (activeVersion) {
+      return activeVersion.major_version && activeVersion.minor_version
+        ? `${activeVersion.major_version}.${activeVersion.minor_version}`
+        : activeVersion.version_number.toString()
+    }
+    // Fall back to the highest version number from branchesByVersion
+    if (branchesByVersion.length > 0) {
+      return branchesByVersion[0][0]
+    }
+    return null
+  }, [templateVersions, branchesByVersion])
+
   // Render template version section
   const renderTemplateVersion = (versionNumber: string, versionBranches: WorkflowBranch[]) => {
     const isCollapsed = collapsedTemplateVersions.has(versionNumber)
@@ -543,10 +692,16 @@ export function BranchesView({
       !b.is_deleted &&
       b.is_active
     ).length
+    // Check if this is the latest active template
+    const isLatestActive = versionNumber === activeTemplateVersion
 
     return (
       <div key={versionNumber} className="mb-3">
-        <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
+        <div className={`rounded-lg p-4 ${
+          isLatestActive
+            ? 'bg-indigo-50 border-2 border-indigo-500 ring-2 ring-indigo-200'
+            : 'bg-indigo-50 border-2 border-indigo-200'
+        }`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 flex-1">
               {/* Collapse button */}
@@ -565,10 +720,10 @@ export function BranchesView({
 
               <Orbit className="w-5 h-5 text-indigo-600" />
               <h3 className="text-base font-semibold text-indigo-900">
-                {workflowName || 'Workflow'}
+                {workflowName || 'Workflow'} v{versionNumber}
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-200 text-indigo-800">
-                Template v{versionNumber}
+              <span className="text-xs text-indigo-600">
+                {branchCount} {branchCount === 1 ? 'branch' : 'branches'}
               </span>
               {activeBranchCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300 flex items-center space-x-1">
@@ -589,9 +744,6 @@ export function BranchesView({
               </button>
             )}
           </div>
-          <p className="text-xs text-indigo-700 mt-2 ml-11">
-            Template version • {branchCount} {branchCount === 1 ? 'branch' : 'branches'}
-          </p>
         </div>
 
         {/* Render branches for this version */}
@@ -704,114 +856,169 @@ export function BranchesView({
                 )}
               </div>
             ) : (
-              <div className="space-y-3">
-                {[...templateVersions]
-                  .sort((a, b) => b.version_number - a.version_number)
-                  .map((version, index) => {
-                    const stageCount = version.stages?.length || 0
-                    const checklistCount = version.checklist_templates?.length || 0
-                    const ruleCount = version.automation_rules?.length || 0
+              <div className="space-y-4">
+                {(() => {
+                  // Group versions by major version
+                  const sortedVersions = [...templateVersions].sort((a, b) => b.version_number - a.version_number)
+                  const groupedByMajor = new Map<number, typeof templateVersions>()
 
-                    // Count active branches for this template version
-                    const versionStr = version.major_version && version.minor_version
-                      ? `${version.major_version}.${version.minor_version}`
-                      : version.version_number.toString()
-                    const activeBranchCount = branches.filter(b =>
-                      !b.is_archived &&
-                      !b.is_deleted &&
-                      b.is_active &&
-                      (b.template_version_number?.toString() === versionStr ||
-                       b.template_version_number?.toString() === version.version_number.toString())
-                    ).length
+                  sortedVersions.forEach(version => {
+                    const majorVersion = version.major_version ?? version.version_number
+                    if (!groupedByMajor.has(majorVersion)) {
+                      groupedByMajor.set(majorVersion, [])
+                    }
+                    groupedByMajor.get(majorVersion)!.push(version)
+                  })
 
-                    const isLatest = index === 0
-                    const isSelected = selectedVersions.includes(version.id)
+                  // Sort major versions descending
+                  const sortedMajorVersions = Array.from(groupedByMajor.keys()).sort((a, b) => b - a)
+                  const latestVersionId = sortedVersions[0]?.id
+
+                  return sortedMajorVersions.map((majorVersion, groupIndex) => {
+                    const versions = groupedByMajor.get(majorVersion)!
+                    const isCollapsed = collapsedMajorVersions.has(majorVersion)
+                    const isLatestGroup = groupIndex === 0
+                    const totalBranchesInGroup = versions.reduce((sum, version) => {
+                      const versionStr = version.major_version && version.minor_version
+                        ? `${version.major_version}.${version.minor_version}`
+                        : version.version_number.toString()
+                      return sum + branches.filter(b =>
+                        !b.is_archived &&
+                        !b.is_deleted &&
+                        b.is_active &&
+                        (b.template_version_number?.toString() === versionStr ||
+                         b.template_version_number?.toString() === version.version_number.toString())
+                      ).length
+                    }, 0)
 
                     return (
-                      <div
-                        key={version.id}
-                        className={`rounded-lg border-2 p-4 ${
-                          compareMode && isSelected
-                            ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-300'
-                            : isLatest
-                              ? 'border-indigo-300 bg-indigo-50'
-                              : 'border-gray-200 bg-white hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start space-x-3 flex-1">
-                            {compareMode && (
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleVersionSelection(version.id)}
-                                className="mt-1.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
+                      <div key={majorVersion} className="border border-gray-200 rounded-lg overflow-hidden">
+                        {/* Major version header */}
+                        <button
+                          onClick={() => toggleMajorVersionCollapse(majorVersion)}
+                          className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                            isLatestGroup
+                              ? 'bg-indigo-50 hover:bg-indigo-100'
+                              : 'bg-gray-50 hover:bg-gray-100'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            {isCollapsed ? (
+                              <ChevronRight className="w-4 h-4 text-gray-500" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-gray-500" />
                             )}
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2 mb-1">
-                                <h3 className="text-base font-semibold text-gray-900">
-                                  {formatVersion(version.version_number, version.major_version, version.minor_version)}
-                                </h3>
-                                {isLatest && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 border border-indigo-300">
-                                    Latest
-                                  </span>
-                                )}
-                                {version.version_type && (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                    version.version_type === 'major'
-                                      ? 'bg-amber-100 text-amber-700 border border-amber-300'
-                                      : 'bg-blue-100 text-blue-700 border border-blue-300'
-                                  }`}>
-                                    {version.version_type === 'major' ? 'Major' : 'Minor'}
-                                  </span>
-                                )}
-                                {activeBranchCount > 0 && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300 flex items-center space-x-1">
-                                    <GitBranch className="w-3 h-3" />
-                                    <span>{activeBranchCount} active {activeBranchCount === 1 ? 'branch' : 'branches'}</span>
-                                  </span>
-                                )}
-                              </div>
-                              {version.description && (
-                                <p className="text-sm text-gray-600 mb-2 whitespace-pre-line">{version.description}</p>
-                              )}
-                              <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                <div className="flex items-center space-x-1">
-                                  <Clock className="w-3 h-3" />
-                                  <span>
-                                    {new Date(version.created_at).toLocaleDateString()} at{' '}
-                                    {new Date(version.created_at).toLocaleTimeString()}
-                                  </span>
-                                </div>
-                                <span>•</span>
-                                <span>{stageCount} stages</span>
-                                <span>•</span>
-                                <span>{checklistCount} checklists</span>
-                                <span>•</span>
-                                <span>{ruleCount} rules</span>
-                              </div>
-                            </div>
+                            <span className={`font-semibold ${isLatestGroup ? 'text-indigo-900' : 'text-gray-900'}`}>
+                              Version {majorVersion}
+                            </span>
+                            <span className="text-sm text-gray-500">
+                              ({versions.length} {versions.length === 1 ? 'release' : 'releases'})
+                            </span>
                           </div>
-                          {!compareMode && (
-                            <div className="flex items-center space-x-2 ml-4">
-                              {onViewVersion && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => onViewVersion(version.id)}
-                                >
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  View
-                                </Button>
-                              )}
-                            </div>
+                          {totalBranchesInGroup > 0 && (
+                            <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300 flex items-center space-x-1">
+                              <GitBranch className="w-3 h-3" />
+                              <span>{totalBranchesInGroup} active</span>
+                            </span>
                           )}
-                        </div>
+                        </button>
+
+                        {/* Versions within this major version */}
+                        {!isCollapsed && (
+                          <div className="divide-y divide-gray-100">
+                            {versions.map((version, versionIndex) => {
+                              const stageCount = version.stages?.length || 0
+                              const checklistCount = version.checklist_templates?.length || 0
+
+                              const versionStr = version.major_version && version.minor_version
+                                ? `${version.major_version}.${version.minor_version}`
+                                : version.version_number.toString()
+                              const activeBranchCount = branches.filter(b =>
+                                !b.is_archived &&
+                                !b.is_deleted &&
+                                b.is_active &&
+                                (b.template_version_number?.toString() === versionStr ||
+                                 b.template_version_number?.toString() === version.version_number.toString())
+                              ).length
+
+                              const isLatest = version.id === latestVersionId
+                              const isSelected = selectedVersions.includes(version.id)
+
+                              // Find previous version for change summary (highest version_number less than current)
+                              const previousVersion = sortedVersions
+                                .filter(v => v.version_number < version.version_number)
+                                .sort((a, b) => b.version_number - a.version_number)[0] || null
+                              const changeSummary = generateChangeSummary(version, previousVersion)
+
+                              return (
+                                <div
+                                  key={version.id}
+                                  className={`p-4 ${
+                                    compareMode && isSelected
+                                      ? 'ring-2 ring-inset ring-blue-500 bg-blue-50'
+                                      : isLatest
+                                        ? 'bg-indigo-50/50'
+                                        : 'bg-white hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex items-start space-x-3 flex-1">
+                                      {compareMode && (
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => toggleVersionSelection(version.id)}
+                                          className="mt-1.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                        />
+                                      )}
+                                      <div className="flex-1">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <div className="flex items-center space-x-3">
+                                            <h3 className="text-base font-semibold text-gray-900">
+                                              {formatVersion(version.version_number, version.major_version, version.minor_version)}
+                                            </h3>
+                                            <span className="text-xs text-gray-400">
+                                              {new Date(version.created_at).toLocaleDateString()}
+                                            </span>
+                                            <span className="text-xs text-gray-400">•</span>
+                                            <span className="text-xs text-gray-400">{stageCount} stages</span>
+                                            <span className="text-xs text-gray-400">•</span>
+                                            <span className="text-xs text-gray-400">{checklistCount} checklists</span>
+                                            {activeBranchCount > 0 && (
+                                              <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300 flex items-center space-x-1">
+                                                <GitBranch className="w-3 h-3" />
+                                                <span>{activeBranchCount} active</span>
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <p className="text-sm text-gray-600">{changeSummary}</p>
+                                      </div>
+                                    </div>
+                                    {!compareMode && (
+                                      <div className="flex items-center space-x-2 ml-4">
+                                        {onViewVersion && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => onViewVersion(version.id)}
+                                          >
+                                            <Eye className="w-3 h-3 mr-1" />
+                                            View
+                                          </Button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     )
-                  })}
+                  })
+                })()}
               </div>
             )}
           </div>

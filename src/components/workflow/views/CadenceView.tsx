@@ -10,14 +10,14 @@
  * Extracted from WorkflowsPage.tsx during Phase 3 refactoring.
  */
 
-import React from 'react'
-import { Calendar, Plus, Clock, Zap, Edit3, Trash2, Power, PowerOff, AlertCircle, GitBranch, Users } from 'lucide-react'
+import React, { useState } from 'react'
+import { Calendar, Plus, Clock, Zap, Edit3, Trash2, Power, PowerOff, AlertCircle, GitBranch, Users, ChevronRight, ChevronDown, XCircle } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 
 export type CadenceTimeframe = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
 
-export type RuleCategory = 'branch_creation' | 'asset_population'
+export type RuleCategory = 'branch_creation' | 'asset_population' | 'branch_ending'
 
 export interface AutomationRule {
   id: string
@@ -64,6 +64,11 @@ export interface CadenceViewProps {
   onAddAssetPopulationRule?: () => void
   onEditAssetPopulationRule?: (rule: AutomationRule) => void
   onDeleteAssetPopulationRule?: (ruleId: string, ruleName: string) => void
+
+  /** Callbacks for branch ending rule operations */
+  onAddBranchEndingRule?: () => void
+  onEditBranchEndingRule?: (rule: AutomationRule) => void
+  onDeleteBranchEndingRule?: (ruleId: string, ruleName: string) => void
 }
 
 export function CadenceView({
@@ -80,14 +85,35 @@ export function CadenceView({
   onToggleRuleActive,
   onAddAssetPopulationRule,
   onEditAssetPopulationRule,
-  onDeleteAssetPopulationRule
+  onDeleteAssetPopulationRule,
+  onAddBranchEndingRule,
+  onEditBranchEndingRule,
+  onDeleteBranchEndingRule
 }: CadenceViewProps) {
+  // State for collapsed sections
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['branch_creation', 'asset_population', 'branch_ending']))
+
+  const toggleSectionExpanded = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId)
+      } else {
+        newSet.add(sectionId)
+      }
+      return newSet
+    })
+  }
+
   // Separate rules by category
   const branchCreationRules = automationRules.filter(
     rule => !rule.rule_category || rule.rule_category === 'branch_creation'
   )
   const assetPopulationRules = automationRules.filter(
     rule => rule.rule_category === 'asset_population'
+  )
+  const branchEndingRules = automationRules.filter(
+    rule => rule.rule_category === 'branch_ending'
   )
 
   // Get human-readable cadence label
@@ -285,121 +311,79 @@ export function CadenceView({
   ) => (
     <div
       key={rule.id}
-      className={`border rounded-lg p-4 ${
+      className={`border rounded-lg p-3 ${
         rule.is_active ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200 opacity-60'
       }`}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex-1">
-          <div className="flex items-center space-x-2 mb-1">
-            <h5 className="text-sm font-medium text-gray-900">{rule.rule_name}</h5>
-            {/* Toggle button - available outside of edit mode */}
-            {canEdit && onToggleRuleActive ? (
-              <button
-                onClick={() => onToggleRuleActive(rule.id, !rule.is_active)}
-                className={`px-2 py-0.5 rounded-full text-xs border flex items-center cursor-pointer transition-colors ${
-                  rule.is_active
-                    ? 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200'
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                }`}
-                title={rule.is_active ? 'Click to deactivate' : 'Click to activate'}
-              >
-                {rule.is_active ? (
-                  <>
-                    <Power className="w-3 h-3 mr-1" />
-                    Active
-                  </>
-                ) : (
-                  <>
-                    <PowerOff className="w-3 h-3 mr-1" />
-                    Inactive
-                  </>
-                )}
-              </button>
-            ) : (
-              // Read-only badge for non-admins
-              <span className={`px-2 py-0.5 rounded-full text-xs border flex items-center ${
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2 flex-1 min-w-0">
+          {getTriggerIcon(rule.rule_type)}
+          <h5 className="text-sm font-medium text-gray-900 truncate">{rule.rule_name}</h5>
+          {/* Toggle button */}
+          {canEdit && onToggleRuleActive ? (
+            <button
+              onClick={() => onToggleRuleActive(rule.id, !rule.is_active)}
+              className={`px-2 py-0.5 rounded-full text-xs border flex items-center cursor-pointer transition-colors ${
                 rule.is_active
-                  ? 'bg-green-100 text-green-700 border-green-300'
-                  : 'bg-gray-100 text-gray-700 border-gray-300'
-              }`}>
-                {rule.is_active ? (
-                  <>
-                    <Power className="w-3 h-3 mr-1" />
-                    Active
-                  </>
-                ) : (
-                  <>
-                    <PowerOff className="w-3 h-3 mr-1" />
-                    Inactive
-                  </>
-                )}
-              </span>
-            )}
-          </div>
+                  ? 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200'
+                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+              }`}
+              title={rule.is_active ? 'Click to deactivate' : 'Click to activate'}
+            >
+              {rule.is_active ? <Power className="w-3 h-3" /> : <PowerOff className="w-3 h-3" />}
+            </button>
+          ) : (
+            <span className={`px-2 py-0.5 rounded-full text-xs border flex items-center ${
+              rule.is_active
+                ? 'bg-green-100 text-green-700 border-green-300'
+                : 'bg-gray-100 text-gray-700 border-gray-300'
+            }`}>
+              {rule.is_active ? <Power className="w-3 h-3" /> : <PowerOff className="w-3 h-3" />}
+            </span>
+          )}
         </div>
 
         {canEdit && (
-          <div className="flex items-center space-x-2 ml-3">
+          <div className="flex items-center space-x-1 ml-2">
             {onEdit && (
-              <Button
-                size="sm"
-                variant="ghost"
-                title="Edit Rule"
+              <button
                 onClick={() => onEdit(rule)}
-                className="hover:bg-blue-50"
+                className="p-1 hover:bg-blue-50 rounded transition-colors"
+                title="Edit Rule"
               >
-                <Edit3 className="w-4 h-4 text-gray-600" />
-              </Button>
+                <Edit3 className="w-4 h-4 text-gray-500" />
+              </button>
             )}
             {onDelete && (
-              <Button
-                size="sm"
-                variant="ghost"
-                title="Delete Rule"
+              <button
                 onClick={() => onDelete(rule.id, rule.rule_name)}
-                className="hover:bg-red-50"
+                className="p-1 hover:bg-red-50 rounded transition-colors"
+                title="Delete Rule"
               >
-                <Trash2 className="w-4 h-4 text-red-500" />
-              </Button>
+                <Trash2 className="w-4 h-4 text-red-400" />
+              </button>
             )}
           </div>
         )}
       </div>
 
-      {/* Rule Details */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Trigger/Condition */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="flex items-center space-x-2 mb-1">
-            {getTriggerIcon(rule.rule_type)}
-            <span className="text-xs font-medium text-blue-900">When</span>
-            <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
-              {rule.rule_type === 'time_based' || rule.rule_type === 'time' ? 'Time' :
-               rule.rule_type === 'event' ? 'Event' : 'Activity'}
-            </span>
-          </div>
-          <p className="text-sm text-blue-800 font-medium">
-            {getConditionDescription(rule)}
-          </p>
+      {/* Rule Details - Inline layout */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex items-center space-x-2 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1.5">
+          <span className="font-medium text-blue-700">When:</span>
+          <span className="text-blue-800">{getConditionDescription(rule)}</span>
         </div>
-
-        {/* Action */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-          <div className="flex items-center space-x-2 mb-1">
-            <Zap className="w-4 h-4 text-green-600" />
-            <span className="text-xs font-medium text-green-900">Then</span>
-          </div>
-          <p className="text-sm text-green-800 font-medium">
-            {getActionDescription(rule)}
-          </p>
+        <span className="text-gray-400">→</span>
+        <div className="flex items-center space-x-2 bg-green-50 border border-green-200 rounded-md px-2.5 py-1.5">
+          <span className="font-medium text-green-700">Then:</span>
+          <span className="text-green-800">{getActionDescription(rule)}</span>
         </div>
       </div>
     </div>
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -430,117 +414,220 @@ export function CadenceView({
       </div>
 
       {/* Branch Creation Rules Section */}
-      <Card>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <GitBranch className="w-5 h-5 text-purple-600" />
-              <h4 className="text-sm font-semibold text-gray-900">
-                Branch Creation Rules ({branchCreationRules.length})
-              </h4>
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                When to create new workflow branches
-              </span>
-            </div>
-            {canEdit && onAddRule && (
-              <Button size="sm" onClick={onAddRule}>
-                <Plus className="w-4 h-4 mr-1" />
-                Add Rule
-              </Button>
+      <Card className="overflow-hidden">
+        <button
+          onClick={() => toggleSectionExpanded('branch_creation')}
+          className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="flex items-center space-x-2">
+            {expandedSections.has('branch_creation') ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+            <GitBranch className="w-4 h-4 text-purple-600" />
+            <h4 className="text-sm font-semibold text-gray-900">
+              Branch Creation Rules ({branchCreationRules.length})
+            </h4>
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+              When to create new workflow branches
+            </span>
+          </div>
+          {canEdit && onAddRule && (
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddRule()
+              }}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Rule
+            </Button>
+          )}
+        </button>
+
+        {expandedSections.has('branch_creation') && (
+          <div className="px-3 pb-3 border-t border-gray-100">
+            {/* Loading State */}
+            {isLoadingRules && (
+              <div className="text-center py-6">
+                <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <p className="text-sm text-gray-500 mt-2">Loading automation rules...</p>
+              </div>
+            )}
+
+            {/* Branch Creation Rules List */}
+            {!isLoadingRules && branchCreationRules.length > 0 && (
+              <div className="space-y-2 pt-3">
+                {branchCreationRules.map((rule) => renderRuleCard(rule, onEditRule, onDeleteRule))}
+              </div>
+            )}
+
+            {/* Empty State for Branch Creation */}
+            {!isLoadingRules && branchCreationRules.length === 0 && (
+              <div className="text-center py-4 mt-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <div className="max-w-md mx-auto">
+                  <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <GitBranch className="w-4 h-4 text-purple-500" />
+                  </div>
+                  <h5 className="text-sm font-medium text-gray-900 mb-1">No branch creation rules</h5>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Create rules to automatically generate new workflow branches on a schedule.
+                  </p>
+                  {canEdit && onAddRule && (
+                    <Button size="sm" onClick={onAddRule}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Branch Rule
+                    </Button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
-
-          {/* Loading State */}
-          {isLoadingRules && (
-            <div className="text-center py-8">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="text-sm text-gray-500 mt-2">Loading automation rules...</p>
-            </div>
-          )}
-
-          {/* Branch Creation Rules List */}
-          {!isLoadingRules && branchCreationRules.length > 0 && (
-            <div className="space-y-3">
-              {branchCreationRules.map((rule) => renderRuleCard(rule, onEditRule, onDeleteRule))}
-            </div>
-          )}
-
-          {/* Empty State for Branch Creation */}
-          {!isLoadingRules && branchCreationRules.length === 0 && (
-            <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-              <div className="max-w-md mx-auto">
-                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <GitBranch className="w-5 h-5 text-purple-500" />
-                </div>
-                <h5 className="text-sm font-medium text-gray-900 mb-1">No branch creation rules</h5>
-                <p className="text-xs text-gray-500 mb-3">
-                  Create rules to automatically generate new workflow branches on a schedule (e.g., quarterly, monthly).
-                </p>
-                {canEdit && onAddRule && (
-                  <Button size="sm" onClick={onAddRule}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Branch Rule
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </Card>
 
       {/* Asset Population Rules Section */}
-      <Card>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <Users className="w-5 h-5 text-orange-600" />
-              <h4 className="text-sm font-semibold text-gray-900">
-                Asset Population Rules ({assetPopulationRules.length})
-              </h4>
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                When to add assets to branches
-              </span>
-            </div>
-            {canEdit && onAddAssetPopulationRule && (
-              <Button size="sm" onClick={onAddAssetPopulationRule}>
-                <Plus className="w-4 h-4 mr-1" />
-                Add Rule
-              </Button>
+      <Card className="overflow-hidden">
+        <button
+          onClick={() => toggleSectionExpanded('asset_population')}
+          className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="flex items-center space-x-2">
+            {expandedSections.has('asset_population') ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+            <Users className="w-4 h-4 text-orange-600" />
+            <h4 className="text-sm font-semibold text-gray-900">
+              Asset Population Rules ({assetPopulationRules.length})
+            </h4>
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+              When to add assets to branches
+            </span>
+          </div>
+          {canEdit && onAddAssetPopulationRule && (
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddAssetPopulationRule()
+              }}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Rule
+            </Button>
+          )}
+        </button>
+
+        {expandedSections.has('asset_population') && (
+          <div className="px-3 pb-3 border-t border-gray-100">
+            {/* Asset Population Rules List */}
+            {!isLoadingRules && assetPopulationRules.length > 0 && (
+              <div className="space-y-2 pt-3">
+                {assetPopulationRules.map((rule) => renderRuleCard(
+                  rule,
+                  onEditAssetPopulationRule,
+                  onDeleteAssetPopulationRule
+                ))}
+              </div>
+            )}
+
+            {/* Empty State for Asset Population */}
+            {!isLoadingRules && assetPopulationRules.length === 0 && (
+              <div className="text-center py-4 mt-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <div className="max-w-md mx-auto">
+                  <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <Users className="w-4 h-4 text-orange-500" />
+                  </div>
+                  <h5 className="text-sm font-medium text-gray-900 mb-1">No asset population rules</h5>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Create rules to automatically add assets to branches based on triggers.
+                  </p>
+                  {canEdit && onAddAssetPopulationRule && (
+                    <Button size="sm" onClick={onAddAssetPopulationRule}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Population Rule
+                    </Button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
+        )}
+      </Card>
 
-          {/* Asset Population Rules List */}
-          {!isLoadingRules && assetPopulationRules.length > 0 && (
-            <div className="space-y-3">
-              {assetPopulationRules.map((rule) => renderRuleCard(
-                rule,
-                onEditAssetPopulationRule,
-                onDeleteAssetPopulationRule
-              ))}
-            </div>
+      {/* Branch Ending Rules Section */}
+      <Card className="overflow-hidden">
+        <button
+          onClick={() => toggleSectionExpanded('branch_ending')}
+          className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="flex items-center space-x-2">
+            {expandedSections.has('branch_ending') ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+            <XCircle className="w-4 h-4 text-red-600" />
+            <h4 className="text-sm font-semibold text-gray-900">
+              Branch Ending Rules ({branchEndingRules.length})
+            </h4>
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+              When to archive or close branches
+            </span>
+          </div>
+          {canEdit && onAddBranchEndingRule && (
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddBranchEndingRule()
+              }}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Rule
+            </Button>
           )}
+        </button>
 
-          {/* Empty State for Asset Population */}
-          {!isLoadingRules && assetPopulationRules.length === 0 && (
-            <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-              <div className="max-w-md mx-auto">
-                <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Users className="w-5 h-5 text-orange-500" />
-                </div>
-                <h5 className="text-sm font-medium text-gray-900 mb-1">No asset population rules</h5>
-                <p className="text-xs text-gray-500 mb-3">
-                  Create rules to automatically add assets to branches based on triggers like branch creation, earnings dates, or other events.
-                </p>
-                {canEdit && onAddAssetPopulationRule && (
-                  <Button size="sm" onClick={onAddAssetPopulationRule}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Population Rule
-                  </Button>
-                )}
+        {expandedSections.has('branch_ending') && (
+          <div className="px-3 pb-3 border-t border-gray-100">
+            {/* Branch Ending Rules List */}
+            {!isLoadingRules && branchEndingRules.length > 0 && (
+              <div className="space-y-2 pt-3">
+                {branchEndingRules.map((rule) => renderRuleCard(
+                  rule,
+                  onEditBranchEndingRule,
+                  onDeleteBranchEndingRule
+                ))}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+
+            {/* Empty State for Branch Ending */}
+            {!isLoadingRules && branchEndingRules.length === 0 && (
+              <div className="text-center py-4 mt-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <div className="max-w-md mx-auto">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <XCircle className="w-4 h-4 text-red-500" />
+                  </div>
+                  <h5 className="text-sm font-medium text-gray-900 mb-1">No branch ending rules</h5>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Create rules to automatically archive or close branches.
+                  </p>
+                  {canEdit && onAddBranchEndingRule && (
+                    <Button size="sm" onClick={onAddBranchEndingRule}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Ending Rule
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   )

@@ -15,7 +15,8 @@
  * Note: Modal-specific queries (user search, etc.) remain in their respective modal components
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
 interface UseWorkflowQueriesParams {
@@ -31,6 +32,36 @@ export function useWorkflowQueries({
   selectedBranchId,
   branchStatusFilter = 'all'
 }: UseWorkflowQueriesParams) {
+  const queryClient = useQueryClient()
+
+  // Subscribe to realtime changes for workflow branches
+  useEffect(() => {
+    if (!selectedWorkflowId) return
+
+    // Subscribe to INSERT, UPDATE, DELETE on workflows where parent_workflow_id matches
+    const channel = supabase
+      .channel(`workflow-branches-${selectedWorkflowId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workflows',
+          filter: `parent_workflow_id=eq.${selectedWorkflowId}`
+        },
+        (payload) => {
+          console.log('[Realtime] Branch change detected:', payload.eventType)
+          // Invalidate branches queries to trigger refetch
+          queryClient.invalidateQueries({ queryKey: ['workflow-branches', selectedWorkflowId] })
+          queryClient.invalidateQueries({ queryKey: ['all-workflow-branches', selectedWorkflowId] })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [selectedWorkflowId, queryClient])
 
   // Main workflows query
   const workflowsQuery = useQuery({

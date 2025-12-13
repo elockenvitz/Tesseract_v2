@@ -9,6 +9,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
+import { SetupWizardPage } from './pages/SetupWizardPage'
 import { TesseractLoader } from './components/ui/TesseractLoader'
 
 const queryClient = new QueryClient({
@@ -48,6 +49,13 @@ function AppRoutes() {
         path="/reset-password"
         element={user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />}
       />
+
+      {/* Setup Wizard route - protected but skips onboarding check */}
+      <Route path="/setup" element={
+        <ProtectedRoute skipOnboardingCheck>
+          <SetupWizardPage />
+        </ProtectedRoute>
+      } />
 
       {/* Protected routes */}
       <Route path="/*" element={

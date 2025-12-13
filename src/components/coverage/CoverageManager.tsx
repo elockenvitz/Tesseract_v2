@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, History, Calendar, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle, UserPlus } from 'lucide-react'
+import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, History, Calendar, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle, UserPlus, Building2, FolderOpen, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
@@ -61,10 +61,11 @@ interface CoverageRecord {
 
 export function CoverageManager({ isOpen, onClose, initialView = 'active', mode = 'modal' }: CoverageManagerProps) {
   const [activeView, setActiveView] = useState<'active' | 'history' | 'requests'>(initialView)
-  const [viewMode, setViewMode] = useState<'list' | 'workload' | 'matrix' | 'calendar'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'workload' | 'matrix' | 'calendar' | 'team'>('list')
   const [searchQuery, setSearchQuery] = useState('')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [selectedAnalystId, setSelectedAnalystId] = useState<string | null>(null)
+  const [teamFilter, setTeamFilter] = useState<string | null>(null)
   const [selectedStatCard, setSelectedStatCard] = useState<'analysts' | 'covered' | 'gaps' | 'average' | null>(null)
   const [matrixGroupBy, setMatrixGroupBy] = useState<'sector' | 'analyst' | 'portfolio' | 'role' | 'team'>('sector')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -112,6 +113,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   })
   const [viewHistoryAssetId, setViewHistoryAssetId] = useState<string | null>(null)
   const [showAllChanges, setShowAllChanges] = useState(false)
+  const [comparisonPeriod, setComparisonPeriod] = useState<'7d' | '30d' | '90d' | 'ytd' | 'all' | 'custom'>('30d')
+  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string }>({
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  })
+  const [visibleHistoryCount, setVisibleHistoryCount] = useState(50)
   const [expandedChanges, setExpandedChanges] = useState<Set<string>>(new Set())
   const [showAllTimelinePeriods, setShowAllTimelinePeriods] = useState(false)
   const [selectedHistoryEvent, setSelectedHistoryEvent] = useState<any | null>(null)
@@ -235,49 +242,26 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const [showAnalystDropdown, setShowAnalystDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const adminBadgeRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const hasGlobalCoverageAdmin = user?.coverage_admin || false
+  const [showAdminBadgeDropdown, setShowAdminBadgeDropdown] = useState(false)
 
   // Fetch all coverage records with asset details
   const { data: coverageRecords, isLoading: coverageLoading } = useQuery({
     queryKey: ['all-coverage'],
     queryFn: async () => {
-      console.log('🔍 Fetching all coverage records with assets...')
-      
-      // First, let's check what's in the coverage table
-      const { data: rawCoverage, error: rawError } = await supabase
-        .from('coverage')
-        .select('*')
-        .limit(5)
-      
-      console.log('📋 Raw coverage data:', rawCoverage)
-      console.log('❌ Raw coverage error:', rawError)
-      
-      // Now let's try the join - include role, notes, portfolio info, and team info
       const { data, error } = await supabase
         .from('coverage')
         .select('*, assets(*), portfolios(id, name), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type)')
         .order('updated_at', { ascending: false })
-      
+
       if (error) {
-        console.error('❌ Failed to fetch coverage:', error)
-        console.error('❌ Error details:', JSON.stringify(error, null, 2))
+        console.error('Failed to fetch coverage:', error)
         throw error
       }
-      
-      console.log('✅ Coverage with assets fetched:', data?.length || 0, 'records')
-      console.log('📋 First record structure:', JSON.stringify(data?.[0], null, 2))
-      console.log('📋 Asset data in first record:', data?.[0]?.assets)
-      
-      // Let's also check if there are any assets at all
-      const { data: allAssets } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .limit(5)
-      
-      console.log('📊 Available assets:', allAssets?.length || 0)
-      console.log('📊 Sample assets:', allAssets)
-      
+
       return data as CoverageRecord[]
     },
     enabled: isVisible,
@@ -291,7 +275,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryFn: async () => {
       const { data, error } = await supabase
         .from('assets')
-        .select('id, symbol, company_name, sector')
+        .select('id, symbol, company_name, sector, industry, country, exchange, market_cap')
         .order('symbol', { ascending: true })
 
       if (error) throw error
@@ -351,6 +335,210 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     }
   })
 
+  // Fetch org admin status for current user
+  const { data: isOrgAdmin = false, isLoading: isLoadingOrgAdmin } = useQuery({
+    queryKey: ['org-admin-status', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return false
+      const { data, error } = await supabase
+        .from('organization_memberships')
+        .select('is_org_admin')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single()
+
+      if (error) return false
+      return data?.is_org_admin || false
+    },
+    enabled: !!user?.id
+  })
+
+  // Fetch team memberships to show what teams each analyst belongs to
+  const { data: userTeamMemberships } = useQuery({
+    queryKey: ['user-team-memberships'],
+    queryFn: async () => {
+      // Get org chart node members with their node info (teams are stored in org_chart_nodes)
+      const { data, error } = await supabase
+        .from('org_chart_node_members')
+        .select(`
+          user_id,
+          node:node_id (id, name, node_type),
+          role
+        `)
+
+      if (error) throw error
+
+      // Group by user_id, including all org chart node memberships
+      const byUser = new Map<string, Array<{ id: string; name: string; type: string; role?: string }>>()
+      ;(data || []).forEach((m: any) => {
+        if (m.user_id && m.node) {
+          if (!byUser.has(m.user_id)) {
+            byUser.set(m.user_id, [])
+          }
+          byUser.get(m.user_id)!.push({
+            id: m.node.id,
+            name: m.node.name,
+            type: m.node.node_type,
+            role: m.role
+          })
+        }
+      })
+      return byUser
+    },
+    enabled: isVisible
+  })
+
+  // Fetch all org chart nodes for the team filter dropdown (with parent info for disambiguation)
+  const { data: allOrgChartNodes } = useQuery({
+    queryKey: ['org-chart-nodes-for-filter'],
+    queryFn: async () => {
+      // Fetch ALL nodes to build hierarchy (not just team/portfolio/division)
+      const { data, error } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, node_type, parent_id, is_non_investment')
+        .order('node_type')
+        .order('name')
+
+      if (error) throw error
+
+      // Fetch node links (for portfolios linked to multiple teams)
+      const { data: links, error: linksError } = await supabase
+        .from('org_chart_node_links')
+        .select('node_id, linked_node_id')
+
+      if (linksError) throw linksError
+
+      // Build a map for quick parent lookup
+      const nodeMap = new Map((data || []).map(n => [n.id, n]))
+
+      // Build a map of node_id -> linked team names
+      const nodeLinksMap = new Map<string, string[]>()
+      for (const link of (links || [])) {
+        const linkedNode = nodeMap.get(link.linked_node_id)
+        if (linkedNode) {
+          const existing = nodeLinksMap.get(link.node_id) || []
+          existing.push(linkedNode.name)
+          nodeLinksMap.set(link.node_id, existing)
+        }
+      }
+
+      // Check if a node or any of its ancestors is marked as non-investment
+      const isNonInvestmentNode = (node: any): boolean => {
+        if (node.is_non_investment) return true
+        if (node.parent_id) {
+          const parent = nodeMap.get(node.parent_id)
+          if (parent) return isNonInvestmentNode(parent)
+        }
+        return false
+      }
+
+      // Get display name - for portfolios with links, show all linked teams
+      const getDisplayName = (node: any) => {
+        const linkedTeams = nodeLinksMap.get(node.id)
+        if (linkedTeams && linkedTeams.length > 0) {
+          return `${node.name} (${linkedTeams.join(', ')})`
+        }
+        // Fallback to parent name
+        if (node.parent_id) {
+          const parent = nodeMap.get(node.parent_id)
+          return parent?.name ? `${node.name} (${parent.name})` : node.name
+        }
+        return node.name
+      }
+
+      // Filter to only team/portfolio/division for the dropdown, excluding non-investment nodes
+      const filteredNodes = (data || [])
+        .filter(n => ['team', 'portfolio', 'division'].includes(n.node_type) && !isNonInvestmentNode(n))
+        .map((node: any) => ({
+          ...node,
+          displayName: getDisplayName(node),
+          linkedNodeIds: (links || []).filter(l => l.node_id === node.id).map(l => l.linked_node_id)
+        }))
+
+      return { nodes: filteredNodes, allNodes: data || [], nodeLinks: links || [] }
+    },
+    enabled: isVisible
+  })
+
+  // Helper function to get all descendant node IDs for hierarchical filtering
+  const getDescendantNodeIds = (nodeId: string): Set<string> => {
+    const result = new Set<string>([nodeId])
+    const allNodes = allOrgChartNodes?.allNodes || []
+
+    const findChildren = (parentId: string) => {
+      allNodes.forEach(node => {
+        if (node.parent_id === parentId && !result.has(node.id)) {
+          result.add(node.id)
+          findChildren(node.id) // Recursively find children
+        }
+      })
+    }
+
+    findChildren(nodeId)
+    return result
+  }
+
+  // Helper function to get ancestor node IDs (going UP the tree)
+  const getAncestorNodeIds = (nodeId: string): Set<string> => {
+    const result = new Set<string>([nodeId])
+    const allNodes = allOrgChartNodes?.allNodes || []
+    const nodeMap = new Map(allNodes.map(n => [n.id, n]))
+
+    let currentNode = nodeMap.get(nodeId)
+    while (currentNode?.parent_id) {
+      result.add(currentNode.parent_id)
+      currentNode = nodeMap.get(currentNode.parent_id)
+    }
+
+    return result
+  }
+
+  // Helper function to check if user can manage coverage for a specific node
+  // Returns true if:
+  // 1. User has global coverage_admin AND node doesn't have override
+  // 2. User is coverage admin for this specific node
+  // 3. User is coverage admin for an ancestor node AND no override exists between them
+  const canManageCoverageForNode = (nodeId: string | null | undefined): boolean => {
+    // No node specified - check if user has any coverage admin rights
+    if (!nodeId) {
+      return !!hasAnyCoverageAdminRights || userCoverageAdminNodes.length > 0
+    }
+
+    const hasOverride = overrideNodes.includes(nodeId)
+
+    // Global coverage admin can manage unless node has override
+    if (hasAnyCoverageAdminRights && !hasOverride) {
+      return true
+    }
+
+    // Check if user is explicitly a coverage admin for this node
+    if (userCoverageAdminNodes.includes(nodeId)) {
+      return true
+    }
+
+    // Check if user is coverage admin for any ancestor (cascading)
+    // But stop if we hit an override node
+    const allNodes = allOrgChartNodes?.allNodes || []
+    const nodeMap = new Map(allNodes.map(n => [n.id, n]))
+    let currentNode = nodeMap.get(nodeId)
+
+    while (currentNode?.parent_id) {
+      // If we hit an override node, stop checking ancestors
+      if (overrideNodes.includes(currentNode.id)) {
+        break
+      }
+
+      // Check if user is coverage admin for this ancestor
+      if (userCoverageAdminNodes.includes(currentNode.parent_id)) {
+        return true
+      }
+
+      currentNode = nodeMap.get(currentNode.parent_id)
+    }
+
+    return false
+  }
+
   // Fetch all portfolios for the portfolio assignment feature
   const { data: portfolios } = useQuery({
     queryKey: ['portfolios'],
@@ -365,6 +553,151 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     },
     enabled: isVisible
   })
+
+  // Fetch user's node-level coverage admin memberships (excluding blocked)
+  const { data: userCoverageAdminNodes = [] } = useQuery({
+    queryKey: ['user-coverage-admin-nodes', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+      const { data, error } = await supabase
+        .from('org_chart_node_members')
+        .select('node_id')
+        .eq('user_id', user.id)
+        .eq('is_coverage_admin', true)
+        .or('coverage_admin_blocked.is.null,coverage_admin_blocked.eq.false')
+
+      if (error) throw error
+      return (data || []).map(d => d.node_id)
+    },
+    enabled: !!user?.id && isVisible
+  })
+
+  // Fetch nodes with coverage_admin_override
+  const { data: overrideNodes = [] } = useQuery({
+    queryKey: ['coverage-admin-override-nodes'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_nodes')
+        .select('id')
+        .eq('coverage_admin_override', true)
+
+      if (error) throw error
+      return (data || []).map(d => d.id)
+    },
+    enabled: isVisible
+  })
+
+  // Check if user has any coverage admin capability (global or node-level)
+  const hasAnyCoverageAdminRights = hasGlobalCoverageAdmin || userCoverageAdminNodes.length > 0
+
+  // Get the selected node details to check if it's a portfolio
+  const selectedNode = allOrgChartNodes?.nodes?.find((n: any) => n.id === teamFilter)
+  const isPortfolioSelected = selectedNode?.node_type === 'portfolio'
+
+  // Get the portfolio ID from portfolios table when a portfolio node is selected
+  const selectedPortfolioId = isPortfolioSelected && portfolios
+    ? portfolios.find(p => p.name === selectedNode.name)?.id
+    : null
+
+  // Fetch investable universe assets for the selected portfolio
+  const { data: portfolioUniverseAssets } = useQuery({
+    queryKey: ['portfolio-universe-assets-coverage', selectedPortfolioId],
+    enabled: !!selectedPortfolioId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_universe_assets')
+        .select('asset_id')
+        .eq('portfolio_id', selectedPortfolioId)
+      if (error) throw error
+      return data?.map(ua => ua.asset_id) || []
+    },
+  })
+
+  // Fetch investable universe filters for the selected portfolio
+  const { data: portfolioUniverseFilters } = useQuery({
+    queryKey: ['portfolio-universe-filters-coverage', selectedPortfolioId],
+    enabled: !!selectedPortfolioId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_universe_filters')
+        .select('*')
+        .eq('portfolio_id', selectedPortfolioId)
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Compute assets matching portfolio filters
+  const portfolioFilteredAssetIds = React.useMemo(() => {
+    if (!assets || !portfolioUniverseFilters || portfolioUniverseFilters.length === 0) return []
+
+    return assets.filter(asset => {
+      return portfolioUniverseFilters.every((filter: any) => {
+        const { filter_type, filter_operator, filter_value } = filter
+
+        switch (filter_type) {
+          case 'sector':
+            if (filter_operator === 'include') return asset.sector === filter_value
+            if (filter_operator === 'exclude') return asset.sector !== filter_value
+            return true
+
+          case 'industry':
+            if (filter_operator === 'include') return (asset as any).industry === filter_value
+            if (filter_operator === 'exclude') return (asset as any).industry !== filter_value
+            return true
+
+          case 'country':
+            if (filter_operator === 'include') return (asset as any).country === filter_value
+            if (filter_operator === 'exclude') return (asset as any).country !== filter_value
+            return true
+
+          case 'exchange':
+            if (filter_operator === 'include') return (asset as any).exchange === filter_value
+            if (filter_operator === 'exclude') return (asset as any).exchange !== filter_value
+            return true
+
+          case 'market_cap':
+            const marketCap = (asset as any).market_cap
+            if (!marketCap) return false
+            const marketCapInMillions = Number(marketCap) / 1000000
+
+            if (filter_operator === 'gt') {
+              const threshold = parseFloat(filter_value.replace(/[>M]/g, ''))
+              return marketCapInMillions > threshold
+            }
+            if (filter_operator === 'lt') {
+              const threshold = parseFloat(filter_value.replace(/[<M]/g, ''))
+              return marketCapInMillions < threshold
+            }
+            if (filter_operator === 'between') {
+              const [minStr, maxStr] = filter_value.split('-')
+              const min = parseFloat(minStr.replace('M', ''))
+              const max = parseFloat(maxStr.replace('M', ''))
+              return marketCapInMillions >= min && marketCapInMillions <= max
+            }
+            return true
+
+          default:
+            return true
+        }
+      })
+    }).map(a => a.id)
+  }, [assets, portfolioUniverseFilters])
+
+  // Check if the portfolio has any universe configuration (filters or manual assets)
+  const hasUniverseConfiguration = React.useMemo(() => {
+    const hasFilters = portfolioUniverseFilters && portfolioUniverseFilters.length > 0
+    const hasManualAssets = portfolioUniverseAssets && portfolioUniverseAssets.length > 0
+    return hasFilters || hasManualAssets
+  }, [portfolioUniverseFilters, portfolioUniverseAssets])
+
+  // Combined investable universe asset IDs (manual + filter-matched)
+  const investableUniverseAssetIds = React.useMemo(() => {
+    if (!isPortfolioSelected) return null
+    const manualIds = portfolioUniverseAssets || []
+    const filterIds = portfolioFilteredAssetIds || []
+    return new Set([...manualIds, ...filterIds])
+  }, [isPortfolioSelected, portfolioUniverseAssets, portfolioFilteredAssetIds])
 
   // Fetch all teams (org chart nodes of type 'team') for team-scoped coverage
   const { data: allTeams } = useQuery({
@@ -410,30 +743,55 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   })
 
   // Fetch user's team memberships from org_chart_node_members
+  // Users are typically members of portfolios, so we need to find the team through the hierarchy
   const { data: userTeams } = useQuery({
     queryKey: ['user-team-memberships', user?.id],
     queryFn: async () => {
       if (!user?.id) return []
 
-      // Get the user's team memberships
+      // Get the user's node memberships (they might be in portfolios, teams, etc.)
       const { data: memberships, error: membershipError } = await supabase
         .from('org_chart_node_members')
-        .select('node_id')
+        .select('node_id, is_admin')
         .eq('user_id', user.id)
 
       if (membershipError) throw membershipError
       if (!memberships || memberships.length === 0) return []
 
-      // Get the team details for these memberships
-      const teamIds = memberships.map(m => m.node_id)
-      const { data: teams, error: teamsError } = await supabase
+      // Get the node details for these memberships
+      const nodeIds = memberships.map(m => m.node_id)
+      const { data: nodes, error: nodesError } = await supabase
         .from('org_chart_nodes')
         .select('id, name, node_type, parent_id')
-        .in('id', teamIds)
-        .eq('node_type', 'team')
+        .in('id', nodeIds)
 
-      if (teamsError) throw teamsError
-      return teams || []
+      if (nodesError) throw nodesError
+      if (!nodes || nodes.length === 0) return []
+
+      // Find teams - either directly if user is team member, or through parent hierarchy
+      const teams: Array<{ id: string; name: string; node_type: string; parent_id: string | null; is_admin?: boolean }> = []
+      const membershipMap = new Map(memberships.map(m => [m.node_id, m.is_admin]))
+
+      for (const node of nodes) {
+        if (node.node_type === 'team') {
+          // User is directly a member of a team
+          teams.push({ ...node, is_admin: membershipMap.get(node.id) })
+        } else if (node.node_type === 'portfolio' && node.parent_id) {
+          // User is a member of a portfolio - find the parent team
+          const { data: parentTeam } = await supabase
+            .from('org_chart_nodes')
+            .select('id, name, node_type, parent_id')
+            .eq('id', node.parent_id)
+            .eq('node_type', 'team')
+            .single()
+
+          if (parentTeam && !teams.find(t => t.id === parentTeam.id)) {
+            teams.push({ ...parentTeam, is_admin: membershipMap.get(node.id) })
+          }
+        }
+      }
+
+      return teams
     },
     enabled: isVisible && !!user?.id
   })
@@ -442,7 +800,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const { data: allCoverageEvents, isLoading: historyLoading, isFetching: historyFetching } = useQuery({
     queryKey: ['all-coverage-events'],
     queryFn: async () => {
-      console.log('[Coverage History] Fetching coverage events...')
       const { data, error } = await supabase
         .from('coverage_history')
         .select(`
@@ -453,10 +810,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
         .limit(100)
 
       if (error) {
-        console.error('[Coverage History] Error fetching coverage events:', error)
+        console.error('Error fetching coverage events:', error)
         throw error
       }
-      console.log('[Coverage History] Fetched events:', data?.length || 0, 'records')
       return data || []
     },
     enabled: isVisible && activeView === 'history'
@@ -472,7 +828,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
         .order('created_at', { ascending: false })
 
       // Non-admins can only see their own requests
-      if (!user?.coverage_admin && user?.id) {
+      if (!hasAnyCoverageAdminRights && user?.id) {
         query = query.eq('requested_by', user.id)
       }
 
@@ -485,6 +841,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   })
 
   // Set showAllChanges default based on user role
+  // Non-admins see history expanded by default (they need to track changes they can't make)
+  // Admins see it collapsed (they focus on making edits, can expand if needed)
   useEffect(() => {
     if (user) {
       setShowAllChanges(!user.coverage_admin)
@@ -523,44 +881,56 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     }
   }, [showAssetDropdown, showAnalystDropdown])
 
+  // Close admin badge dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (adminBadgeRef.current && !adminBadgeRef.current.contains(event.target as Node)) {
+        setShowAdminBadgeDropdown(false)
+      }
+    }
+
+    if (showAdminBadgeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAdminBadgeDropdown])
+
+  // Determine if admin badge is ready (both org admin and coverage admin status loaded)
+  // Coverage admin can be global (user.coverage_admin) or node-level (userCoverageAdminNodes)
+  const hasNodeLevelCoverageAdmin = userCoverageAdminNodes.length > 0
+  const isCoverageAdmin = hasGlobalCoverageAdmin || hasNodeLevelCoverageAdmin
+  const isAdminBadgeReady = !isLoadingOrgAdmin
+
   // Update coverage mutation
   const updateCoverageMutation = useMutation({
     mutationFn: async ({ coverageId, userId, analystName }: { coverageId: string; userId: string; analystName: string }) => {
-      console.log('🚀 Mutation started - Updating coverage:', { coverageId, userId, analystName })
-      
-      const updateData = { 
+      const updateData = {
         user_id: userId,
         analyst_name: analystName,
-        updated_at: new Date().toISOString() 
+        updated_at: new Date().toISOString()
       }
-      console.log('📝 Update data:', updateData)
-      
+
       const { data, error } = await supabase
         .from('coverage')
         .update(updateData)
         .eq('id', coverageId)
         .select()
-      
+
       if (error) {
-        console.error('❌ Supabase update failed:', error)
-        console.error('❌ Error details:', JSON.stringify(error, null, 2))
+        console.error('Failed to update coverage:', error)
         throw error
       }
-      
-      console.log('✅ Coverage updated successfully, returned data:', data)
+
       return data
     },
     onSuccess: () => {
-      console.log('🎉 Mutation success - invalidating queries')
       queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
       queryClient.invalidateQueries({ queryKey: ['coverage'] })
       setShowUserDropdown(null)
       setEditingCoverageId(null)
     },
     onError: (error) => {
-      console.error('💥 Mutation onError callback:', error)
-      console.error('💥 Error type:', typeof error)
-      console.error('💥 Error message:', error?.message)
+      console.error('Coverage update error:', error)
     }
   })
 
@@ -690,10 +1060,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     const permission = coverageSettings?.visibility_change_permission || 'anyone'
 
     if (permission === 'anyone') return true
-    if (permission === 'coverage_admin') return !!user?.coverage_admin
+    if (permission === 'coverage_admin') return canManageCoverageForNode(coverage.team_id)
     if (permission === 'team_lead') {
-      // Check if user is coverage admin or team lead for this coverage's team
-      if (user?.coverage_admin) return true
+      // Check if user is coverage admin for this team or team lead
+      if (canManageCoverageForNode(coverage.team_id)) return true
       // Check if user is an admin of the team
       const isTeamLead = userTeams?.some(t => t.id === coverage.team_id && t.is_admin)
       return !!isTeamLead
@@ -825,7 +1195,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
         console.error('Rescind error:', error)
         throw error
       }
-      console.log('Rescind success:', data)
       return data
     },
     onSuccess: () => {
@@ -923,7 +1292,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       // Process new coverages
       for (const newCoverage of pendingNewCoverages) {
         const { id, fromCoverageId, ...insertData } = newCoverage
-        console.log('Inserting new coverage:', insertData)
         const { error } = await supabase.from('coverage').insert(insertData)
         if (error) {
           console.error('Error inserting coverage:', error)
@@ -963,7 +1331,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   })
 
   const handleEditCoverage = (coverageId: string) => {
-    console.log('✏️ Starting to edit coverage:', coverageId)
     setEditingCoverageId(coverageId)
     setShowUserDropdown(coverageId)
   }
@@ -1032,11 +1399,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       records = records.filter(coverage => {
         const startDateStr = coverage.start_date.split('T')[0] // YYYY-MM-DD format
         // Only include coverage that has already started (start_date <= today)
-        if (startDateStr > todayStr) {
-          console.log(`Skipping future coverage: ${coverage.analyst_name} for ${coverage.assets?.symbol}, start_date: ${startDateStr}, today: ${todayStr}`)
-          return false // Skip future coverage
-        }
-        return true
+        return startDateStr <= todayStr
       })
 
       // Sort by asset symbol, then by analyst name for consistent display
@@ -1061,18 +1424,125 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       )
     }
 
+    // Apply team filter - show coverage where analyst is a member of the selected node OR any descendant
+    // For portfolios, include all linked teams and their hierarchies
+    if (teamFilter && userTeamMemberships) {
+      let relevantNodeIds: Set<string>
+
+      if (isPortfolioSelected) {
+        // For portfolios: get all linked teams and their descendants
+        const selectedNodeData = allOrgChartNodes?.nodes?.find((n: any) => n.id === teamFilter)
+        const linkedTeamIds = selectedNodeData?.linkedNodeIds || []
+
+        relevantNodeIds = new Set<string>([teamFilter])
+
+        // Include all linked teams and their descendants/ancestors
+        for (const linkedTeamId of linkedTeamIds) {
+          // Add the linked team and all its descendants
+          const descendants = getDescendantNodeIds(linkedTeamId)
+          descendants.forEach(id => relevantNodeIds.add(id))
+          // Add ancestors above the linked team
+          const ancestors = getAncestorNodeIds(linkedTeamId)
+          ancestors.forEach(id => relevantNodeIds.add(id))
+        }
+
+        // If no links, fallback to parent team
+        if (linkedTeamIds.length === 0) {
+          const allNodes = allOrgChartNodes?.allNodes || []
+          const nodeData = allNodes.find(n => n.id === teamFilter)
+          if (nodeData?.parent_id) {
+            const descendants = getDescendantNodeIds(nodeData.parent_id)
+            descendants.forEach(id => relevantNodeIds.add(id))
+            const ancestors = getAncestorNodeIds(nodeData.parent_id)
+            ancestors.forEach(id => relevantNodeIds.add(id))
+          }
+        }
+      } else {
+        // For teams/divisions: get all descendant node IDs for hierarchical filtering
+        // e.g., selecting "Equity" division will include all teams/portfolios under it
+        relevantNodeIds = getDescendantNodeIds(teamFilter)
+      }
+
+      records = records.filter(coverage => {
+        const analystMemberships = userTeamMemberships.get(coverage.user_id) || []
+        return analystMemberships.some(m => relevantNodeIds.has(m.id))
+      })
+    }
+
+    // Apply investable universe filter when a portfolio is selected
+    if (isPortfolioSelected && selectedPortfolioId) {
+      if (hasUniverseConfiguration) {
+        // Portfolio has universe filters/manual assets defined - apply filter
+        if (investableUniverseAssetIds && investableUniverseAssetIds.size > 0) {
+          records = records.filter(coverage => investableUniverseAssetIds.has(coverage.asset_id))
+        } else {
+          // Universe is configured but no assets match - show nothing
+          records = []
+        }
+      }
+      // If no universe configuration, show all assets (don't filter)
+    }
+
     return records
   })()
 
-  // Get all covered asset IDs
+  // Apply team filter to coverage history events
+  const filteredCoverageEvents = (() => {
+    if (!allCoverageEvents) return []
+    if (!teamFilter || !userTeamMemberships) return allCoverageEvents
+
+    const relevantNodeIds = getDescendantNodeIds(teamFilter)
+    return allCoverageEvents.filter(event => {
+      // Check if either old or new analyst is a member of the filtered team hierarchy
+      // Note: fields are old_user_id and new_user_id in coverage_history table
+      const oldAnalystMemberships = event.old_user_id ? userTeamMemberships.get(event.old_user_id) || [] : []
+      const newAnalystMemberships = event.new_user_id ? userTeamMemberships.get(event.new_user_id) || [] : []
+
+      const oldAnalystMatch = oldAnalystMemberships.some(m => relevantNodeIds.has(m.id))
+      const newAnalystMatch = newAnalystMemberships.some(m => relevantNodeIds.has(m.id))
+
+      return oldAnalystMatch || newAnalystMatch
+    })
+  })()
+
+  // Apply team filter to coverage requests
+  const filteredCoverageRequests = (() => {
+    if (!coverageRequests) return []
+    if (!teamFilter || !userTeamMemberships) return coverageRequests
+
+    const relevantNodeIds = getDescendantNodeIds(teamFilter)
+    return coverageRequests.filter(request => {
+      // Filter by the user who made the request
+      const requesterMemberships = request.requested_by ? userTeamMemberships.get(request.requested_by) || [] : []
+      return requesterMemberships.some(m => relevantNodeIds.has(m.id))
+    })
+  })()
+
+  // Get all covered asset IDs (within universe if portfolio selected with universe config)
   const coveredAssetIds = new Set(
     (coverageRecords || [])
       .filter(coverage => coverage.is_active)
+      .filter(coverage => {
+        // If a portfolio with universe config is selected, only count coverage within the universe
+        if (hasUniverseConfiguration && investableUniverseAssetIds && investableUniverseAssetIds.size > 0) {
+          return investableUniverseAssetIds.has(coverage.asset_id)
+        }
+        return true
+      })
       .map(coverage => coverage.asset_id)
   )
 
-  // Get all uncovered assets (total count for workload view)
-  const allUncoveredAssets = (assets || []).filter(asset => !coveredAssetIds.has(asset.id))
+  // Get all uncovered assets (respecting investable universe when portfolio selected with config)
+  const allUncoveredAssets = (() => {
+    // When a portfolio with an investable universe config is selected, show uncovered universe assets
+    if (hasUniverseConfiguration && investableUniverseAssetIds && investableUniverseAssetIds.size > 0) {
+      return (assets || []).filter(asset =>
+        investableUniverseAssetIds.has(asset.id) && !coveredAssetIds.has(asset.id)
+      )
+    }
+    // Otherwise show all uncovered assets
+    return (assets || []).filter(asset => !coveredAssetIds.has(asset.id))
+  })()
 
   // Get uncovered assets matching search (for list view display)
   const uncoveredAssets = (() => {
@@ -1084,6 +1554,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
           asset.company_name.toLowerCase().includes(searchQuery.toLowerCase())
         return matchesSearch
       })
+    }
+    // When a portfolio is selected, show all uncovered assets (with or without universe config)
+    if (isPortfolioSelected) {
+      return allUncoveredAssets
     }
     // For workload view, we use allUncoveredAssets.length in the stats card
     return []
@@ -1105,14 +1579,132 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         ? 'Coverage Timeline'
                         : 'Coverage Management'}
                     </h3>
-                    {user?.coverage_admin && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm ring-1 ring-blue-600/20">
-                        <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        ADMIN
-                      </span>
-                    )}
+                    {/* Admin Badge */}
+                    <div className="relative" ref={adminBadgeRef}>
+                      <button
+                        onClick={() => isAdminBadgeReady && setShowAdminBadgeDropdown(!showAdminBadgeDropdown)}
+                        disabled={!isAdminBadgeReady}
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                          !isAdminBadgeReady
+                            ? 'blur-sm opacity-50 bg-gray-100 text-gray-600'
+                            : isOrgAdmin || isCoverageAdmin
+                            ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        <Shield className="w-3 h-3 mr-1" />
+                        {!isAdminBadgeReady
+                          ? 'Permissions'
+                          : isOrgAdmin && hasGlobalCoverageAdmin
+                          ? 'Full Admin'
+                          : isOrgAdmin
+                          ? 'Org Admin'
+                          : hasGlobalCoverageAdmin
+                          ? 'Coverage Admin'
+                          : hasNodeLevelCoverageAdmin
+                          ? 'Coverage Admin (Limited)'
+                          : 'Read Access'}
+                      </button>
+
+                      {/* Dropdown */}
+                      {showAdminBadgeDropdown && (
+                        <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                          <div className="p-3 border-b border-gray-100">
+                            <h3 className="text-sm font-medium text-gray-900">Your Permissions</h3>
+                          </div>
+                          <div className="p-3 space-y-3">
+                            {/* Org Admin Status */}
+                            <div className="flex items-start space-x-3">
+                              <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
+                                isOrgAdmin ? 'bg-green-100' : 'bg-gray-100'
+                              }`}>
+                                {isOrgAdmin ? (
+                                  <Check className="w-3 h-3 text-green-600" />
+                                ) : (
+                                  <X className="w-3 h-3 text-gray-400" />
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">Organization Admin</p>
+                                <p className="text-xs text-gray-500">
+                                  {isOrgAdmin
+                                    ? 'Can manage teams, members, and settings'
+                                    : 'Cannot modify organization structure'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Coverage Admin Status */}
+                            <div className="flex items-start space-x-3">
+                              <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
+                                isCoverageAdmin ? 'bg-green-100' : 'bg-gray-100'
+                              }`}>
+                                {isCoverageAdmin ? (
+                                  <Check className="w-3 h-3 text-green-600" />
+                                ) : (
+                                  <X className="w-3 h-3 text-gray-400" />
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  Coverage Admin
+                                  {hasGlobalCoverageAdmin && hasNodeLevelCoverageAdmin ? '' :
+                                   hasNodeLevelCoverageAdmin ? ' (Limited)' : ''}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {hasGlobalCoverageAdmin
+                                    ? 'Can manage coverage assignments globally'
+                                    : hasNodeLevelCoverageAdmin
+                                    ? `Admin for ${userCoverageAdminNodes.length} node${userCoverageAdminNodes.length > 1 ? 's' : ''}`
+                                    : 'Can only manage own coverage assignments'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Node-level coverage admin details */}
+                            {hasNodeLevelCoverageAdmin && !hasGlobalCoverageAdmin && allOrgChartNodes && (
+                              <div className="pt-2 border-t border-gray-100">
+                                <p className="text-xs font-medium text-gray-500 mb-2">Coverage admin for:</p>
+                                <div className="space-y-1 max-h-24 overflow-y-auto">
+                                  {userCoverageAdminNodes.slice(0, 5).map(nodeId => {
+                                    const node = allOrgChartNodes.allNodes?.find((n: any) => n.id === nodeId)
+                                    return node ? (
+                                      <div key={nodeId} className="flex items-center space-x-2 text-xs">
+                                        <div
+                                          className="w-2 h-2 rounded-full"
+                                          style={{ backgroundColor: node.color }}
+                                        />
+                                        <span className="text-gray-700">{node.name}</span>
+                                      </div>
+                                    ) : null
+                                  })}
+                                  {userCoverageAdminNodes.length > 5 && (
+                                    <p className="text-xs text-gray-400">
+                                      +{userCoverageAdminNodes.length - 5} more
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Read Access (shown when no admin permissions) */}
+                            {!isOrgAdmin && !isCoverageAdmin && (
+                              <div className="flex items-start space-x-3 pt-2 border-t border-gray-100">
+                                <div className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center bg-blue-100">
+                                  <Check className="w-3 h-3 text-blue-600" />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-gray-900">Read Access</p>
+                                  <p className="text-xs text-gray-500">
+                                    Can view coverage information and request changes
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
                     Manage analyst coverage assignments
@@ -1162,11 +1754,21 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     >
                       <Calendar className="h-4 w-4" />
                     </button>
+                    <button
+                      onClick={() => setViewMode('team')}
+                      className={clsx(
+                        "p-2 rounded-md transition-colors",
+                        viewMode === 'team' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
+                      )}
+                      title="Team View"
+                    >
+                      <Building2 className="h-4 w-4" />
+                    </button>
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-3">
-                {!viewHistoryAssetId && user?.coverage_admin && (
+                {!viewHistoryAssetId && hasAnyCoverageAdminRights && (
                   <>
                     <Button
                       size="sm"
@@ -1203,7 +1805,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </Button>
                   </>
                 )}
-                {!viewHistoryAssetId && !user?.coverage_admin && (
+                {!viewHistoryAssetId && !hasAnyCoverageAdminRights && (
                   <Button
                     size="sm"
                     onClick={() => {
@@ -1245,11 +1847,19 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                     <div className="flex items-center gap-4">
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900">{assetCoverageHistory[0]?.assets?.symbol}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold text-gray-900">{assetCoverageHistory[0]?.assets?.symbol}</h4>
+                          {!hasAnyCoverageAdminRights && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                              <Eye className="w-3 h-3 mr-1" />
+                              View Only
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-500">{assetCoverageHistory[0]?.assets?.company_name}</p>
                       </div>
                       {/* Timeline Action Buttons */}
-                      {user?.coverage_admin && (() => {
+                      {hasAnyCoverageAdminRights && (() => {
                         const currentCoverage = assetCoverageHistory.find(c => !c.ended_at || c.ended_at >= getLocalDateString())
                         return currentCoverage ? (
                           <div className="flex items-center gap-1 ml-2 pl-4 border-l border-gray-300">
@@ -1603,7 +2213,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   <div className="flex-1">
                                     {/* Analyst Name */}
                                     <div className="flex items-center gap-2 mb-1.5">
-                                    {editingAnalyst === record.id && user?.coverage_admin ? (
+                                    {editingAnalyst === record.id && hasAnyCoverageAdminRights ? (
                                       <div className="relative" ref={dropdownRef}>
                                         <button
                                           onClick={() => setEditingAnalyst(null)}
@@ -1639,7 +2249,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           })}
                                         </div>
                                       </div>
-                                    ) : user?.coverage_admin ? (
+                                    ) : hasAnyCoverageAdminRights ? (
                                       <button
                                         onClick={() => setEditingAnalyst(record.id)}
                                         className="text-sm font-semibold text-gray-900 hover:text-blue-600 flex items-center gap-1"
@@ -1672,10 +2282,11 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     )}
                                   </div>
 
+
                                   {/* Date Range */}
                                   <div className="text-sm text-gray-600 flex items-center gap-2">
                                     {/* Start Date */}
-                                    {editingDateValue?.coverageId === record.id && editingDateValue?.field === 'start' && user?.coverage_admin ? (
+                                    {editingDateValue?.coverageId === record.id && editingDateValue?.field === 'start' && hasAnyCoverageAdminRights ? (
                                       <input
                                         type="date"
                                         value={editingDateValue.value}
@@ -1752,7 +2363,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                         className="inline-block w-[110px] h-[20px] px-1 py-0 text-sm leading-5 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white align-baseline"
                                         onClick={(e) => e.stopPropagation()}
                                       />
-                                    ) : user?.coverage_admin ? (
+                                    ) : hasAnyCoverageAdminRights ? (
                                       <button
                                         onClick={() => setEditingDateValue({ coverageId: record.id, field: 'start', value: record.start_date.split('T')[0] })}
                                         className="text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
@@ -1776,7 +2387,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     <span>→</span>
 
                                     {/* End Date */}
-                                    {editingDateValue?.coverageId === record.id && editingDateValue?.field === 'end' && user?.coverage_admin ? (
+                                    {editingDateValue?.coverageId === record.id && editingDateValue?.field === 'end' && hasAnyCoverageAdminRights ? (
                                       <input
                                         type="date"
                                         value={editingDateValue.value !== null
@@ -1858,7 +2469,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                         className="inline-block w-[110px] h-[20px] px-1 py-0 text-sm leading-5 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white align-baseline"
                                         onClick={(e) => e.stopPropagation()}
                                       />
-                                    ) : user?.coverage_admin ? (
+                                    ) : hasAnyCoverageAdminRights ? (
                                       <button
                                         onClick={() => setEditingDateValue({ coverageId: record.id, field: 'end', value: record.end_date ? record.end_date.split('T')[0] : null })}
                                         className="text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
@@ -1886,7 +2497,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     )}
 
                                     {/* No End Date checkbox - only for current period when editing end date and not already unspecified */}
-                                    {user?.coverage_admin && isCurrent && (editingDateValue?.coverageId === record.id && editingDateValue?.field === 'end') && record.end_date && (
+                                    {hasAnyCoverageAdminRights && isCurrent && (editingDateValue?.coverageId === record.id && editingDateValue?.field === 'end') && record.end_date && (
                                       <label className="flex items-center gap-1.5 ml-2 cursor-pointer group">
                                         <input
                                           type="checkbox"
@@ -1912,7 +2523,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 </div>
 
                                 {/* Delete button */}
-                                {user?.coverage_admin && (
+                                {hasAnyCoverageAdminRights && (
                                   <button
                                     onClick={() => {
                                       setPendingTimelineDeletes(prev => new Set([...prev, record.id]))
@@ -2195,7 +2806,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   </div>
 
                   {/* Timeline Footer */}
-                  {user?.coverage_admin ? (
+                  {hasAnyCoverageAdminRights ? (
                     <div className="flex justify-between items-center p-6 border-t border-gray-200 flex-shrink-0">
                       <div className="text-sm text-gray-600">
                         {(Object.keys(pendingTimelineChanges).length > 0 || pendingTimelineDeletes.size > 0 || pendingNewCoverages.length > 0) && (
@@ -2353,18 +2964,57 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             )}
 
             {/* Search and Filter Buttons */}
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by asset symbol, company name, or analyst..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by asset symbol, company name, or analyst..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+
+                {/* Team/Group Filter Dropdown */}
+                <div className="relative">
+                  <select
+                    value={teamFilter || ''}
+                    onChange={(e) => setTeamFilter(e.target.value || null)}
+                    className={clsx(
+                      "pl-3 pr-8 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm appearance-none cursor-pointer min-w-[220px]",
+                      teamFilter ? "border-primary-500 bg-primary-50 text-primary-700" : "border-gray-300 bg-white text-gray-700"
+                    )}
+                  >
+                    <option value="">All Teams & Portfolios</option>
+                    {/* Group by type */}
+                    {allOrgChartNodes?.nodes && allOrgChartNodes.nodes.filter(n => n.node_type === 'division').length > 0 && (
+                      <optgroup label="Divisions">
+                        {allOrgChartNodes.nodes.filter(n => n.node_type === 'division').map(node => (
+                          <option key={node.id} value={node.id}>{node.displayName}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {allOrgChartNodes?.nodes && allOrgChartNodes.nodes.filter(n => n.node_type === 'team').length > 0 && (
+                      <optgroup label="Teams">
+                        {allOrgChartNodes.nodes.filter(n => n.node_type === 'team').map(node => (
+                          <option key={node.id} value={node.id}>{node.displayName}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {allOrgChartNodes?.nodes && allOrgChartNodes.nodes.filter(n => n.node_type === 'portfolio').length > 0 && (
+                      <optgroup label="Portfolios">
+                        {allOrgChartNodes.nodes.filter(n => n.node_type === 'portfolio').map(node => (
+                          <option key={node.id} value={node.id}>{node.displayName}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                </div>
+
+                <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
                 <button
                   onClick={() => setActiveView('active')}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
@@ -2401,6 +3051,25 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   )}
                 </button>
               </div>
+              </div>
+
+              {/* Investable Universe Indicator - below search bar, only when universe is configured */}
+              {isPortfolioSelected && hasUniverseConfiguration && investableUniverseAssetIds && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-sm w-fit">
+                  <span className="text-indigo-600 font-medium">Universe:</span>
+                  <span className="text-indigo-900">
+                    {investableUniverseAssetIds.size} assets
+                  </span>
+                  <span className="text-indigo-400">•</span>
+                  <span className="text-green-600">
+                    {coveredAssetIds.size} covered
+                  </span>
+                  <span className="text-indigo-400">•</span>
+                  <span className="text-amber-600">
+                    {allUncoveredAssets.length} gaps
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Coverage List - Active View */}
@@ -2432,10 +3101,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
                     <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
                       <div className="col-span-3">Asset</div>
-                      <div className="col-span-2">Analyst</div>
+                      <div className="col-span-3">Analyst</div>
                       <div className="col-span-2">Visibility</div>
                       <div className="col-span-2">Sector</div>
-                      <div className="col-span-3 text-right">Actions</div>
+                      <div className="col-span-2 text-right">Actions</div>
                     </div>
                   </div>
 
@@ -2447,12 +3116,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         <div className="grid grid-cols-12 gap-4 items-center">
                           {/* Asset Info */}
                           <div className="col-span-3">
-                            <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-2">
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-semibold text-gray-900 truncate">
                                   {coverage.assets?.symbol || 'Unknown Symbol'}
                                 </p>
-                                <p className="text-sm text-gray-600 truncate" title={coverage.assets?.company_name || 'Unknown Company'}>
+                                <p className="text-xs text-gray-500 truncate" title={coverage.assets?.company_name || 'Unknown Company'}>
                                   {coverage.assets?.company_name || 'Unknown Company'}
                                 </p>
                               </div>
@@ -2460,18 +3129,21 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           </div>
 
                           {/* Analyst with Role Badge */}
-                          <div className="col-span-2">
-                            <div className="flex items-center gap-2">
+                          <div className="col-span-3">
+                            <div className="flex flex-col gap-0.5">
                               <span className="text-sm text-gray-700 truncate">
                                 {coverage.analyst_name}
                               </span>
-                              {/* Show role badge only when hierarchy is enabled */}
                               {coverageSettings?.enable_hierarchy && coverage.role && (
                                 <span className={clsx(
-                                  'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full',
-                                  'bg-purple-100 text-purple-800'
+                                  'inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded w-fit',
+                                  coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
+                                  coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
+                                  coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
                                 )}>
-                                  <User className="h-3 w-3" />
+                                  {coverage.role === 'primary' && <Star className="h-2.5 w-2.5" />}
+                                  {coverage.role === 'secondary' && <Shield className="h-2.5 w-2.5" />}
+                                  {coverage.role === 'tertiary' && <UserCheck className="h-2.5 w-2.5" />}
                                   {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
                                 </span>
                               )}
@@ -2480,58 +3152,94 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                           {/* Visibility */}
                           <div className="col-span-2">
-                            {editingVisibility?.coverageId === coverage.id ? (
-                              <div className="flex items-center gap-1">
-                                <select
-                                  value={editingVisibility.currentVisibility}
-                                  onChange={(e) => {
-                                    const newVisibility = e.target.value as 'team' | 'division' | 'firm'
-                                    updateVisibilityMutation.mutate({
-                                      coverageId: coverage.id,
-                                      visibility: newVisibility
-                                    })
-                                  }}
-                                  className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                                  autoFocus
-                                  onBlur={() => setEditingVisibility(null)}
-                                >
-                                  <option value="team">Team</option>
-                                  <option value="division">Division</option>
-                                  <option value="firm">Firm</option>
-                                </select>
-                              </div>
-                            ) : (
+                            <div className="relative inline-block">
                               <button
-                                onClick={() => canChangeVisibility(coverage) && setEditingVisibility({
-                                  coverageId: coverage.id,
-                                  currentVisibility: coverage.visibility || 'team'
-                                })}
+                                onClick={() => canChangeVisibility(coverage) && setEditingVisibility(
+                                  editingVisibility?.coverageId === coverage.id
+                                    ? null
+                                    : { coverageId: coverage.id, currentVisibility: coverage.visibility || 'team' }
+                                )}
                                 disabled={!canChangeVisibility(coverage)}
                                 className={clsx(
-                                  'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full transition-colors',
-                                  coverage.visibility === 'firm' && 'bg-green-100 text-green-800',
+                                  'inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full transition-all',
+                                  coverage.visibility === 'firm' && 'bg-purple-100 text-purple-800',
                                   coverage.visibility === 'division' && 'bg-blue-100 text-blue-800',
-                                  (!coverage.visibility || coverage.visibility === 'team') && 'bg-gray-100 text-gray-700',
+                                  (!coverage.visibility || coverage.visibility === 'team') && 'bg-green-100 text-green-700',
                                   canChangeVisibility(coverage) && 'hover:ring-2 hover:ring-primary-300 cursor-pointer',
-                                  !canChangeVisibility(coverage) && 'cursor-default'
+                                  !canChangeVisibility(coverage) && 'cursor-default opacity-75'
                                 )}
                                 title={canChangeVisibility(coverage) ? 'Click to change visibility' : 'You do not have permission to change visibility'}
                               >
-                                <Eye className="h-3 w-3" />
-                                {coverage.visibility === 'firm' ? 'Firm' : coverage.visibility === 'division' ? 'Division' : 'Team'}
+                                {coverage.visibility === 'firm' ? (
+                                  <Building2 className="h-2.5 w-2.5" />
+                                ) : coverage.visibility === 'division' ? (
+                                  <FolderOpen className="h-2.5 w-2.5" />
+                                ) : (
+                                  <Users className="h-2.5 w-2.5" />
+                                )}
+                                {coverage.visibility === 'firm' ? 'Firm' : coverage.visibility === 'division' ? 'Div' : 'Team'}
+                                {canChangeVisibility(coverage) && (
+                                  <ChevronDown className={clsx(
+                                    'h-2.5 w-2.5 transition-transform',
+                                    editingVisibility?.coverageId === coverage.id && 'rotate-180'
+                                  )} />
+                                )}
                               </button>
-                            )}
+
+                              {/* Custom visibility dropdown */}
+                              {editingVisibility?.coverageId === coverage.id && (
+                                <>
+                                  {/* Backdrop to close dropdown */}
+                                  <div
+                                    className="fixed inset-0 z-30"
+                                    onClick={() => setEditingVisibility(null)}
+                                  />
+                                  <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] animate-in fade-in slide-in-from-top-1 duration-150">
+                                    {[
+                                      { value: 'team', label: 'Team Only', desc: 'Only your team can see', icon: Users, color: 'text-green-600 bg-green-50' },
+                                      { value: 'division', label: 'Division', desc: 'Teams in your division', icon: FolderOpen, color: 'text-blue-600 bg-blue-50' },
+                                      { value: 'firm', label: 'Firm-wide', desc: 'Everyone in the org', icon: Building2, color: 'text-purple-600 bg-purple-50' },
+                                    ].map((option) => (
+                                      <button
+                                        key={option.value}
+                                        onClick={() => {
+                                          updateVisibilityMutation.mutate({
+                                            coverageId: coverage.id,
+                                            visibility: option.value as 'team' | 'division' | 'firm'
+                                          })
+                                        }}
+                                        className={clsx(
+                                          'w-full px-3 py-2 text-left hover:bg-gray-50 transition-colors flex items-center gap-3',
+                                          coverage.visibility === option.value && 'bg-gray-50'
+                                        )}
+                                      >
+                                        <div className={clsx('p-1.5 rounded-md', option.color)}>
+                                          <option.icon className="h-3.5 w-3.5" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-gray-900">{option.label}</div>
+                                          <div className="text-xs text-gray-500">{option.desc}</div>
+                                        </div>
+                                        {coverage.visibility === option.value && (
+                                          <Check className="h-4 w-4 text-primary-600 flex-shrink-0" />
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </div>
 
                           {/* Sector */}
                           <div className="col-span-2">
-                            <span className="text-sm text-gray-600 truncate block">
+                            <span className="text-xs text-gray-600 truncate block">
                               {coverage.assets?.sector || '—'}
                             </span>
                           </div>
 
                           {/* Actions */}
-                          <div className="col-span-3">
+                          <div className="col-span-2">
                             <div className="flex items-center gap-2 justify-end">
                               <button
                                 onClick={() => setViewHistoryAssetId(coverage.assets?.id || null)}
@@ -2540,7 +3248,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               >
                                 <History className="h-4 w-4" />
                               </button>
-                              {!user?.coverage_admin && (
+                              {!hasAnyCoverageAdminRights && (
                                 <button
                                   onClick={() => setRequestingChange({
                                     assetId: coverage.asset_id,
@@ -2584,12 +3292,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             <div className="grid grid-cols-12 gap-4 items-center">
                               {/* Asset Info */}
                               <div className="col-span-3">
-                                <div className="flex items-center space-x-3">
+                                <div className="flex items-center space-x-2">
                                   <div className="min-w-0 flex-1">
                                     <p className="text-sm font-semibold text-gray-900 truncate">
                                       {asset.symbol}
                                     </p>
-                                    <p className="text-sm text-gray-600 truncate" title={asset.company_name}>
+                                    <p className="text-xs text-gray-500 truncate" title={asset.company_name}>
                                       {asset.company_name}
                                     </p>
                                   </div>
@@ -2597,8 +3305,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               </div>
 
                               {/* No Analyst */}
-                              <div className="col-span-2">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                              <div className="col-span-3">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                   No Coverage
                                 </span>
                               </div>
@@ -2610,15 +3318,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                               {/* Sector */}
                               <div className="col-span-2">
-                                <span className="text-sm text-gray-600 truncate block">
+                                <span className="text-xs text-gray-600 truncate block">
                                   {asset.sector || '—'}
                                 </span>
                               </div>
 
                               {/* Actions */}
-                              <div className="col-span-3">
+                              <div className="col-span-2">
                                 <div className="flex items-center gap-2 justify-end">
-                                  {user?.coverage_admin ? (
+                                  {hasAnyCoverageAdminRights ? (
                                     <button
                                       onClick={() => {
                                         setAddingCoverage({
@@ -2706,7 +3414,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   <span className="font-medium text-gray-900">{asset.symbol}</span>
                                   <span className="text-gray-500 ml-2 text-sm">{asset.company_name}</span>
                                 </div>
-                                {user?.coverage_admin ? (
+                                {hasAnyCoverageAdminRights ? (
                                   <button
                                     onClick={() => {
                                       setAddingCoverage({
@@ -3045,74 +3753,228 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     {/* Detail Panel - Shows based on selection */}
                     {selectedAnalystId ? (
                       <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                          <h3 className="text-sm font-semibold text-gray-900">
-                            Coverage Details: {filteredCoverage.find(c => c.user_id === selectedAnalystId)?.analyst_name || 'Selected Analyst'}
-                          </h3>
-                        </div>
-                        <div className="flex-1 overflow-auto">
-                          <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                              <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                                {coverageSettings?.enable_hierarchy && (
-                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                )}
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Since</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {filteredCoverage
-                                .filter(c => c.user_id === selectedAnalystId)
-                                .sort((a, b) => {
-                                  // Sort by role priority first, then by symbol
-                                  const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
-                                  const aOrder = a.role ? (roleOrder[a.role] ?? 3) : 4
-                                  const bOrder = b.role ? (roleOrder[b.role] ?? 3) : 4
-                                  if (aOrder !== bOrder) return aOrder - bOrder
-                                  return (a.assets?.symbol || '').localeCompare(b.assets?.symbol || '')
-                                })
-                                .map(coverage => (
-                                  <tr key={coverage.id} className="hover:bg-gray-50">
-                                    <td className="px-4 py-2.5">
-                                      <span className="font-medium text-gray-900">{coverage.assets?.symbol}</span>
-                                    </td>
-                                    <td className="px-4 py-2.5">
-                                      <span className="text-sm text-gray-600 truncate max-w-[150px] block">{coverage.assets?.company_name}</span>
-                                    </td>
-                                    {/* Role column - only show when hierarchy is enabled */}
-                                    {coverageSettings?.enable_hierarchy && (
-                                      <td className="px-4 py-2.5">
-                                        {coverage.role ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-                                            <User className="h-3 w-3" />
-                                            {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                          </span>
-                                        ) : (
-                                          <span className="text-xs text-gray-400">—</span>
-                                        )}
-                                      </td>
-                                    )}
-                                    <td className="px-4 py-2.5">
-                                      <span className="text-sm text-gray-500">{coverage.assets?.sector || '—'}</span>
-                                    </td>
-                                    <td className="px-4 py-2.5">
-                                      <span className="text-sm text-gray-500">
-                                        {coverage.start_date ? new Date(coverage.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                        {(() => {
+                          const analystCoverage = filteredCoverage.filter(c => c.user_id === selectedAnalystId)
+                          const analystName = analystCoverage[0]?.analyst_name || 'Selected Analyst'
+
+                          // Calculate breakdown stats
+                          const sectorBreakdown = new Map<string, number>()
+                          const portfolioBreakdown = new Map<string, { name: string; count: number }>()
+                          const teamBreakdown = new Map<string, { name: string; count: number }>()
+                          let primaryCount = 0, secondaryCount = 0, tertiaryCount = 0
+
+                          analystCoverage.forEach(c => {
+                            // Sector
+                            const sector = c.assets?.sector || 'Uncategorized'
+                            sectorBreakdown.set(sector, (sectorBreakdown.get(sector) || 0) + 1)
+
+                            // Portfolio
+                            if (c.portfolio_id && c.portfolios) {
+                              const existing = portfolioBreakdown.get(c.portfolio_id)
+                              if (existing) existing.count++
+                              else portfolioBreakdown.set(c.portfolio_id, { name: c.portfolios.name, count: 1 })
+                            }
+
+                            // Team
+                            if (c.team_id && c.teams) {
+                              const existing = teamBreakdown.get(c.team_id)
+                              if (existing) existing.count++
+                              else teamBreakdown.set(c.team_id, { name: c.teams.name, count: 1 })
+                            }
+
+                            // Roles
+                            if (c.role === 'primary') primaryCount++
+                            else if (c.role === 'secondary') secondaryCount++
+                            else if (c.role === 'tertiary') tertiaryCount++
+                          })
+
+                          const sortedSectors = Array.from(sectorBreakdown.entries()).sort((a, b) => b[1] - a[1])
+                          const maxSectorCount = sortedSectors.length > 0 ? sortedSectors[0][1] : 1
+                          const sortedPortfolios = Array.from(portfolioBreakdown.entries()).sort((a, b) => b[1].count - a[1].count)
+                          const sortedTeams = Array.from(teamBreakdown.entries()).sort((a, b) => b[1].count - a[1].count)
+
+                          return (
+                            <>
+                              {/* Header with analyst info and key metrics */}
+                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-primary-50 to-white">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                                      <span className="text-sm font-bold text-primary-700">
+                                        {analystName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                                       </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                          {filteredCoverage.filter(c => c.user_id === selectedAnalystId).length === 0 && (
-                            <div className="p-8 text-center text-gray-500 text-sm">
-                              No coverage records found
-                            </div>
-                          )}
-                        </div>
+                                    </div>
+                                    <div>
+                                      <h3 className="text-sm font-semibold text-gray-900">{analystName}</h3>
+                                      <p className="text-xs text-gray-500">{analystCoverage.length} assets covered</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {primaryCount > 0 && (
+                                      <span className="flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full">
+                                        <Star className="h-3 w-3" /> {primaryCount} Primary
+                                      </span>
+                                    )}
+                                    {secondaryCount > 0 && (
+                                      <span className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                                        <Shield className="h-3 w-3" /> {secondaryCount} Secondary
+                                      </span>
+                                    )}
+                                    {tertiaryCount > 0 && (
+                                      <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">
+                                        <UserCheck className="h-3 w-3" /> {tertiaryCount} Tertiary
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Distribution Breakdowns */}
+                              <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0 bg-gray-50/50">
+                                <div className="grid grid-cols-3 gap-4">
+                                  {/* Sector Distribution */}
+                                  <div>
+                                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                                      <BarChart3 className="h-3 w-3" /> Sector Distribution
+                                    </h4>
+                                    <div className="space-y-1.5 max-h-24 overflow-y-auto">
+                                      {sortedSectors.slice(0, 5).map(([sector, count]) => (
+                                        <div key={sector} className="flex items-center gap-2">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-0.5">
+                                              <span className="text-[10px] text-gray-600 truncate">{sector}</span>
+                                              <span className="text-[10px] font-medium text-gray-900">{count}</span>
+                                            </div>
+                                            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                              <div
+                                                className="h-full bg-primary-500 rounded-full"
+                                                style={{ width: `${(count / maxSectorCount) * 100}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                      {sortedSectors.length > 5 && (
+                                        <span className="text-[10px] text-gray-400">+{sortedSectors.length - 5} more</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Portfolio Distribution */}
+                                  <div>
+                                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                                      <FolderOpen className="h-3 w-3" /> By Portfolio
+                                    </h4>
+                                    {sortedPortfolios.length > 0 ? (
+                                      <div className="space-y-1 max-h-24 overflow-y-auto">
+                                        {sortedPortfolios.map(([id, { name, count }]) => (
+                                          <div key={id} className="flex items-center justify-between px-2 py-1 bg-white rounded border border-gray-100">
+                                            <span className="text-[10px] text-gray-600 truncate">{name}</span>
+                                            <span className="text-[10px] font-semibold text-primary-600">{count}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[10px] text-gray-400 italic">No portfolio assignments</p>
+                                    )}
+                                  </div>
+
+                                  {/* Team Distribution */}
+                                  <div>
+                                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                                      <Building2 className="h-3 w-3" /> By Team
+                                    </h4>
+                                    {sortedTeams.length > 0 ? (
+                                      <div className="space-y-1 max-h-24 overflow-y-auto">
+                                        {sortedTeams.map(([id, { name, count }]) => (
+                                          <div key={id} className="flex items-center justify-between px-2 py-1 bg-white rounded border border-gray-100">
+                                            <span className="text-[10px] text-gray-600 truncate">{name}</span>
+                                            <span className="text-[10px] font-semibold text-green-600">{count}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[10px] text-gray-400 italic">No team assignments</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Assets Table */}
+                              <div className="flex-1 overflow-auto">
+                                <table className="w-full">
+                                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                                    <tr>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                                      {coverageSettings?.enable_hierarchy && (
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                                      )}
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Since</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {analystCoverage
+                                      .sort((a, b) => {
+                                        const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
+                                        const aOrder = a.role ? (roleOrder[a.role] ?? 3) : 4
+                                        const bOrder = b.role ? (roleOrder[b.role] ?? 3) : 4
+                                        if (aOrder !== bOrder) return aOrder - bOrder
+                                        return (a.assets?.symbol || '').localeCompare(b.assets?.symbol || '')
+                                      })
+                                      .map(coverage => (
+                                        <tr key={coverage.id} className="hover:bg-gray-50">
+                                          <td className="px-4 py-2.5">
+                                            <span className="font-medium text-gray-900">{coverage.assets?.symbol}</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="text-sm text-gray-600 truncate max-w-[120px] block">{coverage.assets?.company_name}</span>
+                                          </td>
+                                          {coverageSettings?.enable_hierarchy && (
+                                            <td className="px-4 py-2.5">
+                                              {coverage.role ? (
+                                                <span className={clsx(
+                                                  "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full",
+                                                  coverage.role === 'primary' && "bg-yellow-100 text-yellow-800",
+                                                  coverage.role === 'secondary' && "bg-blue-100 text-blue-800",
+                                                  coverage.role === 'tertiary' && "bg-gray-100 text-gray-700"
+                                                )}>
+                                                  {coverage.role === 'primary' && <Star className="h-3 w-3" />}
+                                                  {coverage.role === 'secondary' && <Shield className="h-3 w-3" />}
+                                                  {coverage.role === 'tertiary' && <UserCheck className="h-3 w-3" />}
+                                                  {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
+                                                </span>
+                                              ) : (
+                                                <span className="text-xs text-gray-400">—</span>
+                                              )}
+                                            </td>
+                                          )}
+                                          <td className="px-4 py-2.5">
+                                            <span className="text-sm text-gray-500">{coverage.assets?.sector || '—'}</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="text-sm text-gray-500">{coverage.portfolios?.name || '—'}</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="text-sm text-gray-500">
+                                              {coverage.start_date ? new Date(coverage.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                  </tbody>
+                                </table>
+                                {analystCoverage.length === 0 && (
+                                  <div className="p-8 text-center text-gray-500 text-sm">
+                                    No coverage records found
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )
+                        })()}
                       </Card>
                     ) : selectedStatCard === 'analysts' ? (
                       /* Analysts Detail Panel */
@@ -3223,59 +4085,159 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         </div>
                       </Card>
                     ) : selectedStatCard === 'gaps' ? (
-                      /* Coverage Gaps Detail Panel */
+                      /* Coverage Gaps Detail Panel - Enhanced with Sector/Team Breakdown */
                       <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4 text-amber-600" />
-                            <h3 className="text-sm font-semibold text-gray-900">Coverage Gaps ({allUncoveredAssets.length})</h3>
-                          </div>
-                        </div>
-                        <div className="p-3 flex-1 overflow-y-auto">
-                          {allUncoveredAssets.length > 0 ? (
-                            <div className="grid gap-2">
-                              {allUncoveredAssets.map(asset => (
-                                <div key={asset.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
-                                  <div>
-                                    <p className="font-medium text-gray-900">{asset.symbol}</p>
-                                    <p className="text-xs text-gray-500">{asset.company_name}</p>
-                                  </div>
+                        {(() => {
+                          // Group uncovered assets by sector
+                          const sectorGaps = new Map<string, typeof allUncoveredAssets>()
+                          allUncoveredAssets.forEach(asset => {
+                            const sector = asset.sector || 'Uncategorized'
+                            if (!sectorGaps.has(sector)) sectorGaps.set(sector, [])
+                            sectorGaps.get(sector)!.push(asset)
+                          })
+
+                          // Find which teams typically cover each sector (based on existing coverage)
+                          const sectorTeams = new Map<string, Map<string, { name: string; count: number }>>()
+                          filteredCoverage.forEach(c => {
+                            if (c.assets?.sector && c.team_id && c.teams) {
+                              const sector = c.assets.sector
+                              if (!sectorTeams.has(sector)) sectorTeams.set(sector, new Map())
+                              const teams = sectorTeams.get(sector)!
+                              const existing = teams.get(c.team_id)
+                              if (existing) existing.count++
+                              else teams.set(c.team_id, { name: c.teams.name, count: 1 })
+                            }
+                          })
+
+                          const sortedSectors = Array.from(sectorGaps.entries())
+                            .sort((a, b) => b[1].length - a[1].length)
+
+                          return (
+                            <>
+                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+                                <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-500">{asset.sector || '—'}</span>
-                                    {user?.coverage_admin && (
-                                      <button
-                                        onClick={() => {
-                                          setAddingCoverage({
-                                            assetId: asset.id,
-                                            analystId: '',
-                                            startDate: getLocalDateString(),
-                                            endDate: '',
-                                            role: '',
-                                            portfolioIds: [],
-                                            notes: '',
-                                            teamId: userTeams?.[0]?.id || null,
-                                            visibility: coverageSettings?.default_visibility || 'team',
-                                            isLead: false
-                                          })
-                                          setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
-                                        }}
-                                        className="px-2 py-1 text-xs font-medium text-primary-600 bg-white border border-primary-300 hover:bg-primary-50 rounded transition-colors"
-                                      >
-                                        Assign
-                                      </button>
-                                    )}
+                                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                                    <h3 className="text-sm font-semibold text-gray-900">Coverage Gaps ({allUncoveredAssets.length})</h3>
                                   </div>
+                                  <span className="text-xs text-gray-500">{sectorGaps.size} sectors affected</span>
                                 </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-12 text-center">
-                              <CheckCircle className="h-12 w-12 text-green-400 mb-3" />
-                              <p className="text-gray-600 font-medium">All assets are covered!</p>
-                              <p className="text-xs text-gray-500">No coverage gaps detected</p>
-                            </div>
-                          )}
-                        </div>
+                              </div>
+
+                              {allUncoveredAssets.length > 0 ? (
+                                <>
+                                  {/* Sector Summary */}
+                                  <div className="px-4 py-3 border-b border-gray-100 bg-amber-50/30 flex-shrink-0">
+                                    <h4 className="text-xs font-semibold text-gray-700 mb-2">Gap Breakdown by Sector</h4>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {sortedSectors.slice(0, 8).map(([sector, assets]) => {
+                                        const teamsForSector = sectorTeams.get(sector)
+                                        const topTeam = teamsForSector ? Array.from(teamsForSector.values()).sort((a, b) => b.count - a.count)[0] : null
+                                        return (
+                                          <div
+                                            key={sector}
+                                            className="px-2.5 py-1.5 bg-white rounded-lg border border-amber-200 shadow-sm"
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs font-medium text-gray-900">{sector}</span>
+                                              <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded">
+                                                {assets.length}
+                                              </span>
+                                            </div>
+                                            {topTeam && (
+                                              <p className="text-[9px] text-gray-500 mt-0.5 flex items-center gap-1">
+                                                <Building2 className="h-2.5 w-2.5" />
+                                                Typically: {topTeam.name}
+                                              </p>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
+                                      {sortedSectors.length > 8 && (
+                                        <span className="px-2 py-1 text-xs text-gray-500">+{sortedSectors.length - 8} more</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Grouped Asset List */}
+                                  <div className="flex-1 overflow-y-auto">
+                                    {sortedSectors.map(([sector, assets]) => {
+                                      const teamsForSector = sectorTeams.get(sector)
+                                      const suggestedTeams = teamsForSector
+                                        ? Array.from(teamsForSector.values()).sort((a, b) => b.count - a.count).slice(0, 2)
+                                        : []
+
+                                      return (
+                                        <div key={sector} className="border-b border-gray-100 last:border-b-0">
+                                          {/* Sector Header */}
+                                          <div className="px-4 py-2 bg-gray-50 flex items-center justify-between sticky top-0">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs font-semibold text-gray-700">{sector}</span>
+                                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                                                {assets.length} gaps
+                                              </span>
+                                            </div>
+                                            {suggestedTeams.length > 0 && (
+                                              <div className="flex items-center gap-1">
+                                                <span className="text-[9px] text-gray-400">Suggested teams:</span>
+                                                {suggestedTeams.map(team => (
+                                                  <span key={team.name} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] bg-primary-50 text-primary-700 rounded">
+                                                    <Building2 className="h-2 w-2" />
+                                                    {team.name}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {/* Assets in this sector */}
+                                          <div className="px-4 py-2 space-y-1.5">
+                                            {assets.map(asset => (
+                                              <div key={asset.id} className="flex items-center justify-between p-2 bg-amber-50/50 rounded border border-amber-100 hover:bg-amber-50 transition-colors">
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-sm font-medium text-gray-900 truncate">{asset.symbol}</p>
+                                                  <p className="text-[10px] text-gray-500 truncate">{asset.company_name}</p>
+                                                </div>
+                                                {hasAnyCoverageAdminRights && (
+                                                  <button
+                                                    onClick={() => {
+                                                      setAddingCoverage({
+                                                        assetId: asset.id,
+                                                        analystId: '',
+                                                        startDate: getLocalDateString(),
+                                                        endDate: '',
+                                                        role: '',
+                                                        portfolioIds: [],
+                                                        notes: '',
+                                                        teamId: userTeams?.[0]?.id || null,
+                                                        visibility: coverageSettings?.default_visibility || 'team',
+                                                        isLead: false
+                                                      })
+                                                      setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
+                                                    }}
+                                                    className="ml-2 px-2 py-1 text-[10px] font-medium text-primary-600 bg-white border border-primary-200 hover:bg-primary-50 rounded transition-colors flex-shrink-0"
+                                                  >
+                                                    Assign
+                                                  </button>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center py-12 text-center flex-1">
+                                  <CheckCircle className="h-12 w-12 text-green-400 mb-3" />
+                                  <p className="text-gray-600 font-medium">All assets are covered!</p>
+                                  <p className="text-xs text-gray-500">No coverage gaps detected</p>
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
                       </Card>
                     ) : selectedStatCard === 'average' ? (
                       /* Average Coverage Analytics Panel */
@@ -3751,15 +4713,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     })
 
                     // Get historical events from coverage history
-                    if (allCoverageEvents) {
+                    if (filteredCoverageEvents) {
                       // First pass: detect transitions by finding created + dates_changed pairs
                       const transitionPairs = new Set<string>()
 
-                      allCoverageEvents.forEach(createdEvent => {
+                      filteredCoverageEvents.forEach(createdEvent => {
                         if (createdEvent.change_type !== 'created' || !createdEvent.assets) return
 
                         // Look for matching end event (dates_changed that sets end_date)
-                        const matchingEnd = allCoverageEvents.find(endEvent =>
+                        const matchingEnd = filteredCoverageEvents.find(endEvent =>
                           endEvent.change_type === 'dates_changed' &&
                           endEvent.asset_id === createdEvent.asset_id &&
                           endEvent.old_analyst_name !== createdEvent.new_analyst_name &&
@@ -3791,7 +4753,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       })
 
                       // Second pass: add other events that aren't part of transitions
-                      allCoverageEvents.forEach(event => {
+                      filteredCoverageEvents.forEach(event => {
                         if (!event.assets || transitionPairs.has(event.id)) return
 
                         const eventDate = new Date(event.changed_at)
@@ -4222,19 +5184,246 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   })()}
                 </div>
               )}
+
+              {/* Team View - Team-centric coverage dashboard */}
+              {viewMode === 'team' && (
+                <div className="space-y-4">
+                  {(() => {
+                    // Group coverage by team
+                    type TeamStats = {
+                      id: string
+                      name: string
+                      analysts: Map<string, { name: string; count: number; primaryCount: number }>
+                      assets: Set<string>
+                      coveredAssets: Set<string>
+                      primaryCount: number
+                      secondaryCount: number
+                      tertiaryCount: number
+                      portfolios: Map<string, { name: string; count: number }>
+                      sectors: Map<string, number>
+                    }
+
+                    const teamStats = new Map<string, TeamStats>()
+                    const noTeamStats: TeamStats = {
+                      id: 'no-team',
+                      name: 'Unassigned',
+                      analysts: new Map(),
+                      assets: new Set(),
+                      coveredAssets: new Set(),
+                      primaryCount: 0,
+                      secondaryCount: 0,
+                      tertiaryCount: 0,
+                      portfolios: new Map(),
+                      sectors: new Map()
+                    }
+
+                    // Process all coverage records
+                    filteredCoverage.forEach(c => {
+                      const teamId = c.team_id || 'no-team'
+                      const teamName = c.teams?.name || 'Unassigned'
+
+                      if (!teamStats.has(teamId) && teamId !== 'no-team') {
+                        teamStats.set(teamId, {
+                          id: teamId,
+                          name: teamName,
+                          analysts: new Map(),
+                          assets: new Set(),
+                          coveredAssets: new Set(),
+                          primaryCount: 0,
+                          secondaryCount: 0,
+                          tertiaryCount: 0,
+                          portfolios: new Map(),
+                          sectors: new Map()
+                        })
+                      }
+
+                      const stats = teamId === 'no-team' ? noTeamStats : teamStats.get(teamId)!
+
+                      // Track analysts
+                      const existingAnalyst = stats.analysts.get(c.user_id)
+                      if (existingAnalyst) {
+                        existingAnalyst.count++
+                        if (c.role === 'primary') existingAnalyst.primaryCount++
+                      } else {
+                        stats.analysts.set(c.user_id, {
+                          name: c.analyst_name,
+                          count: 1,
+                          primaryCount: c.role === 'primary' ? 1 : 0
+                        })
+                      }
+
+                      // Track assets
+                      if (c.asset_id) {
+                        stats.assets.add(c.asset_id)
+                        stats.coveredAssets.add(c.asset_id)
+                      }
+
+                      // Track roles
+                      if (c.role === 'primary') stats.primaryCount++
+                      else if (c.role === 'secondary') stats.secondaryCount++
+                      else if (c.role === 'tertiary') stats.tertiaryCount++
+
+                      // Track portfolios
+                      if (c.portfolio_id && c.portfolios) {
+                        const existingPortfolio = stats.portfolios.get(c.portfolio_id)
+                        if (existingPortfolio) {
+                          existingPortfolio.count++
+                        } else {
+                          stats.portfolios.set(c.portfolio_id, { name: c.portfolios.name, count: 1 })
+                        }
+                      }
+
+                      // Track sectors
+                      if (c.assets?.sector) {
+                        stats.sectors.set(c.assets.sector, (stats.sectors.get(c.assets.sector) || 0) + 1)
+                      }
+                    })
+
+                    // Add no-team stats if it has data
+                    if (noTeamStats.analysts.size > 0) {
+                      teamStats.set('no-team', noTeamStats)
+                    }
+
+                    const sortedTeams = Array.from(teamStats.values()).sort((a, b) => {
+                      if (a.id === 'no-team') return 1
+                      if (b.id === 'no-team') return -1
+                      return b.assets.size - a.assets.size
+                    })
+
+                    return (
+                      <>
+                        {/* Team Summary Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {sortedTeams.map(team => {
+                            const avgCoverage = team.analysts.size > 0 ? team.assets.size / team.analysts.size : 0
+                            const sortedAnalysts = Array.from(team.analysts.values()).sort((a, b) => b.count - a.count)
+                            const topSectors = Array.from(team.sectors.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3)
+
+                            return (
+                              <Card key={team.id} className="overflow-hidden">
+                                {/* Team Header */}
+                                <div className={clsx(
+                                  "px-4 py-3 border-b",
+                                  team.id === 'no-team' ? "bg-gray-100 border-gray-200" : "bg-gradient-to-r from-primary-50 to-white border-primary-100"
+                                )}>
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Building2 className={clsx("h-5 w-5", team.id === 'no-team' ? "text-gray-400" : "text-primary-600")} />
+                                      <h3 className="font-semibold text-gray-900">{team.name}</h3>
+                                    </div>
+                                    <span className="text-xs text-gray-500">{team.analysts.size} analysts</span>
+                                  </div>
+                                </div>
+
+                                {/* Team Stats */}
+                                <div className="p-4 space-y-4">
+                                  {/* Coverage Stats */}
+                                  <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div className="p-2 bg-gray-50 rounded-lg">
+                                      <p className="text-lg font-bold text-gray-900">{team.assets.size}</p>
+                                      <p className="text-[10px] text-gray-500">Assets</p>
+                                    </div>
+                                    <div className="p-2 bg-yellow-50 rounded-lg">
+                                      <p className="text-lg font-bold text-yellow-700">{team.primaryCount}</p>
+                                      <p className="text-[10px] text-gray-500">Primary</p>
+                                    </div>
+                                    <div className="p-2 bg-blue-50 rounded-lg">
+                                      <p className="text-lg font-bold text-blue-700">{team.secondaryCount}</p>
+                                      <p className="text-[10px] text-gray-500">Secondary</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Analyst Workload */}
+                                  <div>
+                                    <h4 className="text-xs font-semibold text-gray-700 mb-2">Analyst Workload</h4>
+                                    <div className="space-y-1.5">
+                                      {sortedAnalysts.slice(0, 4).map(analyst => {
+                                        const loadPercent = avgCoverage > 0 ? Math.min(100, (analyst.count / (avgCoverage * 2)) * 100) : 50
+                                        return (
+                                          <div key={analyst.name} className="flex items-center gap-2">
+                                            <span className="text-[10px] text-gray-600 w-20 truncate">{analyst.name.split(' ')[0]}</span>
+                                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                              <div
+                                                className={clsx(
+                                                  "h-full rounded-full",
+                                                  loadPercent > 75 ? "bg-red-400" : loadPercent > 50 ? "bg-yellow-400" : "bg-green-400"
+                                                )}
+                                                style={{ width: `${loadPercent}%` }}
+                                              />
+                                            </div>
+                                            <span className="text-[10px] font-medium text-gray-700 w-6 text-right">{analyst.count}</span>
+                                          </div>
+                                        )
+                                      })}
+                                      {sortedAnalysts.length > 4 && (
+                                        <p className="text-[10px] text-gray-400">+{sortedAnalysts.length - 4} more</p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Top Sectors */}
+                                  {topSectors.length > 0 && (
+                                    <div>
+                                      <h4 className="text-xs font-semibold text-gray-700 mb-2">Top Sectors</h4>
+                                      <div className="flex flex-wrap gap-1">
+                                        {topSectors.map(([sector, count]) => (
+                                          <span key={sector} className="inline-flex items-center px-2 py-0.5 text-[10px] bg-gray-100 text-gray-700 rounded-full">
+                                            {sector} <span className="ml-1 font-semibold">{count}</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Portfolios */}
+                                  {team.portfolios.size > 0 && (
+                                    <div>
+                                      <h4 className="text-xs font-semibold text-gray-700 mb-2">Portfolios</h4>
+                                      <div className="flex flex-wrap gap-1">
+                                        {Array.from(team.portfolios.values()).slice(0, 3).map(portfolio => (
+                                          <span key={portfolio.name} className="inline-flex items-center px-2 py-0.5 text-[10px] bg-primary-50 text-primary-700 rounded-full">
+                                            <FolderOpen className="h-2.5 w-2.5 mr-1" />
+                                            {portfolio.name}
+                                          </span>
+                                        ))}
+                                        {team.portfolios.size > 3 && (
+                                          <span className="text-[10px] text-gray-400">+{team.portfolios.size - 3} more</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </Card>
+                            )
+                          })}
+                        </div>
+
+                        {/* Empty State */}
+                        {sortedTeams.length === 0 && (
+                          <Card className="p-12 text-center">
+                            <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No team coverage data</h3>
+                            <p className="text-gray-500">Coverage records don't have team assignments yet</p>
+                          </Card>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
               </>
             )}
 
             {/* History View - Coverage Events */}
             {activeView === 'history' && (
-              <Card padding="none" className={`min-h-[500px] relative ${!allCoverageEvents || allCoverageEvents.length === 0 ? 'flex items-center justify-center' : ''}`}>
+              <Card padding="none" className={`min-h-[500px] max-h-[calc(100vh-200px)] flex flex-col overflow-hidden relative ${!filteredCoverageEvents || filteredCoverageEvents.length === 0 ? 'flex items-center justify-center' : ''}`}>
                 {/* Loading overlay with blur */}
                 {(historyFetching) && (
                   <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                   </div>
                 )}
-                {!allCoverageEvents || allCoverageEvents.length === 0 ? (
+                {!filteredCoverageEvents || filteredCoverageEvents.length === 0 ? (
                   <div className="p-12 text-center">
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <History className="h-8 w-8 text-gray-400" />
@@ -4244,8 +5433,189 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   </div>
                 ) : (
                   <>
+                    {/* Period Comparison Summary */}
+                    <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-primary-600" />
+                          Coverage Changes
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Period:</span>
+                          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                            {[
+                              { value: '7d', label: '7d' },
+                              { value: '30d', label: '30d' },
+                              { value: '90d', label: '90d' },
+                              { value: 'ytd', label: 'YTD' },
+                              { value: 'all', label: 'All' },
+                              { value: 'custom', label: 'Custom' }
+                            ].map(period => (
+                              <button
+                                key={period.value}
+                                onClick={() => {
+                                  setComparisonPeriod(period.value as '7d' | '30d' | '90d' | 'ytd' | 'all' | 'custom')
+                                  setVisibleHistoryCount(50) // Reset visible count when changing period
+                                }}
+                                className={clsx(
+                                  "px-2 py-1 text-xs font-medium rounded-md transition-all",
+                                  comparisonPeriod === period.value
+                                    ? "bg-white text-primary-700 shadow-sm"
+                                    : "text-gray-600 hover:text-gray-900"
+                                )}
+                              >
+                                {period.label}
+                              </button>
+                            ))}
+                          </div>
+                          {comparisonPeriod === 'custom' && (
+                            <div className="flex items-center gap-1.5 ml-2">
+                              <input
+                                type="date"
+                                value={customDateRange.start}
+                                onChange={(e) => {
+                                  setCustomDateRange(prev => ({ ...prev, start: e.target.value }))
+                                  setVisibleHistoryCount(50)
+                                }}
+                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                              />
+                              <span className="text-xs text-gray-400">to</span>
+                              <input
+                                type="date"
+                                value={customDateRange.end}
+                                onChange={(e) => {
+                                  setCustomDateRange(prev => ({ ...prev, end: e.target.value }))
+                                  setVisibleHistoryCount(50)
+                                }}
+                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Comparison Stats */}
+                      {(() => {
+                        const now = new Date()
+                        let periodStart: Date | null = null
+                        let periodEnd: Date = now
+                        switch (comparisonPeriod) {
+                          case '7d':
+                            periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+                            break
+                          case '30d':
+                            periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+                            break
+                          case '90d':
+                            periodStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+                            break
+                          case 'ytd':
+                            periodStart = new Date(now.getFullYear(), 0, 1)
+                            break
+                          case 'all':
+                            periodStart = null // No start date filter
+                            break
+                          case 'custom':
+                            periodStart = new Date(customDateRange.start)
+                            periodEnd = new Date(customDateRange.end + 'T23:59:59') // Include full end day
+                            break
+                        }
+
+                        const periodEvents = filteredCoverageEvents.filter(e => {
+                          const eventDate = new Date(e.changed_at)
+                          if (periodStart && eventDate < periodStart) return false
+                          if (comparisonPeriod === 'custom' && eventDate > periodEnd) return false
+                          return true
+                        })
+                        const addedCount = periodEvents.filter(e => e.change_type === 'created' || e.change_type === 'coverage_added').length
+                        const removedCount = periodEvents.filter(e => e.change_type === 'deleted').length
+                        const changedCount = periodEvents.filter(e => e.change_type === 'analyst_changed' || e.change_type === 'dates_changed').length
+                        const netChange = addedCount - removedCount
+
+                        // Get unique analysts affected
+                        const analystsAffected = new Set<string>()
+                        periodEvents.forEach(e => {
+                          if (e.new_analyst_name) analystsAffected.add(e.new_analyst_name)
+                          if (e.old_analyst_name) analystsAffected.add(e.old_analyst_name)
+                        })
+
+                        // Get unique assets affected
+                        const assetsAffected = new Set<string>()
+                        periodEvents.forEach(e => {
+                          if (e.asset_id) assetsAffected.add(e.asset_id)
+                        })
+
+                        return (
+                          <div className="grid grid-cols-5 gap-3">
+                            <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                              <div className="flex items-center gap-2">
+                                <Plus className="h-4 w-4 text-green-600" />
+                                <div>
+                                  <p className="text-lg font-bold text-green-700">{addedCount}</p>
+                                  <p className="text-[10px] text-green-600">Added</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+                              <div className="flex items-center gap-2">
+                                <X className="h-4 w-4 text-red-600" />
+                                <div>
+                                  <p className="text-lg font-bold text-red-700">{removedCount}</p>
+                                  <p className="text-[10px] text-red-600">Removed</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                              <div className="flex items-center gap-2">
+                                <ArrowRightLeft className="h-4 w-4 text-blue-600" />
+                                <div>
+                                  <p className="text-lg font-bold text-blue-700">{changedCount}</p>
+                                  <p className="text-[10px] text-blue-600">Changed</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className={clsx(
+                              "p-3 rounded-lg border",
+                              netChange > 0 ? "bg-emerald-50 border-emerald-100" : netChange < 0 ? "bg-amber-50 border-amber-100" : "bg-gray-50 border-gray-100"
+                            )}>
+                              <div className="flex items-center gap-2">
+                                {netChange > 0 ? (
+                                  <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                ) : netChange < 0 ? (
+                                  <TrendingDown className="h-4 w-4 text-amber-600" />
+                                ) : (
+                                  <ArrowRightLeft className="h-4 w-4 text-gray-500" />
+                                )}
+                                <div>
+                                  <p className={clsx(
+                                    "text-lg font-bold",
+                                    netChange > 0 ? "text-emerald-700" : netChange < 0 ? "text-amber-700" : "text-gray-600"
+                                  )}>
+                                    {netChange > 0 ? '+' : ''}{netChange}
+                                  </p>
+                                  <p className={clsx(
+                                    "text-[10px]",
+                                    netChange > 0 ? "text-emerald-600" : netChange < 0 ? "text-amber-600" : "text-gray-500"
+                                  )}>Net Change</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                              <div className="flex items-center gap-2">
+                                <Users className="h-4 w-4 text-purple-600" />
+                                <div>
+                                  <p className="text-lg font-bold text-purple-700">{assetsAffected.size}</p>
+                                  <p className="text-[10px] text-purple-600">Assets Affected</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+
                     {/* Table Header */}
-                    <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                    <div className="flex-shrink-0 px-6 py-3 bg-gray-50 border-b border-gray-200">
                       <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <div className="col-span-2">Event</div>
                         <div className="col-span-2">Asset</div>
@@ -4255,15 +5625,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Coverage Events - Scrollable */}
-                    <div className="overflow-y-auto divide-y divide-gray-200 max-h-[calc(90vh-330px)]">
+                    <div className="flex-1 overflow-y-auto divide-y divide-gray-200">
                       {(() => {
                         // First, deduplicate events by creating a unique key for each logical event
                         const uniqueEvents = new Map()
 
-                        console.log('[Coverage History] Raw events before dedup:', allCoverageEvents.length)
-                        console.log('[Coverage History] Raw event types:', allCoverageEvents.filter(e => e.change_type === 'dates_changed').length, 'dates_changed')
-
-                        allCoverageEvents.forEach((event) => {
+                        filteredCoverageEvents.forEach((event) => {
                           // Create a unique key based on asset, change type, and the actual data that changed
                           let key = ''
                           if (event.change_type === 'created') {
@@ -4298,19 +5665,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         const transitionMap = new Map()
                         const processedEvents = new Set()
 
-                        console.log('[Coverage History] Detecting transitions from', deduplicatedEvents.length, 'events')
-                        console.log('[Coverage History] Event types:', deduplicatedEvents.map(e => e.change_type))
-                        console.log('[Coverage History] dates_changed events:', deduplicatedEvents.filter(e => e.change_type === 'dates_changed').length)
-
-                        deduplicatedEvents.forEach((createdEvent, idx) => {
+                        deduplicatedEvents.forEach((createdEvent) => {
                           if (createdEvent.change_type === 'created' && !processedEvents.has(createdEvent.id)) {
-                            console.log('[Coverage History] Checking created event:', {
-                              analyst: createdEvent.new_analyst_name,
-                              asset: createdEvent.assets?.symbol,
-                              date: createdEvent.new_start_date,
-                              changed_at: createdEvent.changed_at
-                            })
-
                             // Look for a corresponding dates_changed event around the same time
                             const matchingEndEvent = deduplicatedEvents.find((endEvent) => {
                               if (endEvent.change_type === 'dates_changed' &&
@@ -4324,23 +5680,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   new Date(createdEvent.changed_at).getTime() -
                                   new Date(endEvent.changed_at).getTime()
                                 )
-                                console.log('[Coverage History] Potential match:', {
-                                  old_analyst: endEvent.old_analyst_name,
-                                  new_analyst: createdEvent.new_analyst_name,
-                                  timeDiff,
-                                  matches: timeDiff < 10000
-                                })
                                 return timeDiff < 10000 // Within 10 seconds
                               }
                               return false
                             })
 
                             if (matchingEndEvent) {
-                              console.log('[Coverage History] ✓ Transition detected:', {
-                                from: matchingEndEvent.old_analyst_name,
-                                to: createdEvent.new_analyst_name,
-                                asset: createdEvent.assets?.symbol
-                              })
                               // This is a transition! Create a synthetic analyst_changed event
                               transitionMap.set(createdEvent.id, {
                                 ...createdEvent,
@@ -4352,13 +5697,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               })
                               processedEvents.add(createdEvent.id)
                               processedEvents.add(matchingEndEvent.id)
-                            } else {
-                              console.log('[Coverage History] No matching transition found for', createdEvent.new_analyst_name)
                             }
                           }
                         })
-
-                        console.log('[Coverage History] Transitions detected:', transitionMap.size)
 
                         // Build final events list: use transitions where detected, otherwise use original events
                         const finalEvents = deduplicatedEvents
@@ -4393,165 +5734,164 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             })
                           : finalEvents
 
-                        return filteredEvents
-                      })().map((event) => {
+                        // Apply period filter
+                        const now2 = new Date()
+                        let periodStart2: Date | null = null
+                        let periodEnd2: Date = now2
+                        switch (comparisonPeriod) {
+                          case '7d':
+                            periodStart2 = new Date(now2.getTime() - 7 * 24 * 60 * 60 * 1000)
+                            break
+                          case '30d':
+                            periodStart2 = new Date(now2.getTime() - 30 * 24 * 60 * 60 * 1000)
+                            break
+                          case '90d':
+                            periodStart2 = new Date(now2.getTime() - 90 * 24 * 60 * 60 * 1000)
+                            break
+                          case 'ytd':
+                            periodStart2 = new Date(now2.getFullYear(), 0, 1)
+                            break
+                          case 'all':
+                            periodStart2 = null
+                            break
+                          case 'custom':
+                            periodStart2 = new Date(customDateRange.start)
+                            periodEnd2 = new Date(customDateRange.end + 'T23:59:59')
+                            break
+                        }
+
+                        const periodFilteredEvents = filteredEvents.filter(e => {
+                          const eventDate = new Date(e.changed_at)
+                          if (periodStart2 && eventDate < periodStart2) return false
+                          if (comparisonPeriod === 'custom' && eventDate > periodEnd2) return false
+                          return true
+                        })
+
+                        const totalEventsCount = periodFilteredEvents.length
+                        const visibleEvents = periodFilteredEvents.slice(0, visibleHistoryCount)
+
                         const formatDate = (dateStr: string | null) => {
-                          if (!dateStr) {
-                            console.warn('[Coverage History] N/A date for event:', {
-                              id: event.id,
-                              type: event.change_type,
-                              asset: event.assets?.symbol,
-                              old_start: event.old_start_date,
-                              new_start: event.new_start_date,
-                              old_end: event.old_end_date,
-                              new_end: event.new_end_date
-                            })
-                            return 'N/A'
-                          }
+                          if (!dateStr) return 'N/A'
                           const [year, month, day] = dateStr.split('T')[0].split('-')
                           const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
                           return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                         }
 
-                        let eventType = ''
-                        let details = ''
-                        let badgeColor = 'bg-gray-100 text-gray-700'
-                        let eventDate = ''
-                        let dateToDisplay: string | null = null
-
-                        if (event.change_type === 'created') {
-                          eventType = 'Coverage Started'
-                          details = `${event.new_analyst_name} started covering`
-                          dateToDisplay = event.new_start_date
-                          eventDate = formatDate(event.new_start_date)
-                          badgeColor = 'bg-green-100 text-green-700'
-                        } else if (event.change_type === 'analyst_changed') {
-                          eventType = 'Analyst Changed'
-                          details = `${event.old_analyst_name} → ${event.new_analyst_name}`
-                          dateToDisplay = event.new_start_date
-                          eventDate = formatDate(event.new_start_date)
-                          badgeColor = 'bg-blue-100 text-blue-700'
-                        } else if (event.change_type === 'deleted') {
-                          eventType = 'Coverage Ended'
-                          details = `${event.old_analyst_name} stopped covering`
-                          dateToDisplay = event.old_end_date
-                          eventDate = formatDate(event.old_end_date)
-                          badgeColor = 'bg-red-100 text-red-700'
-                        } else if (event.change_type === 'dates_changed') {
-                          // Handle dates_changed events that weren't part of a transition
-                          // These are standalone date changes that didn't involve an analyst transition
-
-                          // Check what actually changed
-                          const startDateChanged = event.old_start_date !== event.new_start_date
-                          const endDateChanged = event.old_end_date !== event.new_end_date
-                          const activeStatusChanged = event.old_is_active !== event.new_is_active
-
-                          if (!startDateChanged && !endDateChanged) {
-                            // Nothing meaningful changed, skip this event
-                            return null
-                          }
-
-                          // Skip events where only an end date was added (likely part of a transition)
-                          // These should have been caught by the transition detection
-                          if (!startDateChanged && endDateChanged && event.old_end_date === null && event.new_end_date !== null) {
-                            // This is setting an end date, which is usually part of a transition
-                            // If it wasn't caught by transition detection, it's still not worth showing separately
-                            return null
-                          }
-
-                          // Skip events for inactive coverage (historical adjustments)
-                          if (event.old_is_active === false && event.new_is_active === false) {
-                            // Both old and new are inactive, this is just historical cleanup
-                            return null
-                          }
-
-                          eventType = 'Dates Updated'
-
-                          // Build a more descriptive detail message
-                          if (startDateChanged && endDateChanged) {
-                            details = `${event.old_analyst_name}'s coverage dates changed`
-                          } else if (startDateChanged) {
-                            details = `${event.old_analyst_name}'s start date changed`
-                          } else if (endDateChanged) {
-                            details = `${event.old_analyst_name}'s end date changed`
-                          }
-
-                          // Use the new start date as the event date
-                          dateToDisplay = event.new_start_date || event.old_start_date
-                          eventDate = formatDate(dateToDisplay)
-                          badgeColor = 'bg-gray-100 text-gray-700'
-                        } else if (event.change_type === 'coverage_added') {
-                          eventType = 'Coverage Added'
-                          details = `${event.new_analyst_name} added as additional analyst`
-                          dateToDisplay = event.new_start_date
-                          eventDate = formatDate(event.new_start_date)
-                          badgeColor = 'bg-purple-100 text-purple-700'
-                        } else if (event.change_type === 'historical_added') {
-                          eventType = 'Historical Added'
-                          details = `${event.new_analyst_name} (${formatDate(event.new_start_date)} — ${formatDate(event.new_end_date)})`
-                          dateToDisplay = event.new_start_date
-                          eventDate = formatDate(event.new_start_date)
-                          badgeColor = 'bg-gray-100 text-gray-700'
-                        }
-
-                        // Skip events that don't have a displayable date
-                        if (!dateToDisplay) {
-                          console.warn('[Coverage History] Skipping event with no displayable date:', event)
-                          return null
-                        }
-
                         return (
-                          <div
-                            key={event.id}
-                            className="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() => setSelectedHistoryEvent(event)}
-                          >
-                            <div className="grid grid-cols-12 gap-4 items-center">
-                              <div className="col-span-2">
-                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${badgeColor} whitespace-nowrap`}>
-                                  {eventType}
-                                </span>
-                              </div>
-                              <div className="col-span-2">
-                                <div>
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {event.assets?.symbol || 'Unknown'}
-                                  </p>
-                                  <p className="text-xs text-gray-500 truncate" title={event.assets?.company_name}>
-                                    {event.assets?.company_name || '—'}
-                                  </p>
+                          <>
+                            {visibleEvents.map((event) => {
+                              let eventType = ''
+                              let details = ''
+                              let badgeColor = 'bg-gray-100 text-gray-700'
+                              let eventDate = ''
+                              let dateToDisplay: string | null = null
+
+                              if (event.change_type === 'created') {
+                                eventType = 'Coverage Started'
+                                details = `${event.new_analyst_name} started covering`
+                                dateToDisplay = event.new_start_date
+                                eventDate = formatDate(event.new_start_date)
+                                badgeColor = 'bg-green-100 text-green-700'
+                              } else if (event.change_type === 'analyst_changed') {
+                                eventType = 'Analyst Changed'
+                                details = `${event.old_analyst_name} → ${event.new_analyst_name}`
+                                dateToDisplay = event.new_start_date
+                                eventDate = formatDate(event.new_start_date)
+                                badgeColor = 'bg-blue-100 text-blue-700'
+                              } else if (event.change_type === 'deleted') {
+                                eventType = 'Coverage Ended'
+                                details = `${event.old_analyst_name} stopped covering`
+                                dateToDisplay = event.old_end_date
+                                eventDate = formatDate(event.old_end_date)
+                                badgeColor = 'bg-red-100 text-red-700'
+                              } else if (event.change_type === 'dates_changed') {
+                                const startDateChanged = event.old_start_date !== event.new_start_date
+                                const endDateChanged = event.old_end_date !== event.new_end_date
+                                if (!startDateChanged && !endDateChanged) return null
+                                if (!startDateChanged && endDateChanged && event.old_end_date === null && event.new_end_date !== null) return null
+                                if (event.old_is_active === false && event.new_is_active === false) return null
+                                eventType = 'Dates Updated'
+                                if (startDateChanged && endDateChanged) {
+                                  details = `${event.old_analyst_name}'s coverage dates changed`
+                                } else if (startDateChanged) {
+                                  details = `${event.old_analyst_name}'s start date changed`
+                                } else if (endDateChanged) {
+                                  details = `${event.old_analyst_name}'s end date changed`
+                                }
+                                dateToDisplay = event.new_start_date || event.old_start_date
+                                eventDate = formatDate(dateToDisplay)
+                                badgeColor = 'bg-gray-100 text-gray-700'
+                              } else if (event.change_type === 'coverage_added') {
+                                eventType = 'Coverage Added'
+                                details = `${event.new_analyst_name} added as additional analyst`
+                                dateToDisplay = event.new_start_date
+                                eventDate = formatDate(event.new_start_date)
+                                badgeColor = 'bg-purple-100 text-purple-700'
+                              } else if (event.change_type === 'historical_added') {
+                                eventType = 'Historical Added'
+                                details = `${event.new_analyst_name} (${formatDate(event.new_start_date)} — ${formatDate(event.new_end_date)})`
+                                dateToDisplay = event.new_start_date
+                                eventDate = formatDate(event.new_start_date)
+                                badgeColor = 'bg-gray-100 text-gray-700'
+                              }
+
+                              if (!dateToDisplay) return null
+
+                              return (
+                                <div
+                                  key={event.id}
+                                  className="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                                  onClick={() => setSelectedHistoryEvent(event)}
+                                >
+                                  <div className="grid grid-cols-12 gap-4 items-center">
+                                    <div className="col-span-2">
+                                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${badgeColor} whitespace-nowrap`}>
+                                        {eventType}
+                                      </span>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <div>
+                                        <p className="text-sm font-semibold text-gray-900">
+                                          {event.assets?.symbol || 'Unknown'}
+                                        </p>
+                                        <p className="text-xs text-gray-500 truncate" title={event.assets?.company_name}>
+                                          {event.assets?.company_name || '—'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="col-span-5">
+                                      <p className="text-sm text-gray-900 font-medium">{details}</p>
+                                    </div>
+                                    <div className="col-span-3 text-right">
+                                      <p className="text-sm font-medium text-gray-900">{eventDate}</p>
+                                    </div>
+                                  </div>
                                 </div>
+                              )
+                            }).filter(Boolean)}
+
+                            {/* Load More Button */}
+                            {visibleHistoryCount < totalEventsCount && (
+                              <div className="px-6 py-4 text-center border-t border-gray-100">
+                                <button
+                                  onClick={() => setVisibleHistoryCount(prev => prev + 50)}
+                                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+                                >
+                                  Load more ({totalEventsCount - visibleHistoryCount} remaining)
+                                </button>
                               </div>
-                              <div className="col-span-5">
-                                <p className="text-sm text-gray-900 font-medium">{details}</p>
+                            )}
+
+                            {/* No results message */}
+                            {totalEventsCount === 0 && (
+                              <div className="px-6 py-12 text-center">
+                                <p className="text-gray-500">
+                                  {searchQuery ? `No history found for "${searchQuery}"` : 'No coverage changes in this period'}
+                                </p>
                               </div>
-                              <div className="col-span-3 text-right">
-                                <p className="text-sm font-medium text-gray-900">{eventDate}</p>
-                              </div>
-                            </div>
-                          </div>
+                            )}
+                          </>
                         )
-                      }).filter(Boolean)}
-                      {/* No results message when search filters out all events */}
-                      {searchQuery && (() => {
-                        // Check if the filtering resulted in no displayable events
-                        const hasResults = allCoverageEvents.some(event => {
-                          const query = searchQuery.toLowerCase()
-                          return (
-                            event.assets?.symbol?.toLowerCase().includes(query) ||
-                            event.assets?.company_name?.toLowerCase().includes(query) ||
-                            event.new_analyst_name?.toLowerCase().includes(query) ||
-                            event.old_analyst_name?.toLowerCase().includes(query)
-                          )
-                        })
-                        if (!hasResults) {
-                          return (
-                            <div className="px-6 py-12 text-center">
-                              <p className="text-gray-500">No history found for "{searchQuery}"</p>
-                            </div>
-                          )
-                        }
-                        return null
                       })()}
                     </div>
                   </>
@@ -4561,21 +5901,25 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
             {/* Requests View */}
             {activeView === 'requests' && (
-              <Card padding="none" className={`min-h-[500px] relative ${!coverageRequests || coverageRequests.length === 0 ? 'flex items-center justify-center' : ''}`}>
+              <Card padding="none" className={`min-h-[500px] relative ${!filteredCoverageRequests || filteredCoverageRequests.length === 0 ? 'flex items-center justify-center' : ''}`}>
                 {/* Loading overlay with blur */}
                 {(requestsFetching) && (
                   <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                   </div>
                 )}
-                {!coverageRequests || coverageRequests.length === 0 ? (
+                {!filteredCoverageRequests || filteredCoverageRequests.length === 0 ? (
                   <div className="p-12 text-center">
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <Shield className="h-8 w-8 text-gray-400" />
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No coverage requests</h3>
-                    <p className="text-gray-500">
-                      There are no pending or historical coverage change requests.
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      {hasAnyCoverageAdminRights ? 'No coverage requests' : 'No requests from you'}
+                    </h3>
+                    <p className="text-gray-500 max-w-md mx-auto">
+                      {hasAnyCoverageAdminRights
+                        ? 'There are no pending or historical coverage change requests to review.'
+                        : 'You haven\'t submitted any coverage change requests. Use the "Request Change" button in the Active tab to request coverage modifications.'}
                     </p>
                   </div>
                 ) : (
@@ -4594,7 +5938,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Request Rows */}
-                    {coverageRequests.filter((request) => {
+                    {filteredCoverageRequests.filter((request) => {
                       if (!searchQuery) return true
                       const query = searchQuery.toLowerCase()
                       return (
@@ -4679,7 +6023,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           {/* Actions */}
                           <div className="col-span-2">
                             {request.status === 'pending' ? (
-                              user?.coverage_admin ? (
+                              hasAnyCoverageAdminRights ? (
                                 <div className="flex items-center gap-2">
                                   <Button
                                     size="sm"
@@ -4754,7 +6098,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       </div>
                     ))}
                     {/* No results message when search filters out all requests */}
-                    {searchQuery && !coverageRequests.some((request) => {
+                    {searchQuery && !filteredCoverageRequests.some((request) => {
                       const query = searchQuery.toLowerCase()
                       return (
                         request.assets?.symbol?.toLowerCase().includes(query) ||

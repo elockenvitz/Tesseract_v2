@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical, Edit, X, FolderKanban } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Briefcase, DollarSign, Percent, Users, Trash2, ChevronUp, ChevronDown, MoreVertical, Edit, X, FolderKanban, Globe, Search, Upload, Filter, Check, AlertCircle } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -50,6 +50,16 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   const [selectedDetailTopic, setSelectedDetailTopic] = useState<string | null>(null)
   const [sortColumn, setSortColumn] = useState<string>('symbol')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  // Investable Universe state
+  const [universeSearchQuery, setUniverseSearchQuery] = useState('')
+  const [showUniverseAssetSearch, setShowUniverseAssetSearch] = useState(false)
+  const [showAddFilterModal, setShowAddFilterModal] = useState(false)
+  const [newFilterType, setNewFilterType] = useState('sector')
+  const [newFilterOperator, setNewFilterOperator] = useState('include')
+  const [newFilterValue, setNewFilterValue] = useState('')
+  const [marketCapMin, setMarketCapMin] = useState('')
+  const [marketCapMax, setMarketCapMax] = useState('')
+  const [marketCapOperator, setMarketCapOperator] = useState<'gt' | 'lt' | 'between'>('gt')
   const queryClient = useQueryClient()
 
   // Update local state when switching to a different portfolio
@@ -177,6 +187,151 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
     },
   })
 
+  // INVESTABLE UNIVERSE - Assets explicitly added to universe
+  const { data: universeAssets, refetch: refetchUniverseAssets } = useQuery({
+    queryKey: ['portfolio-universe-assets', portfolio.id],
+    enabled: !!portfolio.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_universe_assets')
+        .select(`
+          id,
+          asset_id,
+          notes,
+          added_at,
+          asset:assets!inner (
+            id,
+            symbol,
+            company_name,
+            sector,
+            industry
+          )
+        `)
+        .eq('portfolio_id', portfolio.id)
+        .order('added_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // UNIVERSE FILTERS - Rule-based inclusion
+  const { data: universeFilters, refetch: refetchUniverseFilters } = useQuery({
+    queryKey: ['portfolio-universe-filters', portfolio.id],
+    enabled: !!portfolio.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_universe_filters')
+        .select('*')
+        .eq('portfolio_id', portfolio.id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // ALL ASSETS - for searching/adding to universe
+  const { data: allAssets } = useQuery({
+    queryKey: ['all-assets-for-universe'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector, industry, country, exchange, market_cap')
+        .order('symbol')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Compute unique filter options from assets
+  const filterOptions = useMemo(() => {
+    if (!allAssets) return { sectors: [], industries: [], countries: [], exchanges: [] }
+
+    const sectors = [...new Set(allAssets.map(a => a.sector).filter(Boolean))].sort()
+    const industries = [...new Set(allAssets.map(a => a.industry).filter(Boolean))].sort()
+    const countries = [...new Set(allAssets.map(a => a.country).filter(Boolean))].sort()
+    const exchanges = [...new Set(allAssets.map(a => a.exchange).filter(Boolean))].sort()
+
+    return { sectors, industries, countries, exchanges }
+  }, [allAssets])
+
+  // Index options (hardcoded for now)
+  const indexOptions = ['S&P 500', 'NASDAQ 100', 'Dow Jones', 'Russell 1000', 'Russell 2000', 'Russell 3000']
+
+  // Compute assets that match filter rules
+  const filteredUniverseAssets = useMemo(() => {
+    if (!allAssets || !universeFilters || universeFilters.length === 0) return []
+
+    return allAssets.filter(asset => {
+      // Asset must pass ALL filters (AND logic)
+      return universeFilters.every((filter: any) => {
+        const { filter_type, filter_operator, filter_value } = filter
+
+        switch (filter_type) {
+          case 'sector':
+            if (filter_operator === 'include') return asset.sector === filter_value
+            if (filter_operator === 'exclude') return asset.sector !== filter_value
+            return true
+
+          case 'industry':
+            if (filter_operator === 'include') return asset.industry === filter_value
+            if (filter_operator === 'exclude') return asset.industry !== filter_value
+            return true
+
+          case 'country':
+            if (filter_operator === 'include') return asset.country === filter_value
+            if (filter_operator === 'exclude') return asset.country !== filter_value
+            return true
+
+          case 'exchange':
+            if (filter_operator === 'include') return asset.exchange === filter_value
+            if (filter_operator === 'exclude') return asset.exchange !== filter_value
+            return true
+
+          case 'market_cap':
+            if (!asset.market_cap) return false
+            const marketCapInMillions = Number(asset.market_cap) / 1000000 // Convert to millions
+
+            if (filter_operator === 'gt') {
+              // Value is like ">500M" - extract number
+              const threshold = parseFloat(filter_value.replace(/[>M]/g, ''))
+              return marketCapInMillions > threshold
+            }
+            if (filter_operator === 'lt') {
+              const threshold = parseFloat(filter_value.replace(/[<M]/g, ''))
+              return marketCapInMillions < threshold
+            }
+            if (filter_operator === 'between') {
+              // Value is like "500M-1000M"
+              const [minStr, maxStr] = filter_value.split('-')
+              const min = parseFloat(minStr.replace('M', ''))
+              const max = parseFloat(maxStr.replace('M', ''))
+              return marketCapInMillions >= min && marketCapInMillions <= max
+            }
+            return true
+
+          case 'index':
+            // Index membership would need a separate data source - skip for now
+            return true
+
+          default:
+            return true
+        }
+      })
+    })
+  }, [allAssets, universeFilters])
+
+  // Combined universe: manually added assets + filter-matched assets
+  const combinedUniverseAssets = useMemo(() => {
+    const manualAssetIds = new Set(universeAssets?.map(ua => ua.asset_id) || [])
+    const filterMatchedAssets = filteredUniverseAssets.filter(a => !manualAssetIds.has(a.id))
+
+    return {
+      manual: universeAssets || [],
+      filtered: filterMatchedAssets,
+      total: (universeAssets?.length || 0) + filterMatchedAssets.length
+    }
+  }, [universeAssets, filteredUniverseAssets])
+
   // Group team members by role, then by user
   const teamMembersByRole = useMemo(() => {
     if (!teamWithUsers) return {}
@@ -271,6 +426,63 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['all-portfolios'] })
+    },
+  })
+
+  // UNIVERSE MUTATIONS
+  const addUniverseAssetMutation = useMutation({
+    mutationFn: async (assetId: string) => {
+      const { error } = await supabase
+        .from('portfolio_universe_assets')
+        .insert({
+          portfolio_id: portfolio.id,
+          asset_id: assetId,
+        })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      refetchUniverseAssets()
+    },
+  })
+
+  const removeUniverseAssetMutation = useMutation({
+    mutationFn: async (universeAssetId: string) => {
+      const { error } = await supabase
+        .from('portfolio_universe_assets')
+        .delete()
+        .eq('id', universeAssetId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      refetchUniverseAssets()
+    },
+  })
+
+  const addUniverseFilterMutation = useMutation({
+    mutationFn: async (filter: { filter_type: string; filter_operator: string; filter_value: string }) => {
+      const { error } = await supabase
+        .from('portfolio_universe_filters')
+        .insert({
+          portfolio_id: portfolio.id,
+          ...filter,
+        })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      refetchUniverseFilters()
+    },
+  })
+
+  const removeUniverseFilterMutation = useMutation({
+    mutationFn: async (filterId: string) => {
+      const { error } = await supabase
+        .from('portfolio_universe_filters')
+        .delete()
+        .eq('id', filterId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      refetchUniverseFilters()
     },
   })
 
@@ -606,6 +818,394 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                   </div>
                 </Card>
               </div>
+
+              {/* Investable Universe Section */}
+              <Card>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-indigo-100 rounded-lg">
+                      <Globe className="h-5 w-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Investable Universe</h3>
+                      <p className="text-sm text-gray-500">
+                        {combinedUniverseAssets.total} assets • {(universeFilters?.length || 0)} filters
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAddFilterModal(true)}
+                    >
+                      <Filter className="h-4 w-4 mr-1" />
+                      Add Filter
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowUniverseAssetSearch(!showUniverseAssetSearch)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Assets
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Asset Search */}
+                {showUniverseAssetSearch && (
+                  <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <Search className="h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search assets by symbol or name..."
+                        value={universeSearchQuery}
+                        onChange={(e) => setUniverseSearchQuery(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setShowUniverseAssetSearch(false)
+                          setUniverseSearchQuery('')
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {universeSearchQuery.length >= 1 && (
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {allAssets
+                          ?.filter(asset =>
+                            asset.symbol.toLowerCase().includes(universeSearchQuery.toLowerCase()) ||
+                            asset.company_name?.toLowerCase().includes(universeSearchQuery.toLowerCase())
+                          )
+                          .filter(asset => !universeAssets?.some(ua => ua.asset_id === asset.id))
+                          .slice(0, 10)
+                          .map(asset => (
+                            <div
+                              key={asset.id}
+                              className="flex items-center justify-between p-2 hover:bg-white rounded cursor-pointer"
+                              onClick={() => {
+                                addUniverseAssetMutation.mutate(asset.id)
+                                setUniverseSearchQuery('')
+                              }}
+                            >
+                              <div>
+                                <span className="font-medium text-gray-900">{asset.symbol}</span>
+                                <span className="text-gray-500 ml-2 text-sm">{asset.company_name}</span>
+                              </div>
+                              <Plus className="h-4 w-4 text-indigo-600" />
+                            </div>
+                          ))}
+                        {allAssets?.filter(asset =>
+                          asset.symbol.toLowerCase().includes(universeSearchQuery.toLowerCase()) ||
+                          asset.company_name?.toLowerCase().includes(universeSearchQuery.toLowerCase())
+                        ).filter(asset => !universeAssets?.some(ua => ua.asset_id === asset.id)).length === 0 && (
+                          <p className="text-sm text-gray-500 p-2">No matching assets found</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Add Filter Modal */}
+                {showAddFilterModal && (
+                  <div className="mb-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium text-indigo-900">Add Filter Rule</h4>
+                      <Button variant="ghost" size="sm" onClick={() => setShowAddFilterModal(false)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {/* All controls on one line */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Filter Type */}
+                      <select
+                        value={newFilterType}
+                        onChange={(e) => {
+                          setNewFilterType(e.target.value)
+                          setNewFilterValue('')
+                          setMarketCapMin('')
+                          setMarketCapMax('')
+                        }}
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="sector">Sector</option>
+                        <option value="industry">Industry</option>
+                        <option value="market_cap">Market Cap</option>
+                        <option value="index">Index Membership</option>
+                        <option value="country">Country</option>
+                        <option value="exchange">Exchange</option>
+                      </select>
+
+                      {/* Market Cap: Condition + Value(s) */}
+                      {newFilterType === 'market_cap' && (
+                        <>
+                          <select
+                            value={marketCapOperator}
+                            onChange={(e) => setMarketCapOperator(e.target.value as 'gt' | 'lt' | 'between')}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="gt">Greater than</option>
+                            <option value="lt">Less than</option>
+                            <option value="between">Between</option>
+                          </select>
+                          <input
+                            type="number"
+                            value={marketCapMin}
+                            onChange={(e) => setMarketCapMin(e.target.value)}
+                            placeholder={marketCapOperator === 'between' ? 'Min ($M)' : 'Value ($M)'}
+                            className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                          />
+                          {marketCapOperator === 'between' && (
+                            <>
+                              <span className="text-gray-500 text-sm">and</span>
+                              <input
+                                type="number"
+                                value={marketCapMax}
+                                onChange={(e) => setMarketCapMax(e.target.value)}
+                                placeholder="Max ($M)"
+                                className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </>
+                          )}
+                        </>
+                      )}
+
+                      {/* Other filters: Operator + Value dropdown */}
+                      {newFilterType !== 'market_cap' && (
+                        <>
+                          <select
+                            value={newFilterOperator}
+                            onChange={(e) => setNewFilterOperator(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="include">Include</option>
+                            <option value="exclude">Exclude</option>
+                          </select>
+                          <select
+                            value={newFilterValue}
+                            onChange={(e) => setNewFilterValue(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 min-w-[150px]"
+                          >
+                            <option value="">Select...</option>
+                            {newFilterType === 'sector' && filterOptions.sectors.map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                            {newFilterType === 'industry' && filterOptions.industries.map(i => (
+                              <option key={i} value={i}>{i}</option>
+                            ))}
+                            {newFilterType === 'country' && filterOptions.countries.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                            {newFilterType === 'exchange' && filterOptions.exchanges.map(e => (
+                              <option key={e} value={e}>{e}</option>
+                            ))}
+                            {newFilterType === 'index' && indexOptions.map(idx => (
+                              <option key={idx} value={idx}>{idx}</option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex justify-end mt-3">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (newFilterType === 'market_cap') {
+                            // Build market cap filter value
+                            let filterValue = ''
+                            if (marketCapOperator === 'gt' && marketCapMin) {
+                              filterValue = `>${marketCapMin}M`
+                            } else if (marketCapOperator === 'lt' && marketCapMin) {
+                              filterValue = `<${marketCapMin}M`
+                            } else if (marketCapOperator === 'between' && marketCapMin && marketCapMax) {
+                              filterValue = `${marketCapMin}M-${marketCapMax}M`
+                            }
+                            if (filterValue) {
+                              addUniverseFilterMutation.mutate({
+                                filter_type: 'market_cap',
+                                filter_operator: marketCapOperator,
+                                filter_value: filterValue,
+                              })
+                              setMarketCapMin('')
+                              setMarketCapMax('')
+                              setShowAddFilterModal(false)
+                            }
+                          } else if (newFilterValue.trim()) {
+                            addUniverseFilterMutation.mutate({
+                              filter_type: newFilterType,
+                              filter_operator: newFilterOperator,
+                              filter_value: newFilterValue.trim(),
+                            })
+                            setNewFilterValue('')
+                            setShowAddFilterModal(false)
+                          }
+                        }}
+                        disabled={
+                          newFilterType === 'market_cap'
+                            ? (marketCapOperator === 'between' ? !marketCapMin || !marketCapMax : !marketCapMin)
+                            : !newFilterValue.trim()
+                        }
+                      >
+                        Add Filter
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Filters */}
+                {universeFilters && universeFilters.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Active Filters</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {universeFilters.map((filter: any) => {
+                        const isMarketCap = filter.filter_type === 'market_cap'
+                        const isExclude = filter.filter_operator === 'exclude'
+
+                        // Format the display based on filter type
+                        const getFilterLabel = () => {
+                          switch (filter.filter_type) {
+                            case 'market_cap': return 'Market Cap'
+                            case 'sector': return 'Sector'
+                            case 'industry': return 'Industry'
+                            case 'country': return 'Country'
+                            case 'exchange': return 'Exchange'
+                            case 'index': return 'Index'
+                            default: return filter.filter_type
+                          }
+                        }
+
+                        // Format the value display - market cap already has operator in value
+                        const getDisplayValue = () => {
+                          if (isMarketCap) {
+                            // Parse market cap values like ">500M", "<1000M", "500M-1000M"
+                            const val = filter.filter_value
+                            if (val.startsWith('>')) return `> $${val.slice(1)}`
+                            if (val.startsWith('<')) return `< $${val.slice(1)}`
+                            if (val.includes('-')) {
+                              const [min, max] = val.split('-')
+                              return `$${min} - $${max}`
+                            }
+                            return `$${val}`
+                          }
+                          return filter.filter_value
+                        }
+
+                        const getOperatorLabel = () => {
+                          if (isMarketCap) return '' // Operator is in the value for market cap
+                          return filter.filter_operator === 'include' ? 'is' : 'is not'
+                        }
+
+                        return (
+                          <div
+                            key={filter.id}
+                            className={`inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg text-sm border ${
+                              isExclude
+                                ? 'bg-red-50 border-red-200 text-red-700'
+                                : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                            }`}
+                          >
+                            <span className="font-medium">{getFilterLabel()}</span>
+                            {getOperatorLabel() && (
+                              <span className={`${isExclude ? 'text-red-500' : 'text-indigo-400'}`}>{getOperatorLabel()}</span>
+                            )}
+                            <span className={`font-semibold ${isExclude ? 'text-red-800' : 'text-indigo-900'}`}>
+                              {getDisplayValue()}
+                            </span>
+                            <button
+                              onClick={() => removeUniverseFilterMutation.mutate(filter.id)}
+                              className={`ml-1 p-1 rounded-md transition-colors ${
+                                isExclude
+                                  ? 'hover:bg-red-200 text-red-500'
+                                  : 'hover:bg-indigo-200 text-indigo-500'
+                              }`}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Universe Assets List */}
+                {combinedUniverseAssets.total > 0 ? (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">
+                      Included Assets ({combinedUniverseAssets.total})
+                      {combinedUniverseAssets.manual.length > 0 && combinedUniverseAssets.filtered.length > 0 && (
+                        <span className="font-normal text-gray-400 ml-2">
+                          ({combinedUniverseAssets.manual.length} manual + {combinedUniverseAssets.filtered.length} from filters)
+                        </span>
+                      )}
+                    </h4>
+                    <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sector</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {/* Manually added assets */}
+                          {combinedUniverseAssets.manual.map((ua: any) => (
+                            <tr key={`manual-${ua.id}`} className="hover:bg-gray-50">
+                              <td className="px-4 py-2 text-sm font-medium text-gray-900">{ua.asset?.symbol}</td>
+                              <td className="px-4 py-2 text-sm text-gray-500">{ua.asset?.company_name}</td>
+                              <td className="px-4 py-2 text-sm text-gray-500">{ua.asset?.sector || '-'}</td>
+                              <td className="px-4 py-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                  Manual
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                <button
+                                  onClick={() => removeUniverseAssetMutation.mutate(ua.id)}
+                                  className="text-red-600 hover:text-red-800"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {/* Filter-matched assets */}
+                          {combinedUniverseAssets.filtered.map((asset: any) => (
+                            <tr key={`filter-${asset.id}`} className="hover:bg-gray-50 bg-indigo-50/30">
+                              <td className="px-4 py-2 text-sm font-medium text-gray-900">{asset.symbol}</td>
+                              <td className="px-4 py-2 text-sm text-gray-500">{asset.company_name}</td>
+                              <td className="px-4 py-2 text-sm text-gray-500">{asset.sector || '-'}</td>
+                              <td className="px-4 py-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                                  Filter
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-right text-gray-400">
+                                -
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Globe className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p className="font-medium">No assets in universe</p>
+                    <p className="text-sm">Add assets manually or create filter rules to define your investable universe</p>
+                  </div>
+                )}
+              </Card>
             </div>
           )}
 

@@ -13,35 +13,53 @@ export function useAuth() {
     // If user is authenticated, fetch full profile from public.users table
     if (session?.user) {
       try {
-        // Use upsert to handle user record creation/update
-        const { error: upsertError } = await supabase
-          .from('users')
-          .upsert({
-            id: session.user.id,
-            email: session.user.email,
-          }, {
-            onConflict: 'id',
-            ignoreDuplicates: false
-          })
-
-        if (upsertError) {
-          console.warn('Failed to upsert user record (non-blocking):', upsertError)
-        }
-
-        // Fetch full user profile including coverage_admin field
-        const { data: profile, error: profileError } = await supabase
+        // First, try to fetch existing user profile
+        const { data: existingProfile, error: fetchError } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
           .single()
 
-        if (profileError) {
-          console.warn('Failed to fetch user profile:', profileError)
-          // Fall back to auth user only
+        if (fetchError && fetchError.code === 'PGRST116') {
+          // User doesn't exist in public.users table - create them
+          // This happens for users who signed up before we had the users table
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: session.user.id,
+              email: session.user.email,
+            })
+
+          if (insertError) {
+            console.warn('Failed to create user record (non-blocking):', insertError)
+          }
+
+          // Fetch the newly created profile
+          const { data: newProfile, error: newFetchError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single()
+
+          if (newFetchError) {
+            console.warn('Failed to fetch new user profile:', newFetchError)
+            setUser(session.user)
+          } else {
+            setUser({ ...session.user, ...newProfile } as any)
+          }
+        } else if (fetchError) {
+          console.warn('Failed to fetch user profile:', fetchError)
           setUser(session.user)
         } else {
+          // User exists - just update email if it changed (don't overwrite names)
+          if (existingProfile.email !== session.user.email) {
+            await supabase
+              .from('users')
+              .update({ email: session.user.email })
+              .eq('id', session.user.id)
+          }
           // Merge auth user with profile data
-          setUser({ ...session.user, ...profile } as any)
+          setUser({ ...session.user, ...existingProfile } as any)
         }
       } catch (err) {
         console.warn('Network error handling user session (non-blocking):', err)
@@ -84,27 +102,34 @@ export function useAuth() {
       email,
       password,
     })
-    
-    // If signup successful, create user record with names
+
+    // If signup successful, create/update user record with names
     if (data.user && !error) {
       try {
-        const { error: insertError } = await supabase
+        // Use upsert to handle both new users and existing users
+        // This ensures first_name and last_name are always saved
+        const { error: upsertError } = await supabase
           .from('users')
-          .insert({
+          .upsert({
             id: data.user.id,
             email: data.user.email,
             first_name: firstName,
             last_name: lastName
+          }, {
+            onConflict: 'id',
+            ignoreDuplicates: false
           })
 
-        if (insertError) {
-          console.error('Failed to create user record with names:', insertError)
+        if (upsertError) {
+          console.error('Failed to save user record with names:', upsertError)
+        } else {
+          console.log('User record saved with names:', firstName, lastName)
         }
       } catch (err) {
-        console.error('Error creating user record:', err)
+        console.error('Error saving user record:', err)
       }
     }
-    
+
     return { data, error }
   }
 

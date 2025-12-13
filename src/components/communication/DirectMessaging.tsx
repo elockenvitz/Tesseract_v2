@@ -211,11 +211,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       return lastValidConversationsRef.current || undefined
     }
 
-    // Check if all conversations have complete participant data
+    // Check if all conversations have participant data loaded
+    // Only require that user objects exist - names are optional (will fall back to email)
     const isComplete = rawConversations.every(conv =>
       conv.participants &&
       conv.participants.length > 0 &&
-      conv.participants.every(p => p.user && p.user.first_name && p.user.last_name)
+      conv.participants.every(p => p.user && (p.user.first_name || p.user.email))
     )
 
     // If data is complete, cache it and return it
@@ -224,8 +225,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       return rawConversations
     }
 
-    // Data is incomplete - return cached data if we have it, otherwise show loading
-    return lastValidConversationsRef.current || undefined
+    // Data is incomplete - return cached data if we have it, otherwise return raw data anyway
+    // This prevents infinite loading when users don't have complete profiles
+    return lastValidConversationsRef.current || rawConversations
   }, [rawConversations, user?.id])
 
   // Fetch messages for selected conversation
@@ -679,7 +681,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 </div>
               ))}
             </div>
-          ) : !conversations || conversationsFetching ? (
+          ) : !conversations ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="animate-pulse">

@@ -35,11 +35,13 @@ import {
   XCircle,
   Clock,
   FolderOpen,
+  Folder,
   MoreHorizontal,
   GripVertical,
   UserX,
   AlertTriangle,
   Shield,
+  ShieldOff,
   Phone,
   AtSign,
   ExternalLink,
@@ -200,8 +202,11 @@ interface OrgChartNode {
   sort_order: number
   settings: any
   is_active: boolean
+  is_non_investment?: boolean
+  coverage_admin_override?: boolean
   created_at: string
   children?: OrgChartNode[]
+  isLinkedInstance?: boolean // True if this node appears as a linked portfolio under another team
 }
 
 interface OrgChartNodeMember {
@@ -210,6 +215,8 @@ interface OrgChartNodeMember {
   user_id: string
   role: string
   focus: string | null
+  is_coverage_admin?: boolean
+  coverage_admin_blocked?: boolean
   created_at: string
   user?: UserProfile
 }
@@ -272,6 +279,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   const [editingNode, setEditingNode] = useState<OrgChartNode | null>(null)
   const [showAddNodeMemberModal, setShowAddNodeMemberModal] = useState<OrgChartNode | null>(null)
   const [viewingNodeDetails, setViewingNodeDetails] = useState<OrgChartNode | null>(null)
+  const [viewingTeamCoverage, setViewingTeamCoverage] = useState<{ teamId: string; teamName: string } | null>(null)
   const [deleteNodeConfirm, setDeleteNodeConfirm] = useState<{ isOpen: boolean; node: OrgChartNode | null }>({ isOpen: false, node: null })
 
   // Org chart panning state
@@ -279,6 +287,10 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   const [isPanning, setIsPanning] = useState(false)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 })
+
+  // Admin badge dropdown state
+  const [showAdminBadgeDropdown, setShowAdminBadgeDropdown] = useState(false)
+  const adminBadgeRef = useRef<HTMLDivElement>(null)
 
   // Portfolio team member state
   const [showAddPortfolioTeamMemberModal, setShowAddPortfolioTeamMemberModal] = useState(false)
@@ -317,7 +329,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   })
 
   // Fetch all organization members with user profiles (including suspended)
-  const { data: orgMembers = [] } = useQuery({
+  const { data: orgMembers = [], isLoading: isLoadingOrgMembers } = useQuery({
     queryKey: ['organization-members'],
     queryFn: async () => {
       // Fetch memberships
@@ -540,7 +552,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     }
   })
 
-  // Fetch access requests (admin only)
+  // Fetch access requests (admin only - all pending requests)
   const { data: accessRequests = [] } = useQuery({
     queryKey: ['access-requests'],
     queryFn: async () => {
@@ -573,6 +585,27 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     enabled: isOrgAdmin
   })
 
+  // Fetch user's own access requests (for non-admins to track their requests)
+  const { data: myAccessRequests = [] } = useQuery({
+    queryKey: ['my-access-requests', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+      const { data, error } = await supabase
+        .from('access_requests')
+        .select(`
+          *,
+          target_team:target_team_id (*),
+          target_portfolio:target_portfolio_id (*)
+        `)
+        .eq('requester_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data as AccessRequest[]
+    },
+    enabled: !isOrgAdmin && !!user?.id
+  })
+
   // Fetch organization contacts (non-login personnel)
   const { data: contacts = [] } = useQuery({
     queryKey: ['organization-contacts'],
@@ -600,6 +633,19 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
 
       if (error) throw error
       return data as OrgChartNode[]
+    }
+  })
+
+  // Fetch org chart node links (for portfolios linked to multiple teams)
+  const { data: orgChartNodeLinks = [] } = useQuery({
+    queryKey: ['org-chart-node-links'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_node_links')
+        .select('*')
+
+      if (error) throw error
+      return data || []
     }
   })
 
@@ -637,6 +683,24 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     }
   })
 
+  // Fetch user's node-level coverage admin memberships (excluding blocked)
+  const { data: userCoverageAdminNodes = [] } = useQuery({
+    queryKey: ['user-coverage-admin-nodes', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+      const { data, error } = await supabase
+        .from('org_chart_node_members')
+        .select('node_id')
+        .eq('user_id', user.id)
+        .eq('is_coverage_admin', true)
+        .or('coverage_admin_blocked.is.null,coverage_admin_blocked.eq.false')
+
+      if (error) throw error
+      return (data || []).map(d => d.node_id)
+    },
+    enabled: !!user?.id
+  })
+
   // Fetch coverage settings for the organization
   const { data: coverageSettings, refetch: refetchCoverageSettings } = useQuery({
     queryKey: ['coverage-settings', organization?.id],
@@ -653,6 +717,116 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     },
     enabled: !!organization?.id
   })
+
+  // Fetch coverage stats grouped by team_id for displaying on org nodes
+  // Coverage flows through USER MEMBERSHIP - a user's coverage counts for all portfolios they're a member of
+  const { data: coverageStatsByTeam = {} } = useQuery({
+    queryKey: ['coverage-stats-by-team', orgChartNodes, orgChartNodeLinks, orgChartNodeMembers],
+    queryFn: async () => {
+      // Get all coverage records
+      const { data: coverageData, error: coverageError } = await supabase
+        .from('coverage')
+        .select('asset_id, user_id')
+        .eq('is_active', true)
+
+      if (coverageError) {
+        console.error('Error fetching coverage stats:', coverageError)
+        throw coverageError
+      }
+
+      // Build a map of user_id -> their coverage (assets they cover)
+      const userCoverage = new Map<string, Set<string>>()
+      coverageData?.forEach(record => {
+        if (record.user_id && record.asset_id) {
+          if (!userCoverage.has(record.user_id)) {
+            userCoverage.set(record.user_id, new Set())
+          }
+          userCoverage.get(record.user_id)!.add(record.asset_id)
+        }
+      })
+
+      // Build a map of node_id -> member user_ids (from org_chart_node_members)
+      const nodeMemberIds = new Map<string, Set<string>>()
+      orgChartNodeMembers.forEach(member => {
+        if (!nodeMemberIds.has(member.node_id)) {
+          nodeMemberIds.set(member.node_id, new Set())
+        }
+        nodeMemberIds.get(member.node_id)!.add(member.user_id)
+      })
+
+      // Helper to get all portfolio node IDs under a team (direct children + linked)
+      const getTeamPortfolioNodeIds = (teamId: string): string[] => {
+        const portfolioNodeIds: string[] = []
+
+        // Direct portfolio children
+        orgChartNodes
+          .filter(n => n.node_type === 'portfolio' && n.parent_id === teamId)
+          .forEach(p => portfolioNodeIds.push(p.id))
+
+        // Linked portfolios (portfolios linked to this team via org_chart_node_links)
+        orgChartNodeLinks
+          .filter(link => link.linked_node_id === teamId)
+          .forEach(link => {
+            const linkedNode = orgChartNodes.find(n => n.id === link.node_id)
+            if (linkedNode?.node_type === 'portfolio') {
+              portfolioNodeIds.push(linkedNode.id)
+            }
+          })
+
+        return portfolioNodeIds
+      }
+
+      // Calculate coverage stats for each team based on member coverage
+      const stats: Record<string, { assetCount: number; analystCount: number }> = {}
+
+      if (orgChartNodes) {
+        const teamNodes = orgChartNodes.filter(n => n.node_type === 'team')
+
+        teamNodes.forEach(team => {
+          const assets = new Set<string>()
+          const analysts = new Set<string>()
+
+          // Get all portfolio node IDs under this team
+          const portfolioNodeIds = getTeamPortfolioNodeIds(team.id)
+
+          // For each portfolio, get its members and their coverage
+          portfolioNodeIds.forEach(portfolioNodeId => {
+            const memberIds = nodeMemberIds.get(portfolioNodeId) || new Set()
+            memberIds.forEach(userId => {
+              const userAssets = userCoverage.get(userId)
+              if (userAssets && userAssets.size > 0) {
+                analysts.add(userId)
+                userAssets.forEach(assetId => assets.add(assetId))
+              }
+            })
+          })
+
+          if (assets.size > 0 || analysts.size > 0) {
+            stats[team.id] = {
+              assetCount: assets.size,
+              analystCount: analysts.size
+            }
+          }
+        })
+      }
+
+      console.log('Coverage stats by team (membership-based):', stats)
+      return stats
+    },
+    enabled: !!orgChartNodes && orgChartNodes.length > 0
+  })
+
+  // Helper to get portfolio IDs for a given team
+  const getPortfolioIdsForTeam = (teamId: string): string[] => {
+    if (!orgChartNodes) return []
+
+    const portfolioNodes = orgChartNodes.filter(n => n.node_type === 'portfolio' && n.settings?.portfolio_id)
+    const teamPortfolios = portfolioNodes.filter(p => p.parent_id === teamId)
+
+    return teamPortfolios
+      .map(p => p.settings?.portfolio_id)
+      .filter((id): id is string => !!id)
+  }
 
   // Coverage settings state for editing
   const [editingCoverageSettings, setEditingCoverageSettings] = useState<{
@@ -699,57 +873,70 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     return orgChartNodeMembers.filter(m => m.node_id === nodeId)
   }
 
-  // Compute shared portfolios - portfolios that appear under multiple teams
-  // Returns a map of portfolio_id -> array of team names that share it
+  // Compute shared portfolios - portfolios that are linked to multiple teams via org_chart_node_links
+  // Returns a map of node_id -> array of team names that share it
   const sharedPortfoliosMap = React.useMemo(() => {
-    const portfolioTeams = new Map<string, { nodeIds: string[], teamNames: string[] }>()
+    const shared = new Map<string, string[]>()
 
-    // Find all portfolio nodes and their parent team names
-    orgChartNodes.forEach(node => {
-      if (node.node_type === 'portfolio' && node.settings?.portfolio_id) {
-        const portfolioId = node.settings.portfolio_id
-        // Find parent node to get team name
-        const parent = orgChartNodes.find(n => n.id === node.parent_id)
-        const teamName = parent?.name || 'Unknown Team'
-
-        if (!portfolioTeams.has(portfolioId)) {
-          portfolioTeams.set(portfolioId, { nodeIds: [], teamNames: [] })
-        }
-        const entry = portfolioTeams.get(portfolioId)!
-        entry.nodeIds.push(node.id)
-        entry.teamNames.push(teamName)
+    // Group links by node_id to find all teams a portfolio is linked to
+    const linksByNode = new Map<string, string[]>()
+    orgChartNodeLinks.forEach(link => {
+      if (!linksByNode.has(link.node_id)) {
+        linksByNode.set(link.node_id, [])
       }
+      linksByNode.get(link.node_id)!.push(link.linked_node_id)
     })
 
-    // Filter to only portfolios shared by multiple teams
-    const shared = new Map<string, string[]>()
-    portfolioTeams.forEach((value, portfolioId) => {
-      if (value.nodeIds.length > 1) {
-        // Map each node ID to the other teams it's shared with
-        value.nodeIds.forEach((nodeId, index) => {
-          const otherTeams = value.teamNames.filter((_, i) => i !== index)
-          shared.set(nodeId, otherTeams)
-        })
+    // For each linked portfolio, get the names of all linked teams
+    linksByNode.forEach((linkedNodeIds, nodeId) => {
+      const teamNames = linkedNodeIds
+        .map(linkedId => orgChartNodes.find(n => n.id === linkedId)?.name)
+        .filter((name): name is string => !!name)
+      if (teamNames.length > 0) {
+        shared.set(nodeId, teamNames)
       }
     })
 
     return shared
-  }, [orgChartNodes])
+  }, [orgChartNodes, orgChartNodeLinks])
 
   // Get shared teams for a node (returns array of team names this portfolio is shared with)
   const getSharedTeams = (nodeId: string): string[] => {
     return sharedPortfoliosMap.get(nodeId) || []
   }
 
-  // Build tree structure from flat nodes
+  // Build tree structure from flat nodes, including linked portfolios
   const buildNodeTree = (nodes: OrgChartNode[], parentId: string | null = null): OrgChartNode[] => {
-    return nodes
+    // Get direct children (by parent_id)
+    const directChildren = nodes
       .filter(node => node.parent_id === parentId)
       .map(node => ({
         ...node,
+        isLinkedInstance: false,
         children: buildNodeTree(nodes, node.id)
       }))
-      .sort((a, b) => a.sort_order - b.sort_order)
+
+    // Get linked portfolios (portfolios linked to this node via org_chart_node_links)
+    // Only add linked portfolios if parentId is not null (we're building children of a team/division)
+    const linkedChildren: OrgChartNode[] = []
+    if (parentId) {
+      // Find all links where linked_node_id === parentId (this team has portfolios linked to it)
+      const linksToThisTeam = orgChartNodeLinks.filter(link => link.linked_node_id === parentId)
+
+      linksToThisTeam.forEach(link => {
+        const linkedNode = nodes.find(n => n.id === link.node_id)
+        // Only include if this is not already a direct child (parent_id !== parentId)
+        if (linkedNode && linkedNode.parent_id !== parentId) {
+          linkedChildren.push({
+            ...linkedNode,
+            isLinkedInstance: true, // Mark this as a linked instance
+            children: [] // Linked instances don't show their own children to avoid duplication
+          } as OrgChartNode)
+        }
+      })
+    }
+
+    return [...directChildren, ...linkedChildren].sort((a, b) => a.sort_order - b.sort_order)
   }
 
   const nodeTree = buildNodeTree(orgChartNodes)
@@ -1080,6 +1267,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       icon: string
       portfolio_id?: string
       childIdsToReparent?: string[] // For inserting between nodes
+      is_non_investment?: boolean
     }) => {
       if (!organization) throw new Error('No organization found')
 
@@ -1172,7 +1360,8 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
         color: nodeData.color,
         icon: nodeData.icon,
         sort_order: nextSortOrder,
-        created_by: user?.id
+        created_by: user?.id,
+        is_non_investment: nodeData.is_non_investment || false
       }
 
       // Only include parent_id if it's a valid org_chart_node reference
@@ -1243,6 +1432,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
       color: string
       icon: string
       custom_type_label?: string
+      is_non_investment?: boolean
     }) => {
       const { data, error } = await supabase
         .from('org_chart_nodes')
@@ -1252,6 +1442,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           color: nodeData.color,
           icon: nodeData.icon,
           custom_type_label: nodeData.custom_type_label,
+          is_non_investment: nodeData.is_non_investment || false,
           updated_at: new Date().toISOString()
         })
         .eq('id', nodeData.id)
@@ -1303,7 +1494,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
 
   // Add member to org chart node mutation
   const addNodeMemberMutation = useMutation({
-    mutationFn: async (memberData: { node_id: string; user_id: string; role: string; focus?: string }) => {
+    mutationFn: async (memberData: { node_id: string; user_id: string; role: string; focus?: string; is_coverage_admin?: boolean }) => {
       const { data, error } = await supabase
         .from('org_chart_node_members')
         .insert({
@@ -1311,6 +1502,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           user_id: memberData.user_id,
           role: memberData.role,
           focus: memberData.focus || null,
+          is_coverage_admin: memberData.is_coverage_admin || false,
           created_by: user?.id
         })
         .select()
@@ -1321,6 +1513,7 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      queryClient.invalidateQueries({ queryKey: ['user-coverage-admin-nodes'] })
     },
     onError: (error: any) => {
       alert(`Failed to add member: ${error.message}`)
@@ -1339,6 +1532,53 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+    }
+  })
+
+  // Toggle coverage admin status for a node member
+  const toggleNodeMemberCoverageAdminMutation = useMutation({
+    mutationFn: async ({ memberId, isCoverageAdmin }: { memberId: string; isCoverageAdmin: boolean }) => {
+      const { error } = await supabase
+        .from('org_chart_node_members')
+        .update({ is_coverage_admin: isCoverageAdmin })
+        .eq('id', memberId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      queryClient.invalidateQueries({ queryKey: ['user-coverage-admin-nodes'] })
+    }
+  })
+
+  // Toggle coverage admin blocked status for a node member
+  const toggleNodeMemberCoverageAdminBlockedMutation = useMutation({
+    mutationFn: async ({ memberId, isBlocked }: { memberId: string; isBlocked: boolean }) => {
+      const { error } = await supabase
+        .from('org_chart_node_members')
+        .update({ coverage_admin_blocked: isBlocked })
+        .eq('id', memberId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+    }
+  })
+
+  // Toggle coverage admin override for a node
+  const toggleNodeCoverageOverrideMutation = useMutation({
+    mutationFn: async ({ nodeId, hasOverride }: { nodeId: string; hasOverride: boolean }) => {
+      const { error } = await supabase
+        .from('org_chart_nodes')
+        .update({ coverage_admin_override: hasOverride })
+        .eq('id', nodeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-chart-nodes'] })
+      queryClient.invalidateQueries({ queryKey: ['coverage-admin-override-nodes'] })
     }
   })
 
@@ -1489,6 +1729,23 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   const activeMembers = filteredMembers.filter(m => m.status === 'active')
   const suspendedMembers = filteredMembers.filter(m => m.status === 'inactive')
 
+  // Helper to check if current user is a member of an org chart node (team)
+  const isUserMemberOfNode = (nodeId: string): boolean => {
+    if (!user?.id) return false
+    // Check org_chart_node_members
+    const nodeMembers = orgChartNodeMembers.filter(m => m.node_id === nodeId)
+    if (nodeMembers.some(m => m.user_id === user.id)) return true
+    // For team nodes, also check team_memberships via settings.team_id
+    const node = orgChartNodes.find(n => n.id === nodeId)
+    if (node?.node_type === 'team' && node.settings?.team_id) {
+      return teamMemberships.some(tm => tm.team_id === node.settings.team_id && tm.user_id === user.id)
+    }
+    return false
+  }
+
+  // State for node join request
+  const [nodeJoinRequest, setNodeJoinRequest] = useState<OrgChartNode | null>(null)
+
   const tabs: { id: TabType; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
     { id: 'teams', label: 'Teams', icon: <Users className="w-4 h-4" /> },
     { id: 'people', label: 'People', icon: <UserCircle className="w-4 h-4" /> },
@@ -1562,6 +1819,64 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
     return () => window.removeEventListener('mouseup', handleMouseUp)
   }, [isPanning])
 
+  // Close admin badge dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (adminBadgeRef.current && !adminBadgeRef.current.contains(event.target as Node)) {
+        setShowAdminBadgeDropdown(false)
+      }
+    }
+
+    if (showAdminBadgeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAdminBadgeDropdown])
+
+  // Determine current user's coverage admin status
+  const currentUserMembership = orgMembers.find(m => m.user_id === user?.id)
+  const hasGlobalCoverageAdmin = currentUserMembership?.user?.coverage_admin || false
+  const hasNodeLevelCoverageAdmin = userCoverageAdminNodes.length > 0
+  const isCoverageAdmin = hasGlobalCoverageAdmin || hasNodeLevelCoverageAdmin
+  const isAdminBadgeReady = !isLoadingOrgMembers && (orgMembers.length === 0 || currentUserMembership !== undefined)
+
+  // Helper function to check if user can manage coverage admins for a specific node
+  // Returns true if:
+  // 1. User is org admin, OR
+  // 2. User has global coverage_admin and node doesn't have override, OR
+  // 3. User is coverage admin for this node, OR
+  // 4. User is coverage admin for an ancestor node (respecting overrides)
+  const canManageCoverageAdminsForNode = (nodeId: string): boolean => {
+    // Org admins can always manage
+    if (isOrgAdmin) return true
+
+    const node = orgChartNodes.find(n => n.id === nodeId)
+    const hasOverride = node?.coverage_admin_override || false
+
+    // Global coverage admin can manage unless node has override
+    if (isCoverageAdmin && !hasOverride) return true
+
+    // Check if user is explicitly a coverage admin for this node
+    if (userCoverageAdminNodes.includes(nodeId)) return true
+
+    // Check if user is coverage admin for any ancestor (cascading)
+    // But stop if we hit an override node
+    const nodeMap = new Map(orgChartNodes.map(n => [n.id, n]))
+    let currentNode = nodeMap.get(nodeId)
+
+    while (currentNode?.parent_id) {
+      // If current node has override, stop checking ancestors
+      if (currentNode.coverage_admin_override) break
+
+      // Check if user is coverage admin for this ancestor
+      if (userCoverageAdminNodes.includes(currentNode.parent_id)) return true
+
+      currentNode = nodeMap.get(currentNode.parent_id)
+    }
+
+    return false
+  }
+
   return (
     <div className={`h-full flex flex-col ${activeTab === 'teams' ? 'bg-white' : 'bg-gray-50'}`}>
       {/* Header */}
@@ -1571,10 +1886,136 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
             <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
               <Building2 className="w-6 h-6 text-indigo-600" />
             </div>
-            <div>
+            <div className="flex items-center space-x-3">
               <h1 className="text-xl font-semibold text-gray-900">
                 {organization?.name || 'Organization'}
               </h1>
+              {/* Admin Badge */}
+              <div className="relative" ref={adminBadgeRef}>
+                <button
+                  onClick={() => isAdminBadgeReady && setShowAdminBadgeDropdown(!showAdminBadgeDropdown)}
+                  disabled={!isAdminBadgeReady}
+                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                    !isAdminBadgeReady
+                      ? 'blur-sm opacity-50 bg-gray-100 text-gray-600'
+                      : isOrgAdmin || isCoverageAdmin
+                      ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Shield className="w-3 h-3 mr-1" />
+                  {!isAdminBadgeReady
+                    ? 'Permissions'
+                    : isOrgAdmin && hasGlobalCoverageAdmin
+                    ? 'Full Admin'
+                    : isOrgAdmin
+                    ? 'Org Admin'
+                    : hasGlobalCoverageAdmin
+                    ? 'Coverage Admin'
+                    : hasNodeLevelCoverageAdmin
+                    ? 'Coverage Admin (Limited)'
+                    : 'Read Access'}
+                </button>
+
+                {/* Dropdown */}
+                {showAdminBadgeDropdown && (
+                  <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="p-3 border-b border-gray-100">
+                      <h3 className="text-sm font-medium text-gray-900">Your Permissions</h3>
+                    </div>
+                    <div className="p-3 space-y-3">
+                      {/* Org Admin Status */}
+                      <div className="flex items-start space-x-3">
+                        <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
+                          isOrgAdmin ? 'bg-green-100' : 'bg-gray-100'
+                        }`}>
+                          {isOrgAdmin ? (
+                            <Check className="w-3 h-3 text-green-600" />
+                          ) : (
+                            <X className="w-3 h-3 text-gray-400" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">Organization Admin</p>
+                          <p className="text-xs text-gray-500">
+                            {isOrgAdmin
+                              ? 'Can manage teams, members, and settings'
+                              : 'Cannot modify organization structure'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Coverage Admin Status */}
+                      <div className="flex items-start space-x-3">
+                        <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
+                          isCoverageAdmin ? 'bg-green-100' : 'bg-gray-100'
+                        }`}>
+                          {isCoverageAdmin ? (
+                            <Check className="w-3 h-3 text-green-600" />
+                          ) : (
+                            <X className="w-3 h-3 text-gray-400" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            Coverage Admin
+                            {hasGlobalCoverageAdmin && hasNodeLevelCoverageAdmin ? '' :
+                             hasNodeLevelCoverageAdmin ? ' (Limited)' : ''}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {hasGlobalCoverageAdmin
+                              ? 'Can manage coverage assignments globally'
+                              : hasNodeLevelCoverageAdmin
+                              ? `Admin for ${userCoverageAdminNodes.length} node${userCoverageAdminNodes.length > 1 ? 's' : ''}`
+                              : 'Can only manage own coverage assignments'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Node-level coverage admin details */}
+                      {hasNodeLevelCoverageAdmin && !hasGlobalCoverageAdmin && (
+                        <div className="pt-2 border-t border-gray-100">
+                          <p className="text-xs font-medium text-gray-500 mb-2">Coverage admin for:</p>
+                          <div className="space-y-1 max-h-24 overflow-y-auto">
+                            {userCoverageAdminNodes.slice(0, 5).map(nodeId => {
+                              const node = orgChartNodes.find(n => n.id === nodeId)
+                              return node ? (
+                                <div key={nodeId} className="flex items-center space-x-2 text-xs">
+                                  <div
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: node.color }}
+                                  />
+                                  <span className="text-gray-700">{node.name}</span>
+                                </div>
+                              ) : null
+                            })}
+                            {userCoverageAdminNodes.length > 5 && (
+                              <p className="text-xs text-gray-400">
+                                +{userCoverageAdminNodes.length - 5} more
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Read Access (shown when no admin permissions) */}
+                      {!isOrgAdmin && !isCoverageAdmin && (
+                        <div className="flex items-start space-x-3 pt-2 border-t border-gray-100">
+                          <div className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center bg-blue-100">
+                            <Check className="w-3 h-3 text-blue-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">Read Access</p>
+                            <p className="text-xs text-gray-500">
+                              Can view organization structure and team information
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center space-x-3">
@@ -1584,15 +2025,34 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                 Add Person
               </Button>
             )}
-            {!isOrgAdmin && (
-              <Button
-                variant="outline"
-                onClick={() => setShowRequestModal(true)}
-              >
-                <Mail className="w-4 h-4 mr-2" />
-                Request Access
-              </Button>
-            )}
+            {!isOrgAdmin && (() => {
+              const pendingCount = myAccessRequests.filter(r => r.status === 'pending').length
+              const myTeamIds = teamMemberships.filter(tm => tm.user_id === user?.id).map(tm => tm.team_id)
+              const teamsNotJoined = teams.filter(t => !myTeamIds.includes(t.id))
+
+              // Show button if there are teams to join or pending requests
+              if (teamsNotJoined.length > 0 || pendingCount > 0) {
+                return (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowRequestModal(true)}
+                  >
+                    {pendingCount > 0 ? (
+                      <>
+                        <Clock className="w-4 h-4 mr-2" />
+                        {pendingCount} Pending
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4 mr-2" />
+                        Request Access
+                      </>
+                    )}
+                  </Button>
+                )
+              }
+              return null
+            })()}
           </div>
         </div>
       </div>
@@ -1621,6 +2081,51 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           ))}
         </div>
       </div>
+
+      {/* My Requests Banner (for non-admins) */}
+      {!isOrgAdmin && myAccessRequests.length > 0 && (
+        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100">
+                <Clock className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-amber-900">
+                  You have {myAccessRequests.filter(r => r.status === 'pending').length} pending request{myAccessRequests.filter(r => r.status === 'pending').length !== 1 ? 's' : ''}
+                </p>
+                <p className="text-xs text-amber-700">
+                  {myAccessRequests.filter(r => r.status === 'pending').length > 0
+                    ? 'Waiting for admin approval'
+                    : `${myAccessRequests.length} total request${myAccessRequests.length !== 1 ? 's' : ''}`}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              {myAccessRequests.slice(0, 3).map(request => (
+                <span
+                  key={request.id}
+                  className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                    request.status === 'pending'
+                      ? 'bg-amber-100 text-amber-800'
+                      : request.status === 'approved'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-red-100 text-red-800'
+                  }`}
+                >
+                  {request.target_team?.name || request.target_portfolio?.name || request.request_type}
+                  {request.status === 'pending' && <Clock className="w-3 h-3 ml-1" />}
+                  {request.status === 'approved' && <Check className="w-3 h-3 ml-1" />}
+                  {request.status === 'denied' && <X className="w-3 h-3 ml-1" />}
+                </span>
+              ))}
+              {myAccessRequests.length > 3 && (
+                <span className="text-xs text-amber-600">+{myAccessRequests.length - 3} more</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
       {['people', 'portfolios'].includes(activeTab) && (
@@ -1787,7 +2292,11 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                               setShowAddNodeModal(true)
                             }}
                             onViewDetails={(n) => setViewingNodeDetails(n)}
+                            getCoverageStats={(teamId) => coverageStatsByTeam[teamId]}
+                            onViewTeamCoverage={(teamId, teamName) => setViewingTeamCoverage({ teamId, teamName })}
                             parentId={null}
+                            onRequestToJoin={(n) => setNodeJoinRequest(n)}
+                            isUserMember={isUserMemberOfNode}
                           />
                         </div>
                       )
@@ -1826,6 +2335,102 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           {/* People Tab */}
           {activeTab === 'people' && (
             <div className="space-y-6">
+              {/* My Access Summary (for non-admins) */}
+              {!isOrgAdmin && user && (
+                <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-indigo-900 flex items-center">
+                        <Shield className="w-4 h-4 mr-2" />
+                        My Access
+                      </h3>
+                      <p className="text-xs text-indigo-700 mt-1">Your current permissions and memberships</p>
+                    </div>
+                    {(() => {
+                      const myMembership = orgMembers.find(m => m.user_id === user.id)
+                      return myMembership?.user?.coverage_admin && (
+                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                          <Shield className="w-3 h-3 mr-1" />
+                          Coverage Admin
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Teams */}
+                    <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Users className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-medium text-gray-700">Teams</span>
+                      </div>
+                      {(() => {
+                        const myTeams = teamMemberships.filter(tm => tm.user_id === user.id)
+                        return myTeams.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {myTeams.map(tm => (
+                              <span
+                                key={tm.id}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs"
+                                style={{
+                                  backgroundColor: `${tm.team?.color || '#6366f1'}15`,
+                                  color: tm.team?.color || '#6366f1'
+                                }}
+                              >
+                                {tm.team?.name}
+                                {tm.is_team_admin && <Crown className="w-2.5 h-2.5 ml-1" />}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500">No team memberships</p>
+                        )
+                      })()}
+                    </div>
+                    {/* Portfolios */}
+                    <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Briefcase className="w-4 h-4 text-purple-600" />
+                        <span className="text-xs font-medium text-gray-700">Portfolios</span>
+                      </div>
+                      {(() => {
+                        const myPortfolios = portfolioMemberships.filter(pm => pm.user_id === user.id)
+                        return myPortfolios.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {myPortfolios.map(pm => (
+                              <span
+                                key={pm.id}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-700"
+                              >
+                                {pm.portfolio?.name}
+                                {pm.is_portfolio_manager && <Crown className="w-2.5 h-2.5 ml-1" />}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500">No portfolio access</p>
+                        )
+                      })()}
+                    </div>
+                    {/* Role */}
+                    <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <UserCircle className="w-4 h-4 text-gray-600" />
+                        <span className="text-xs font-medium text-gray-700">Your Role</span>
+                      </div>
+                      {(() => {
+                        const myMembership = orgMembers.find(m => m.user_id === user.id)
+                        return (
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-900 font-medium">{myMembership?.title || 'Member'}</p>
+                            <p className="text-xs text-gray-500">{user.email}</p>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </Card>
+              )}
+
               {/* View Toggle */}
               <div className="flex items-center space-x-2 justify-start">
                 <button
@@ -2013,8 +2618,8 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                     )}
                   </div>
 
-                  {/* Suspended Users */}
-                  {suspendedMembers.length > 0 && (
+                  {/* Suspended Users (admin only) */}
+                  {isOrgAdmin && suspendedMembers.length > 0 && (
                     <div className="space-y-3">
                       <h3 className="text-sm font-medium text-gray-700 flex items-center">
                         <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-500" />
@@ -2037,16 +2642,14 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                                 <p className="text-xs text-gray-500">{member.user?.email}</p>
                               </div>
                             </div>
-                            {isOrgAdmin && (
-                              <button
-                                onClick={() => unsuspendUserMutation.mutate(member.id)}
-                                disabled={unsuspendUserMutation.isPending}
-                                className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 rounded transition-colors flex items-center"
-                              >
-                                <Shield className="w-3 h-3 mr-1" />
-                                Restore
-                              </button>
-                            )}
+                            <button
+                              onClick={() => unsuspendUserMutation.mutate(member.id)}
+                              disabled={unsuspendUserMutation.isPending}
+                              className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 rounded transition-colors flex items-center"
+                            >
+                              <Shield className="w-3 h-3 mr-1" />
+                              Restore
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -2705,6 +3308,68 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
         />
       )}
 
+      {/* Node Join Request Modal */}
+      {nodeJoinRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">Request to Join</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Request access to <span className="font-medium text-gray-700">{nodeJoinRequest.name}</span>
+              </p>
+            </div>
+            <div className="px-6 py-4">
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg mb-4">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white`} style={{ backgroundColor: nodeJoinRequest.color || '#6366f1' }}>
+                  {nodeJoinRequest.icon === 'users' && <Users className="w-5 h-5" />}
+                  {nodeJoinRequest.icon === 'building' && <Building2 className="w-5 h-5" />}
+                  {nodeJoinRequest.icon === 'briefcase' && <Briefcase className="w-5 h-5" />}
+                  {nodeJoinRequest.icon === 'folder' && <Folder className="w-5 h-5" />}
+                  {!['users', 'building', 'briefcase', 'folder'].includes(nodeJoinRequest.icon) && <Users className="w-5 h-5" />}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{nodeJoinRequest.name}</p>
+                  <p className="text-xs text-gray-500 capitalize">{nodeJoinRequest.node_type}</p>
+                </div>
+              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason (optional)
+              </label>
+              <textarea
+                id="node-join-reason"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                rows={3}
+                placeholder="Why would you like to join this group?"
+              />
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3">
+              <button
+                onClick={() => setNodeJoinRequest(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const reason = (document.getElementById('node-join-reason') as HTMLTextAreaElement)?.value
+                  submitAccessRequestMutation.mutate({
+                    request_type: 'join_node',
+                    reason: reason || undefined,
+                    // Store node info in reason since we don't have a dedicated column
+                    requested_title: `Join ${nodeJoinRequest.node_type}: ${nodeJoinRequest.name} (ID: ${nodeJoinRequest.id})`
+                  })
+                  setNodeJoinRequest(null)
+                }}
+                disabled={submitAccessRequestMutation.isPending}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50"
+              >
+                {submitAccessRequestMutation.isPending ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Coverage Settings Confirmation Modal */}
       {showCoverageSettingsConfirm && editingCoverageSettings && coverageSettings && (() => {
         // Calculate what actually changed
@@ -2894,12 +3559,13 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
           existingMembers={getNodeMembers(showAddNodeMemberModal.id)}
           availableUsers={orgMembers}
           onClose={() => setShowAddNodeMemberModal(null)}
-          onSave={(userId, role, focus) => {
+          onSave={(userId, role, focus, isCoverageAdmin) => {
             addNodeMemberMutation.mutate({
               node_id: showAddNodeMemberModal.id,
               user_id: userId,
               role,
-              focus
+              focus,
+              is_coverage_admin: isCoverageAdmin
             }, {
               onSuccess: () => setShowAddNodeMemberModal(null)
             })
@@ -2948,7 +3614,27 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
               removeNodeMemberMutation.mutate(memberId)
             }
           }}
+          onToggleCoverageAdmin={(memberId, isCoverageAdmin) => {
+            toggleNodeMemberCoverageAdminMutation.mutate({ memberId, isCoverageAdmin })
+          }}
+          onToggleCoverageAdminBlocked={(memberId, isBlocked) => {
+            toggleNodeMemberCoverageAdminBlockedMutation.mutate({ memberId, isBlocked })
+          }}
+          canManageCoverageAdmins={canManageCoverageAdminsForNode(viewingNodeDetails.id)}
+          allOrgChartNodes={orgChartNodes}
+          allNodeMembers={orgChartNodeMembers}
+          globalCoverageAdminUserIds={new Set(orgMembers.filter(m => m.user?.coverage_admin).map(m => m.user_id))}
           isSaving={updateNodeMutation.isPending}
+        />
+      )}
+
+      {/* Team Coverage Panel */}
+      {viewingTeamCoverage && (
+        <TeamCoveragePanel
+          teamId={viewingTeamCoverage.teamId}
+          teamName={viewingTeamCoverage.teamName}
+          portfolioIds={getPortfolioIdsForTeam(viewingTeamCoverage.teamId)}
+          onClose={() => setViewingTeamCoverage(null)}
         />
       )}
 
@@ -3089,6 +3775,7 @@ export function OrganizationPage() {
         .from('organization_memberships')
         .select('is_org_admin')
         .eq('user_id', user.id)
+        .eq('status', 'active')
         .maybeSingle()
 
       if (error) {
@@ -3098,7 +3785,8 @@ export function OrganizationPage() {
 
       return { isAdmin: data?.is_org_admin === true }
     },
-    enabled: !!user?.id
+    enabled: !!user?.id,
+    staleTime: 0
   })
 
   // Show loading screen until we know the user's admin status
@@ -3131,11 +3819,15 @@ interface OrgChartNodeCardProps {
   onRemoveTeamMember?: (memberId: string) => void
   onInsertBetween?: (parentId: string, childIds: string[]) => void
   onViewDetails: (node: OrgChartNode) => void
+  getCoverageStats?: (teamId: string) => { assetCount: number; analystCount: number } | undefined
+  onViewTeamCoverage?: (teamId: string, teamName: string) => void
   depth?: number
   parentId?: string | null
+  onRequestToJoin?: (node: OrgChartNode) => void
+  isUserMember?: (nodeId: string) => boolean
 }
 
-function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, onDelete, onAddMember, onRemoveMember, getNodeMembers, getSharedTeams, getTeamMembers, getTeamPortfolios, getPortfolioTeamMembers, onAddTeamMember, onRemoveTeamMember, onInsertBetween, onViewDetails, depth = 0, parentId }: OrgChartNodeCardProps) {
+function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, onDelete, onAddMember, onRemoveMember, getNodeMembers, getSharedTeams, getTeamMembers, getTeamPortfolios, getPortfolioTeamMembers, onAddTeamMember, onRemoveTeamMember, onInsertBetween, onViewDetails, getCoverageStats, onViewTeamCoverage, depth = 0, parentId, onRequestToJoin, isUserMember }: OrgChartNodeCardProps) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
 
@@ -3162,7 +3854,10 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, 
   const isSharedPortfolio = node.node_type === 'portfolio' && sharedTeams.length > 0
 
   // For team nodes linked to teams table
+  // Note: linkedTeamId uses settings.team_id for legacy team lookups
+  // but for coverage stats, we use the node.id directly since coverage.team_id references org_chart_nodes.id
   const linkedTeamId = node.node_type === 'team' ? node.settings?.team_id : null
+  const coverageTeamId = node.node_type === 'team' ? node.id : null // Use node.id for coverage lookups
   const teamPortfolios = linkedTeamId && getTeamPortfolios ? getTeamPortfolios(linkedTeamId) : []
 
   // Recursively collect all portfolio team members from this node and all descendants
@@ -3235,30 +3930,76 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, 
           </div>
         )}
 
+        {/* Request to Join button for non-admins (team nodes only) */}
+        {!isOrgAdmin && node.node_type === 'team' && onRequestToJoin && isUserMember && !isUserMember(node.id) && (
+          <div className="absolute -top-1 -right-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-20">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onRequestToJoin(node)
+              }}
+              className="flex items-center space-x-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg shadow-md transition-colors"
+              title={`Request to join ${node.name}`}
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>Join</span>
+            </button>
+          </div>
+        )}
+
+        {/* Member indicator for non-admins */}
+        {!isOrgAdmin && node.node_type === 'team' && isUserMember && isUserMember(node.id) && (
+          <div className="absolute -top-1 -right-1 z-20">
+            <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+              <Check className="w-3 h-3 mr-0.5" />
+              Member
+            </span>
+          </div>
+        )}
+
         {/* Node Card */}
         <div
-          className={`relative bg-white border-2 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md ${
-            isExpanded && hasChildren ? 'border-gray-300' : 'border-gray-200'
+          className={`relative border-2 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md ${
+            node.is_non_investment
+              ? 'bg-gray-100 border-gray-300 border-dashed'
+              : `bg-white ${isExpanded && hasChildren ? 'border-gray-300' : 'border-gray-200'}`
           }`}
-          style={{ borderTopColor: node.color, borderTopWidth: '3px', width: '220px', minHeight: '120px' }}
+          style={{
+            borderTopColor: node.is_non_investment ? '#9ca3af' : node.color,
+            borderTopWidth: '3px',
+            borderTopStyle: 'solid',
+            width: '220px',
+            minHeight: '120px'
+          }}
           onClick={() => setIsExpanded(!isExpanded)}
         >
-          {/* Collaborative portfolio indicator - positioned in upper-left corner */}
-          {isSharedPortfolio && (
+          {/* Non-investment indicator */}
+          {node.is_non_investment && (
+            <div className="absolute top-2 left-2 z-10">
+              <span className="inline-flex items-center px-1.5 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-medium rounded">
+                Non-Investment
+              </span>
+            </div>
+          )}
+
+          {/* Collaborative/Linked portfolio indicator - positioned in upper-left corner */}
+          {(isSharedPortfolio || node.isLinkedInstance) && !node.is_non_investment && (
             <div
               className="absolute top-2 left-2 z-10"
               onMouseEnter={() => setShowSharedTooltip(true)}
               onMouseLeave={() => setShowSharedTooltip(false)}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-600 rounded-full">
+              <div className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-600">
                 <Link2 className="w-3 h-3" />
               </div>
               {/* Tooltip */}
               {showSharedTooltip && (
                 <div className="absolute z-30 top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
-                  <div className="font-medium mb-1">Shared with:</div>
-                  {sharedTeams.map((teamName, idx) => (
+                  <div className="font-medium mb-1">{node.isLinkedInstance ? 'Linked portfolio' : 'Shared with:'}</div>
+                  {node.isLinkedInstance ? (
+                    <div className="text-gray-300">Primary location: {orgChartNodes.find(n => n.id === node.parent_id)?.name || 'Unknown'}</div>
+                  ) : sharedTeams.map((teamName, idx) => (
                     <div key={idx} className="text-gray-300">{teamName}</div>
                   ))}
                   {/* Arrow */}
@@ -3292,6 +4033,48 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, 
               {linkedTeamId && teamPortfolios.length > 0 && ` · ${teamPortfolios.length} portfolio${teamPortfolios.length !== 1 ? 's' : ''}`}
             </p>
 
+            {/* Coverage stats for team nodes - always show container for consistent sizing */}
+            {coverageTeamId && getCoverageStats && (
+              <div className="mt-1.5 text-xs h-[52px] flex flex-col justify-center">
+                {(() => {
+                  const stats = getCoverageStats(coverageTeamId)
+                  if (stats && (stats.assetCount > 0 || stats.analystCount > 0)) {
+                    return (
+                      <>
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                            <Briefcase className="w-3 h-3 mr-1" />
+                            {stats.assetCount} asset{stats.assetCount !== 1 ? 's' : ''}
+                          </span>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                            <UserCircle className="w-3 h-3 mr-1" />
+                            {stats.analystCount} analyst{stats.analystCount !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        {onViewTeamCoverage && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onViewTeamCoverage(coverageTeamId, node.name)
+                            }}
+                            className="mt-1 text-indigo-600 hover:text-indigo-800 hover:underline text-xs flex items-center justify-center gap-1 w-full"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View Coverage
+                          </button>
+                        )}
+                      </>
+                    )
+                  }
+                  // Show placeholder for empty coverage
+                  return (
+                    <div className="text-gray-400 text-center">
+                      No coverage assigned
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
 
             {/* Expand indicator for nodes with children */}
             {hasChildren && (
@@ -3434,14 +4217,280 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, 
                   onRemoveTeamMember={onRemoveTeamMember}
                   onInsertBetween={onInsertBetween}
                   onViewDetails={onViewDetails}
+                  getCoverageStats={getCoverageStats}
+                  onViewTeamCoverage={onViewTeamCoverage}
                   depth={depth + 1}
                   parentId={node.id}
+                  onRequestToJoin={onRequestToJoin}
+                  isUserMember={isUserMember}
                 />
               </div>
             ))}
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// TeamCoveragePanel - shows coverage details for a specific team
+interface TeamCoveragePanelProps {
+  teamId: string
+  teamName: string
+  portfolioIds: string[] // Portfolio IDs associated with this team
+  onClose: () => void
+}
+
+function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCoveragePanelProps) {
+  // Fetch coverage records for this team's portfolios (via membership)
+  const { data: coverageRecords = [], isLoading } = useQuery({
+    queryKey: ['team-coverage', teamId, portfolioIds],
+    queryFn: async () => {
+      if (portfolioIds.length === 0) return []
+
+      // Find org_chart_nodes for these portfolios
+      const { data: portfolioNodes } = await supabase
+        .from('org_chart_nodes')
+        .select('id, settings')
+        .eq('node_type', 'portfolio')
+
+      const portfolioNodeIds = (portfolioNodes || [])
+        .filter(n => n.settings?.portfolio_id && portfolioIds.includes(n.settings.portfolio_id))
+        .map(n => n.id)
+
+      if (portfolioNodeIds.length === 0) return []
+
+      // Get members of these portfolio nodes
+      const { data: members } = await supabase
+        .from('org_chart_node_members')
+        .select('user_id')
+        .in('node_id', portfolioNodeIds)
+
+      const memberUserIds = [...new Set((members || []).map(m => m.user_id))]
+      if (memberUserIds.length === 0) return []
+
+      // Get coverage by these users
+      const { data: coverageData, error: coverageError } = await supabase
+        .from('coverage')
+        .select('id, asset_id, user_id, visibility, role, is_lead, created_at')
+        .in('user_id', memberUserIds)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (coverageError) throw coverageError
+      if (!coverageData || coverageData.length === 0) return []
+
+      // Get unique asset IDs and fetch asset info
+      const assetIds = [...new Set(coverageData.map(c => c.asset_id).filter(Boolean))]
+      const { data: assetsData } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector')
+        .in('id', assetIds)
+
+      const assetsMap = new Map(assetsData?.map(a => [a.id, a]) || [])
+
+      // Get unique user IDs and fetch user info
+      const userIds = [...new Set(coverageData.map(c => c.user_id).filter(Boolean))]
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .in('id', userIds)
+
+      const usersMap = new Map(usersData?.map(u => [u.id, u]) || [])
+
+      // Combine coverage with asset and user info
+      return coverageData.map(c => {
+        const asset = assetsMap.get(c.asset_id)
+        return {
+          ...c,
+          asset: asset ? { id: asset.id, ticker: asset.symbol, name: asset.company_name } : null,
+          user: usersMap.get(c.user_id) || null
+        }
+      })
+    }
+  })
+
+  // Count unique assets (not duplicate coverage records)
+  const uniqueAssetCount = new Set(coverageRecords.map(r => r.asset_id)).size
+
+  // Count overlapping assets (covered by multiple analysts)
+  const assetAnalystCount = coverageRecords.reduce((acc, record) => {
+    if (record.asset_id) {
+      if (!acc[record.asset_id]) acc[record.asset_id] = new Set()
+      if (record.user_id) acc[record.asset_id].add(record.user_id)
+    }
+    return acc
+  }, {} as Record<string, Set<string>>)
+
+  const overlapCount = Object.values(assetAnalystCount).filter(analysts => analysts.size > 1).length
+
+  // Group by visibility for display
+  const coverageByVisibility = coverageRecords.reduce((acc, record) => {
+    const vis = record.visibility || 'team'
+    if (!acc[vis]) acc[vis] = []
+    acc[vis].push(record)
+    return acc
+  }, {} as Record<string, typeof coverageRecords>)
+
+  const getVisibilityColor = (visibility: string) => {
+    switch (visibility) {
+      case 'firm': return 'bg-purple-100 text-purple-800'
+      case 'division': return 'bg-blue-100 text-blue-800'
+      default: return 'bg-green-100 text-green-800'
+    }
+  }
+
+  const getVisibilityIcon = (visibility: string) => {
+    switch (visibility) {
+      case 'firm': return <Building2 className="w-3 h-3" />
+      case 'division': return <FolderOpen className="w-3 h-3" />
+      default: return <Users className="w-3 h-3" />
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-end z-50">
+      <div className="bg-white h-full w-full max-w-xl shadow-2xl flex flex-col animate-slide-in-right">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+              <Briefcase className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">{teamName} Coverage</h2>
+              <p className="text-sm text-gray-500">
+                {uniqueAssetCount} asset{uniqueAssetCount !== 1 ? 's' : ''} covered
+                {overlapCount > 0 && (
+                  <span className="ml-2 text-amber-600">
+                    ({overlapCount} overlap{overlapCount !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            </div>
+          ) : coverageRecords.length === 0 ? (
+            <div className="text-center py-12">
+              <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No coverage assigned</h3>
+              <p className="text-sm text-gray-500">
+                This team doesn't have any coverage assignments yet.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-green-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-700">
+                    {coverageByVisibility['team']?.length || 0}
+                  </div>
+                  <div className="text-xs text-green-600 flex items-center justify-center gap-1">
+                    <Users className="w-3 h-3" /> Team Only
+                  </div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-700">
+                    {coverageByVisibility['division']?.length || 0}
+                  </div>
+                  <div className="text-xs text-blue-600 flex items-center justify-center gap-1">
+                    <FolderOpen className="w-3 h-3" /> Division
+                  </div>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-700">
+                    {coverageByVisibility['firm']?.length || 0}
+                  </div>
+                  <div className="text-xs text-purple-600 flex items-center justify-center gap-1">
+                    <Building2 className="w-3 h-3" /> Firm-wide
+                  </div>
+                </div>
+              </div>
+
+              {/* Coverage list */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  Coverage Assignments
+                </h3>
+                <div className="space-y-2">
+                  {coverageRecords.map((record) => (
+                    <div
+                      key={record.id}
+                      className="bg-white border border-gray-200 rounded-lg p-3 hover:border-gray-300 transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">
+                              {(record.asset as any)?.ticker || 'Unknown'}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getVisibilityColor(record.visibility || 'team')}`}>
+                              {getVisibilityIcon(record.visibility || 'team')}
+                              {record.visibility || 'team'}
+                            </span>
+                            {record.role && (
+                              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                                {record.role}
+                              </span>
+                            )}
+                            {record.is_lead && (
+                              <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded font-medium">
+                                Lead
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500 mt-0.5">
+                            {(record.asset as any)?.name || 'Unknown Asset'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-gray-900">
+                            {(record.user as any)?.first_name || ''} {(record.user as any)?.last_name || (record.user as any)?.email?.split('@')[0] || 'Unknown'}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {new Date(record.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <Info className="w-3 h-3" />
+              Visibility determines who can see each coverage assignment
+            </span>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -3585,7 +4634,7 @@ interface AddNodeMemberModalProps {
   existingMembers: OrgChartNodeMember[]
   availableUsers: OrganizationMembership[]
   onClose: () => void
-  onSave: (userId: string, role: string, focus?: string) => void
+  onSave: (userId: string, role: string, focus?: string, isCoverageAdmin?: boolean) => void
   isLoading?: boolean
 }
 
@@ -3593,6 +4642,7 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
   const [selectedUserId, setSelectedUserId] = useState('')
   const [role, setRole] = useState('')
   const [focus, setFocus] = useState('')
+  const [isCoverageAdmin, setIsCoverageAdmin] = useState(false)
 
   const roleOptions = [
     { value: 'Portfolio Manager', label: 'Portfolio Manager' },
@@ -3678,6 +4728,25 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
             </select>
           </div>
 
+          {/* Coverage Admin Checkbox */}
+          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
+            <input
+              type="checkbox"
+              id="coverage-admin"
+              checked={isCoverageAdmin}
+              onChange={(e) => setIsCoverageAdmin(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <div>
+              <label htmlFor="coverage-admin" className="text-sm font-medium text-gray-700">
+                Coverage Admin
+              </label>
+              <p className="text-xs text-gray-500">
+                Can manage coverage assignments for this {node.node_type} and all children
+              </p>
+            </div>
+          </div>
+
           {/* Show existing members */}
           {existingMembers.length > 0 && (
             <div>
@@ -3696,7 +4765,7 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
         <div className="flex justify-end space-x-3 mt-6">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() => onSave(selectedUserId, role, focus || undefined)}
+            onClick={() => onSave(selectedUserId, role, focus || undefined, isCoverageAdmin)}
             disabled={!selectedUserId || !role || isLoading}
             loading={isLoading}
           >
@@ -4245,6 +5314,7 @@ interface AddNodeModalProps {
     icon: string
     portfolio_id?: string
     childIdsToReparent?: string[]
+    is_non_investment?: boolean
   }) => void
   isLoading: boolean
 }
@@ -4267,6 +5337,7 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
   const [color, setColor] = useState('#6366f1')
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('')
   const [portfolioSearch, setPortfolioSearch] = useState('')
+  const [isNonInvestment, setIsNonInvestment] = useState(false)
 
   // Filter portfolios based on search
   const filteredPortfolios = portfolios.filter(p =>
@@ -4288,7 +5359,8 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
         color: '#10b981', // Green for portfolios
         icon: 'briefcase',
         portfolio_id: selectedPortfolioId,
-        childIdsToReparent: childIdsToReparent || undefined
+        childIdsToReparent: childIdsToReparent || undefined,
+        is_non_investment: isNonInvestment
       })
       return
     }
@@ -4304,7 +5376,8 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
       description: description.trim() || undefined,
       color,
       icon: NODE_TYPE_OPTIONS.find(o => o.value === nodeType)?.icon || 'folder',
-      childIdsToReparent: childIdsToReparent || undefined
+      childIdsToReparent: childIdsToReparent || undefined,
+      is_non_investment: isNonInvestment
     })
   }
 
@@ -4473,6 +5546,21 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
               </div>
             </div>
           )}
+
+          {/* Non-Investment Checkbox */}
+          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
+            <input
+              type="checkbox"
+              id="isNonInvestment"
+              checked={isNonInvestment}
+              onChange={(e) => setIsNonInvestment(e.target.checked)}
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label htmlFor="isNonInvestment" className="text-sm text-gray-700">
+              <span className="font-medium">Non-investment team</span>
+              <p className="text-xs text-gray-500">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+            </label>
+          </div>
         </div>
 
         <div className="flex justify-end space-x-3 mt-6">
@@ -4505,6 +5593,7 @@ interface EditNodeModalProps {
     color: string
     icon: string
     custom_type_label?: string
+    is_non_investment?: boolean
   }) => void
   isLoading: boolean
 }
@@ -4514,6 +5603,7 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
   const [name, setName] = useState(node.name)
   const [description, setDescription] = useState(node.description || '')
   const [color, setColor] = useState(node.color)
+  const [isNonInvestment, setIsNonInvestment] = useState(node.is_non_investment || false)
 
   const handleSubmit = () => {
     if (!name.trim()) return
@@ -4525,7 +5615,8 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
       description: description.trim() || undefined,
       color,
       icon: node.icon,
-      custom_type_label: node.node_type === 'custom' ? customTypeLabel.trim() : undefined
+      custom_type_label: node.node_type === 'custom' ? customTypeLabel.trim() : undefined,
+      is_non_investment: isNonInvestment
     })
   }
 
@@ -4608,6 +5699,21 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
               ))}
             </div>
           </div>
+
+          {/* Non-Investment Checkbox */}
+          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
+            <input
+              type="checkbox"
+              id="editIsNonInvestment"
+              checked={isNonInvestment}
+              onChange={(e) => setIsNonInvestment(e.target.checked)}
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label htmlFor="editIsNonInvestment" className="text-sm text-gray-700">
+              <span className="font-medium">Non-investment team</span>
+              <p className="text-xs text-gray-500">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+            </label>
+          </div>
         </div>
 
         <div className="flex justify-end space-x-3 mt-6">
@@ -4632,10 +5738,16 @@ interface NodeDetailModalProps {
   onClose: () => void
   isAdmin: boolean
   availableUsers: any[]
-  onSaveNode: (data: { id: string; name: string; description?: string; color: string; icon: string; custom_type_label?: string }) => void
+  onSaveNode: (data: { id: string; name: string; description?: string; color: string; icon: string; custom_type_label?: string; is_non_investment?: boolean }) => void
   onAddMember: (nodeId: string, userId: string, role?: string, focus?: string) => void
   onUpdateMember: (memberId: string, role: string, focus: string | null) => void
   onRemoveMember: (memberId: string) => void
+  onToggleCoverageAdmin?: (memberId: string, isCoverageAdmin: boolean) => void
+  onToggleCoverageAdminBlocked?: (memberId: string, isBlocked: boolean) => void
+  canManageCoverageAdmins?: boolean
+  allOrgChartNodes?: OrgChartNode[]
+  allNodeMembers?: OrgChartNodeMember[]
+  globalCoverageAdminUserIds?: Set<string>
   isSaving: boolean
 }
 
@@ -4650,6 +5762,12 @@ function NodeDetailModal({
   onAddMember,
   onUpdateMember,
   onRemoveMember,
+  onToggleCoverageAdmin,
+  onToggleCoverageAdminBlocked,
+  canManageCoverageAdmins,
+  allOrgChartNodes = [],
+  allNodeMembers = [],
+  globalCoverageAdminUserIds = new Set(),
   isSaving
 }: NodeDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false)
@@ -4657,6 +5775,7 @@ function NodeDetailModal({
   const [editDescription, setEditDescription] = useState(node.description || '')
   const [editColor, setEditColor] = useState(node.color)
   const [editCustomTypeLabel, setEditCustomTypeLabel] = useState(node.custom_type_label || '')
+  const [editIsNonInvestment, setEditIsNonInvestment] = useState(node.is_non_investment || false)
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
   const [editMemberRole, setEditMemberRole] = useState('')
   const [editMemberFocus, setEditMemberFocus] = useState('')
@@ -4685,6 +5804,88 @@ function NodeDetailModal({
 
   // All users are available - same user can be added with different role/focus
   const availableUsersFiltered = availableUsers
+
+  // Get all members from this node and all descendant nodes (for coverage admin display)
+  const allDescendantNodeIds = React.useMemo(() => {
+    const ids = new Set<string>([node.id])
+
+    // Helper to recursively get all descendant node IDs
+    const addDescendants = (parentId: string) => {
+      allOrgChartNodes
+        .filter(n => n.parent_id === parentId)
+        .forEach(child => {
+          ids.add(child.id)
+          addDescendants(child.id)
+        })
+    }
+
+    addDescendants(node.id)
+    return ids
+  }, [node.id, allOrgChartNodes])
+
+  // Get unique members from this node and all descendants (dedupe by user_id)
+  const membersWithDescendants = React.useMemo(() => {
+    const memberMap = new Map<string, OrgChartNodeMember>()
+
+    allNodeMembers
+      .filter(m => allDescendantNodeIds.has(m.node_id))
+      .forEach(m => {
+        // Keep the first occurrence (or one with is_coverage_admin if applicable)
+        if (!memberMap.has(m.user_id)) {
+          memberMap.set(m.user_id, m)
+        } else if (m.is_coverage_admin && !memberMap.get(m.user_id)?.is_coverage_admin) {
+          // Prefer the one with coverage admin status
+          memberMap.set(m.user_id, m)
+        }
+      })
+
+    return Array.from(memberMap.values())
+  }, [allNodeMembers, allDescendantNodeIds])
+
+  // Helper to determine a member's effective admin status for this node
+  type AdminStatus = 'explicit' | 'inherited' | 'global' | 'blocked' | 'none'
+
+  const getMemberAdminStatus = (member: OrgChartNodeMember): { status: AdminStatus; source?: string } => {
+    // If explicitly blocked for this node, show blocked
+    if (member.coverage_admin_blocked) {
+      return { status: 'blocked' }
+    }
+
+    // If explicitly set as admin for this node
+    if (member.is_coverage_admin) {
+      return { status: 'explicit' }
+    }
+
+    // Check if user has global coverage admin
+    if (globalCoverageAdminUserIds.has(member.user_id)) {
+      return { status: 'global' }
+    }
+
+    // Check if user has admin rights from parent nodes (inherited)
+    const nodeMap = new Map(allOrgChartNodes.map(n => [n.id, n]))
+    let currentNode = nodeMap.get(node.parent_id || '')
+
+    while (currentNode) {
+      // Check if user is admin at this parent node
+      const parentMember = allNodeMembers.find(m =>
+        m.node_id === currentNode!.id &&
+        m.user_id === member.user_id &&
+        m.is_coverage_admin &&
+        !m.coverage_admin_blocked
+      )
+      if (parentMember) {
+        return { status: 'inherited', source: currentNode.name }
+      }
+
+      // Move up the tree, but stop if the parent node has override set
+      if (currentNode.coverage_admin_override) {
+        break
+      }
+      currentNode = currentNode.parent_id ? nodeMap.get(currentNode.parent_id) : undefined
+    }
+
+    return { status: 'none' }
+  }
 
   // Get icon based on node type
   const getNodeIcon = () => {
@@ -4716,7 +5917,8 @@ function NodeDetailModal({
       description: editDescription.trim() || undefined,
       color: editColor,
       icon: node.icon,
-      custom_type_label: node.node_type === 'custom' ? editCustomTypeLabel.trim() : undefined
+      custom_type_label: node.node_type === 'custom' ? editCustomTypeLabel.trim() : undefined,
+      is_non_investment: editIsNonInvestment
     })
     setIsEditing(false)
   }
@@ -4743,43 +5945,71 @@ function NodeDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-gray-100">
+        <div
+          className="p-5 border-b border-gray-100"
+          style={{ backgroundColor: `${currentColor}08` }}
+        >
           <div className="flex items-start justify-between">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 flex-1 min-w-0">
               <div
-                className="w-14 h-14 rounded-xl flex items-center justify-center"
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{ backgroundColor: `${currentColor}20` }}
               >
                 {getNodeIcon()}
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 {isEditing ? (
                   <input
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className="text-xl font-semibold text-gray-900 w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="text-lg font-semibold text-gray-900 w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     placeholder="Enter name"
+                    autoFocus
                   />
                 ) : (
-                  <h3 className="text-xl font-semibold text-gray-900">{node.name}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 truncate">{node.name}</h3>
                 )}
-                <p className="text-sm text-gray-500">{getTypeLabel()}</p>
+                <div className="flex items-center space-x-2 mt-0.5">
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: `${currentColor}20`, color: currentColor }}
+                  >
+                    {getTypeLabel()}
+                  </span>
+                  {node.is_non_investment && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      Non-Investment
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
+            <div className="flex items-center space-x-1 ml-3">
+              {isAdmin && !isEditing && (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all text-gray-500 hover:text-indigo-600"
+                  title="Edit"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={isEditing ? handleCancelEdit : onClose}
+                className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all"
+                title={isEditing ? "Cancel editing" : "Close"}
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
+        <div className="flex-1 p-5 overflow-y-auto">
           {/* Custom Type Label (only for custom type in edit mode) */}
           {isEditing && node.node_type === 'custom' && (
             <div className="mb-6">
@@ -4794,60 +6024,79 @@ function NodeDetailModal({
             </div>
           )}
 
-          {/* Description */}
-          <div className="mb-6">
-            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-              <FileText className="w-4 h-4 mr-2 text-gray-400" />
-              Description
-            </h4>
-            {isEditing ? (
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Add a description..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                rows={3}
-              />
-            ) : (
-              <p className="text-gray-600 bg-gray-50 rounded-lg p-3">
-                {node.description || 'No description'}
-              </p>
-            )}
-          </div>
-
-          {/* Color (only in edit mode) */}
-          {isEditing && (
-            <div className="mb-6">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Color</h4>
-              <div className="flex flex-wrap gap-2">
-                {NODE_COLORS.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => setEditColor(c)}
-                    className={`w-8 h-8 rounded-full border-2 transition-transform ${
-                      editColor === c ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: c }}
+          {/* Description - only show in edit mode or if there's content */}
+          {(isEditing || node.description) && (
+            <div className="mb-5">
+              {isEditing ? (
+                <>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Description</h4>
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="Add a description..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                    rows={2}
                   />
-                ))}
+                </>
+              ) : (
+                <p className="text-sm text-gray-600">{node.description}</p>
+              )}
+            </div>
+          )}
+
+          {/* Edit-only settings */}
+          {isEditing && (
+            <div className="mb-5 p-4 bg-gray-50 rounded-lg space-y-4">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">Settings</h4>
+
+              {/* Color */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Color</label>
+                <div className="flex flex-wrap gap-2">
+                  {NODE_COLORS.map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setEditColor(c)}
+                      className={`w-7 h-7 rounded-full border-2 transition-all ${
+                        editColor === c ? 'border-gray-800 scale-110 shadow-sm' : 'border-transparent hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Non-Investment Checkbox */}
+              <div className="flex items-center space-x-3 pt-2 border-t border-gray-200">
+                <input
+                  type="checkbox"
+                  id="detailIsNonInvestment"
+                  checked={editIsNonInvestment}
+                  onChange={(e) => setEditIsNonInvestment(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor="detailIsNonInvestment" className="text-sm text-gray-700">
+                  <span className="font-medium">Non-investment team</span>
+                  <p className="text-xs text-gray-500">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+                </label>
               </div>
             </div>
           )}
 
           {/* Members */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-gray-700 flex items-center">
-                <Users className="w-4 h-4 mr-2 text-gray-400" />
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center">
+                <Users className="w-3.5 h-3.5 mr-1.5" />
                 Members ({displayMembers.length})
               </h4>
               {isEditing && isAdmin && (
                 <button
                   onClick={() => setShowAddMember(!showAddMember)}
-                  className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center"
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center"
                 >
-                  <UserPlus className="w-4 h-4 mr-1" />
-                  Add Member
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add
                 </button>
               )}
             </div>
@@ -5086,32 +6335,130 @@ function NodeDetailModal({
             )}
           </div>
 
+          {/* Coverage Admin Section - shows members from this node and all descendants (only for investment-related nodes) */}
+          {!(isEditing ? editIsNonInvestment : node.is_non_investment) && (canManageCoverageAdmins || membersWithDescendants.some(m => m.is_coverage_admin || globalCoverageAdminUserIds.has(m.user_id))) && (
+            <div className="pt-4 border-t border-gray-100">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center mb-3">
+                <Shield className="w-3.5 h-3.5 mr-1.5" />
+                Coverage Admin Rights
+              </h4>
+
+              {/* List of members from this node and descendants with per-member admin controls */}
+              <div className="bg-gray-50 rounded-lg divide-y divide-gray-100">
+                {membersWithDescendants.length > 0 ? (
+                  membersWithDescendants.map(member => {
+                    const displayName = member.user?.full_name || member.user?.email || 'Unknown'
+                    const initial = displayName.charAt(0).toUpperCase()
+                    const adminStatus = getMemberAdminStatus(member)
+
+                    // Determine if this user has inherited or global admin that can be blocked
+                    const hasInheritedOrGlobalAdmin =
+                      adminStatus.status === 'global' ||
+                      adminStatus.status === 'inherited' ||
+                      (adminStatus.status === 'blocked' && (globalCoverageAdminUserIds.has(member.user_id) || allNodeMembers.some(m =>
+                        m.user_id === member.user_id &&
+                        m.node_id !== node.id &&
+                        m.is_coverage_admin &&
+                        !m.coverage_admin_blocked
+                      )))
+
+                    return (
+                      <div key={member.id} className="px-3 py-2 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium text-white"
+                            style={{ backgroundColor: node.color }}
+                          >
+                            {initial}
+                          </div>
+                          <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {/* Admin Status Badge */}
+                          {adminStatus.status === 'explicit' && (
+                            <span className="px-2 py-0.5 text-xs bg-indigo-100 text-indigo-700 rounded-full flex items-center">
+                              <Shield className="w-3 h-3 mr-1" />
+                              Admin
+                            </span>
+                          )}
+                          {adminStatus.status === 'global' && (
+                            <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center" title="Has global coverage admin rights">
+                              <Shield className="w-3 h-3 mr-1" />
+                              Global
+                            </span>
+                          )}
+                          {adminStatus.status === 'inherited' && (
+                            <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full flex items-center" title={`Inherited from ${adminStatus.source}`}>
+                              <Shield className="w-3 h-3 mr-1" />
+                              Inherited
+                            </span>
+                          )}
+                          {adminStatus.status === 'blocked' && (
+                            <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full flex items-center" title="Admin access blocked for this node">
+                              <ShieldOff className="w-3 h-3 mr-1" />
+                              Blocked
+                            </span>
+                          )}
+
+                          {/* Admin Control Buttons */}
+                          {canManageCoverageAdmins && (
+                            <div className="flex items-center space-x-1">
+                              {/* Toggle explicit admin (only for 'none' or 'explicit' status - global/inherited just need block option) */}
+                              {(adminStatus.status === 'none' || adminStatus.status === 'explicit') && onToggleCoverageAdmin && (
+                                <button
+                                  onClick={() => onToggleCoverageAdmin(member.id, !member.is_coverage_admin)}
+                                  className={`p-1.5 rounded transition-colors ${
+                                    adminStatus.status === 'explicit'
+                                      ? 'text-indigo-600 hover:bg-indigo-50'
+                                      : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
+                                  }`}
+                                  title={adminStatus.status === 'explicit' ? 'Remove explicit admin' : 'Grant explicit admin'}
+                                >
+                                  <Shield className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {/* Block/Unblock inherited or global admin */}
+                              {hasInheritedOrGlobalAdmin && onToggleCoverageAdminBlocked && (
+                                <button
+                                  onClick={() => onToggleCoverageAdminBlocked(member.id, !member.coverage_admin_blocked)}
+                                  className={`p-1.5 rounded transition-colors ${
+                                    member.coverage_admin_blocked
+                                      ? 'text-amber-600 hover:bg-amber-50'
+                                      : 'text-gray-400 hover:bg-gray-100 hover:text-amber-600'
+                                  }`}
+                                  title={member.coverage_admin_blocked ? 'Unblock admin access' : 'Block inherited/global admin'}
+                                >
+                                  <ShieldOff className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <p className="px-3 py-2 text-sm text-gray-500">No node members. Add members to manage coverage admin rights.</p>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
 
-        {/* Footer */}
-        <div className="p-6 border-t border-gray-100 flex justify-end space-x-3">
-          {isEditing ? (
-            <>
-              <Button variant="outline" onClick={handleCancelEdit}>Cancel</Button>
-              <Button
-                onClick={handleSave}
-                disabled={!editName.trim() || (node.node_type === 'custom' && !editCustomTypeLabel.trim()) || isSaving}
-              >
-                {isSaving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={onClose}>Close</Button>
-              {isAdmin && (
-                <Button onClick={() => setIsEditing(true)}>
-                  <Edit3 className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-              )}
-            </>
-          )}
-        </div>
+        {/* Footer - only shows when editing */}
+        {isEditing && (
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
+            <Button variant="outline" onClick={handleCancelEdit}>Cancel</Button>
+            <Button
+              onClick={handleSave}
+              disabled={!editName.trim() || (node.node_type === 'custom' && !editCustomTypeLabel.trim()) || isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )

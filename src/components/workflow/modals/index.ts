@@ -42,3 +42,7 @@ export type { EditRuleModalProps } from './EditRuleModal'
 // Automation Modals - Asset Population
 export { AddAssetPopulationRuleModal } from './AddAssetPopulationRuleModal'
 export type { AddAssetPopulationRuleModalProps } from './AddAssetPopulationRuleModal'
+
+// Automation Modals - Branch Ending
+export { AddBranchEndingRuleModal } from './AddBranchEndingRuleModal'
+export type { AddBranchEndingRuleModalProps } from './AddBranchEndingRuleModal'

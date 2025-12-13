@@ -693,13 +693,37 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         break
 
       case 'portfolio':
+        // Coverage flows through membership - get assets covered by users who are members of the portfolio
         if (Array.isArray(filter.values) && filter.values.length > 0) {
-          const { data: portfolioCoverage } = await supabase
-            .from('coverage')
-            .select('asset_id')
-            .in('portfolio_id', filter.values)
-            .eq('is_active', true)
-          filterAssetIds = portfolioCoverage?.map(p => p.asset_id).filter(Boolean) || []
+          // Find org_chart_nodes for these portfolios
+          const { data: portfolioNodes } = await supabase
+            .from('org_chart_nodes')
+            .select('id, settings')
+            .eq('node_type', 'portfolio')
+
+          const portfolioNodeIds = (portfolioNodes || [])
+            .filter(n => n.settings?.portfolio_id && filter.values.includes(n.settings.portfolio_id))
+            .map(n => n.id)
+
+          if (portfolioNodeIds.length > 0) {
+            // Get members of these portfolio nodes
+            const { data: members } = await supabase
+              .from('org_chart_node_members')
+              .select('user_id')
+              .in('node_id', portfolioNodeIds)
+
+            const memberUserIds = [...new Set((members || []).map(m => m.user_id))]
+
+            if (memberUserIds.length > 0) {
+              // Get coverage by these users
+              const { data: portfolioCoverage } = await supabase
+                .from('coverage')
+                .select('asset_id')
+                .in('user_id', memberUserIds)
+                .eq('is_active', true)
+              filterAssetIds = portfolioCoverage?.map(p => p.asset_id).filter(Boolean) || []
+            }
+          }
         }
         break
     }

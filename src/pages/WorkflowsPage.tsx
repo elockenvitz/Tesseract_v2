@@ -36,7 +36,8 @@ import {
   AccessRequestModal,
   AddRuleModal,
   EditRuleModal,
-  AddAssetPopulationRuleModal
+  AddAssetPopulationRuleModal,
+  AddBranchEndingRuleModal
 } from '../components/workflow/modals'
 import { CreateWorkflowWizard } from '../components/workflow/CreateWorkflowWizard'
 import { TabStateManager } from '../lib/tabStateManager'
@@ -224,6 +225,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false)
   const [showAddRuleModal, setShowAddRuleModal] = useState(false)
   const [showAddAssetPopulationRuleModal, setShowAddAssetPopulationRuleModal] = useState(false)
+  const [showAddBranchEndingRuleModal, setShowAddBranchEndingRuleModal] = useState(false)
   const [editingRule, setEditingRule] = useState<string | null>(null)
   const [editingAssetPopulationRule, setEditingAssetPopulationRule] = useState<string | null>(null)
   const [showCreateBranchModal, setShowCreateBranchModal] = useState(false)
@@ -3673,8 +3675,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     // Close the appropriate modal based on rule category
     setShowAddRuleModal(false)
     setShowAddAssetPopulationRuleModal(false)
+    setShowAddBranchEndingRuleModal(false)
 
-    const ruleTypeLabel = ruleData.rule_category === 'asset_population' ? 'asset population rule' : 'branch creation rule'
+    const ruleTypeLabel = ruleData.rule_category === 'asset_population' ? 'asset population rule' :
+                          ruleData.rule_category === 'branch_ending' ? 'branch ending rule' : 'branch creation rule'
     trackChange('rule_added', `Added ${ruleTypeLabel} "${ruleData.name}"`, `rule_${tempId}`)
   }, [selectedWorkflow, trackChange])
 
@@ -3781,7 +3785,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
       setShowAddRuleModal(false)
       setShowAddAssetPopulationRuleModal(false)
-      const ruleTypeLabel = data.rule_category === 'asset_population' ? 'Asset Population Rule' : 'Branch Creation Rule'
+      setShowAddBranchEndingRuleModal(false)
+      const ruleTypeLabel = data.rule_category === 'asset_population' ? 'Asset Population Rule' :
+                           data.rule_category === 'branch_ending' ? 'Branch Ending Rule' : 'Branch Creation Rule'
       trackChange('rule_added', `${ruleTypeLabel} Added: "${data.rule_name}"`, `rule_${data.id}`)
     },
     onError: (error: any) => {
@@ -5703,6 +5709,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         setShowDeleteRuleModal(true)
                       }
                     }}
+                    onAddBranchEndingRule={() => setShowAddBranchEndingRuleModal(true)}
+                    onEditBranchEndingRule={(rule) => setEditingRule(rule.id)}
+                    onDeleteBranchEndingRule={(ruleId, ruleName) => {
+                      if (isTemplateEditMode) {
+                        handleDeleteRuleDraft(ruleId)
+                      } else {
+                        setRuleToDelete({ id: ruleId, name: ruleName, type: 'automation' })
+                        setShowDeleteRuleModal(true)
+                      }
+                    }}
                   />
               )}
 
@@ -6454,6 +6470,22 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowName={selectedWorkflow.name}
           workflowStages={selectedWorkflow.stages || []}
           onClose={() => setShowAddAssetPopulationRuleModal(false)}
+          onSave={(ruleData) => {
+            // rule_category is already set by the modal
+            if (isTemplateEditMode) {
+              handleAddRuleDraft(ruleData)
+            } else {
+              addRuleMutation.mutate({ workflowId: selectedWorkflow.id, rule: ruleData })
+            }
+          }}
+        />
+      )}
+
+      {showAddBranchEndingRuleModal && selectedWorkflow && (
+        <AddBranchEndingRuleModal
+          workflowId={selectedWorkflow.id}
+          workflowName={selectedWorkflow.name}
+          onClose={() => setShowAddBranchEndingRuleModal(false)}
           onSave={(ruleData) => {
             // rule_category is already set by the modal
             if (isTemplateEditMode) {
