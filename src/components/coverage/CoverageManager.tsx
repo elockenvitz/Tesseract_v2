@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, History, Calendar, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle, UserPlus, Building2, FolderOpen, Check } from 'lucide-react'
+import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, EyeOff, History, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle, UserPlus, Building2, FolderOpen, Check, Briefcase, Minimize2, Maximize2, Scale } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
@@ -51,6 +51,7 @@ interface CoverageRecord {
   portfolios?: {
     id: string
     name: string
+    team_id?: string | null
   } | null
   teams?: {
     id: string
@@ -60,25 +61,124 @@ interface CoverageRecord {
 }
 
 export function CoverageManager({ isOpen, onClose, initialView = 'active', mode = 'modal' }: CoverageManagerProps) {
-  const [activeView, setActiveView] = useState<'active' | 'history' | 'requests'>(initialView)
-  const [viewMode, setViewMode] = useState<'list' | 'workload' | 'matrix' | 'calendar' | 'team'>('list')
+  // localStorage key for persisting settings
+  const STORAGE_KEY = 'coverage-manager-settings'
+
+  // Load initial state from localStorage
+  const getInitialState = <T,>(key: string, defaultValue: T): T => {
+    if (typeof window === 'undefined') return defaultValue
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (key in parsed) {
+          // Handle Set conversion
+          if (defaultValue instanceof Set) {
+            return new Set(parsed[key]) as T
+          }
+          return parsed[key]
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load coverage settings:', e)
+    }
+    return defaultValue
+  }
+
+  const [activeView, setActiveView] = useState<'active' | 'history' | 'requests'>(() => getInitialState('activeView', initialView))
+  const [viewMode, setViewMode] = useState<'list' | 'gaps' | 'workload' | 'matrix'>(() => getInitialState('viewMode', 'list'))
   const [searchQuery, setSearchQuery] = useState('')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [selectedAnalystId, setSelectedAnalystId] = useState<string | null>(null)
-  const [teamFilter, setTeamFilter] = useState<string | null>(null)
   const [selectedStatCard, setSelectedStatCard] = useState<'analysts' | 'covered' | 'gaps' | 'average' | null>(null)
-  const [matrixGroupBy, setMatrixGroupBy] = useState<'sector' | 'analyst' | 'portfolio' | 'role' | 'team'>('sector')
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [matrixGroupBy, setMatrixGroupBy] = useState<'sector' | 'analyst' | 'portfolio' | 'team' | 'holdings'>(() => getInitialState('matrixGroupBy', 'sector'))
+  const [matrixSelectedAnalysts, setMatrixSelectedAnalysts] = useState<Set<string>>(() => new Set()) // Empty = show all
+  const [showMatrixAnalystPicker, setShowMatrixAnalystPicker] = useState(false)
+  const matrixAnalystPickerRef = useRef<HTMLDivElement>(null)
+  const [matrixShowOverlapsOnly, setMatrixShowOverlapsOnly] = useState(false)
+  const [matrixGroupContextMenu, setMatrixGroupContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => getInitialState('collapsedGroups', new Set()))
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(() => getInitialState('hiddenGroups', new Set()))
+  const [hideEmptyGroups, setHideEmptyGroups] = useState(() => getInitialState('hideEmptyGroups', false))
+  const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; groupKey: string; groupName: string } | null>(null)
+  const [collapsedGapsGroups, setCollapsedGapsGroups] = useState<Set<string>>(() => getInitialState('collapsedGapsGroups', new Set()))
+
+  // List View Configuration - Columns, Sorting, Filtering, Grouping
+  type ListColumnId = 'asset' | 'analyst' | 'role' | 'visibility' | 'sector' | 'startDate' | 'tenure' | 'industry' | 'marketCap'
+  type ListGroupByLevel = 'division' | 'department' | 'team' | 'portfolio' | 'sector' | 'industry' | 'analyst'
+  const [listVisibleColumns, setListVisibleColumns] = useState<ListColumnId[]>(() => getInitialState('listVisibleColumns', ['asset', 'analyst', 'visibility', 'sector']))
+  const [listGroupByLevels, setListGroupByLevels] = useState<ListGroupByLevel[]>(() => getInitialState('listGroupByLevels', [])) // Multi-level grouping
+  const [listGroupFilter, setListGroupFilter] = useState<string | null>(null) // Filter to specific group
+  const [showGroupByDropdown, setShowGroupByDropdown] = useState(false)
+  const groupByRef = useRef<HTMLDivElement>(null)
+  const [listSortColumn, setListSortColumn] = useState<ListColumnId | null>(() => getInitialState('listSortColumn', 'asset'))
+  const [listSortDirection, setListSortDirection] = useState<'asc' | 'desc'>(() => getInitialState('listSortDirection', 'asc'))
+  const [listColumnFilters, setListColumnFilters] = useState<Partial<Record<ListColumnId, string>>>({})
+  const [showColumnManager, setShowColumnManager] = useState(false)
+  const [activeFilterColumn, setActiveFilterColumn] = useState<ListColumnId | null>(null)
 
   // Determine if the component should be visible (page mode is always visible)
   const isVisible = mode === 'page' || isOpen
 
-  // Sync activeView with initialView when modal opens
+  // Save settings to localStorage when they change
   useEffect(() => {
-    if (isVisible) {
-      setActiveView(initialView)
+    const settings = {
+      activeView,
+      viewMode,
+      matrixGroupBy,
+      collapsedGroups: Array.from(collapsedGroups),
+      hiddenGroups: Array.from(hiddenGroups),
+      hideEmptyGroups,
+      collapsedGapsGroups: Array.from(collapsedGapsGroups),
+      listVisibleColumns,
+      listGroupByLevels,
+      listSortColumn,
+      listSortDirection
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    } catch (e) {
+      console.warn('Failed to save coverage settings:', e)
+    }
+  }, [activeView, viewMode, matrixGroupBy, collapsedGroups, hiddenGroups, hideEmptyGroups, collapsedGapsGroups, listVisibleColumns, listGroupByLevels, listSortColumn, listSortDirection])
+
+  // Sync activeView with initialView only when modal first opens (not on subsequent renders)
+  const hasInitialized = useRef(false)
+  useEffect(() => {
+    if (isVisible && !hasInitialized.current) {
+      // Only sync with initialView if coming from a specific navigation (e.g., clicking Requests tab)
+      if (initialView !== 'active') {
+        setActiveView(initialView)
+      }
+      hasInitialized.current = true
+    }
+    if (!isVisible) {
+      hasInitialized.current = false
     }
   }, [isVisible, initialView])
+
+  // Close group by dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (groupByRef.current && !groupByRef.current.contains(event.target as Node)) {
+        setShowGroupByDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Close matrix analyst picker on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (matrixAnalystPickerRef.current && !matrixAnalystPickerRef.current.contains(event.target as Node)) {
+        setShowMatrixAnalystPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const [uploadErrors, setUploadErrors] = useState<string[]>([])
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -247,6 +347,94 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const { user } = useAuth()
   const hasGlobalCoverageAdmin = user?.coverage_admin || false
   const [showAdminBadgeDropdown, setShowAdminBadgeDropdown] = useState(false)
+  const columnManagerRef = useRef<HTMLDivElement>(null)
+  const filterDropdownRef = useRef<HTMLDivElement>(null)
+
+  // List View Column Definitions
+  const listColumnDefinitions: Record<ListColumnId, { label: string; width: number; filterable: boolean; sortable: boolean }> = {
+    asset: { label: 'Asset', width: 3, filterable: true, sortable: true },
+    analyst: { label: 'Analyst', width: 2, filterable: true, sortable: true },
+    role: { label: 'Role', width: 1, filterable: true, sortable: true },
+    visibility: { label: 'Visibility', width: 1, filterable: true, sortable: true },
+    sector: { label: 'Sector', width: 2, filterable: true, sortable: true },
+    startDate: { label: 'Start Date', width: 1, filterable: false, sortable: true },
+    tenure: { label: 'Tenure', width: 1, filterable: false, sortable: true },
+    industry: { label: 'Industry', width: 2, filterable: true, sortable: true },
+    marketCap: { label: 'Market Cap', width: 1, filterable: false, sortable: true }
+  }
+
+  // Calculate tenure from start date
+  const calculateTenure = (startDate: string | null): { days: number; label: string } => {
+    if (!startDate) return { days: 0, label: '—' }
+    const start = new Date(startDate)
+    const now = new Date()
+    const diffTime = now.getTime() - start.getTime()
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    if (diffDays < 30) return { days: diffDays, label: `${diffDays}d` }
+    if (diffDays < 365) return { days: diffDays, label: `${Math.floor(diffDays / 30)}mo` }
+    const years = Math.floor(diffDays / 365)
+    const months = Math.floor((diffDays % 365) / 30)
+    return { days: diffDays, label: months > 0 ? `${years}y ${months}mo` : `${years}y` }
+  }
+
+  // Format market cap
+  const formatMarketCap = (marketCap: number | null | undefined): string => {
+    if (!marketCap) return '—'
+    if (marketCap >= 1e12) return `$${(marketCap / 1e12).toFixed(1)}T`
+    if (marketCap >= 1e9) return `$${(marketCap / 1e9).toFixed(1)}B`
+    if (marketCap >= 1e6) return `$${(marketCap / 1e6).toFixed(1)}M`
+    return `$${marketCap.toLocaleString()}`
+  }
+
+  // Toggle column sort
+  const handleColumnSort = (columnId: ListColumnId) => {
+    if (!listColumnDefinitions[columnId].sortable) return
+    if (listSortColumn === columnId) {
+      setListSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setListSortColumn(columnId)
+      setListSortDirection('asc')
+    }
+  }
+
+  // Toggle column filter dropdown
+  const handleFilterClick = (columnId: ListColumnId, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!listColumnDefinitions[columnId].filterable) return
+    setActiveFilterColumn(prev => prev === columnId ? null : columnId)
+  }
+
+  // Get team name from user's org chart membership (since team_id on coverage is often null)
+  const getAnalystTeamName = (userId: string): string | null => {
+    if (!userTeamMemberships) return null
+    const memberships = userTeamMemberships.get(userId)
+    if (!memberships || memberships.length === 0) return null
+    // Prefer team type nodes, then any other membership
+    const teamNode = memberships.find(m => m.type === 'team')
+    if (teamNode) return teamNode.name
+    // Fall back to first membership if no team found
+    return memberships[0]?.name || null
+  }
+
+  // Get unique values for filter dropdown
+  const getUniqueFilterValues = (columnId: ListColumnId, records: CoverageRecord[]): string[] => {
+    const values = new Set<string>()
+    records.forEach(coverage => {
+      let value: string | undefined
+      switch (columnId) {
+        case 'analyst': value = coverage.analyst_name; break
+        case 'role': value = coverage.role || 'Unassigned'; break
+        case 'visibility': value = coverage.visibility || 'team'; break
+        case 'sector': value = coverage.assets?.sector; break
+        case 'industry': value = (coverage.assets as any)?.industry; break
+      }
+      if (value) values.add(value)
+    })
+    return Array.from(values).sort()
+  }
+
+  // Calculate total width for visible columns
+  const totalColumnWidth = listVisibleColumns.reduce((sum, colId) => sum + listColumnDefinitions[colId].width, 0) + 1 // +1 for actions
 
   // Fetch all coverage records with asset details
   const { data: coverageRecords, isLoading: coverageLoading } = useQuery({
@@ -254,7 +442,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select('*, assets(*), portfolios(id, name), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type)')
+        .select('*, assets(*), portfolios(id, name, team_id), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type)')
         .order('updated_at', { ascending: false })
 
       if (error) {
@@ -283,6 +471,27 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     },
     enabled: isVisible,
   })
+
+  // Fetch teams for team name lookups
+  const { data: teamsData } = useQuery({
+    queryKey: ['teams-for-coverage'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('teams')
+        .select('id, name')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: isVisible,
+  })
+
+  // Create a map for quick team lookups by id
+  const teamsMap = React.useMemo(() => {
+    const map = new Map<string, string>()
+    teamsData?.forEach(team => map.set(team.id, team.name))
+    return map
+  }, [teamsData])
 
   // Fetch coverage history for a specific asset
   const { data: assetCoverageHistory } = useQuery({
@@ -355,35 +564,319 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
   // Fetch team memberships to show what teams each analyst belongs to
   const { data: userTeamMemberships } = useQuery({
-    queryKey: ['user-team-memberships'],
+    queryKey: ['user-team-memberships-coverage'],
     queryFn: async () => {
-      // Get org chart node members with their node info (teams are stored in org_chart_nodes)
-      const { data, error } = await supabase
-        .from('org_chart_node_members')
+      // Get team memberships from team_memberships table (links users to teams)
+      const { data: teamMemberships, error: tmError } = await supabase
+        .from('team_memberships')
         .select(`
           user_id,
-          node:node_id (id, name, node_type),
-          role
+          team:team_id (id, name)
+        `)
+
+      if (tmError) throw tmError
+
+      // Get all org chart nodes to find the hierarchy
+      const { data: orgNodes, error: orgError } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, node_type, parent_id, settings')
+
+      if (orgError) throw orgError
+
+      // Build a map of team_id -> org chart node (nodes with settings.team_id)
+      const teamIdToOrgNode = new Map<string, any>()
+      ;(orgNodes || []).forEach((node: any) => {
+        if (node.settings?.team_id) {
+          teamIdToOrgNode.set(node.settings.team_id, node)
+        }
+      })
+
+      // Build node lookup map
+      const nodeMap = new Map((orgNodes || []).map((n: any) => [n.id, n]))
+
+      // Group by user_id, finding the org chart node for each team membership
+      const byUser = new Map<string, Array<{ id: string; name: string; type: string; role?: string }>>()
+      ;(teamMemberships || []).forEach((m: any) => {
+        if (m.user_id && m.team) {
+          if (!byUser.has(m.user_id)) {
+            byUser.set(m.user_id, [])
+          }
+
+          // Find org chart node linked to this team
+          const orgNode = teamIdToOrgNode.get(m.team.id)
+          if (orgNode) {
+            byUser.get(m.user_id)!.push({
+              id: orgNode.id,
+              name: orgNode.name,
+              type: orgNode.node_type,
+              role: undefined
+            })
+          } else {
+            // Fallback: use team directly
+            byUser.get(m.user_id)!.push({
+              id: m.team.id,
+              name: m.team.name,
+              type: 'team',
+              role: undefined
+            })
+          }
+        }
+      })
+      return byUser
+    },
+    enabled: isVisible
+  })
+
+  // Fetch portfolio team memberships (portfolio members are in portfolio_team table, not org_chart_node_members)
+  const { data: portfolioTeamMemberships } = useQuery({
+    queryKey: ['portfolio-team-memberships-for-grouping'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_team')
+        .select(`
+          user_id,
+          portfolio_id,
+          role,
+          portfolios:portfolio_id (id, name)
         `)
 
       if (error) throw error
 
-      // Group by user_id, including all org chart node memberships
-      const byUser = new Map<string, Array<{ id: string; name: string; type: string; role?: string }>>()
+      // Group by user_id -> portfolio names
+      const byUser = new Map<string, string[]>()
       ;(data || []).forEach((m: any) => {
-        if (m.user_id && m.node) {
+        if (m.user_id && m.portfolios?.name) {
           if (!byUser.has(m.user_id)) {
             byUser.set(m.user_id, [])
           }
-          byUser.get(m.user_id)!.push({
-            id: m.node.id,
-            name: m.node.name,
-            type: m.node.node_type,
-            role: m.role
-          })
+          const portfolioName = m.portfolios.name
+          if (!byUser.get(m.user_id)!.includes(portfolioName)) {
+            byUser.get(m.user_id)!.push(portfolioName)
+          }
         }
       })
       return byUser
+    },
+    enabled: isVisible
+  })
+
+  // Fetch portfolio holdings (for holdings grouping in matrix view)
+  const { data: portfolioHoldings } = useQuery({
+    queryKey: ['portfolio-holdings-for-matrix'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_holdings')
+        .select(`
+          portfolio_id,
+          asset_id,
+          portfolios:portfolio_id (id, name),
+          assets:asset_id (id, symbol, company_name, sector)
+        `)
+
+      if (error) throw error
+
+      // Group by portfolio name -> assets
+      const byPortfolio = new Map<string, Array<{ id: string; symbol: string; name: string; sector: string }>>()
+      ;(data || []).forEach((h: any) => {
+        if (h.portfolios?.name && h.assets) {
+          const portfolioName = h.portfolios.name
+          if (!byPortfolio.has(portfolioName)) {
+            byPortfolio.set(portfolioName, [])
+          }
+          const existing = byPortfolio.get(portfolioName)!
+          if (!existing.find(a => a.id === h.assets.id)) {
+            existing.push({
+              id: h.assets.id,
+              symbol: h.assets.symbol,
+              name: h.assets.company_name,
+              sector: h.assets.sector || 'Uncategorized'
+            })
+          }
+        }
+      })
+      return byPortfolio
+    },
+    enabled: isVisible
+  })
+
+  // Fetch portfolio universe data (for portfolio grouping based on investable universe filters)
+  const { data: portfolioUniverseAssets } = useQuery({
+    queryKey: ['portfolio-universe-assets-for-matrix'],
+    queryFn: async () => {
+      // Get all portfolios
+      const { data: portfolios, error: portfoliosError } = await supabase
+        .from('portfolios')
+        .select('id, name')
+
+      if (portfoliosError) throw portfoliosError
+
+      // Get direct universe asset assignments
+      const { data: directAssets, error: directError } = await supabase
+        .from('portfolio_universe_assets')
+        .select(`
+          portfolio_id,
+          asset_id,
+          assets:asset_id (id, symbol, company_name, sector, industry, market_cap)
+        `)
+
+      if (directError) throw directError
+
+      // Get portfolio universe filters
+      const { data: filters, error: filtersError } = await supabase
+        .from('portfolio_universe_filters')
+        .select('*')
+
+      if (filtersError) throw filtersError
+
+      // Get all assets for filter evaluation
+      const { data: allAssets, error: assetsError } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector, industry, country, exchange, market_cap')
+
+      if (assetsError) throw assetsError
+
+      // Helper to check if asset matches a filter (matches PortfolioTab.tsx logic)
+      const assetMatchesFilter = (asset: any, filter: any): boolean => {
+        const { filter_type, filter_operator, filter_value } = filter
+
+        switch (filter_type) {
+          case 'sector':
+            if (filter_operator === 'include') return asset.sector === filter_value
+            if (filter_operator === 'exclude') return asset.sector !== filter_value
+            return true
+
+          case 'industry':
+            if (filter_operator === 'include') return asset.industry === filter_value
+            if (filter_operator === 'exclude') return asset.industry !== filter_value
+            return true
+
+          case 'country':
+            if (filter_operator === 'include') return asset.country === filter_value
+            if (filter_operator === 'exclude') return asset.country !== filter_value
+            return true
+
+          case 'exchange':
+            if (filter_operator === 'include') return asset.exchange === filter_value
+            if (filter_operator === 'exclude') return asset.exchange !== filter_value
+            return true
+
+          case 'market_cap':
+            if (!asset.market_cap) return false
+            const marketCapInMillions = Number(asset.market_cap) / 1000000 // Convert to millions
+
+            if (filter_operator === 'gt') {
+              // Value is like ">500M" - extract number
+              const threshold = parseFloat(filter_value.replace(/[>M]/g, ''))
+              return marketCapInMillions > threshold
+            }
+            if (filter_operator === 'lt') {
+              const threshold = parseFloat(filter_value.replace(/[<M]/g, ''))
+              return marketCapInMillions < threshold
+            }
+            if (filter_operator === 'between') {
+              // Value is like "500M-1000M"
+              const [minStr, maxStr] = filter_value.split('-')
+              const min = parseFloat(minStr.replace('M', ''))
+              const max = parseFloat(maxStr.replace('M', ''))
+              return marketCapInMillions >= min && marketCapInMillions <= max
+            }
+            return true
+
+          case 'index':
+            // Index membership would need a separate data source - skip for now
+            return true
+
+          default:
+            return true
+        }
+      }
+
+      // Build universe by portfolio name
+      const byPortfolio = new Map<string, Array<{ id: string; symbol: string; name: string; sector: string }>>()
+      const portfolioIdToName = new Map<string, string>()
+      ;(portfolios || []).forEach(p => portfolioIdToName.set(p.id, p.name))
+
+      // Add direct asset assignments
+      ;(directAssets || []).forEach((da: any) => {
+        const portfolioName = portfolioIdToName.get(da.portfolio_id)
+        if (!portfolioName || !da.assets) return
+
+        if (!byPortfolio.has(portfolioName)) {
+          byPortfolio.set(portfolioName, [])
+        }
+        const existing = byPortfolio.get(portfolioName)!
+        if (!existing.find(a => a.id === da.assets.id)) {
+          existing.push({
+            id: da.assets.id,
+            symbol: da.assets.symbol,
+            name: da.assets.company_name,
+            sector: da.assets.sector || 'Uncategorized'
+          })
+        }
+      })
+
+      // Group filters by portfolio
+      const filtersByPortfolio = new Map<string, any[]>()
+      ;(filters || []).forEach((f: any) => {
+        if (!filtersByPortfolio.has(f.portfolio_id)) {
+          filtersByPortfolio.set(f.portfolio_id, [])
+        }
+        filtersByPortfolio.get(f.portfolio_id)!.push(f)
+      })
+
+      // Apply filters to find matching assets
+      filtersByPortfolio.forEach((portfolioFilters, portfolioId) => {
+        const portfolioName = portfolioIdToName.get(portfolioId)
+        if (!portfolioName) return
+
+        if (!byPortfolio.has(portfolioName)) {
+          byPortfolio.set(portfolioName, [])
+        }
+        const existing = byPortfolio.get(portfolioName)!
+        const existingIds = new Set(existing.map(a => a.id))
+
+        ;(allAssets || []).forEach((asset: any) => {
+          if (existingIds.has(asset.id)) return
+
+          // Asset must match ALL filters for this portfolio
+          const matchesAll = portfolioFilters.every(f => assetMatchesFilter(asset, f))
+          if (matchesAll) {
+            existing.push({
+              id: asset.id,
+              symbol: asset.symbol,
+              name: asset.company_name,
+              sector: asset.sector || 'Uncategorized'
+            })
+          }
+        })
+      })
+
+      return byPortfolio
+    },
+    enabled: isVisible
+  })
+
+  // Fetch all org chart node members (for team grouping - teams derive members from child portfolio nodes)
+  const { data: allOrgChartNodeMembers } = useQuery({
+    queryKey: ['all-org-chart-node-members-for-grouping'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_node_members')
+        .select('node_id, user_id, role')
+
+      if (error) throw error
+
+      // Build a map of node_id -> user_ids
+      const byNode = new Map<string, string[]>()
+      ;(data || []).forEach((m: any) => {
+        if (!byNode.has(m.node_id)) {
+          byNode.set(m.node_id, [])
+        }
+        if (!byNode.get(m.node_id)!.includes(m.user_id)) {
+          byNode.get(m.node_id)!.push(m.user_id)
+        }
+      })
+      return byNode
     },
     enabled: isVisible
   })
@@ -446,9 +939,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
         return node.name
       }
 
-      // Filter to only team/portfolio/division for the dropdown, excluding non-investment nodes
+      // Filter to only department/division/team/portfolio for the dropdown, excluding non-investment nodes
       const filteredNodes = (data || [])
-        .filter(n => ['team', 'portfolio', 'division'].includes(n.node_type) && !isNonInvestmentNode(n))
+        .filter(n => ['department', 'division', 'team', 'portfolio'].includes(n.node_type) && !isNonInvestmentNode(n))
         .map((node: any) => ({
           ...node,
           displayName: getDisplayName(node),
@@ -590,115 +1083,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   // Check if user has any coverage admin capability (global or node-level)
   const hasAnyCoverageAdminRights = hasGlobalCoverageAdmin || userCoverageAdminNodes.length > 0
 
-  // Get the selected node details to check if it's a portfolio
-  const selectedNode = allOrgChartNodes?.nodes?.find((n: any) => n.id === teamFilter)
-  const isPortfolioSelected = selectedNode?.node_type === 'portfolio'
-
-  // Get the portfolio ID from portfolios table when a portfolio node is selected
-  const selectedPortfolioId = isPortfolioSelected && portfolios
-    ? portfolios.find(p => p.name === selectedNode.name)?.id
-    : null
-
-  // Fetch investable universe assets for the selected portfolio
-  const { data: portfolioUniverseAssets } = useQuery({
-    queryKey: ['portfolio-universe-assets-coverage', selectedPortfolioId],
-    enabled: !!selectedPortfolioId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('portfolio_universe_assets')
-        .select('asset_id')
-        .eq('portfolio_id', selectedPortfolioId)
-      if (error) throw error
-      return data?.map(ua => ua.asset_id) || []
-    },
-  })
-
-  // Fetch investable universe filters for the selected portfolio
-  const { data: portfolioUniverseFilters } = useQuery({
-    queryKey: ['portfolio-universe-filters-coverage', selectedPortfolioId],
-    enabled: !!selectedPortfolioId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('portfolio_universe_filters')
-        .select('*')
-        .eq('portfolio_id', selectedPortfolioId)
-      if (error) throw error
-      return data || []
-    },
-  })
-
-  // Compute assets matching portfolio filters
-  const portfolioFilteredAssetIds = React.useMemo(() => {
-    if (!assets || !portfolioUniverseFilters || portfolioUniverseFilters.length === 0) return []
-
-    return assets.filter(asset => {
-      return portfolioUniverseFilters.every((filter: any) => {
-        const { filter_type, filter_operator, filter_value } = filter
-
-        switch (filter_type) {
-          case 'sector':
-            if (filter_operator === 'include') return asset.sector === filter_value
-            if (filter_operator === 'exclude') return asset.sector !== filter_value
-            return true
-
-          case 'industry':
-            if (filter_operator === 'include') return (asset as any).industry === filter_value
-            if (filter_operator === 'exclude') return (asset as any).industry !== filter_value
-            return true
-
-          case 'country':
-            if (filter_operator === 'include') return (asset as any).country === filter_value
-            if (filter_operator === 'exclude') return (asset as any).country !== filter_value
-            return true
-
-          case 'exchange':
-            if (filter_operator === 'include') return (asset as any).exchange === filter_value
-            if (filter_operator === 'exclude') return (asset as any).exchange !== filter_value
-            return true
-
-          case 'market_cap':
-            const marketCap = (asset as any).market_cap
-            if (!marketCap) return false
-            const marketCapInMillions = Number(marketCap) / 1000000
-
-            if (filter_operator === 'gt') {
-              const threshold = parseFloat(filter_value.replace(/[>M]/g, ''))
-              return marketCapInMillions > threshold
-            }
-            if (filter_operator === 'lt') {
-              const threshold = parseFloat(filter_value.replace(/[<M]/g, ''))
-              return marketCapInMillions < threshold
-            }
-            if (filter_operator === 'between') {
-              const [minStr, maxStr] = filter_value.split('-')
-              const min = parseFloat(minStr.replace('M', ''))
-              const max = parseFloat(maxStr.replace('M', ''))
-              return marketCapInMillions >= min && marketCapInMillions <= max
-            }
-            return true
-
-          default:
-            return true
-        }
-      })
-    }).map(a => a.id)
-  }, [assets, portfolioUniverseFilters])
-
-  // Check if the portfolio has any universe configuration (filters or manual assets)
-  const hasUniverseConfiguration = React.useMemo(() => {
-    const hasFilters = portfolioUniverseFilters && portfolioUniverseFilters.length > 0
-    const hasManualAssets = portfolioUniverseAssets && portfolioUniverseAssets.length > 0
-    return hasFilters || hasManualAssets
-  }, [portfolioUniverseFilters, portfolioUniverseAssets])
-
-  // Combined investable universe asset IDs (manual + filter-matched)
-  const investableUniverseAssetIds = React.useMemo(() => {
-    if (!isPortfolioSelected) return null
-    const manualIds = portfolioUniverseAssets || []
-    const filterIds = portfolioFilteredAssetIds || []
-    return new Set([...manualIds, ...filterIds])
-  }, [isPortfolioSelected, portfolioUniverseAssets, portfolioFilteredAssetIds])
-
   // Fetch all teams (org chart nodes of type 'team') for team-scoped coverage
   const { data: allTeams } = useQuery({
     queryKey: ['all-teams-for-coverage'],
@@ -838,6 +1222,200 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       return data || []
     },
     enabled: isVisible && activeView === 'requests'
+  })
+
+  // Fetch uncovered assets (gaps) - assets without active coverage
+  const { data: gapsQueryResult, isLoading: gapsLoading } = useQuery({
+    queryKey: ['coverage-gaps'],
+    queryFn: async () => {
+      // Get all assets with active coverage
+      const { data: coveredAssetIds, error: coverageError } = await supabase
+        .from('coverage')
+        .select('asset_id')
+        .eq('is_active', true)
+
+      if (coverageError) throw coverageError
+
+      const coveredIds = new Set((coveredAssetIds || []).map(c => c.asset_id))
+
+      // Get all assets
+      const { data: allAssets, error: assetsError } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector, industry, market_cap')
+        .order('symbol')
+
+      if (assetsError) throw assetsError
+
+      // Return both uncovered (gaps) and all assets with coverage status
+      const uncoveredAssets = (allAssets || []).filter(a => !coveredIds.has(a.id))
+      const allWithStatus = (allAssets || []).map(a => ({
+        ...a,
+        isCovered: coveredIds.has(a.id)
+      }))
+
+      return {
+        uncovered: uncoveredAssets,
+        allWithStatus
+      }
+    },
+    enabled: isVisible && viewMode === 'gaps'
+  })
+
+  // Extract gaps data for backward compatibility
+  const gapsData = gapsQueryResult?.uncovered
+  const allAssetsWithStatus = gapsQueryResult?.allWithStatus
+
+  // Fetch portfolio universe assets for portfolio-based gap analysis
+  const { data: portfolioUniverseData } = useQuery({
+    queryKey: ['portfolio-universe-gaps'],
+    queryFn: async () => {
+      // First, get ALL portfolios
+      const { data: allPortfolios, error: portfoliosError } = await supabase
+        .from('portfolios')
+        .select('id, name')
+        .order('name')
+
+      if (portfoliosError) throw portfoliosError
+
+      // Get portfolio universe assets (direct assignments)
+      const { data: universeAssets, error: universeError } = await supabase
+        .from('portfolio_universe_assets')
+        .select(`
+          portfolio_id,
+          asset_id,
+          assets!inner(id, symbol, company_name, sector, industry, market_cap)
+        `)
+
+      if (universeError) throw universeError
+
+      // Get portfolio universe filters (rule-based)
+      const { data: universeFilters, error: filtersError } = await supabase
+        .from('portfolio_universe_filters')
+        .select('*')
+
+      if (filtersError) throw filtersError
+
+      // Get all assets for filter evaluation
+      const { data: allAssets, error: assetsError } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector, industry, market_cap')
+
+      if (assetsError) throw assetsError
+
+      // Get all assets with active coverage
+      const { data: coveredAssetIds, error: coverageError } = await supabase
+        .from('coverage')
+        .select('asset_id')
+        .eq('is_active', true)
+
+      if (coverageError) throw coverageError
+
+      const coveredIds = new Set((coveredAssetIds || []).map(c => c.asset_id))
+
+      // Helper to parse market cap filter value (e.g., ">75000M" -> 75000000000)
+      const parseMarketCapValue = (value: string): number => {
+        const match = value.match(/[><=]*(\d+)([BMK])?/i)
+        if (!match) return 0
+        let num = parseInt(match[1], 10)
+        const suffix = match[2]?.toUpperCase()
+        if (suffix === 'B') num *= 1e9
+        else if (suffix === 'M') num *= 1e6
+        else if (suffix === 'K') num *= 1e3
+        return num
+      }
+
+      // Helper to check if asset matches a filter
+      const assetMatchesFilter = (asset: any, filter: any): boolean => {
+        if (filter.filter_type === 'market_cap' && asset.market_cap != null) {
+          const threshold = parseMarketCapValue(filter.filter_value)
+          const op = filter.filter_operator
+          if (op === 'gt' || filter.filter_value.startsWith('>')) return asset.market_cap > threshold
+          if (op === 'lt' || filter.filter_value.startsWith('<')) return asset.market_cap < threshold
+          if (op === 'gte') return asset.market_cap >= threshold
+          if (op === 'lte') return asset.market_cap <= threshold
+          if (op === 'eq') return asset.market_cap === threshold
+        }
+        if (filter.filter_type === 'sector' && asset.sector) {
+          return asset.sector.toLowerCase() === filter.filter_value.toLowerCase()
+        }
+        if (filter.filter_type === 'industry' && asset.industry) {
+          return asset.industry.toLowerCase() === filter.filter_value.toLowerCase()
+        }
+        return false
+      }
+
+      // Build universe data per portfolio
+      const universeByPortfolio = new Map<string, Array<{ id: string; symbol: string; company_name: string; sector: string | null; industry: string | null; market_cap: number | null }>>()
+      const hasUniverseDefinition = new Set<string>()
+
+      // Add direct asset assignments
+      ;(universeAssets || []).forEach((ua: any) => {
+        const pId = ua.portfolio_id
+        hasUniverseDefinition.add(pId)
+        if (!universeByPortfolio.has(pId)) {
+          universeByPortfolio.set(pId, [])
+        }
+        universeByPortfolio.get(pId)!.push({
+          id: ua.assets.id,
+          symbol: ua.assets.symbol,
+          company_name: ua.assets.company_name,
+          sector: ua.assets.sector,
+          industry: ua.assets.industry,
+          market_cap: ua.assets.market_cap
+        })
+      })
+
+      // Group filters by portfolio
+      const filtersByPortfolio = new Map<string, any[]>()
+      ;(universeFilters || []).forEach((filter: any) => {
+        hasUniverseDefinition.add(filter.portfolio_id)
+        if (!filtersByPortfolio.has(filter.portfolio_id)) {
+          filtersByPortfolio.set(filter.portfolio_id, [])
+        }
+        filtersByPortfolio.get(filter.portfolio_id)!.push(filter)
+      })
+
+      // Apply filters to find matching assets
+      filtersByPortfolio.forEach((filters, portfolioId) => {
+        if (!universeByPortfolio.has(portfolioId)) {
+          universeByPortfolio.set(portfolioId, [])
+        }
+        const existingIds = new Set(universeByPortfolio.get(portfolioId)!.map(a => a.id))
+
+        ;(allAssets || []).forEach((asset: any) => {
+          // Skip if already in universe from direct assignment
+          if (existingIds.has(asset.id)) return
+
+          // Asset must match ALL filters for this portfolio
+          const matchesAll = filters.every((filter: any) => assetMatchesFilter(asset, filter))
+          if (matchesAll) {
+            universeByPortfolio.get(portfolioId)!.push({
+              id: asset.id,
+              symbol: asset.symbol,
+              company_name: asset.company_name,
+              sector: asset.sector,
+              industry: asset.industry,
+              market_cap: asset.market_cap
+            })
+          }
+        })
+      })
+
+      // Build result for ALL portfolios
+      return (allPortfolios || []).map(portfolio => {
+        const universeAssetsList = universeByPortfolio.get(portfolio.id) || []
+        const uncoveredAssets = universeAssetsList.filter(asset => !coveredIds.has(asset.id))
+        const hasDefinition = hasUniverseDefinition.has(portfolio.id)
+
+        return {
+          portfolio: { id: portfolio.id, name: portfolio.name },
+          assets: uncoveredAssets,
+          universeSize: universeAssetsList.length,
+          hasUniverseDefinition: hasDefinition
+        }
+      })
+    },
+    enabled: isVisible && viewMode === 'gaps' && listGroupByLevels.includes('portfolio')
   })
 
   // Set showAllChanges default based on user role
@@ -1424,125 +2002,107 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       )
     }
 
-    // Apply team filter - show coverage where analyst is a member of the selected node OR any descendant
-    // For portfolios, include all linked teams and their hierarchies
-    if (teamFilter && userTeamMemberships) {
-      let relevantNodeIds: Set<string>
-
-      if (isPortfolioSelected) {
-        // For portfolios: get all linked teams and their descendants
-        const selectedNodeData = allOrgChartNodes?.nodes?.find((n: any) => n.id === teamFilter)
-        const linkedTeamIds = selectedNodeData?.linkedNodeIds || []
-
-        relevantNodeIds = new Set<string>([teamFilter])
-
-        // Include all linked teams and their descendants/ancestors
-        for (const linkedTeamId of linkedTeamIds) {
-          // Add the linked team and all its descendants
-          const descendants = getDescendantNodeIds(linkedTeamId)
-          descendants.forEach(id => relevantNodeIds.add(id))
-          // Add ancestors above the linked team
-          const ancestors = getAncestorNodeIds(linkedTeamId)
-          ancestors.forEach(id => relevantNodeIds.add(id))
-        }
-
-        // If no links, fallback to parent team
-        if (linkedTeamIds.length === 0) {
-          const allNodes = allOrgChartNodes?.allNodes || []
-          const nodeData = allNodes.find(n => n.id === teamFilter)
-          if (nodeData?.parent_id) {
-            const descendants = getDescendantNodeIds(nodeData.parent_id)
-            descendants.forEach(id => relevantNodeIds.add(id))
-            const ancestors = getAncestorNodeIds(nodeData.parent_id)
-            ancestors.forEach(id => relevantNodeIds.add(id))
+    // Apply list view column filters (only in list view mode)
+    if (viewMode === 'list' && Object.keys(listColumnFilters).length > 0) {
+      records = records.filter(coverage => {
+        for (const [columnId, filterValue] of Object.entries(listColumnFilters)) {
+          if (!filterValue) continue
+          const lowerFilter = filterValue.toLowerCase()
+          switch (columnId) {
+            case 'asset':
+              if (!(coverage.assets?.symbol?.toLowerCase().includes(lowerFilter) ||
+                    coverage.assets?.company_name?.toLowerCase().includes(lowerFilter))) return false
+              break
+            case 'analyst':
+              if (!coverage.analyst_name?.toLowerCase().includes(lowerFilter)) return false
+              break
+            case 'role':
+              if (!(coverage.role || 'unassigned').toLowerCase().includes(lowerFilter)) return false
+              break
+            case 'visibility':
+              if (!(coverage.visibility || 'team').toLowerCase().includes(lowerFilter)) return false
+              break
+            case 'sector':
+              if (!coverage.assets?.sector?.toLowerCase().includes(lowerFilter)) return false
+              break
+            case 'industry':
+              if (!(coverage.assets as any)?.industry?.toLowerCase().includes(lowerFilter)) return false
+              break
           }
         }
-      } else {
-        // For teams/divisions: get all descendant node IDs for hierarchical filtering
-        // e.g., selecting "Equity" division will include all teams/portfolios under it
-        relevantNodeIds = getDescendantNodeIds(teamFilter)
-      }
-
-      records = records.filter(coverage => {
-        const analystMemberships = userTeamMemberships.get(coverage.user_id) || []
-        return analystMemberships.some(m => relevantNodeIds.has(m.id))
+        return true
       })
     }
 
-    // Apply investable universe filter when a portfolio is selected
-    if (isPortfolioSelected && selectedPortfolioId) {
-      if (hasUniverseConfiguration) {
-        // Portfolio has universe filters/manual assets defined - apply filter
-        if (investableUniverseAssetIds && investableUniverseAssetIds.size > 0) {
-          records = records.filter(coverage => investableUniverseAssetIds.has(coverage.asset_id))
-        } else {
-          // Universe is configured but no assets match - show nothing
-          records = []
+    // Apply list view sorting (only in list view mode)
+    if (viewMode === 'list' && listSortColumn) {
+      records = [...records].sort((a, b) => {
+        let aVal: any, bVal: any
+        switch (listSortColumn) {
+          case 'asset':
+            aVal = a.assets?.symbol || ''
+            bVal = b.assets?.symbol || ''
+            break
+          case 'analyst':
+            aVal = a.analyst_name || ''
+            bVal = b.analyst_name || ''
+            break
+          case 'role':
+            const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
+            aVal = roleOrder[a.role || ''] ?? 3
+            bVal = roleOrder[b.role || ''] ?? 3
+            return listSortDirection === 'asc' ? aVal - bVal : bVal - aVal
+          case 'visibility':
+            const visOrder: Record<string, number> = { team: 0, division: 1, firm: 2 }
+            aVal = visOrder[a.visibility || 'team'] ?? 0
+            bVal = visOrder[b.visibility || 'team'] ?? 0
+            return listSortDirection === 'asc' ? aVal - bVal : bVal - aVal
+          case 'sector':
+            aVal = a.assets?.sector || ''
+            bVal = b.assets?.sector || ''
+            break
+          case 'startDate':
+            aVal = a.start_date || ''
+            bVal = b.start_date || ''
+            break
+          case 'tenure':
+            aVal = calculateTenure(a.start_date).days
+            bVal = calculateTenure(b.start_date).days
+            return listSortDirection === 'asc' ? aVal - bVal : bVal - aVal
+          case 'industry':
+            aVal = (a.assets as any)?.industry || ''
+            bVal = (b.assets as any)?.industry || ''
+            break
+          case 'marketCap':
+            aVal = (a.assets as any)?.market_cap || 0
+            bVal = (b.assets as any)?.market_cap || 0
+            return listSortDirection === 'asc' ? aVal - bVal : bVal - aVal
+          default:
+            return 0
         }
-      }
-      // If no universe configuration, show all assets (don't filter)
+        const comparison = String(aVal).localeCompare(String(bVal))
+        return listSortDirection === 'asc' ? comparison : -comparison
+      })
     }
 
     return records
   })()
 
-  // Apply team filter to coverage history events
-  const filteredCoverageEvents = (() => {
-    if (!allCoverageEvents) return []
-    if (!teamFilter || !userTeamMemberships) return allCoverageEvents
+  // Coverage history events
+  const filteredCoverageEvents = allCoverageEvents || []
 
-    const relevantNodeIds = getDescendantNodeIds(teamFilter)
-    return allCoverageEvents.filter(event => {
-      // Check if either old or new analyst is a member of the filtered team hierarchy
-      // Note: fields are old_user_id and new_user_id in coverage_history table
-      const oldAnalystMemberships = event.old_user_id ? userTeamMemberships.get(event.old_user_id) || [] : []
-      const newAnalystMemberships = event.new_user_id ? userTeamMemberships.get(event.new_user_id) || [] : []
+  // Coverage requests
+  const filteredCoverageRequests = coverageRequests || []
 
-      const oldAnalystMatch = oldAnalystMemberships.some(m => relevantNodeIds.has(m.id))
-      const newAnalystMatch = newAnalystMemberships.some(m => relevantNodeIds.has(m.id))
-
-      return oldAnalystMatch || newAnalystMatch
-    })
-  })()
-
-  // Apply team filter to coverage requests
-  const filteredCoverageRequests = (() => {
-    if (!coverageRequests) return []
-    if (!teamFilter || !userTeamMemberships) return coverageRequests
-
-    const relevantNodeIds = getDescendantNodeIds(teamFilter)
-    return coverageRequests.filter(request => {
-      // Filter by the user who made the request
-      const requesterMemberships = request.requested_by ? userTeamMemberships.get(request.requested_by) || [] : []
-      return requesterMemberships.some(m => relevantNodeIds.has(m.id))
-    })
-  })()
-
-  // Get all covered asset IDs (within universe if portfolio selected with universe config)
+  // Get all covered asset IDs
   const coveredAssetIds = new Set(
     (coverageRecords || [])
       .filter(coverage => coverage.is_active)
-      .filter(coverage => {
-        // If a portfolio with universe config is selected, only count coverage within the universe
-        if (hasUniverseConfiguration && investableUniverseAssetIds && investableUniverseAssetIds.size > 0) {
-          return investableUniverseAssetIds.has(coverage.asset_id)
-        }
-        return true
-      })
       .map(coverage => coverage.asset_id)
   )
 
-  // Get all uncovered assets (respecting investable universe when portfolio selected with config)
-  const allUncoveredAssets = (() => {
-    // When a portfolio with an investable universe config is selected, show uncovered universe assets
-    if (hasUniverseConfiguration && investableUniverseAssetIds && investableUniverseAssetIds.size > 0) {
-      return (assets || []).filter(asset =>
-        investableUniverseAssetIds.has(asset.id) && !coveredAssetIds.has(asset.id)
-      )
-    }
-    // Otherwise show all uncovered assets
-    return (assets || []).filter(asset => !coveredAssetIds.has(asset.id))
-  })()
+  // Get all uncovered assets
+  const allUncoveredAssets = (assets || []).filter(asset => !coveredAssetIds.has(asset.id))
 
   // Get uncovered assets matching search (for list view display)
   const uncoveredAssets = (() => {
@@ -1554,10 +2114,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
           asset.company_name.toLowerCase().includes(searchQuery.toLowerCase())
         return matchesSearch
       })
-    }
-    // When a portfolio is selected, show all uncovered assets (with or without universe config)
-    if (isPortfolioSelected) {
-      return allUncoveredAssets
     }
     // For workload view, we use allUncoveredAssets.length in the stats card
     return []
@@ -1715,24 +2271,34 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 {!viewHistoryAssetId && activeView === 'active' && (
                   <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
                     <button
-                      onClick={() => setViewMode('list')}
+                      onClick={() => { setViewMode('list'); setMatrixShowOverlapsOnly(false) }}
                       className={clsx(
                         "p-2 rounded-md transition-colors",
                         viewMode === 'list' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
                       )}
-                      title="List View"
+                      title="List"
                     >
                       <List className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => setViewMode('workload')}
+                      onClick={() => { setViewMode('gaps'); setMatrixShowOverlapsOnly(false) }}
+                      className={clsx(
+                        "p-2 rounded-md transition-colors",
+                        viewMode === 'gaps' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
+                      )}
+                      title="Gaps"
+                    >
+                      <AlertCircle className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => { setViewMode('workload'); setMatrixShowOverlapsOnly(false) }}
                       className={clsx(
                         "p-2 rounded-md transition-colors",
                         viewMode === 'workload' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
                       )}
-                      title="Workload View"
+                      title="Workload"
                     >
-                      <LayoutGrid className="h-4 w-4" />
+                      <Scale className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => setViewMode('matrix')}
@@ -1740,29 +2306,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         "p-2 rounded-md transition-colors",
                         viewMode === 'matrix' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
                       )}
-                      title="Matrix View"
+                      title="Matrix"
                     >
                       <Grid3X3 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('calendar')}
-                      className={clsx(
-                        "p-2 rounded-md transition-colors",
-                        viewMode === 'calendar' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
-                      )}
-                      title="Calendar View"
-                    >
-                      <Calendar className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('team')}
-                      className={clsx(
-                        "p-2 rounded-md transition-colors",
-                        viewMode === 'team' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
-                      )}
-                      title="Team View"
-                    >
-                      <Building2 className="h-4 w-4" />
                     </button>
                   </div>
                 )}
@@ -2977,42 +3523,170 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   />
                 </div>
 
-                {/* Team/Group Filter Dropdown */}
-                <div className="relative">
-                  <select
-                    value={teamFilter || ''}
-                    onChange={(e) => setTeamFilter(e.target.value || null)}
+                {/* Group By Dropdown - Multi-level (hidden for Workload and Matrix views) */}
+                {viewMode !== 'workload' && viewMode !== 'matrix' && (
+                <div className="relative" ref={groupByRef}>
+                  <button
+                    onClick={() => setShowGroupByDropdown(!showGroupByDropdown)}
                     className={clsx(
-                      "pl-3 pr-8 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm appearance-none cursor-pointer min-w-[220px]",
-                      teamFilter ? "border-primary-500 bg-primary-50 text-primary-700" : "border-gray-300 bg-white text-gray-700"
+                      "pl-3 pr-8 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm cursor-pointer min-w-[180px] text-left truncate",
+                      listGroupByLevels.length > 0 ? "border-primary-500 bg-primary-50 text-primary-700" : "border-gray-300 bg-white text-gray-700"
                     )}
                   >
-                    <option value="">All Teams & Portfolios</option>
-                    {/* Group by type */}
-                    {allOrgChartNodes?.nodes && allOrgChartNodes.nodes.filter(n => n.node_type === 'division').length > 0 && (
-                      <optgroup label="Divisions">
-                        {allOrgChartNodes.nodes.filter(n => n.node_type === 'division').map(node => (
-                          <option key={node.id} value={node.id}>{node.displayName}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {allOrgChartNodes?.nodes && allOrgChartNodes.nodes.filter(n => n.node_type === 'team').length > 0 && (
-                      <optgroup label="Teams">
-                        {allOrgChartNodes.nodes.filter(n => n.node_type === 'team').map(node => (
-                          <option key={node.id} value={node.id}>{node.displayName}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {allOrgChartNodes?.nodes && allOrgChartNodes.nodes.filter(n => n.node_type === 'portfolio').length > 0 && (
-                      <optgroup label="Portfolios">
-                        {allOrgChartNodes.nodes.filter(n => n.node_type === 'portfolio').map(node => (
-                          <option key={node.id} value={node.id}>{node.displayName}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                    {listGroupByLevels.length === 0
+                      ? 'Groupings'
+                      : `Groupings (${listGroupByLevels.length})`}
+                  </button>
                   <ChevronDown className="absolute right-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+
+                  {showGroupByDropdown && (() => {
+                    const allOptions: Array<{ value: ListGroupByLevel; label: string; icon: typeof FolderOpen; category: 'org' | 'other' }> = [
+                      { value: 'division', label: 'Division', icon: FolderOpen, category: 'org' },
+                      { value: 'department', label: 'Department', icon: Building2, category: 'org' },
+                      { value: 'team', label: 'Team', icon: Users, category: 'org' },
+                      { value: 'portfolio', label: 'Portfolio', icon: Briefcase, category: 'org' },
+                      { value: 'sector', label: 'Sector', icon: BarChart3, category: 'other' },
+                      { value: 'industry', label: 'Industry', icon: TrendingUp, category: 'other' },
+                      { value: 'analyst', label: 'Analyst', icon: User, category: 'other' },
+                    ]
+                    const getOptionDetails = (value: ListGroupByLevel) => allOptions.find(o => o.value === value)!
+                    const moveLevel = (fromIdx: number, toIdx: number) => {
+                      setListGroupByLevels(prev => {
+                        const arr = [...prev]
+                        const [item] = arr.splice(fromIdx, 1)
+                        arr.splice(toIdx, 0, item)
+                        return arr
+                      })
+                    }
+                    const availableOptions = allOptions.filter(o => !listGroupByLevels.includes(o.value))
+
+                    return (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowGroupByDropdown(false)} />
+                        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+                          {/* Current Order Section */}
+                          {listGroupByLevels.length > 0 && (
+                            <div className="bg-gray-50 border-b border-gray-200">
+                              <div className="px-3 py-2 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Grouping Order</span>
+                                <button
+                                  onClick={() => setListGroupByLevels([])}
+                                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                              <div className="px-2 pb-2 space-y-1">
+                                {listGroupByLevels.map((level, idx) => {
+                                  const opt = getOptionDetails(level)
+                                  return (
+                                    <div
+                                      key={level}
+                                      className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-md border border-gray-200 shadow-sm"
+                                    >
+                                      <span className="w-5 h-5 flex items-center justify-center rounded bg-primary-100 text-primary-700 text-xs font-bold">
+                                        {idx + 1}
+                                      </span>
+                                      <opt.icon className="h-4 w-4 text-gray-400" />
+                                      <span className="text-sm font-medium text-gray-700 flex-1">{opt.label}</span>
+                                      <div className="flex items-center gap-0.5">
+                                        <button
+                                          onClick={() => idx > 0 && moveLevel(idx, idx - 1)}
+                                          disabled={idx === 0}
+                                          className={clsx(
+                                            "p-1 rounded transition-colors",
+                                            idx === 0 ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                                          )}
+                                          title="Move up"
+                                        >
+                                          <ChevronUp className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => idx < listGroupByLevels.length - 1 && moveLevel(idx, idx + 1)}
+                                          disabled={idx === listGroupByLevels.length - 1}
+                                          className={clsx(
+                                            "p-1 rounded transition-colors",
+                                            idx === listGroupByLevels.length - 1 ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                                          )}
+                                          title="Move down"
+                                        >
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => setListGroupByLevels(prev => prev.filter(l => l !== level))}
+                                          className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                          title="Remove"
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Available Options */}
+                          <div className="max-h-64 overflow-y-auto">
+                            {availableOptions.length > 0 && (
+                              <>
+                                <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide sticky top-0 bg-white border-b border-gray-100">
+                                  {listGroupByLevels.length === 0 ? 'Select grouping' : 'Add level'}
+                                </div>
+                                {/* Organization options */}
+                                {availableOptions.filter(o => o.category === 'org').length > 0 && (
+                                  <div className="py-1">
+                                    <div className="px-3 py-1 text-[10px] font-medium text-gray-400 uppercase">Organization</div>
+                                    {availableOptions.filter(o => o.category === 'org').map(opt => (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => setListGroupByLevels(prev => [...prev, opt.value])}
+                                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                      >
+                                        <opt.icon className="h-4 w-4 text-gray-400" />
+                                        <span className="text-gray-700">{opt.label}</span>
+                                        <Plus className="h-3.5 w-3.5 text-gray-300 ml-auto" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {/* Other options */}
+                                {availableOptions.filter(o => o.category === 'other').length > 0 && (
+                                  <div className="py-1 border-t border-gray-100">
+                                    <div className="px-3 py-1 text-[10px] font-medium text-gray-400 uppercase">Other</div>
+                                    {availableOptions.filter(o => o.category === 'other').map(opt => (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => setListGroupByLevels(prev => [...prev, opt.value])}
+                                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                      >
+                                        <opt.icon className="h-4 w-4 text-gray-400" />
+                                        <span className="text-gray-700">{opt.label}</span>
+                                        <Plus className="h-3.5 w-3.5 text-gray-300 ml-auto" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {availableOptions.length === 0 && listGroupByLevels.length > 0 && (
+                              <div className="px-3 py-4 text-center text-sm text-gray-500">
+                                All grouping options selected
+                              </div>
+                            )}
+                            {listGroupByLevels.length === 0 && (
+                              <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                                Select fields to group by. Add multiple levels for nested grouping.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
+                )}
 
                 <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
                 <button
@@ -3053,23 +3727,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               </div>
               </div>
 
-              {/* Investable Universe Indicator - below search bar, only when universe is configured */}
-              {isPortfolioSelected && hasUniverseConfiguration && investableUniverseAssetIds && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-sm w-fit">
-                  <span className="text-indigo-600 font-medium">Universe:</span>
-                  <span className="text-indigo-900">
-                    {investableUniverseAssetIds.size} assets
-                  </span>
-                  <span className="text-indigo-400">•</span>
-                  <span className="text-green-600">
-                    {coveredAssetIds.size} covered
-                  </span>
-                  <span className="text-indigo-400">•</span>
-                  <span className="text-amber-600">
-                    {allUncoveredAssets.length} gaps
-                  </span>
-                </div>
-              )}
             </div>
 
             {/* Coverage List - Active View */}
@@ -3077,7 +3734,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               <>
               {/* List View */}
               {viewMode === 'list' && (
-              <Card padding="none" className="min-h-[400px]">
+              <Card padding="none" className="h-[calc(90vh-280px)] flex flex-col overflow-hidden">
               {coverageLoading ? (
                 <div className="p-6">
                   <div className="space-y-4">
@@ -3098,183 +3755,927 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               ) : filteredCoverage.length > 0 || uncoveredAssets.length > 0 ? (
                 <>
                   {/* Table Header */}
-                  <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-                    <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      <div className="col-span-3">Asset</div>
-                      <div className="col-span-3">Analyst</div>
-                      <div className="col-span-2">Visibility</div>
-                      <div className="col-span-2">Sector</div>
-                      <div className="col-span-2 text-right">Actions</div>
+                  <div className="px-6 py-2 bg-gray-50 border-b border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {Object.keys(listColumnFilters).length > 0 && (
+                          <button
+                            onClick={() => setListColumnFilters({})}
+                            className="text-xs text-gray-500 hover:text-red-600 flex items-center gap-1"
+                          >
+                            <X className="w-3 h-3" />
+                            Clear filters
+                          </button>
+                        )}
+                        {hiddenGroups.size > 0 && (
+                          <button
+                            onClick={() => setHiddenGroups(new Set())}
+                            className="text-xs text-amber-600 hover:text-amber-700 bg-amber-50 px-2 py-1 rounded flex items-center gap-1"
+                          >
+                            <EyeOff className="w-3 h-3" />
+                            {hiddenGroups.size} hidden group{hiddenGroups.size !== 1 ? 's' : ''} - Show all
+                          </button>
+                        )}
+                        {listGroupByLevels.length > 0 && (
+                          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer hover:text-gray-800">
+                            <input
+                              type="checkbox"
+                              checked={hideEmptyGroups}
+                              onChange={(e) => setHideEmptyGroups(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            Hide empty groups
+                          </label>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowColumnManager(!showColumnManager)}
+                          className="text-xs text-gray-500 hover:text-primary-600 flex items-center gap-1"
+                        >
+                          <Grid3X3 className="w-3.5 h-3.5" />
+                          Columns
+                        </button>
+                        {/* Column Manager Dropdown */}
+                        {showColumnManager && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setShowColumnManager(false)} />
+                            <div ref={columnManagerRef} className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 p-3 min-w-[200px]">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">Visible Columns</p>
+                          <div className="space-y-1 max-h-64 overflow-y-auto">
+                            {(Object.keys(listColumnDefinitions) as ListColumnId[]).map(colId => (
+                              <label key={colId} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={listVisibleColumns.includes(colId)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setListVisibleColumns(prev => [...prev, colId])
+                                    } else {
+                                      setListVisibleColumns(prev => prev.filter(c => c !== colId))
+                                    }
+                                  }}
+                                  disabled={colId === 'asset'} // Asset column always visible
+                                  className="rounded text-primary-600 focus:ring-primary-500"
+                                />
+                                <span className="text-sm text-gray-700">{listColumnDefinitions[colId].label}</span>
+                              </label>
+                            ))}
+                          </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className={`grid gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider`} style={{ gridTemplateColumns: `repeat(${totalColumnWidth}, minmax(0, 1fr))` }}>
+                      {listVisibleColumns.map(colId => {
+                        const col = listColumnDefinitions[colId]
+                        const isFiltered = !!listColumnFilters[colId]
+                        const isSorted = listSortColumn === colId
+                        return (
+                          <div
+                            key={colId}
+                            className="relative"
+                            style={{ gridColumn: `span ${col.width}` }}
+                          >
+                            <div
+                              className={clsx(
+                                "flex items-center gap-1 cursor-pointer hover:text-gray-700 select-none py-1",
+                                isSorted && "text-primary-600"
+                              )}
+                              onClick={() => handleColumnSort(colId)}
+                            >
+                              <span className="truncate">{col.label}</span>
+                              {col.sortable && (
+                                <span className="flex flex-col">
+                                  <ChevronUp className={clsx("w-3 h-3 -mb-1", isSorted && listSortDirection === 'asc' ? "text-primary-600" : "text-gray-300")} />
+                                  <ChevronDown className={clsx("w-3 h-3 -mt-1", isSorted && listSortDirection === 'desc' ? "text-primary-600" : "text-gray-300")} />
+                                </span>
+                              )}
+                              {col.filterable && (
+                                <button
+                                  onClick={(e) => handleFilterClick(colId, e)}
+                                  className={clsx(
+                                    "p-0.5 rounded hover:bg-gray-200",
+                                    isFiltered && "bg-primary-100 text-primary-600"
+                                  )}
+                                >
+                                  <Search className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            {/* Filter Dropdown */}
+                            {activeFilterColumn === colId && (
+                              <>
+                                <div className="fixed inset-0 z-30" onClick={() => setActiveFilterColumn(null)} />
+                                <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 p-2 min-w-[180px]">
+                                  <input
+                                    type="text"
+                                    placeholder={`Filter ${col.label}...`}
+                                    value={listColumnFilters[colId] || ''}
+                                    onChange={(e) => setListColumnFilters(prev => ({ ...prev, [colId]: e.target.value }))}
+                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                    autoFocus
+                                  />
+                                  {getUniqueFilterValues(colId, coverageRecords || []).length > 0 && (
+                                    <div className="mt-2 max-h-32 overflow-y-auto">
+                                      {getUniqueFilterValues(colId, coverageRecords || []).slice(0, 10).map(val => (
+                                        <button
+                                          key={val}
+                                          onClick={() => {
+                                            setListColumnFilters(prev => ({ ...prev, [colId]: val }))
+                                            setActiveFilterColumn(null)
+                                          }}
+                                          className="block w-full text-left px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded truncate"
+                                        >
+                                          {val}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {listColumnFilters[colId] && (
+                                    <button
+                                      onClick={() => {
+                                        setListColumnFilters(prev => {
+                                          const next = { ...prev }
+                                          delete next[colId]
+                                          return next
+                                        })
+                                        setActiveFilterColumn(null)
+                                      }}
+                                      className="mt-2 w-full text-xs text-red-600 hover:text-red-700"
+                                    >
+                                      Clear filter
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div style={{ gridColumn: 'span 1' }} className="text-right">Actions</div>
                     </div>
                   </div>
 
                   {/* Scrollable Content */}
-                  <div className="overflow-y-auto divide-y divide-gray-200 max-h-[calc(90vh-330px)]">
-                    {/* Active Coverage Rows */}
-                    {filteredCoverage.map((coverage) => (
-                      <div key={coverage.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                        <div className="grid grid-cols-12 gap-4 items-center">
-                          {/* Asset Info */}
-                          <div className="col-span-3">
-                            <div className="flex items-center space-x-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold text-gray-900 truncate">
-                                  {coverage.assets?.symbol || 'Unknown Symbol'}
-                                </p>
-                                <p className="text-xs text-gray-500 truncate" title={coverage.assets?.company_name || 'Unknown Company'}>
-                                  {coverage.assets?.company_name || 'Unknown Company'}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                  <div className="flex-1 overflow-y-auto divide-y divide-gray-200">
+                    {/* Active Coverage Rows - Grouped by selected grouping levels */}
+                    {(() => {
+                      // Helper function to get group key for a coverage record at a specific level
+                      // Helper to get all portfolios a user is a member of (from portfolio_team table)
+                      const getPortfoliosForUser = (userId: string): string[] => {
+                        return portfolioTeamMemberships?.get(userId) || []
+                      }
 
-                          {/* Analyst with Role Badge */}
-                          <div className="col-span-3">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-sm text-gray-700 truncate">
-                                {coverage.analyst_name}
-                              </span>
-                              {coverageSettings?.enable_hierarchy && coverage.role && (
-                                <span className={clsx(
-                                  'inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded w-fit',
-                                  coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
-                                  coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
-                                  coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
-                                )}>
-                                  {coverage.role === 'primary' && <Star className="h-2.5 w-2.5" />}
-                                  {coverage.role === 'secondary' && <Shield className="h-2.5 w-2.5" />}
-                                  {coverage.role === 'tertiary' && <UserCheck className="h-2.5 w-2.5" />}
-                                  {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                      // Helper to get org node (team/division/department) for a user
+                      const getOrgNodeForUser = (userId: string, nodeType: 'team' | 'division' | 'department'): string[] => {
+                        const memberships = userTeamMemberships?.get(userId) || []
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const result: string[] = []
 
-                          {/* Visibility */}
-                          <div className="col-span-2">
-                            <div className="relative inline-block">
-                              <button
-                                onClick={() => canChangeVisibility(coverage) && setEditingVisibility(
-                                  editingVisibility?.coverageId === coverage.id
-                                    ? null
-                                    : { coverageId: coverage.id, currentVisibility: coverage.visibility || 'team' }
-                                )}
-                                disabled={!canChangeVisibility(coverage)}
-                                className={clsx(
-                                  'inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full transition-all',
-                                  coverage.visibility === 'firm' && 'bg-purple-100 text-purple-800',
-                                  coverage.visibility === 'division' && 'bg-blue-100 text-blue-800',
-                                  (!coverage.visibility || coverage.visibility === 'team') && 'bg-green-100 text-green-700',
-                                  canChangeVisibility(coverage) && 'hover:ring-2 hover:ring-primary-300 cursor-pointer',
-                                  !canChangeVisibility(coverage) && 'cursor-default opacity-75'
-                                )}
-                                title={canChangeVisibility(coverage) ? 'Click to change visibility' : 'You do not have permission to change visibility'}
-                              >
-                                {coverage.visibility === 'firm' ? (
-                                  <Building2 className="h-2.5 w-2.5" />
-                                ) : coverage.visibility === 'division' ? (
-                                  <FolderOpen className="h-2.5 w-2.5" />
-                                ) : (
-                                  <Users className="h-2.5 w-2.5" />
-                                )}
-                                {coverage.visibility === 'firm' ? 'Firm' : coverage.visibility === 'division' ? 'Div' : 'Team'}
-                                {canChangeVisibility(coverage) && (
-                                  <ChevronDown className={clsx(
-                                    'h-2.5 w-2.5 transition-transform',
-                                    editingVisibility?.coverageId === coverage.id && 'rotate-180'
-                                  )} />
-                                )}
-                              </button>
+                        for (const membership of memberships) {
+                          // Skip portfolio-type memberships
+                          if (membership.type === 'portfolio') continue
 
-                              {/* Custom visibility dropdown */}
-                              {editingVisibility?.coverageId === coverage.id && (
-                                <>
-                                  {/* Backdrop to close dropdown */}
-                                  <div
-                                    className="fixed inset-0 z-30"
-                                    onClick={() => setEditingVisibility(null)}
-                                  />
-                                  <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] animate-in fade-in slide-in-from-top-1 duration-150">
-                                    {[
-                                      { value: 'team', label: 'Team Only', desc: 'Only your team can see', icon: Users, color: 'text-green-600 bg-green-50' },
-                                      { value: 'division', label: 'Division', desc: 'Teams in your division', icon: FolderOpen, color: 'text-blue-600 bg-blue-50' },
-                                      { value: 'firm', label: 'Firm-wide', desc: 'Everyone in the org', icon: Building2, color: 'text-purple-600 bg-purple-50' },
-                                    ].map((option) => (
-                                      <button
-                                        key={option.value}
-                                        onClick={() => {
-                                          updateVisibilityMutation.mutate({
-                                            coverageId: coverage.id,
-                                            visibility: option.value as 'team' | 'division' | 'firm'
-                                          })
-                                        }}
-                                        className={clsx(
-                                          'w-full px-3 py-2 text-left hover:bg-gray-50 transition-colors flex items-center gap-3',
-                                          coverage.visibility === option.value && 'bg-gray-50'
-                                        )}
-                                      >
-                                        <div className={clsx('p-1.5 rounded-md', option.color)}>
-                                          <option.icon className="h-3.5 w-3.5" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="text-sm font-medium text-gray-900">{option.label}</div>
-                                          <div className="text-xs text-gray-500">{option.desc}</div>
-                                        </div>
-                                        {coverage.visibility === option.value && (
-                                          <Check className="h-4 w-4 text-primary-600 flex-shrink-0" />
-                                        )}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
+                          // If direct match, add it
+                          if (membership.type === nodeType) {
+                            if (!result.includes(membership.name)) {
+                              result.push(membership.name)
+                            }
+                            continue
+                          }
 
-                          {/* Sector */}
-                          <div className="col-span-2">
-                            <span className="text-xs text-gray-600 truncate block">
-                              {coverage.assets?.sector || '—'}
-                            </span>
-                          </div>
+                          // Walk up the tree to find matching node type
+                          let current = allNodes.find(n => n.id === membership.id)
+                          while (current) {
+                            if (current.node_type === nodeType) {
+                              if (!result.includes(current.name)) {
+                                result.push(current.name)
+                              }
+                              break
+                            }
+                            current = allNodes.find(n => n.id === current?.parent_id)
+                          }
+                        }
 
-                          {/* Actions */}
-                          <div className="col-span-2">
-                            <div className="flex items-center gap-2 justify-end">
-                              <button
-                                onClick={() => setViewHistoryAssetId(coverage.assets?.id || null)}
-                                className="p-1 text-gray-400 hover:text-primary-600 transition-colors"
-                                title="View Coverage Timeline"
-                              >
+                        return result
+                      }
+
+                      // Helper to get all descendant node IDs for a given node (including the node itself)
+                      const getAllDescendantNodeIds = (nodeId: string): string[] => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const result: string[] = [nodeId]
+                        const findChildren = (parentId: string) => {
+                          allNodes.forEach(node => {
+                            if (node.parent_id === parentId) {
+                              result.push(node.id)
+                              findChildren(node.id)
+                            }
+                          })
+                        }
+                        findChildren(nodeId)
+                        return result
+                      }
+
+                      // Helper to get all user IDs who are members of a team (via descendant AND linked portfolio memberships)
+                      const getTeamMemberUserIds = (teamNodeId: string): string[] => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                        const userIds = new Set<string>()
+
+                        // 1. Get members from descendant nodes (via parent hierarchy)
+                        const descendantIds = getAllDescendantNodeIds(teamNodeId)
+                        descendantIds.forEach(nodeId => {
+                          const members = allOrgChartNodeMembers?.get(nodeId) || []
+                          members.forEach(userId => userIds.add(userId))
+                        })
+
+                        // 2. Get members from LINKED portfolios (via org_chart_node_links)
+                        nodeLinks.forEach((link: { node_id: string; linked_node_id: string }) => {
+                          if (link.linked_node_id === teamNodeId) {
+                            const node = allNodes.find(n => n.id === link.node_id)
+                            if (node?.node_type === 'portfolio') {
+                              const members = allOrgChartNodeMembers?.get(link.node_id) || []
+                              members.forEach(userId => userIds.add(userId))
+                            }
+                          }
+                        })
+
+                        return Array.from(userIds)
+                      }
+
+                      // Helper to get teams a user belongs to via portfolio memberships
+                      const getTeamsForUser = (userId: string): string[] => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const teamNodes = allNodes.filter(n => n.node_type === 'team')
+                        const result: string[] = []
+
+                        teamNodes.forEach(teamNode => {
+                          const memberUserIds = getTeamMemberUserIds(teamNode.id)
+                          if (memberUserIds.includes(userId)) {
+                            result.push(teamNode.name)
+                          }
+                        })
+
+                        return result
+                      }
+
+                      // Helper to find ancestor of a specific type by walking up the tree
+                      const findAncestorOfType = (nodeId: string, targetType: string): string | null => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        let current = allNodes.find(n => n.id === nodeId)
+                        while (current) {
+                          if (current.node_type === targetType) {
+                            return current.name
+                          }
+                          if (!current.parent_id) break
+                          current = allNodes.find(n => n.id === current?.parent_id)
+                        }
+                        return null
+                      }
+
+                      // Helper to get division/department for a user based on their portfolio memberships
+                      const getOrgNodeForUserFromPortfolios = (userId: string, nodeType: 'division' | 'department'): string[] => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                        const result: string[] = []
+
+                        // Check all portfolio memberships for this user
+                        allOrgChartNodeMembers?.forEach((userIds, nodeId) => {
+                          if (!userIds.includes(userId)) return
+
+                          const ancestorName = findAncestorOfType(nodeId, nodeType)
+                          if (ancestorName && !result.includes(ancestorName)) {
+                            result.push(ancestorName)
+                          }
+                        })
+
+                        // Also check linked portfolios
+                        nodeLinks.forEach((link: { node_id: string; linked_node_id: string }) => {
+                          const portfolioNode = allNodes.find(n => n.id === link.node_id && n.node_type === 'portfolio')
+                          if (!portfolioNode) return
+
+                          // Check if user is member of this linked portfolio
+                          const userIds = allOrgChartNodeMembers?.get(link.node_id) || []
+                          if (!userIds.includes(userId)) return
+
+                          // Find ancestor of target type from the LINKED node
+                          const ancestorName = findAncestorOfType(link.linked_node_id, nodeType)
+                          if (ancestorName && !result.includes(ancestorName)) {
+                            result.push(ancestorName)
+                          }
+                        })
+
+                        return result
+                      }
+
+                      const getGroupKeyForLevel = (coverage: typeof filteredCoverage[0], level: ListGroupByLevel): string => {
+                        switch (level) {
+                          case 'team': {
+                            // Teams are derived from portfolio memberships
+                            const teams = getTeamsForUser(coverage.user_id)
+                            return teams.length > 0 ? teams[0] : 'Unknown Team'
+                          }
+                          case 'division':
+                          case 'department': {
+                            // Division/department derived from portfolio memberships by walking up tree
+                            const nodes = getOrgNodeForUserFromPortfolios(coverage.user_id, level)
+                            return nodes.length > 0 ? nodes[0] : `Unknown ${level.charAt(0).toUpperCase() + level.slice(1)}`
+                          }
+                          case 'portfolio': {
+                            const userPortfolios = getPortfoliosForUser(coverage.user_id)
+                            return userPortfolios.length > 0 ? userPortfolios[0] : 'No Portfolio'
+                          }
+                          case 'sector':
+                            return coverage.assets?.sector || 'Unknown Sector'
+                          case 'industry':
+                            return (coverage.assets as any)?.industry || 'Unknown Industry'
+                          case 'analyst':
+                            return coverage.analyst_name || 'Unknown Analyst'
+                          default:
+                            return 'Other'
+                        }
+                      }
+
+                      // Special grouping for org nodes (team/division/department) - only shows investment-related nodes
+                      const groupByOrgNode = (coverages: typeof filteredCoverage, nodeType: 'team' | 'division' | 'department'): Map<string, typeof filteredCoverage> => {
+                        const grouped = new Map<string, typeof filteredCoverage>()
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const nodesOfType = allNodes.filter(n => n.node_type === nodeType)
+
+                        // Helper to check if a node is in the investment hierarchy
+                        // A node is investment-related if it's under a division that contains portfolios
+                        const isInvestmentNode = (nodeId: string): boolean => {
+                          const portfolios = allNodes.filter(n => n.node_type === 'portfolio')
+                          const nodeLinks = allOrgChartNodes?.nodeLinks || []
+
+                          // Find all divisions that have portfolios (directly or via links)
+                          const investmentDivisionIds = new Set<string>()
+
+                          for (const portfolio of portfolios) {
+                            // Walk up from portfolio to find its division
+                            let current = portfolio
+                            while (current) {
+                              if (current.node_type === 'division') {
+                                investmentDivisionIds.add(current.id)
+                                break
+                              }
+                              if (!current.parent_id) break
+                              current = allNodes.find(n => n.id === current.parent_id) as typeof current
+                            }
+                          }
+
+                          // Also check linked portfolios
+                          for (const link of nodeLinks) {
+                            const portfolio = allNodes.find(n => n.id === link.node_id && n.node_type === 'portfolio')
+                            if (!portfolio) continue
+                            let current = allNodes.find(n => n.id === link.linked_node_id)
+                            while (current) {
+                              if (current.node_type === 'division') {
+                                investmentDivisionIds.add(current.id)
+                                break
+                              }
+                              if (!current.parent_id) break
+                              current = allNodes.find(n => n.id === current?.parent_id)
+                            }
+                          }
+
+                          // Check if the given node is under an investment division
+                          const node = allNodes.find(n => n.id === nodeId)
+                          if (!node) return false
+
+                          // If it IS a division, check if it's an investment division
+                          if (node.node_type === 'division') {
+                            return investmentDivisionIds.has(nodeId)
+                          }
+
+                          // Otherwise, walk up to find its division
+                          let current = node
+                          while (current) {
+                            if (current.node_type === 'division') {
+                              return investmentDivisionIds.has(current.id)
+                            }
+                            if (!current.parent_id) break
+                            current = allNodes.find(n => n.id === current?.parent_id) as typeof current
+                          }
+
+                          return false
+                        }
+
+                        // Initialize only investment-related nodes of this type
+                        nodesOfType.forEach(node => {
+                          if (isInvestmentNode(node.id)) {
+                            grouped.set(node.name, [])
+                          }
+                        })
+
+                        // For teams, find members via descendant portfolio memberships
+                        if (nodeType === 'team') {
+                          // Build a map of user_id -> team names they belong to
+                          const userToTeams = new Map<string, string[]>()
+                          nodesOfType.forEach(teamNode => {
+                            const memberUserIds = getTeamMemberUserIds(teamNode.id)
+                            memberUserIds.forEach(userId => {
+                              if (!userToTeams.has(userId)) {
+                                userToTeams.set(userId, [])
+                              }
+                              if (!userToTeams.get(userId)!.includes(teamNode.name)) {
+                                userToTeams.get(userId)!.push(teamNode.name)
+                              }
+                            })
+                          })
+
+                          // Group coverage by the teams their analysts belong to
+                          coverages.forEach(coverage => {
+                            const userTeamNames = userToTeams.get(coverage.user_id) || []
+                            if (userTeamNames.length > 0) {
+                              userTeamNames.forEach(teamName => {
+                                if (!grouped.has(teamName)) {
+                                  grouped.set(teamName, [])
+                                }
+                                grouped.get(teamName)?.push(coverage)
+                              })
+                            } else {
+                              if (!grouped.has('Unknown Team')) grouped.set('Unknown Team', [])
+                              grouped.get('Unknown Team')?.push(coverage)
+                            }
+                          })
+                          return grouped
+                        }
+
+                        // For division/department, derive membership by walking UP from portfolio memberships
+                        // Build a map of user_id -> division/department names
+                        const userToOrgNodes = new Map<string, string[]>()
+
+                        // For each user's portfolio membership, walk up to find division/department
+                        allOrgChartNodeMembers?.forEach((userIds, nodeId) => {
+                          const node = allNodes.find(n => n.id === nodeId)
+                          if (!node) return
+
+                          // Find the ancestor of the target type
+                          const ancestorName = findAncestorOfType(nodeId, nodeType)
+                          if (ancestorName) {
+                            userIds.forEach(userId => {
+                              if (!userToOrgNodes.has(userId)) {
+                                userToOrgNodes.set(userId, [])
+                              }
+                              if (!userToOrgNodes.get(userId)!.includes(ancestorName)) {
+                                userToOrgNodes.get(userId)!.push(ancestorName)
+                              }
+                            })
+                          }
+                        })
+
+                        // Also check linked portfolios - walk up from linked nodes
+                        const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                        nodeLinks.forEach((link: { node_id: string; linked_node_id: string }) => {
+                          const portfolioNode = allNodes.find(n => n.id === link.node_id && n.node_type === 'portfolio')
+                          if (!portfolioNode) return
+
+                          // Find ancestor of target type starting from the LINKED node
+                          const ancestorName = findAncestorOfType(link.linked_node_id, nodeType)
+                          if (ancestorName) {
+                            const userIds = allOrgChartNodeMembers?.get(link.node_id) || []
+                            userIds.forEach(userId => {
+                              if (!userToOrgNodes.has(userId)) {
+                                userToOrgNodes.set(userId, [])
+                              }
+                              if (!userToOrgNodes.get(userId)!.includes(ancestorName)) {
+                                userToOrgNodes.get(userId)!.push(ancestorName)
+                              }
+                            })
+                          }
+                        })
+
+                        // Group coverage by the division/department their analysts belong to
+                        coverages.forEach(coverage => {
+                          const userOrgNodeNames = userToOrgNodes.get(coverage.user_id) || []
+                          if (userOrgNodeNames.length > 0) {
+                            userOrgNodeNames.forEach(nodeName => {
+                              if (!grouped.has(nodeName)) {
+                                grouped.set(nodeName, [])
+                              }
+                              grouped.get(nodeName)?.push(coverage)
+                            })
+                          } else {
+                            const unknownKey = `Unknown ${nodeType.charAt(0).toUpperCase() + nodeType.slice(1)}`
+                            if (!grouped.has(unknownKey)) grouped.set(unknownKey, [])
+                            grouped.get(unknownKey)?.push(coverage)
+                          }
+                        })
+
+                        return grouped
+                      }
+
+                      // Helper to get portfolio node IDs that are under a team (via hierarchy OR links)
+                      const getPortfolioNodesUnderTeam = (teamNodeId: string): Set<string> => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                        const portfolioNodeIds = new Set<string>()
+
+                        // 1. Get portfolios that are descendants via parent hierarchy
+                        const descendantIds = getAllDescendantNodeIds(teamNodeId)
+                        descendantIds.forEach(nodeId => {
+                          const node = allNodes.find(n => n.id === nodeId)
+                          if (node?.node_type === 'portfolio') {
+                            portfolioNodeIds.add(nodeId)
+                          }
+                        })
+
+                        // 2. Get portfolios that are LINKED to this team (via org_chart_node_links)
+                        // Links where linked_node_id is the team - the node_id is the portfolio
+                        nodeLinks.forEach((link: { node_id: string; linked_node_id: string }) => {
+                          if (link.linked_node_id === teamNodeId) {
+                            const node = allNodes.find(n => n.id === link.node_id)
+                            if (node?.node_type === 'portfolio') {
+                              portfolioNodeIds.add(link.node_id)
+                            }
+                          }
+                        })
+
+                        return portfolioNodeIds
+                      }
+
+                      // Helper to get portfolio names that are descendants of a team
+                      const getPortfolioNamesUnderTeam = (teamNodeId: string): Set<string> => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const portfolioNodeIds = getPortfolioNodesUnderTeam(teamNodeId)
+                        const portfolioNames = new Set<string>()
+
+                        portfolioNodeIds.forEach(nodeId => {
+                          const node = allNodes.find(n => n.id === nodeId)
+                          if (node) {
+                            portfolioNames.add(node.name)
+                          }
+                        })
+
+                        return portfolioNames
+                      }
+
+                      // Special grouping for portfolio - shows portfolios with their members' coverage
+                      // If teamContext is provided, only show portfolios that are descendants of that team
+                      const groupByPortfolio = (coverages: typeof filteredCoverage, teamContext?: string): Map<string, typeof filteredCoverage> => {
+                        const grouped = new Map<string, typeof filteredCoverage>()
+                        const allNodes = allOrgChartNodes?.allNodes || []
+
+                        // If we have a team context, only show portfolios under that team
+                        // Otherwise show all portfolios
+                        let relevantPortfolioNames: Set<string>
+                        if (teamContext) {
+                          relevantPortfolioNames = getPortfolioNamesUnderTeam(teamContext)
+                        } else {
+                          // Get all portfolio names from org chart nodes
+                          relevantPortfolioNames = new Set(
+                            allNodes.filter(n => n.node_type === 'portfolio').map(n => n.name)
+                          )
+                        }
+
+                        // Initialize all relevant portfolios
+                        relevantPortfolioNames.forEach(name => {
+                          grouped.set(name, [])
+                        })
+
+                        // For each coverage, find which portfolios the analyst belongs to (filtered by context)
+                        coverages.forEach(coverage => {
+                          const userPortfolios = getPortfoliosForUser(coverage.user_id)
+                          // Filter to only portfolios relevant to this context
+                          const relevantUserPortfolios = userPortfolios.filter(p => relevantPortfolioNames.has(p))
+
+                          if (relevantUserPortfolios.length > 0) {
+                            relevantUserPortfolios.forEach(portfolioName => {
+                              if (!grouped.has(portfolioName)) {
+                                grouped.set(portfolioName, [])
+                              }
+                              grouped.get(portfolioName)?.push(coverage)
+                            })
+                          } else if (!teamContext) {
+                            // Only add to "No Portfolio" if we're not in a team context
+                            // (In team context, the coverage is already filtered to team members)
+                            if (!grouped.has('No Portfolio')) grouped.set('No Portfolio', [])
+                            grouped.get('No Portfolio')?.push(coverage)
+                          }
+                        })
+
+                        return grouped
+                      }
+
+                      // Sort groups function
+                      const sortGroups = (entries: [string, any][]): [string, any][] => {
+                        return entries.sort((a, b) => {
+                          const aIsUnknown = a[0].startsWith('Unknown') || a[0].startsWith('No ')
+                          const bIsUnknown = b[0].startsWith('Unknown') || b[0].startsWith('No ')
+                          if (aIsUnknown && !bIsUnknown) return 1
+                          if (!aIsUnknown && bIsUnknown) return -1
+                          return a[0].localeCompare(b[0])
+                        })
+                      }
+
+                      // Render a coverage row
+                      const renderCoverageRow = (coverage: typeof filteredCoverage[0], keyPrefix: string, indent: number) => (
+                        <div key={`${keyPrefix}-${coverage.id}`} className="px-6 py-3 hover:bg-gray-50 transition-colors" style={{ paddingLeft: `${24 + indent * 16}px` }}>
+                          <div className="grid gap-2 items-center" style={{ gridTemplateColumns: `repeat(${totalColumnWidth}, minmax(0, 1fr))` }}>
+                            {listVisibleColumns.map(colId => {
+                              const col = listColumnDefinitions[colId]
+                              return (
+                                <div key={colId} style={{ gridColumn: `span ${col.width}` }} className="min-w-0">
+                                  {colId === 'asset' && (
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-gray-900 truncate">{coverage.assets?.symbol || 'Unknown'}</p>
+                                      <p className="text-xs text-gray-500 truncate" title={coverage.assets?.company_name}>{coverage.assets?.company_name || 'Unknown'}</p>
+                                    </div>
+                                  )}
+                                  {colId === 'analyst' && <span className="text-sm text-gray-700 truncate block">{coverage.analyst_name}</span>}
+                                  {colId === 'role' && (coverageSettings?.enable_hierarchy && coverage.role ? (
+                                    <span className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded w-fit',
+                                      coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
+                                      coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
+                                      coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
+                                    )}>
+                                      {coverage.role === 'primary' && <Star className="h-2.5 w-2.5" />}
+                                      {coverage.role === 'secondary' && <Shield className="h-2.5 w-2.5" />}
+                                      {coverage.role === 'tertiary' && <UserCheck className="h-2.5 w-2.5" />}
+                                      {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
+                                    </span>
+                                  ) : <span className="text-xs text-gray-400">—</span>)}
+                                  {colId === 'visibility' && (
+                                    <span className={clsx('inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full',
+                                      coverage.visibility === 'firm' && 'bg-purple-100 text-purple-800',
+                                      coverage.visibility === 'division' && 'bg-blue-100 text-blue-800',
+                                      (!coverage.visibility || coverage.visibility === 'team') && 'bg-green-100 text-green-700'
+                                    )}>
+                                      {coverage.visibility === 'firm' ? <Building2 className="h-2.5 w-2.5" /> : coverage.visibility === 'division' ? <FolderOpen className="h-2.5 w-2.5" /> : <Users className="h-2.5 w-2.5" />}
+                                      {coverage.visibility === 'firm' ? 'Firm' : coverage.visibility === 'division' ? 'Div' : 'Team'}
+                                    </span>
+                                  )}
+                                  {colId === 'sector' && <span className="text-xs text-gray-600 truncate block">{coverage.assets?.sector || '—'}</span>}
+                                  {colId === 'startDate' && <span className="text-xs text-gray-600">{coverage.start_date ? new Date(coverage.start_date).toLocaleDateString() : '—'}</span>}
+                                  {colId === 'tenure' && (
+                                    <span className={clsx('text-xs px-1.5 py-0.5 rounded',
+                                      calculateTenure(coverage.start_date).days < 90 && 'bg-yellow-50 text-yellow-700',
+                                      calculateTenure(coverage.start_date).days >= 90 && calculateTenure(coverage.start_date).days < 365 && 'bg-blue-50 text-blue-700',
+                                      calculateTenure(coverage.start_date).days >= 365 && 'bg-green-50 text-green-700'
+                                    )}>{calculateTenure(coverage.start_date).label}</span>
+                                  )}
+                                  {colId === 'industry' && <span className="text-xs text-gray-600 truncate block">{(coverage.assets as any)?.industry || '—'}</span>}
+                                  {colId === 'marketCap' && <span className="text-xs text-gray-600">{formatMarketCap((coverage.assets as any)?.market_cap)}</span>}
+                                </div>
+                              )
+                            })}
+                            <div style={{ gridColumn: 'span 1' }} className="text-right">
+                              <button onClick={() => setViewHistoryAssetId(coverage.assets?.id || null)} className="p-1 text-gray-400 hover:text-primary-600 transition-colors" title="View Coverage Timeline">
                                 <History className="h-4 w-4" />
                               </button>
-                              {!hasAnyCoverageAdminRights && (
-                                <button
-                                  onClick={() => setRequestingChange({
-                                    assetId: coverage.asset_id,
-                                    assetSymbol: coverage.assets?.symbol || 'Unknown',
-                                    currentUserId: coverage.user_id,
-                                    currentAnalystName: coverage.analyst_name,
-                                    currentRole: coverage.role || null,
-                                    requestedUserId: '',
-                                    requestedRole: coverage.role || 'primary',
-                                    requestType: 'change',
-                                    reason: ''
-                                  })}
-                                  className="p-1 text-gray-400 hover:text-warning-600 transition-colors"
-                                  title="Request Coverage Change"
-                                >
-                                  <AlertCircle className="h-4 w-4" />
-                                </button>
-                              )}
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )
 
-                    {/* Not Covered Section */}
-                    {uncoveredAssets.length > 0 && (
+                      // Helper to find team node ID by name
+                      const getTeamNodeIdByName = (teamName: string): string | undefined => {
+                        const allNodes = allOrgChartNodes?.allNodes || []
+                        const teamNode = allNodes.find(n => n.node_type === 'team' && n.name === teamName)
+                        return teamNode?.id
+                      }
+
+                      // Render nested groups recursively
+                      // teamContext: when we're inside a team group, this is the team node ID for filtering portfolios
+                      const renderNestedGroups = (
+                        coverages: typeof filteredCoverage,
+                        levels: ListGroupByLevel[],
+                        depth: number,
+                        keyPrefix: string,
+                        teamContext?: string
+                      ): React.ReactNode => {
+                        if (levels.length === 0) {
+                          // No more levels - render coverage items
+                          return coverages.map(coverage => renderCoverageRow(coverage, keyPrefix, depth))
+                        }
+
+                        const currentLevel = levels[0]
+                        const remainingLevels = levels.slice(1)
+
+                        // Group coverages by current level
+                        // Use special grouping functions for org nodes and portfolios to show ALL groups
+                        const grouped = (() => {
+                          if (currentLevel === 'portfolio') {
+                            // Pass team context to filter portfolios to only those under the current team
+                            return groupByPortfolio(coverages, teamContext)
+                          }
+                          if (currentLevel === 'team' || currentLevel === 'division' || currentLevel === 'department') {
+                            return groupByOrgNode(coverages, currentLevel)
+                          }
+                          // Default grouping for sector, industry, analyst
+                          const map = new Map<string, typeof filteredCoverage>()
+                          coverages.forEach(coverage => {
+                            const key = getGroupKeyForLevel(coverage, currentLevel)
+                            if (!map.has(key)) map.set(key, [])
+                            map.get(key)?.push(coverage)
+                          })
+                          return map
+                        })()
+
+                        const sortedGroups = sortGroups(Array.from(grouped.entries()))
+
+                        // Calculate total count including nested items
+                        const getTotalCount = (items: typeof filteredCoverage): number => items.length
+
+                        // Filter out hidden groups and optionally empty groups
+                        const visibleGroups = sortedGroups.filter(([groupKey, groupCoverages]) => {
+                          const fullKey = `${keyPrefix}-${groupKey}`
+                          if (hiddenGroups.has(`list-${fullKey}`)) return false
+                          if (hideEmptyGroups && groupCoverages.length === 0) return false
+                          return true
+                        })
+
+                        return visibleGroups.map(([groupKey, groupCoverages]) => {
+                          const fullKey = `${keyPrefix}-${groupKey}`
+                          const isCollapsed = collapsedGroups.has(`list-${fullKey}`)
+                          const bgColors = ['bg-gray-100', 'bg-gray-50', 'bg-white']
+                          const bgColor = bgColors[Math.min(depth, bgColors.length - 1)]
+
+                          return (
+                            <div key={fullKey}>
+                              <button
+                                onClick={() => {
+                                  setCollapsedGroups(prev => {
+                                    const next = new Set(prev)
+                                    const k = `list-${fullKey}`
+                                    if (next.has(k)) next.delete(k)
+                                    else next.add(k)
+                                    return next
+                                  })
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault()
+                                  setGroupContextMenu({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    groupKey: `list-${fullKey}`,
+                                    groupName: groupKey
+                                  })
+                                }}
+                                className={clsx("w-full py-2 border-b border-gray-200 hover:bg-gray-150 transition-colors cursor-pointer text-left", bgColor)}
+                                style={{ paddingLeft: `${24 + depth * 16}px`, paddingRight: '24px' }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {isCollapsed ? <ChevronRight className="h-4 w-4 text-gray-500" /> : <ChevronDown className="h-4 w-4 text-gray-500" />}
+                                  <span className={clsx("font-semibold", depth === 0 ? "text-sm text-gray-700" : "text-xs text-gray-600")}>
+                                    {groupKey}
+                                  </span>
+                                  <span className="text-xs text-gray-500">({getTotalCount(groupCoverages)})</span>
+                                </div>
+                              </button>
+                              {!isCollapsed && groupCoverages.length === 0 && (
+                                <div className="py-4 text-sm text-gray-500 italic" style={{ paddingLeft: `${24 + (depth + 1) * 16}px` }}>
+                                  No coverage
+                                </div>
+                              )}
+                              {!isCollapsed && (() => {
+                                // If we just grouped by team, pass the team node ID as context for portfolio filtering
+                                let newTeamContext = teamContext
+                                if (currentLevel === 'team') {
+                                  newTeamContext = getTeamNodeIdByName(groupKey)
+                                }
+                                return renderNestedGroups(groupCoverages, remainingLevels, depth + 1, fullKey, newTeamContext)
+                              })()}
+                            </div>
+                          )
+                        })
+                      }
+
+                      // Multi-level grouping
+                      if (listGroupByLevels.length > 0) {
+                        return renderNestedGroups(filteredCoverage, listGroupByLevels, 0, 'root', undefined)
+                      }
+
+                      // Default: no grouping (flat list)
+                      return filteredCoverage.map((coverage) => (
+                        <div key={coverage.id} className="px-6 py-3 hover:bg-gray-50 transition-colors">
+                          <div className="grid gap-2 items-center" style={{ gridTemplateColumns: `repeat(${totalColumnWidth}, minmax(0, 1fr))` }}>
+                            {listVisibleColumns.map(colId => {
+                              const col = listColumnDefinitions[colId]
+                              return (
+                                <div key={colId} style={{ gridColumn: `span ${col.width}` }} className="min-w-0">
+                                  {colId === 'asset' && (
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-gray-900 truncate">
+                                        {coverage.assets?.symbol || 'Unknown'}
+                                      </p>
+                                      <p className="text-xs text-gray-500 truncate" title={coverage.assets?.company_name}>
+                                        {coverage.assets?.company_name || 'Unknown'}
+                                      </p>
+                                    </div>
+                                  )}
+                                {colId === 'analyst' && (
+                                  <span className="text-sm text-gray-700 truncate block">
+                                    {coverage.analyst_name}
+                                  </span>
+                                )}
+                                {colId === 'role' && (
+                                  coverageSettings?.enable_hierarchy && coverage.role ? (
+                                    <span className={clsx(
+                                      'inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded w-fit',
+                                      coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
+                                      coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
+                                      coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
+                                    )}>
+                                      {coverage.role === 'primary' && <Star className="h-2.5 w-2.5" />}
+                                      {coverage.role === 'secondary' && <Shield className="h-2.5 w-2.5" />}
+                                      {coverage.role === 'tertiary' && <UserCheck className="h-2.5 w-2.5" />}
+                                      {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )
+                                )}
+                                {colId === 'visibility' && (
+                                  <div className="relative inline-block">
+                                    <button
+                                      onClick={() => canChangeVisibility(coverage) && setEditingVisibility(
+                                        editingVisibility?.coverageId === coverage.id
+                                          ? null
+                                          : { coverageId: coverage.id, currentVisibility: coverage.visibility || 'team' }
+                                      )}
+                                      disabled={!canChangeVisibility(coverage)}
+                                      className={clsx(
+                                        'inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full transition-all',
+                                        coverage.visibility === 'firm' && 'bg-purple-100 text-purple-800',
+                                        coverage.visibility === 'division' && 'bg-blue-100 text-blue-800',
+                                        (!coverage.visibility || coverage.visibility === 'team') && 'bg-green-100 text-green-700',
+                                        canChangeVisibility(coverage) && 'hover:ring-2 hover:ring-primary-300 cursor-pointer',
+                                        !canChangeVisibility(coverage) && 'cursor-default opacity-75'
+                                      )}
+                                    >
+                                      {coverage.visibility === 'firm' ? <Building2 className="h-2.5 w-2.5" /> : coverage.visibility === 'division' ? <FolderOpen className="h-2.5 w-2.5" /> : <Users className="h-2.5 w-2.5" />}
+                                      {coverage.visibility === 'firm' ? 'Firm' : coverage.visibility === 'division' ? 'Div' : 'Team'}
+                                    </button>
+                                    {editingVisibility?.coverageId === coverage.id && (
+                                      <>
+                                        <div className="fixed inset-0 z-30" onClick={() => setEditingVisibility(null)} />
+                                        <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px]">
+                                          {[
+                                            { value: 'team', label: 'Team Only', icon: Users, color: 'text-green-600 bg-green-50' },
+                                            { value: 'division', label: 'Division', icon: FolderOpen, color: 'text-blue-600 bg-blue-50' },
+                                            { value: 'firm', label: 'Firm-wide', icon: Building2, color: 'text-purple-600 bg-purple-50' },
+                                          ].map((option) => (
+                                            <button
+                                              key={option.value}
+                                              onClick={() => updateVisibilityMutation.mutate({ coverageId: coverage.id, visibility: option.value as 'team' | 'division' | 'firm' })}
+                                              className={clsx('w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-3', coverage.visibility === option.value && 'bg-gray-50')}
+                                            >
+                                              <div className={clsx('p-1.5 rounded-md', option.color)}><option.icon className="h-3.5 w-3.5" /></div>
+                                              <span className="text-sm font-medium text-gray-900">{option.label}</span>
+                                              {coverage.visibility === option.value && <Check className="h-4 w-4 text-primary-600 ml-auto" />}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                                {colId === 'sector' && (
+                                  <span className="text-xs text-gray-600 truncate block">{coverage.assets?.sector || '—'}</span>
+                                )}
+                                {colId === 'startDate' && (
+                                  <span className="text-xs text-gray-600">{coverage.start_date ? new Date(coverage.start_date).toLocaleDateString() : '—'}</span>
+                                )}
+                                {colId === 'tenure' && (
+                                  <span className={clsx(
+                                    'text-xs px-1.5 py-0.5 rounded',
+                                    calculateTenure(coverage.start_date).days < 90 && 'bg-yellow-50 text-yellow-700',
+                                    calculateTenure(coverage.start_date).days >= 90 && calculateTenure(coverage.start_date).days < 365 && 'bg-blue-50 text-blue-700',
+                                    calculateTenure(coverage.start_date).days >= 365 && 'bg-green-50 text-green-700'
+                                  )}>
+                                    {calculateTenure(coverage.start_date).label}
+                                  </span>
+                                )}
+                                {colId === 'industry' && (
+                                  <span className="text-xs text-gray-600 truncate block">{(coverage.assets as any)?.industry || '—'}</span>
+                                )}
+                                {colId === 'marketCap' && (
+                                  <span className="text-xs text-gray-600">{formatMarketCap((coverage.assets as any)?.market_cap)}</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                          {/* Actions Column */}
+                          <div style={{ gridColumn: 'span 1' }} className="text-right">
+                            <button
+                              onClick={() => setViewHistoryAssetId(coverage.assets?.id || null)}
+                              className="p-1 text-gray-400 hover:text-primary-600 transition-colors"
+                              title="View Coverage Timeline"
+                            >
+                              <History className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                    })()}
+
+                    {/* Not Covered Section - Hidden when filtering by team/portfolio */}
+                    {uncoveredAssets.length > 0 && listGroupByLevels.length === 0 && (
                       <>
                         {/* Section Divider */}
                         <div className="px-6 py-3 bg-amber-50 border-t-2 border-amber-200">
@@ -3288,89 +4689,76 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                         {/* Uncovered Assets */}
                         {uncoveredAssets.map((asset) => (
-                          <div key={asset.id} className="px-6 py-4 bg-amber-50/30 hover:bg-amber-50 transition-colors">
-                            <div className="grid grid-cols-12 gap-4 items-center">
-                              {/* Asset Info */}
-                              <div className="col-span-3">
-                                <div className="flex items-center space-x-2">
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold text-gray-900 truncate">
-                                      {asset.symbol}
-                                    </p>
-                                    <p className="text-xs text-gray-500 truncate" title={asset.company_name}>
-                                      {asset.company_name}
-                                    </p>
+                          <div key={asset.id} className="px-6 py-3 bg-amber-50/30 hover:bg-amber-50 transition-colors">
+                            <div className="grid gap-2 items-center" style={{ gridTemplateColumns: `repeat(${totalColumnWidth}, minmax(0, 1fr))` }}>
+                              {listVisibleColumns.map(colId => {
+                                const col = listColumnDefinitions[colId]
+                                return (
+                                  <div key={colId} style={{ gridColumn: `span ${col.width}` }} className="min-w-0">
+                                    {colId === 'asset' && (
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-gray-900 truncate">{asset.symbol}</p>
+                                        <p className="text-xs text-gray-500 truncate" title={asset.company_name}>{asset.company_name}</p>
+                                      </div>
+                                    )}
+                                    {colId === 'analyst' && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                        No Coverage
+                                      </span>
+                                    )}
+                                    {colId === 'role' && <span className="text-xs text-gray-400">—</span>}
+                                    {colId === 'visibility' && <span className="text-xs text-gray-400">—</span>}
+                                    {colId === 'sector' && <span className="text-xs text-gray-600 truncate block">{asset.sector || '—'}</span>}
+                                    {colId === 'portfolio' && <span className="text-xs text-gray-400">—</span>}
+                                    {colId === 'team' && <span className="text-xs text-gray-400">—</span>}
+                                    {colId === 'startDate' && <span className="text-xs text-gray-400">—</span>}
+                                    {colId === 'tenure' && <span className="text-xs text-gray-400">—</span>}
+                                    {colId === 'industry' && <span className="text-xs text-gray-600 truncate block">{(asset as any)?.industry || '—'}</span>}
+                                    {colId === 'marketCap' && <span className="text-xs text-gray-600">{formatMarketCap((asset as any)?.market_cap)}</span>}
                                   </div>
-                                </div>
-                              </div>
-
-                              {/* No Analyst */}
-                              <div className="col-span-3">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                  No Coverage
-                                </span>
-                              </div>
-
-                              {/* Visibility - empty for uncovered */}
-                              <div className="col-span-2">
-                                <span className="text-xs text-gray-400">—</span>
-                              </div>
-
-                              {/* Sector */}
-                              <div className="col-span-2">
-                                <span className="text-xs text-gray-600 truncate block">
-                                  {asset.sector || '—'}
-                                </span>
-                              </div>
-
-                              {/* Actions */}
-                              <div className="col-span-2">
-                                <div className="flex items-center gap-2 justify-end">
-                                  {hasAnyCoverageAdminRights ? (
-                                    <button
-                                      onClick={() => {
-                                        setAddingCoverage({
-                                          assetId: asset.id,
-                                          analystId: '',
-                                          startDate: getLocalDateString(),
-                                          endDate: '',
-                                          role: '',
-                                          portfolioIds: [],
-                                          notes: '',
-                                          teamId: userTeams?.[0]?.id || null,
-                                          visibility: coverageSettings?.default_visibility || 'team',
-                                          isLead: false
-                                        })
-                                        setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
-                                        setAnalystSearchQuery('')
-                                        setShowAssetDropdown(false)
-                                        setShowAnalystDropdown(false)
-                                      }}
-                                      className="px-3 py-1 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
-                                      title="Add Coverage"
-                                    >
-                                      Add Coverage
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => setRequestingChange({
+                                )
+                              })}
+                              {/* Actions Column */}
+                              <div style={{ gridColumn: 'span 1' }} className="text-right">
+                                {hasAnyCoverageAdminRights ? (
+                                  <button
+                                    onClick={() => {
+                                      setAddingCoverage({
                                         assetId: asset.id,
-                                        assetSymbol: asset.symbol,
-                                        currentUserId: null,
-                                        currentAnalystName: null,
-                                        currentRole: null,
-                                        requestedUserId: '',
-                                        requestedRole: 'primary',
-                                        requestType: 'add',
-                                        reason: ''
-                                      })}
-                                      className="px-3 py-1 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
-                                      title="Request Coverage"
-                                    >
-                                      Request Coverage
-                                    </button>
-                                  )}
-                                </div>
+                                        analystId: '',
+                                        startDate: getLocalDateString(),
+                                        endDate: '',
+                                        role: '',
+                                        portfolioIds: [],
+                                        notes: '',
+                                        teamId: userTeams?.[0]?.id || null,
+                                        visibility: coverageSettings?.default_visibility || 'team',
+                                        isLead: false
+                                      })
+                                      setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
+                                    }}
+                                    className="px-2 py-1 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md"
+                                  >
+                                    Add
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => setRequestingChange({
+                                      assetId: asset.id,
+                                      assetSymbol: asset.symbol,
+                                      currentUserId: null,
+                                      currentAnalystName: null,
+                                      currentRole: null,
+                                      requestedUserId: '',
+                                      requestedRole: 'primary',
+                                      requestType: 'add',
+                                      reason: ''
+                                    })}
+                                    className="px-2 py-1 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-md"
+                                  >
+                                    Request
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -3497,839 +4885,1247 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               </Card>
               )}
 
-              {/* Workload View */}
-              {viewMode === 'workload' && (
-                <div className="grid grid-cols-12 gap-4 flex-1 min-h-0 mt-4">
-                  {/* Analyst Tiles */}
-                  <div className="col-span-12 lg:col-span-4 flex flex-col min-h-0">
-                    <Card className="flex flex-col h-full overflow-hidden">
-                      <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                        <h3 className="text-sm font-semibold text-gray-900">Analysts</h3>
-                      </div>
-                      <div className="p-3 space-y-2 flex-1 overflow-y-auto">
-                        {(() => {
-                          // Group coverage by analyst with more details
-                          const analystWorkload = new Map<string, {
-                            id: string
-                            name: string
-                            count: number
-                            primaryCount: number
-                            secondaryCount: number
-                            tertiaryCount: number
-                            assets: { symbol: string; role: string | null; sector: string | null }[]
-                            sectors: Set<string>
-                          }>()
-
-                          filteredCoverage.forEach(coverage => {
-                            const analystId = coverage.user_id || 'unknown'
-                            const existing = analystWorkload.get(analystId)
-                            const role = coverage.role || null
-                            const assetInfo = {
-                              symbol: coverage.assets?.symbol || 'Unknown',
-                              role,
-                              sector: coverage.assets?.sector || null
-                            }
-
-                            if (existing) {
-                              existing.count++
-                              if (role === 'primary') existing.primaryCount++
-                              else if (role === 'secondary') existing.secondaryCount++
-                              else if (role === 'tertiary') existing.tertiaryCount++
-                              existing.assets.push(assetInfo)
-                              if (coverage.assets?.sector) existing.sectors.add(coverage.assets.sector)
-                            } else {
-                              analystWorkload.set(analystId, {
-                                id: analystId,
-                                name: coverage.analyst_name,
-                                count: 1,
-                                primaryCount: role === 'primary' ? 1 : 0,
-                                secondaryCount: role === 'secondary' ? 1 : 0,
-                                tertiaryCount: role === 'tertiary' ? 1 : 0,
-                                assets: [assetInfo],
-                                sectors: new Set(coverage.assets?.sector ? [coverage.assets.sector] : [])
-                              })
-                            }
-                          })
-
-                          // Calculate average coverage for workload levels
-                          const analystEntries = Array.from(analystWorkload.entries())
-                          const totalAnalysts = analystEntries.length
-                          const avgCoverage = totalAnalysts > 0
-                            ? analystEntries.reduce((sum, [, a]) => sum + a.count, 0) / totalAnalysts
-                            : 0
-                          const maxCoverage = totalAnalysts > 0
-                            ? Math.max(...analystEntries.map(([, a]) => a.count))
-                            : 0
-
-                          // Workload level thresholds (relative to average)
-                          const getWorkloadLevel = (count: number) => {
-                            if (avgCoverage === 0) return { level: 'normal', color: 'bg-green-500', label: 'Normal' }
-                            const ratio = count / avgCoverage
-                            if (ratio <= 0.8) return { level: 'light', color: 'bg-blue-400', label: 'Light' }
-                            if (ratio <= 1.2) return { level: 'normal', color: 'bg-green-500', label: 'Normal' }
-                            if (ratio <= 1.5) return { level: 'moderate', color: 'bg-yellow-500', label: 'Moderate' }
-                            return { level: 'extended', color: 'bg-red-500', label: 'Extended' }
-                          }
-
-                          return analystEntries
-                            .sort((a, b) => b[1].count - a[1].count)
-                            .map(([analystId, analyst]) => {
-                              const workload = getWorkloadLevel(analyst.count)
-                              // Bar is centered at 50% for average workload
-                              // Below average: less than 50%, Above average: more than 50%
-                              // Scale: 0 = 0%, average = 50%, 2x average = 100%
-                              const barPercentage = avgCoverage > 0
-                                ? Math.min(100, (analyst.count / (avgCoverage * 2)) * 100)
-                                : 50
-
-                              return (
-                                <div
-                                  key={analystId}
-                                  onClick={() => setSelectedAnalystId(selectedAnalystId === analystId ? null : analystId)}
-                                  className={clsx(
-                                    'p-4 rounded-lg border cursor-pointer transition-all',
-                                    selectedAnalystId === analystId
-                                      ? 'bg-primary-50 border-primary-500 ring-2 ring-primary-200'
-                                      : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
-                                  )}
-                                >
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
-                                        <span className="text-sm font-semibold text-primary-700">
-                                          {analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                                        </span>
-                                      </div>
-                                      <span className="font-medium text-gray-900">{analyst.name}</span>
-                                    </div>
-                                    <span className={clsx(
-                                      'px-2 py-0.5 text-[10px] font-semibold rounded-full',
-                                      workload.level === 'light' && 'bg-blue-100 text-blue-700',
-                                      workload.level === 'normal' && 'bg-green-100 text-green-700',
-                                      workload.level === 'moderate' && 'bg-yellow-100 text-yellow-700',
-                                      workload.level === 'extended' && 'bg-red-100 text-red-700'
-                                    )}>
-                                      {workload.label}
-                                    </span>
-                                  </div>
-
-                                  {/* Workload Bar - centered at 50% for average */}
-                                  <div className="mb-3">
-                                    <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
-                                      {/* Center line marker for average */}
-                                      <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gray-400 z-10" />
-                                      <div
-                                        className={clsx('h-full rounded-full transition-all', workload.color)}
-                                        style={{ width: `${barPercentage}%` }}
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 text-xs">
-                                    {analyst.primaryCount > 0 && (
-                                      <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded-full">
-                                        <Star className="h-3 w-3" />
-                                        {analyst.primaryCount}
-                                      </span>
-                                    )}
-                                    {analyst.secondaryCount > 0 && (
-                                      <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full">
-                                        <Shield className="h-3 w-3" />
-                                        {analyst.secondaryCount}
-                                      </span>
-                                    )}
-                                    {analyst.tertiaryCount > 0 && (
-                                      <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full">
-                                        <UserCheck className="h-3 w-3" />
-                                        {analyst.tertiaryCount}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })
-                        })()}
-                        {filteredCoverage.length === 0 && (
-                          <div className="text-center py-8 text-gray-500">
-                            No analysts with coverage
-                          </div>
-                        )}
-                      </div>
-                    </Card>
+              {/* Gaps View - Shows uncovered assets */}
+              {viewMode === 'gaps' && (
+              <Card padding="none" className="h-[calc(90vh-280px)] flex flex-col overflow-hidden">
+                {gapsLoading ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
                   </div>
-
-                  {/* Analytics Panel */}
-                  <div className="col-span-12 lg:col-span-8 flex flex-col min-h-0 gap-4">
-                    {/* Summary Stats - Clickable Cards */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
-                      <Card
-                        className={clsx(
-                          "p-4 cursor-pointer transition-all hover:shadow-md",
-                          selectedStatCard === 'analysts' && !selectedAnalystId && "ring-2 ring-primary-500 bg-primary-50"
-                        )}
-                        onClick={() => {
-                          setSelectedAnalystId(null)
-                          setSelectedStatCard(selectedStatCard === 'analysts' ? null : 'analysts')
-                        }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-primary-100 rounded-lg">
-                            <Users className="h-5 w-5 text-primary-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">
-                              {new Set(filteredCoverage.map(c => c.user_id)).size}
-                            </p>
-                            <p className="text-xs text-gray-500">Total Analysts</p>
-                          </div>
-                        </div>
-                      </Card>
-                      <Card
-                        className={clsx(
-                          "p-4 cursor-pointer transition-all hover:shadow-md",
-                          selectedStatCard === 'covered' && !selectedAnalystId && "ring-2 ring-green-500 bg-green-50"
-                        )}
-                        onClick={() => {
-                          setSelectedAnalystId(null)
-                          setSelectedStatCard(selectedStatCard === 'covered' ? null : 'covered')
-                        }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-green-100 rounded-lg">
-                            <CheckCircle className="h-5 w-5 text-green-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">{filteredCoverage.length}</p>
-                            <p className="text-xs text-gray-500">Covered Assets</p>
-                          </div>
-                        </div>
-                      </Card>
-                      <Card
-                        className={clsx(
-                          "p-4 cursor-pointer transition-all hover:shadow-md",
-                          selectedStatCard === 'gaps' && !selectedAnalystId && "ring-2 ring-amber-500 bg-amber-50"
-                        )}
-                        onClick={() => {
-                          setSelectedAnalystId(null)
-                          setSelectedStatCard(selectedStatCard === 'gaps' ? null : 'gaps')
-                        }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-amber-100 rounded-lg">
-                            <AlertCircle className="h-5 w-5 text-amber-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">{allUncoveredAssets.length}</p>
-                            <p className="text-xs text-gray-500">Coverage Gaps</p>
-                          </div>
-                        </div>
-                      </Card>
-                      <Card
-                        className={clsx(
-                          "p-4 cursor-pointer transition-all hover:shadow-md",
-                          selectedStatCard === 'average' && !selectedAnalystId && "ring-2 ring-blue-500 bg-blue-50"
-                        )}
-                        onClick={() => {
-                          setSelectedAnalystId(null)
-                          setSelectedStatCard(selectedStatCard === 'average' ? null : 'average')
-                        }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <BarChart3 className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">
-                              {filteredCoverage.length > 0
-                                ? (filteredCoverage.length / new Set(filteredCoverage.map(c => c.user_id)).size).toFixed(1)
-                                : '0'}
-                            </p>
-                            <p className="text-xs text-gray-500">Avg per Analyst</p>
-                          </div>
-                        </div>
-                      </Card>
+                ) : (
+                  <>
+                    {/* Header */}
+                    <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-sm font-semibold text-gray-900">
+                          Coverage Gaps
+                        </h3>
+                        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                          {listGroupByLevels.includes('portfolio')
+                            ? (() => {
+                                const totalGaps = portfolioUniverseData?.reduce((sum, p) => sum + p.assets.length, 0) || 0
+                                if (searchQuery && portfolioUniverseData) {
+                                  const filteredGaps = portfolioUniverseData.reduce((sum, p) => {
+                                    return sum + p.assets.filter(a =>
+                                      a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                      a.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                      (a.sector && a.sector.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                                      (a.industry && a.industry.toLowerCase().includes(searchQuery.toLowerCase()))
+                                    ).length
+                                  }, 0)
+                                  return `${filteredGaps}/${totalGaps} uncovered in universes`
+                                }
+                                return `${totalGaps} uncovered in universes`
+                              })()
+                            : (() => {
+                                const totalGaps = gapsData?.length || 0
+                                if (searchQuery && gapsData) {
+                                  const filteredGaps = gapsData.filter((a: any) =>
+                                    a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    a.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (a.sector && a.sector.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                                    (a.industry && a.industry.toLowerCase().includes(searchQuery.toLowerCase()))
+                                  ).length
+                                  if (filteredGaps !== totalGaps) {
+                                    return `${filteredGaps}/${totalGaps} uncovered`
+                                  }
+                                }
+                                return `${totalGaps} uncovered`
+                              })()}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Detail Panel - Shows based on selection */}
-                    {selectedAnalystId ? (
-                      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        {(() => {
-                          const analystCoverage = filteredCoverage.filter(c => c.user_id === selectedAnalystId)
-                          const analystName = analystCoverage[0]?.analyst_name || 'Selected Analyst'
-
-                          // Calculate breakdown stats
-                          const sectorBreakdown = new Map<string, number>()
-                          const portfolioBreakdown = new Map<string, { name: string; count: number }>()
-                          const teamBreakdown = new Map<string, { name: string; count: number }>()
-                          let primaryCount = 0, secondaryCount = 0, tertiaryCount = 0
-
-                          analystCoverage.forEach(c => {
-                            // Sector
-                            const sector = c.assets?.sector || 'Uncategorized'
-                            sectorBreakdown.set(sector, (sectorBreakdown.get(sector) || 0) + 1)
-
-                            // Portfolio
-                            if (c.portfolio_id && c.portfolios) {
-                              const existing = portfolioBreakdown.get(c.portfolio_id)
-                              if (existing) existing.count++
-                              else portfolioBreakdown.set(c.portfolio_id, { name: c.portfolios.name, count: 1 })
-                            }
-
-                            // Team
-                            if (c.team_id && c.teams) {
-                              const existing = teamBreakdown.get(c.team_id)
-                              if (existing) existing.count++
-                              else teamBreakdown.set(c.team_id, { name: c.teams.name, count: 1 })
-                            }
-
-                            // Roles
-                            if (c.role === 'primary') primaryCount++
-                            else if (c.role === 'secondary') secondaryCount++
-                            else if (c.role === 'tertiary') tertiaryCount++
-                          })
-
-                          const sortedSectors = Array.from(sectorBreakdown.entries()).sort((a, b) => b[1] - a[1])
-                          const maxSectorCount = sortedSectors.length > 0 ? sortedSectors[0][1] : 1
-                          const sortedPortfolios = Array.from(portfolioBreakdown.entries()).sort((a, b) => b[1].count - a[1].count)
-                          const sortedTeams = Array.from(teamBreakdown.entries()).sort((a, b) => b[1].count - a[1].count)
-
-                          return (
-                            <>
-                              {/* Header with analyst info and key metrics */}
-                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-primary-50 to-white">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                                      <span className="text-sm font-bold text-primary-700">
-                                        {analystName.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <h3 className="text-sm font-semibold text-gray-900">{analystName}</h3>
-                                      <p className="text-xs text-gray-500">{analystCoverage.length} assets covered</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {primaryCount > 0 && (
-                                      <span className="flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full">
-                                        <Star className="h-3 w-3" /> {primaryCount} Primary
-                                      </span>
+                    {/* Portfolio-based gaps view */}
+                    {listGroupByLevels.includes('portfolio') ? (
+                      <div className="flex-1 overflow-y-auto">
+                        {!portfolioUniverseData || portfolioUniverseData.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                            <Briefcase className="h-12 w-12 text-gray-300 mb-3" />
+                            <p className="text-sm font-medium">No portfolio universes defined</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              Define investable universes in portfolios to see coverage gaps.
+                            </p>
+                          </div>
+                        ) : (
+                          <div>
+                            {portfolioUniverseData.map((portfolioData) => {
+                              // Filter assets by search query
+                              const filteredAssets = searchQuery
+                                ? portfolioData.assets.filter(asset =>
+                                    asset.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    asset.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (asset.sector && asset.sector.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                                    (asset.industry && asset.industry.toLowerCase().includes(searchQuery.toLowerCase()))
+                                  )
+                                : portfolioData.assets
+                              const isCollapsed = collapsedGapsGroups.has(portfolioData.portfolio.id)
+                              const gapCount = filteredAssets.length
+                              const totalGapCount = portfolioData.assets.length
+                              const coveragePercent = portfolioData.universeSize > 0
+                                ? Math.round(((portfolioData.universeSize - totalGapCount) / portfolioData.universeSize) * 100)
+                                : 100
+                              return (
+                                <div key={portfolioData.portfolio.id} className="border-b border-gray-200 last:border-b-0">
+                                  <button
+                                    onClick={() => {
+                                      setCollapsedGapsGroups(prev => {
+                                        const next = new Set(prev)
+                                        if (next.has(portfolioData.portfolio.id)) next.delete(portfolioData.portfolio.id)
+                                        else next.add(portfolioData.portfolio.id)
+                                        return next
+                                      })
+                                    }}
+                                    className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-150 flex items-center gap-2 text-left"
+                                  >
+                                    {isCollapsed ? (
+                                      <ChevronRight className="h-4 w-4 text-gray-500" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4 text-gray-500" />
                                     )}
-                                    {secondaryCount > 0 && (
-                                      <span className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                                        <Shield className="h-3 w-3" /> {secondaryCount} Secondary
+                                    <Briefcase className="h-4 w-4 text-gray-500" />
+                                    <span className="text-sm font-medium text-gray-900">{portfolioData.portfolio.name}</span>
+                                    {totalGapCount === 0 ? (
+                                      <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <CheckCircle className="h-3 w-3" />
+                                        100% covered
                                       </span>
+                                    ) : (
+                                      <>
+                                        <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                                          {searchQuery && gapCount !== totalGapCount
+                                            ? `${gapCount}/${totalGapCount} gaps`
+                                            : `${totalGapCount} gap${totalGapCount !== 1 ? 's' : ''}`}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          ({coveragePercent}% covered of {portfolioData.universeSize})
+                                        </span>
+                                      </>
                                     )}
-                                    {tertiaryCount > 0 && (
-                                      <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">
-                                        <UserCheck className="h-3 w-3" /> {tertiaryCount} Tertiary
-                                      </span>
-                                    )}
+                                  </button>
+                                  {!isCollapsed && (
+                                    !portfolioData.hasUniverseDefinition ? (
+                                      <div className="px-6 py-4 text-center text-gray-500">
+                                        <p className="text-sm">No investable universe defined for this portfolio</p>
+                                      </div>
+                                    ) : gapCount === 0 ? (
+                                      <div className="px-6 py-4 text-center text-gray-500">
+                                        <p className="text-sm text-green-600">
+                                          {searchQuery
+                                            ? `No gaps matching "${searchQuery}"`
+                                            : `All ${portfolioData.universeSize} assets in the investable universe are covered!`}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <div className="divide-y divide-gray-100">
+                                        {filteredAssets.map((asset) => (
+                                          <div
+                                            key={asset.id}
+                                            className="px-6 py-3 hover:bg-gray-50 grid grid-cols-12 gap-4 items-center"
+                                          >
+                                            <div className="col-span-4">
+                                              <div className="flex items-center gap-2">
+                                                <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                                                <div>
+                                                  <p className="text-sm font-medium text-gray-900">{asset.symbol}</p>
+                                                  <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div className="col-span-3">
+                                              <span className="text-sm text-gray-600">{asset.sector || '-'}</span>
+                                            </div>
+                                            <div className="col-span-2">
+                                              <span className="text-sm text-gray-600">
+                                                {asset.market_cap ? `$${(asset.market_cap / 1e9).toFixed(1)}B` : '-'}
+                                              </span>
+                                            </div>
+                                            <div className="col-span-3">
+                                              {hasAnyCoverageAdminRights && (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  onClick={() => {
+                                                    setAddingCoverage({
+                                                      assetId: asset.id,
+                                                      analystId: '',
+                                                      startDate: getLocalDateString(),
+                                                      endDate: '',
+                                                      role: '',
+                                                      portfolioIds: [],
+                                                      notes: '',
+                                                      teamId: userTeams?.[0]?.id || null,
+                                                      visibility: coverageSettings?.default_visibility || 'team',
+                                                      isLead: false
+                                                    })
+                                                    setAssetSearchQuery(asset.symbol)
+                                                  }}
+                                                  className="text-xs"
+                                                >
+                                                  <Plus className="h-3 w-3 mr-1" />
+                                                  Add Coverage
+                                                </Button>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                    <>
+                    {/* Derive gaps grouping from main groupings - only sector/industry apply to uncovered assets */}
+                    {(() => {
+                      const gapsGrouping = listGroupByLevels.find(level => level === 'sector' || level === 'industry') || null
+                      // Filter gaps data by search query
+                      const filteredGapsData = searchQuery && gapsData
+                        ? gapsData.filter((asset: any) =>
+                            asset.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            asset.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (asset.sector && asset.sector.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                            (asset.industry && asset.industry.toLowerCase().includes(searchQuery.toLowerCase()))
+                          )
+                        : gapsData || []
+
+                      // When searching, also find covered assets that match
+                      const matchingCoveredAssets = searchQuery && allAssetsWithStatus
+                        ? allAssetsWithStatus.filter((asset: any) =>
+                            asset.isCovered && (
+                              asset.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              asset.company_name.toLowerCase().includes(searchQuery.toLowerCase())
+                            )
+                          )
+                        : []
+
+                      return (
+                        <>
+                    {/* Table Header - only show when not grouped */}
+                    {!gapsGrouping && (
+                      <div className="px-6 py-2 bg-gray-50 border-b border-gray-200">
+                        <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <div className="col-span-3">Asset</div>
+                          <div className="col-span-2">Sector</div>
+                          <div className="col-span-2">Industry</div>
+                          <div className="col-span-2">Market Cap</div>
+                          <div className="col-span-3">Status</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Table Body */}
+                    <div className="flex-1 overflow-y-auto">
+                      {!gapsData || gapsData.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                          <CheckCircle className="h-12 w-12 text-green-400 mb-3" />
+                          <p className="text-sm font-medium">All assets are covered!</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Every asset in the system has active coverage.
+                          </p>
+                        </div>
+                      ) : filteredGapsData.length === 0 && matchingCoveredAssets.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                          <Search className="h-12 w-12 text-gray-300 mb-3" />
+                          <p className="text-sm font-medium">No assets matching "{searchQuery}"</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Try a different search term.
+                          </p>
+                        </div>
+                      ) : !gapsGrouping ? (
+                        <div className="divide-y divide-gray-100">
+                          {filteredGapsData.map((asset: any) => (
+                            <div
+                              key={asset.id}
+                              className="px-6 py-3 hover:bg-gray-50 grid grid-cols-12 gap-4 items-center"
+                            >
+                              <div className="col-span-3">
+                                <div className="flex items-center gap-2">
+                                  <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900">{asset.symbol}</p>
+                                    <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
                                   </div>
                                 </div>
                               </div>
-
-                              {/* Distribution Breakdowns */}
-                              <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0 bg-gray-50/50">
-                                <div className="grid grid-cols-3 gap-4">
-                                  {/* Sector Distribution */}
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600">{asset.sector || '-'}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600">{asset.industry || '-'}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600">
+                                  {asset.market_cap ? `$${(asset.market_cap / 1e9).toFixed(1)}B` : '-'}
+                                </span>
+                              </div>
+                              <div className="col-span-3">
+                                {hasAnyCoverageAdminRights && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAddingCoverage({
+                                        assetId: asset.id,
+                                        analystId: '',
+                                        startDate: getLocalDateString(),
+                                        endDate: '',
+                                        role: '',
+                                        portfolioIds: [],
+                                        notes: '',
+                                        teamId: userTeams?.[0]?.id || null,
+                                        visibility: coverageSettings?.default_visibility || 'team',
+                                        isLead: false
+                                      })
+                                      setAssetSearchQuery(asset.symbol)
+                                    }}
+                                    className="text-xs"
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Add Coverage
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {/* Show covered assets that match search */}
+                          {matchingCoveredAssets.map((asset: any) => (
+                            <div
+                              key={asset.id}
+                              className="px-6 py-3 hover:bg-gray-50 grid grid-cols-12 gap-4 items-center bg-green-50/50"
+                            >
+                              <div className="col-span-3">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
                                   <div>
-                                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
-                                      <BarChart3 className="h-3 w-3" /> Sector Distribution
-                                    </h4>
-                                    <div className="space-y-1.5 max-h-24 overflow-y-auto">
-                                      {sortedSectors.slice(0, 5).map(([sector, count]) => (
-                                        <div key={sector} className="flex items-center gap-2">
-                                          <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-0.5">
-                                              <span className="text-[10px] text-gray-600 truncate">{sector}</span>
-                                              <span className="text-[10px] font-medium text-gray-900">{count}</span>
+                                    <p className="text-sm font-medium text-gray-900">{asset.symbol}</p>
+                                    <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600">{asset.sector || '-'}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600">{asset.industry || '-'}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-600">
+                                  {asset.market_cap ? `$${(asset.market_cap / 1e9).toFixed(1)}B` : '-'}
+                                </span>
+                              </div>
+                              <div className="col-span-3">
+                                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                                  Covered
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        // Grouped view
+                        <div>
+                          {(() => {
+                            // Group filtered assets by selected field
+                            const grouped = new Map<string, typeof filteredGapsData>()
+                            filteredGapsData.forEach((asset: any) => {
+                              const key = asset[gapsGrouping!] || `Unknown ${gapsGrouping!.charAt(0).toUpperCase() + gapsGrouping!.slice(1)}`
+                              if (!grouped.has(key)) grouped.set(key, [])
+                              grouped.get(key)!.push(asset)
+                            })
+
+                            // Sort groups by name
+                            const sortedGroups = Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+
+                            return sortedGroups.map(([groupName, assets]) => {
+                              const isCollapsed = collapsedGapsGroups.has(groupName)
+                              return (
+                                <div key={groupName} className="border-b border-gray-200 last:border-b-0">
+                                  <button
+                                    onClick={() => {
+                                      setCollapsedGapsGroups(prev => {
+                                        const next = new Set(prev)
+                                        if (next.has(groupName)) next.delete(groupName)
+                                        else next.add(groupName)
+                                        return next
+                                      })
+                                    }}
+                                    className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-150 flex items-center gap-2 text-left"
+                                  >
+                                    {isCollapsed ? (
+                                      <ChevronRight className="h-4 w-4 text-gray-500" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4 text-gray-500" />
+                                    )}
+                                    <span className="text-sm font-medium text-gray-900">{groupName}</span>
+                                    <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                                      {assets.length}
+                                    </span>
+                                  </button>
+                                  {!isCollapsed && (
+                                    <div className="divide-y divide-gray-100">
+                                      {assets.map((asset: any) => (
+                                        <div
+                                          key={asset.id}
+                                          className="px-6 py-3 hover:bg-gray-50 grid grid-cols-12 gap-4 items-center"
+                                        >
+                                          <div className="col-span-4">
+                                            <div className="flex items-center gap-2">
+                                              <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                                              <div>
+                                                <p className="text-sm font-medium text-gray-900">{asset.symbol}</p>
+                                                <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
+                                              </div>
                                             </div>
-                                            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                              <div
-                                                className="h-full bg-primary-500 rounded-full"
-                                                style={{ width: `${(count / maxSectorCount) * 100}%` }}
-                                              />
-                                            </div>
+                                          </div>
+                                          <div className="col-span-3">
+                                            <span className="text-sm text-gray-600">
+                                              {gapsGrouping === 'sector' ? (asset.industry || '-') : (asset.sector || '-')}
+                                            </span>
+                                          </div>
+                                          <div className="col-span-2">
+                                            <span className="text-sm text-gray-600">
+                                              {asset.market_cap ? `$${(asset.market_cap / 1e9).toFixed(1)}B` : '-'}
+                                            </span>
+                                          </div>
+                                          <div className="col-span-3">
+                                            {hasAnyCoverageAdminRights && (
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                  setAddingCoverage({
+                                                    assetId: asset.id,
+                                                    analystId: '',
+                                                    startDate: getLocalDateString(),
+                                                    endDate: '',
+                                                    role: '',
+                                                    portfolioIds: [],
+                                                    notes: '',
+                                                    teamId: userTeams?.[0]?.id || null,
+                                                    visibility: coverageSettings?.default_visibility || 'team',
+                                                    isLead: false
+                                                  })
+                                                  setAssetSearchQuery(asset.symbol)
+                                                }}
+                                                className="text-xs"
+                                              >
+                                                <Plus className="h-3 w-3 mr-1" />
+                                                Add Coverage
+                                              </Button>
+                                            )}
                                           </div>
                                         </div>
                                       ))}
-                                      {sortedSectors.length > 5 && (
-                                        <span className="text-[10px] text-gray-400">+{sortedSectors.length - 5} more</span>
-                                      )}
                                     </div>
-                                  </div>
+                                  )}
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                        </>
+                      )
+                    })()}
+                    </>
+                    )}
+                  </>
+                )}
+              </Card>
+              )}
 
-                                  {/* Portfolio Distribution */}
-                                  <div>
-                                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
-                                      <FolderOpen className="h-3 w-3" /> By Portfolio
-                                    </h4>
-                                    {sortedPortfolios.length > 0 ? (
-                                      <div className="space-y-1 max-h-24 overflow-y-auto">
-                                        {sortedPortfolios.map(([id, { name, count }]) => (
-                                          <div key={id} className="flex items-center justify-between px-2 py-1 bg-white rounded border border-gray-100">
-                                            <span className="text-[10px] text-gray-600 truncate">{name}</span>
-                                            <span className="text-[10px] font-semibold text-primary-600">{count}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-[10px] text-gray-400 italic">No portfolio assignments</p>
-                                    )}
-                                  </div>
+              {/* Workload View */}
+              {viewMode === 'workload' && (
+                <div className="grid grid-cols-12 gap-4 flex-1 min-h-0 mt-4">
+                  {(() => {
+                    // Calculate workload data once for the entire view
+                    const analystWorkload = new Map<string, {
+                      id: string
+                      name: string
+                      count: number
+                      primaryCount: number
+                      secondaryCount: number
+                      tertiaryCount: number
+                      portfolios: Map<string, { name: string; count: number }>
+                      teams: Map<string, { name: string; count: number }>
+                      sectors: Map<string, number>
+                    }>()
 
-                                  {/* Team Distribution */}
-                                  <div>
-                                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
-                                      <Building2 className="h-3 w-3" /> By Team
-                                    </h4>
-                                    {sortedTeams.length > 0 ? (
-                                      <div className="space-y-1 max-h-24 overflow-y-auto">
-                                        {sortedTeams.map(([id, { name, count }]) => (
-                                          <div key={id} className="flex items-center justify-between px-2 py-1 bg-white rounded border border-gray-100">
-                                            <span className="text-[10px] text-gray-600 truncate">{name}</span>
-                                            <span className="text-[10px] font-semibold text-green-600">{count}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-[10px] text-gray-400 italic">No team assignments</p>
+                    // Helper to get portfolios for a user from portfolio_team memberships
+                    const getAnalystPortfolios = (userId: string): Array<{id: string, name: string}> => {
+                      const portfolioNames = portfolioTeamMemberships?.get(userId) || []
+                      const allNodes = allOrgChartNodes?.allNodes || []
+                      return portfolioNames.map(name => {
+                        const node = allNodes.find(n => n.node_type === 'portfolio' && n.name === name)
+                        return { id: node?.id || name, name }
+                      })
+                    }
+
+                    // Helper to get teams for a user from org chart
+                    const getAnalystTeams = (userId: string): Array<{id: string, name: string}> => {
+                      const allNodes = allOrgChartNodes?.allNodes || []
+                      const teamNodes = allNodes.filter(n => n.node_type === 'team')
+                      const result: Array<{id: string, name: string}> = []
+
+                      teamNodes.forEach(teamNode => {
+                        // Check if user is a member of this team (direct membership)
+                        const directMembers = userTeamMemberships?.get(userId) || []
+                        const isDirectMember = directMembers.some(m => m.nodeId === teamNode.id)
+
+                        // Check if user is in any portfolio linked to this team
+                        const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                        const linkedPortfolios = nodeLinks
+                          .filter(link => link.linked_node_id === teamNode.id)
+                          .map(link => {
+                            const portfolioNode = allNodes.find(n => n.id === link.node_id && n.node_type === 'portfolio')
+                            return portfolioNode?.name
+                          })
+                          .filter(Boolean)
+
+                        const userPortfolioNames = portfolioTeamMemberships?.get(userId) || []
+                        const isViaPortfolio = linkedPortfolios.some(pName => userPortfolioNames.includes(pName!))
+
+                        if (isDirectMember || isViaPortfolio) {
+                          result.push({ id: teamNode.id, name: teamNode.name })
+                        }
+                      })
+
+                      return result
+                    }
+
+                    filteredCoverage.forEach(coverage => {
+                      const analystId = coverage.user_id || 'unknown'
+                      const existing = analystWorkload.get(analystId)
+                      const role = coverage.role || null
+                      const sector = coverage.assets?.sector || 'Uncategorized'
+
+                      // Get analyst's portfolios and teams from org chart memberships
+                      const analystPortfolios = getAnalystPortfolios(analystId)
+                      const analystTeams = getAnalystTeams(analystId)
+
+                      if (existing) {
+                        existing.count++
+                        if (role === 'primary') existing.primaryCount++
+                        else if (role === 'secondary') existing.secondaryCount++
+                        else if (role === 'tertiary') existing.tertiaryCount++
+                        existing.sectors.set(sector, (existing.sectors.get(sector) || 0) + 1)
+                        // Add coverage to all analyst's portfolios
+                        analystPortfolios.forEach(portfolio => {
+                          const p = existing.portfolios.get(portfolio.id)
+                          if (p) p.count++
+                          else existing.portfolios.set(portfolio.id, { name: portfolio.name, count: 1 })
+                        })
+                        // Add coverage to all analyst's teams
+                        analystTeams.forEach(team => {
+                          const t = existing.teams.get(team.id)
+                          if (t) t.count++
+                          else existing.teams.set(team.id, { name: team.name, count: 1 })
+                        })
+                      } else {
+                        const portfolios = new Map<string, { name: string; count: number }>()
+                        const teams = new Map<string, { name: string; count: number }>()
+                        analystPortfolios.forEach(portfolio => {
+                          portfolios.set(portfolio.id, { name: portfolio.name, count: 1 })
+                        })
+                        analystTeams.forEach(team => {
+                          teams.set(team.id, { name: team.name, count: 1 })
+                        })
+                        analystWorkload.set(analystId, {
+                          id: analystId,
+                          name: coverage.analyst_name,
+                          count: 1,
+                          primaryCount: role === 'primary' ? 1 : 0,
+                          secondaryCount: role === 'secondary' ? 1 : 0,
+                          tertiaryCount: role === 'tertiary' ? 1 : 0,
+                          portfolios,
+                          teams,
+                          sectors: new Map([[sector, 1]])
+                        })
+                      }
+                    })
+
+                    const analystEntries = Array.from(analystWorkload.entries())
+                    const totalAnalysts = analystEntries.length
+                    const avgCoverage = totalAnalysts > 0
+                      ? analystEntries.reduce((sum, [, a]) => sum + a.count, 0) / totalAnalysts
+                      : 0
+                    const maxCoverage = totalAnalysts > 0
+                      ? Math.max(...analystEntries.map(([, a]) => a.count))
+                      : 0
+
+                    // Calculate total assets in each sector/portfolio/team for percentage calculations
+                    const totalBySector = new Map<string, number>()
+                    const totalByPortfolio = new Map<string, { name: string; count: number }>()
+                    const totalByTeam = new Map<string, { name: string; count: number }>()
+                    filteredCoverage.forEach(c => {
+                      const sector = c.assets?.sector || 'Uncategorized'
+                      totalBySector.set(sector, (totalBySector.get(sector) || 0) + 1)
+
+                      // Get analyst's portfolios and teams from org chart memberships
+                      const analystPortfolios = getAnalystPortfolios(c.user_id)
+                      const analystTeams = getAnalystTeams(c.user_id)
+
+                      analystPortfolios.forEach(portfolio => {
+                        const p = totalByPortfolio.get(portfolio.id)
+                        if (p) p.count++
+                        else totalByPortfolio.set(portfolio.id, { name: portfolio.name, count: 1 })
+                      })
+
+                      analystTeams.forEach(team => {
+                        const t = totalByTeam.get(team.id)
+                        if (t) t.count++
+                        else totalByTeam.set(team.id, { name: team.name, count: 1 })
+                      })
+                    })
+
+                    const getWorkloadLevel = (count: number) => {
+                      if (avgCoverage === 0) return { level: 'normal', color: 'bg-green-500', label: 'Balanced', textColor: 'text-green-700', bgColor: 'bg-green-100' }
+                      const ratio = count / avgCoverage
+                      if (ratio <= 0.7) return { level: 'light', color: 'bg-blue-400', label: 'Below Average', textColor: 'text-blue-700', bgColor: 'bg-blue-100' }
+                      if (ratio <= 1.2) return { level: 'normal', color: 'bg-green-500', label: 'Balanced', textColor: 'text-green-700', bgColor: 'bg-green-100' }
+                      if (ratio <= 1.5) return { level: 'moderate', color: 'bg-amber-500', label: 'Above Average', textColor: 'text-amber-700', bgColor: 'bg-amber-100' }
+                      return { level: 'extended', color: 'bg-red-500', label: 'Above Average', textColor: 'text-red-700', bgColor: 'bg-red-100' }
+                    }
+
+                    // Count analysts in each workload category
+                    const workloadCounts = { light: 0, normal: 0, moderate: 0, extended: 0 }
+                    analystEntries.forEach(([, a]) => {
+                      const wl = getWorkloadLevel(a.count)
+                      workloadCounts[wl.level as keyof typeof workloadCounts]++
+                    })
+
+                    const sortedAnalysts = analystEntries.sort((a, b) => b[1].count - a[1].count)
+
+                    // Get analysts by workload category
+                    const analystsByCategory = {
+                      light: sortedAnalysts.filter(([, a]) => getWorkloadLevel(a.count).level === 'light'),
+                      normal: sortedAnalysts.filter(([, a]) => getWorkloadLevel(a.count).level === 'normal'),
+                      moderate: sortedAnalysts.filter(([, a]) => getWorkloadLevel(a.count).level === 'moderate'),
+                      extended: sortedAnalysts.filter(([, a]) => getWorkloadLevel(a.count).level === 'extended')
+                    }
+
+                    return (
+                      <>
+                        {/* Analyst List - Left Panel (Compact) */}
+                        <div className="col-span-12 lg:col-span-2 flex flex-col min-h-0">
+                          <Card className="flex flex-col h-full overflow-hidden">
+                            <div className="px-3 py-2 border-b border-gray-200 flex-shrink-0 bg-gray-50">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Analysts ({totalAnalysts})</p>
+                            </div>
+                            <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+                              {sortedAnalysts.map(([analystId, analyst]) => {
+                                const workload = getWorkloadLevel(analyst.count)
+
+                                return (
+                                  <div
+                                    key={analystId}
+                                    onClick={() => {
+                                      setSelectedAnalystId(selectedAnalystId === analystId ? null : analystId)
+                                      setSelectedStatCard(null)
+                                    }}
+                                    className={clsx(
+                                      'px-3 py-2 cursor-pointer transition-all flex items-center justify-between',
+                                      selectedAnalystId === analystId
+                                        ? 'bg-primary-50 border-l-2 border-l-primary-500'
+                                        : 'hover:bg-gray-50 border-l-2 border-l-transparent'
                                     )}
+                                  >
+                                    <p className={clsx('text-sm font-medium truncate flex-1', workload.textColor)}>{analyst.name}</p>
+                                    <span className={clsx(
+                                      'text-sm font-bold ml-2 flex-shrink-0',
+                                      workload.textColor
+                                    )}>
+                                      {analyst.count}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                              {filteredCoverage.length === 0 && (
+                                <div className="text-center py-4 text-gray-400 text-xs">
+                                  No data
+                                </div>
+                              )}
+                            </div>
+                          </Card>
+                        </div>
+
+                        {/* Right Panel (Wider) */}
+                        <div className="col-span-12 lg:col-span-10 flex flex-col min-h-0 gap-4">
+                          {/* Summary Stats - Larger, Clickable */}
+                          <div className="grid grid-cols-3 gap-3 flex-shrink-0">
+                            <Card
+                              className={clsx(
+                                "p-4 cursor-pointer transition-all hover:shadow-md",
+                                selectedStatCard === 'analysts' && !selectedAnalystId && "ring-2 ring-primary-500 bg-primary-50"
+                              )}
+                              onClick={() => {
+                                setSelectedAnalystId(null)
+                                setSelectedStatCard(selectedStatCard === 'analysts' ? null : 'analysts')
+                              }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-gray-100 rounded-lg">
+                                  <Users className="h-5 w-5 text-gray-600" />
+                                </div>
+                                <div>
+                                  <p className="text-3xl font-bold text-gray-900">{totalAnalysts}</p>
+                                  <p className="text-xs text-gray-500">Total Analysts</p>
+                                </div>
+                              </div>
+                            </Card>
+                            <Card
+                              className={clsx(
+                                "p-4 cursor-pointer transition-all hover:shadow-md",
+                                selectedStatCard === 'average' && !selectedAnalystId && "ring-2 ring-primary-500 bg-primary-50"
+                              )}
+                              onClick={() => {
+                                setSelectedAnalystId(null)
+                                setSelectedStatCard(selectedStatCard === 'average' ? null : 'average')
+                              }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary-100 rounded-lg">
+                                  <BarChart3 className="h-5 w-5 text-primary-600" />
+                                </div>
+                                <div>
+                                  <p className="text-3xl font-bold text-primary-600">{avgCoverage.toFixed(1)}</p>
+                                  <p className="text-xs text-gray-500">Avg Names</p>
+                                </div>
+                              </div>
+                            </Card>
+                            <Card
+                              className={clsx(
+                                "p-4 cursor-pointer transition-all hover:shadow-md",
+                                selectedStatCard === 'bandwidth' && !selectedAnalystId && "ring-2 ring-purple-500 bg-purple-50"
+                              )}
+                              onClick={() => {
+                                setSelectedAnalystId(null)
+                                setSelectedStatCard(selectedStatCard === 'bandwidth' ? null : 'bandwidth')
+                              }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-purple-100 rounded-lg">
+                                  <BarChart3 className="h-5 w-5 text-purple-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900 mb-1">Bandwidth</p>
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-lg font-bold text-blue-600">{workloadCounts.light}</span>
+                                      <span className="text-[10px] text-gray-500">below</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-lg font-bold text-green-600">{workloadCounts.normal}</span>
+                                      <span className="text-[10px] text-gray-500">balanced</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-lg font-bold text-amber-600">{workloadCounts.moderate + workloadCounts.extended}</span>
+                                      <span className="text-[10px] text-gray-500">above</span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
+                            </Card>
+                          </div>
 
-                              {/* Assets Table */}
+                          {/* Detail Panel - Changes based on selection */}
+                          {selectedAnalystId ? (
+                            /* Analyst Detail View */
+                            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                              {(() => {
+                                const analyst = analystWorkload.get(selectedAnalystId)
+                                if (!analyst) return null
+
+                                const workload = getWorkloadLevel(analyst.count)
+                                const diff = analyst.count - avgCoverage
+                                const analystCoverage = filteredCoverage.filter(c => c.user_id === selectedAnalystId)
+
+                                // Sort sectors, portfolios, teams by count
+                                const sortedSectors = Array.from(analyst.sectors.entries()).sort((a, b) => b[1] - a[1])
+                                const sortedPortfolios = Array.from(analyst.portfolios.entries()).sort((a, b) => b[1].count - a[1].count)
+                                const sortedTeams = Array.from(analyst.teams.entries()).sort((a, b) => b[1].count - a[1].count)
+
+                                return (
+                                  <>
+                                    {/* Compact Analyst Header */}
+                                    <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <div className={clsx(
+                                            'w-10 h-10 rounded-full flex items-center justify-center',
+                                            workload.bgColor
+                                          )}>
+                                            <span className={clsx('text-sm font-bold', workload.textColor)}>
+                                              {analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <h3 className="text-base font-semibold text-gray-900">{analyst.name}</h3>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-sm text-gray-600">
+                                                <span className="font-bold text-gray-900">{analyst.count}</span> names
+                                              </span>
+                                              <span className={clsx(
+                                                'px-2 py-0.5 text-xs font-medium rounded-full',
+                                                workload.bgColor, workload.textColor
+                                              )}>
+                                                {workload.label}
+                                              </span>
+                                              {diff !== 0 && (
+                                                <span className={clsx(
+                                                  'text-xs',
+                                                  diff > 0 ? 'text-amber-600' : 'text-blue-600'
+                                                )}>
+                                                  ({diff > 0 ? '+' : ''}{diff.toFixed(1)} vs avg)
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Distribution Cards - Main Focus */}
+                                    <div className="flex-1 overflow-auto p-4">
+                                      <div className="grid grid-cols-3 gap-4 h-full">
+                                        {/* Sector Distribution Card */}
+                                        <div className="bg-gradient-to-br from-indigo-50 to-white rounded-xl border border-indigo-100 p-4 flex flex-col">
+                                          <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-2 bg-indigo-100 rounded-lg">
+                                              <BarChart3 className="h-5 w-5 text-indigo-600" />
+                                            </div>
+                                            <div>
+                                              <h4 className="text-sm font-semibold text-gray-900">By Sector</h4>
+                                              <p className="text-xs text-gray-500">{sortedSectors.length} sectors</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex-1 overflow-auto space-y-3">
+                                            {sortedSectors.map(([sector, count]) => {
+                                              const coveragePercent = ((count / analyst.count) * 100)
+                                              const totalInSector = totalBySector.get(sector) || count
+                                              const sectorPercent = ((count / totalInSector) * 100)
+                                              return (
+                                                <div key={sector} className="bg-white rounded-lg p-3 border border-indigo-100 shadow-sm">
+                                                  <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-sm font-medium text-gray-900 truncate flex-1" title={sector}>{sector}</span>
+                                                    <span className="text-lg font-bold text-indigo-600 ml-2">{count}</span>
+                                                  </div>
+                                                  <div className="h-2 bg-indigo-100 rounded-full overflow-hidden mb-1">
+                                                    <div
+                                                      className="h-full bg-indigo-500 rounded-full transition-all"
+                                                      style={{ width: `${coveragePercent}%` }}
+                                                    />
+                                                  </div>
+                                                  <div className="flex justify-between text-[10px] text-gray-500">
+                                                    <span>{coveragePercent.toFixed(0)}% of {analyst.name.split(' ')[0]}'s coverage</span>
+                                                    <span>{sectorPercent.toFixed(0)}% of {sector}</span>
+                                                  </div>
+                                                </div>
+                                              )
+                                            })}
+                                            {sortedSectors.length === 0 && (
+                                              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                                                No sector data
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Portfolio Card */}
+                                        <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl border border-purple-100 p-4 flex flex-col">
+                                          <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-2 bg-purple-100 rounded-lg">
+                                              <FolderOpen className="h-5 w-5 text-purple-600" />
+                                            </div>
+                                            <div>
+                                              <h4 className="text-sm font-semibold text-gray-900">By Portfolio</h4>
+                                              <p className="text-xs text-gray-500">{sortedPortfolios.length} portfolio{sortedPortfolios.length !== 1 ? 's' : ''}</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex-1 overflow-auto space-y-3">
+                                            {sortedPortfolios.map(([id, { name, count }]) => {
+                                              const coveragePercent = ((count / analyst.count) * 100)
+                                              const totalInPortfolio = totalByPortfolio.get(id)?.count || count
+                                              const portfolioPercent = ((count / totalInPortfolio) * 100)
+                                              return (
+                                                <div key={id} className="bg-white rounded-lg p-3 border border-purple-100 shadow-sm">
+                                                  <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-sm font-medium text-gray-900 truncate flex-1" title={name}>{name}</span>
+                                                    <span className="text-lg font-bold text-purple-600 ml-2">{count}</span>
+                                                  </div>
+                                                  <div className="h-2 bg-purple-100 rounded-full overflow-hidden mb-1">
+                                                    <div
+                                                      className="h-full bg-purple-500 rounded-full transition-all"
+                                                      style={{ width: `${coveragePercent}%` }}
+                                                    />
+                                                  </div>
+                                                  <div className="flex justify-between text-[10px] text-gray-500">
+                                                    <span>{coveragePercent.toFixed(0)}% of {analyst.name.split(' ')[0]}'s coverage</span>
+                                                    <span>{portfolioPercent.toFixed(0)}% of {name}</span>
+                                                  </div>
+                                                </div>
+                                              )
+                                            })}
+                                            {sortedPortfolios.length === 0 && (
+                                              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                                                Not assigned to any portfolios
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Team Card */}
+                                        <div className="bg-gradient-to-br from-emerald-50 to-white rounded-xl border border-emerald-100 p-4 flex flex-col">
+                                          <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-2 bg-emerald-100 rounded-lg">
+                                              <Building2 className="h-5 w-5 text-emerald-600" />
+                                            </div>
+                                            <div>
+                                              <h4 className="text-sm font-semibold text-gray-900">By Team</h4>
+                                              <p className="text-xs text-gray-500">{sortedTeams.length} team{sortedTeams.length !== 1 ? 's' : ''}</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex-1 overflow-auto space-y-3">
+                                            {sortedTeams.map(([id, { name, count }]) => {
+                                              const coveragePercent = ((count / analyst.count) * 100)
+                                              const totalInTeam = totalByTeam.get(id)?.count || count
+                                              const teamPercent = ((count / totalInTeam) * 100)
+                                              return (
+                                                <div key={id} className="bg-white rounded-lg p-3 border border-emerald-100 shadow-sm">
+                                                  <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-sm font-medium text-gray-900 truncate flex-1" title={name}>{name}</span>
+                                                    <span className="text-lg font-bold text-emerald-600 ml-2">{count}</span>
+                                                  </div>
+                                                  <div className="h-2 bg-emerald-100 rounded-full overflow-hidden mb-1">
+                                                    <div
+                                                      className="h-full bg-emerald-500 rounded-full transition-all"
+                                                      style={{ width: `${coveragePercent}%` }}
+                                                    />
+                                                  </div>
+                                                  <div className="flex justify-between text-[10px] text-gray-500">
+                                                    <span>{coveragePercent.toFixed(0)}% of {analyst.name.split(' ')[0]}'s coverage</span>
+                                                    <span>{teamPercent.toFixed(0)}% of {name}</span>
+                                                  </div>
+                                                </div>
+                                              )
+                                            })}
+                                            {sortedTeams.length === 0 && (
+                                              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                                                Not assigned to any teams
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </>
+                                )
+                              })()}
+                            </Card>
+                          ) : selectedStatCard === 'analysts' ? (
+                            /* All Analysts Table */
+                            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-50">
+                                <div className="flex items-center gap-2">
+                                  <Users className="h-5 w-5 text-gray-600" />
+                                  <h3 className="text-sm font-semibold text-gray-900">All Analysts ({totalAnalysts})</h3>
+                                </div>
+                              </div>
                               <div className="flex-1 overflow-auto">
                                 <table className="w-full">
                                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                                     <tr>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                                      {coverageSettings?.enable_hierarchy && (
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                      )}
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Since</th>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Analyst</th>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Coverage</th>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Sectors</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
-                                    {analystCoverage
-                                      .sort((a, b) => {
-                                        const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
-                                        const aOrder = a.role ? (roleOrder[a.role] ?? 3) : 4
-                                        const bOrder = b.role ? (roleOrder[b.role] ?? 3) : 4
-                                        if (aOrder !== bOrder) return aOrder - bOrder
-                                        return (a.assets?.symbol || '').localeCompare(b.assets?.symbol || '')
-                                      })
-                                      .map(coverage => (
-                                        <tr key={coverage.id} className="hover:bg-gray-50">
-                                          <td className="px-4 py-2.5">
-                                            <span className="font-medium text-gray-900">{coverage.assets?.symbol}</span>
-                                          </td>
-                                          <td className="px-4 py-2.5">
-                                            <span className="text-sm text-gray-600 truncate max-w-[120px] block">{coverage.assets?.company_name}</span>
-                                          </td>
-                                          {coverageSettings?.enable_hierarchy && (
-                                            <td className="px-4 py-2.5">
-                                              {coverage.role ? (
-                                                <span className={clsx(
-                                                  "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full",
-                                                  coverage.role === 'primary' && "bg-yellow-100 text-yellow-800",
-                                                  coverage.role === 'secondary' && "bg-blue-100 text-blue-800",
-                                                  coverage.role === 'tertiary' && "bg-gray-100 text-gray-700"
-                                                )}>
-                                                  {coverage.role === 'primary' && <Star className="h-3 w-3" />}
-                                                  {coverage.role === 'secondary' && <Shield className="h-3 w-3" />}
-                                                  {coverage.role === 'tertiary' && <UserCheck className="h-3 w-3" />}
-                                                  {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
+                                    {sortedAnalysts.map(([id, analyst]) => {
+                                      const workload = getWorkloadLevel(analyst.count)
+                                      const diff = analyst.count - avgCoverage
+                                      return (
+                                        <tr key={id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedAnalystId(id); setSelectedStatCard(null) }}>
+                                          <td className="px-4 py-3">
+                                            <div className="flex items-center gap-2">
+                                              <div className={clsx('w-8 h-8 rounded-full flex items-center justify-center', workload.bgColor)}>
+                                                <span className={clsx('text-xs font-semibold', workload.textColor)}>
+                                                  {analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                                                 </span>
-                                              ) : (
-                                                <span className="text-xs text-gray-400">—</span>
+                                              </div>
+                                              <span className="font-medium text-gray-900">{analyst.name}</span>
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-lg font-bold text-gray-900">{analyst.count}</span>
+                                              {diff !== 0 && (
+                                                <span className={clsx('text-sm', diff > 0 ? 'text-amber-600' : 'text-blue-600')}>
+                                                  ({diff > 0 ? '+' : ''}{diff.toFixed(1)})
+                                                </span>
                                               )}
-                                            </td>
-                                          )}
-                                          <td className="px-4 py-2.5">
-                                            <span className="text-sm text-gray-500">{coverage.assets?.sector || '—'}</span>
+                                            </div>
                                           </td>
-                                          <td className="px-4 py-2.5">
-                                            <span className="text-sm text-gray-500">{coverage.portfolios?.name || '—'}</span>
-                                          </td>
-                                          <td className="px-4 py-2.5">
-                                            <span className="text-sm text-gray-500">
-                                              {coverage.start_date ? new Date(coverage.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                                          <td className="px-4 py-3">
+                                            <span className={clsx('px-2 py-1 text-xs font-semibold rounded-full', workload.bgColor, workload.textColor)}>
+                                              {workload.label}
                                             </span>
                                           </td>
+                                          <td className="px-4 py-3 text-sm text-gray-500">
+                                            {Array.from(analyst.sectors.keys()).slice(0, 2).join(', ')}{analyst.sectors.size > 2 ? '...' : ''}
+                                          </td>
                                         </tr>
-                                      ))}
-                                  </tbody>
-                                </table>
-                                {analystCoverage.length === 0 && (
-                                  <div className="p-8 text-center text-gray-500 text-sm">
-                                    No coverage records found
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          )
-                        })()}
-                      </Card>
-                    ) : selectedStatCard === 'analysts' ? (
-                      /* Analysts Detail Panel */
-                      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                          <div className="flex items-center gap-2">
-                            <Users className="h-4 w-4 text-primary-600" />
-                            <h3 className="text-sm font-semibold text-gray-900">All Analysts</h3>
-                          </div>
-                        </div>
-                        <div className="flex-1 overflow-auto">
-                          <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                              <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Analyst</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Coverage</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Primary</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Secondary</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sectors</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {(() => {
-                                const analystStats = new Map<string, { name: string; count: number; primary: number; secondary: number; sectors: Set<string> }>()
-                                filteredCoverage.forEach(c => {
-                                  const existing = analystStats.get(c.user_id)
-                                  if (existing) {
-                                    existing.count++
-                                    if (c.role === 'primary') existing.primary++
-                                    if (c.role === 'secondary') existing.secondary++
-                                    if (c.assets?.sector) existing.sectors.add(c.assets.sector)
-                                  } else {
-                                    analystStats.set(c.user_id, {
-                                      name: c.analyst_name,
-                                      count: 1,
-                                      primary: c.role === 'primary' ? 1 : 0,
-                                      secondary: c.role === 'secondary' ? 1 : 0,
-                                      sectors: new Set(c.assets?.sector ? [c.assets.sector] : [])
-                                    })
-                                  }
-                                })
-                                return Array.from(analystStats.entries())
-                                  .sort((a, b) => b[1].count - a[1].count)
-                                  .map(([id, stats]) => (
-                                    <tr key={id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedAnalystId(id)}>
-                                      <td className="px-4 py-2.5 font-medium text-gray-900">{stats.name}</td>
-                                      <td className="px-4 py-2.5 text-sm text-gray-600">{stats.count}</td>
-                                      <td className="px-4 py-2.5">
-                                        {stats.primary > 0 && <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded-full">{stats.primary}</span>}
-                                      </td>
-                                      <td className="px-4 py-2.5">
-                                        {stats.secondary > 0 && <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">{stats.secondary}</span>}
-                                      </td>
-                                      <td className="px-4 py-2.5 text-xs text-gray-500">{Array.from(stats.sectors).slice(0, 3).join(', ')}{stats.sectors.size > 3 ? '...' : ''}</td>
-                                    </tr>
-                                  ))
-                              })()}
-                            </tbody>
-                          </table>
-                        </div>
-                      </Card>
-                    ) : selectedStatCard === 'covered' ? (
-                      /* Covered Assets Detail Panel */
-                      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <h3 className="text-sm font-semibold text-gray-900">Covered Assets ({filteredCoverage.length})</h3>
-                          </div>
-                        </div>
-                        <div className="flex-1 overflow-auto">
-                          <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                              <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Analyst</th>
-                                {coverageSettings?.enable_hierarchy && (
-                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                                )}
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Since</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {filteredCoverage
-                                .sort((a, b) => (a.assets?.symbol || '').localeCompare(b.assets?.symbol || ''))
-                                .map(coverage => (
-                                  <tr key={coverage.id} className="hover:bg-gray-50">
-                                    <td className="px-4 py-2.5 font-medium text-gray-900">{coverage.assets?.symbol}</td>
-                                    <td className="px-4 py-2.5 text-sm text-gray-600 truncate max-w-[150px]">{coverage.assets?.company_name}</td>
-                                    <td className="px-4 py-2.5 text-sm text-gray-600">{coverage.analyst_name}</td>
-                                    {coverageSettings?.enable_hierarchy && (
-                                      <td className="px-4 py-2.5">
-                                        {coverage.role ? (
-                                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-                                            {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                          </span>
-                                        ) : null}
-                                      </td>
-                                    )}
-                                    <td className="px-4 py-2.5 text-sm text-gray-500">
-                                      {coverage.start_date ? new Date(coverage.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </Card>
-                    ) : selectedStatCard === 'gaps' ? (
-                      /* Coverage Gaps Detail Panel - Enhanced with Sector/Team Breakdown */
-                      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        {(() => {
-                          // Group uncovered assets by sector
-                          const sectorGaps = new Map<string, typeof allUncoveredAssets>()
-                          allUncoveredAssets.forEach(asset => {
-                            const sector = asset.sector || 'Uncategorized'
-                            if (!sectorGaps.has(sector)) sectorGaps.set(sector, [])
-                            sectorGaps.get(sector)!.push(asset)
-                          })
-
-                          // Find which teams typically cover each sector (based on existing coverage)
-                          const sectorTeams = new Map<string, Map<string, { name: string; count: number }>>()
-                          filteredCoverage.forEach(c => {
-                            if (c.assets?.sector && c.team_id && c.teams) {
-                              const sector = c.assets.sector
-                              if (!sectorTeams.has(sector)) sectorTeams.set(sector, new Map())
-                              const teams = sectorTeams.get(sector)!
-                              const existing = teams.get(c.team_id)
-                              if (existing) existing.count++
-                              else teams.set(c.team_id, { name: c.teams.name, count: 1 })
-                            }
-                          })
-
-                          const sortedSectors = Array.from(sectorGaps.entries())
-                            .sort((a, b) => b[1].length - a[1].length)
-
-                          return (
-                            <>
-                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                                    <h3 className="text-sm font-semibold text-gray-900">Coverage Gaps ({allUncoveredAssets.length})</h3>
-                                  </div>
-                                  <span className="text-xs text-gray-500">{sectorGaps.size} sectors affected</span>
-                                </div>
-                              </div>
-
-                              {allUncoveredAssets.length > 0 ? (
-                                <>
-                                  {/* Sector Summary */}
-                                  <div className="px-4 py-3 border-b border-gray-100 bg-amber-50/30 flex-shrink-0">
-                                    <h4 className="text-xs font-semibold text-gray-700 mb-2">Gap Breakdown by Sector</h4>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {sortedSectors.slice(0, 8).map(([sector, assets]) => {
-                                        const teamsForSector = sectorTeams.get(sector)
-                                        const topTeam = teamsForSector ? Array.from(teamsForSector.values()).sort((a, b) => b.count - a.count)[0] : null
-                                        return (
-                                          <div
-                                            key={sector}
-                                            className="px-2.5 py-1.5 bg-white rounded-lg border border-amber-200 shadow-sm"
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-xs font-medium text-gray-900">{sector}</span>
-                                              <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded">
-                                                {assets.length}
-                                              </span>
-                                            </div>
-                                            {topTeam && (
-                                              <p className="text-[9px] text-gray-500 mt-0.5 flex items-center gap-1">
-                                                <Building2 className="h-2.5 w-2.5" />
-                                                Typically: {topTeam.name}
-                                              </p>
-                                            )}
-                                          </div>
-                                        )
-                                      })}
-                                      {sortedSectors.length > 8 && (
-                                        <span className="px-2 py-1 text-xs text-gray-500">+{sortedSectors.length - 8} more</span>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Grouped Asset List */}
-                                  <div className="flex-1 overflow-y-auto">
-                                    {sortedSectors.map(([sector, assets]) => {
-                                      const teamsForSector = sectorTeams.get(sector)
-                                      const suggestedTeams = teamsForSector
-                                        ? Array.from(teamsForSector.values()).sort((a, b) => b.count - a.count).slice(0, 2)
-                                        : []
-
-                                      return (
-                                        <div key={sector} className="border-b border-gray-100 last:border-b-0">
-                                          {/* Sector Header */}
-                                          <div className="px-4 py-2 bg-gray-50 flex items-center justify-between sticky top-0">
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-xs font-semibold text-gray-700">{sector}</span>
-                                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
-                                                {assets.length} gaps
-                                              </span>
-                                            </div>
-                                            {suggestedTeams.length > 0 && (
-                                              <div className="flex items-center gap-1">
-                                                <span className="text-[9px] text-gray-400">Suggested teams:</span>
-                                                {suggestedTeams.map(team => (
-                                                  <span key={team.name} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] bg-primary-50 text-primary-700 rounded">
-                                                    <Building2 className="h-2 w-2" />
-                                                    {team.name}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          {/* Assets in this sector */}
-                                          <div className="px-4 py-2 space-y-1.5">
-                                            {assets.map(asset => (
-                                              <div key={asset.id} className="flex items-center justify-between p-2 bg-amber-50/50 rounded border border-amber-100 hover:bg-amber-50 transition-colors">
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-sm font-medium text-gray-900 truncate">{asset.symbol}</p>
-                                                  <p className="text-[10px] text-gray-500 truncate">{asset.company_name}</p>
-                                                </div>
-                                                {hasAnyCoverageAdminRights && (
-                                                  <button
-                                                    onClick={() => {
-                                                      setAddingCoverage({
-                                                        assetId: asset.id,
-                                                        analystId: '',
-                                                        startDate: getLocalDateString(),
-                                                        endDate: '',
-                                                        role: '',
-                                                        portfolioIds: [],
-                                                        notes: '',
-                                                        teamId: userTeams?.[0]?.id || null,
-                                                        visibility: coverageSettings?.default_visibility || 'team',
-                                                        isLead: false
-                                                      })
-                                                      setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
-                                                    }}
-                                                    className="ml-2 px-2 py-1 text-[10px] font-medium text-primary-600 bg-white border border-primary-200 hover:bg-primary-50 rounded transition-colors flex-shrink-0"
-                                                  >
-                                                    Assign
-                                                  </button>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
                                       )
                                     })}
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="flex flex-col items-center justify-center py-12 text-center flex-1">
-                                  <CheckCircle className="h-12 w-12 text-green-400 mb-3" />
-                                  <p className="text-gray-600 font-medium">All assets are covered!</p>
-                                  <p className="text-xs text-gray-500">No coverage gaps detected</p>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </Card>
+                          ) : selectedStatCard === 'average' ? (
+                            /* Coverage Distribution */
+                            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-primary-50">
+                                <div className="flex items-center gap-2">
+                                  <BarChart3 className="h-5 w-5 text-primary-600" />
+                                  <h3 className="text-sm font-semibold text-gray-900">Coverage Distribution</h3>
                                 </div>
-                              )}
-                            </>
-                          )
-                        })()}
-                      </Card>
-                    ) : selectedStatCard === 'average' ? (
-                      /* Average Coverage Analytics Panel */
-                      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                          <div className="flex items-center gap-2">
-                            <BarChart3 className="h-4 w-4 text-blue-600" />
-                            <h3 className="text-sm font-semibold text-gray-900">Coverage Distribution</h3>
-                          </div>
-                        </div>
-                        <div className="p-4 flex-1 overflow-y-auto">
-                          {(() => {
-                            const analystCounts = new Map<string, { name: string; count: number }>()
-                            filteredCoverage.forEach(c => {
-                              const existing = analystCounts.get(c.user_id)
-                              if (existing) existing.count++
-                              else analystCounts.set(c.user_id, { name: c.analyst_name, count: 1 })
-                            })
-                            const counts = Array.from(analystCounts.values())
-                            const avgCount = counts.length > 0 ? counts.reduce((s, c) => s + c.count, 0) / counts.length : 0
-                            const maxCount = counts.length > 0 ? Math.max(...counts.map(c => c.count)) : 0
-                            const minCount = counts.length > 0 ? Math.min(...counts.map(c => c.count)) : 0
-
-                            return (
-                              <div className="space-y-6">
-                                {/* Stats Summary */}
-                                <div className="grid grid-cols-3 gap-4">
-                                  <div className="text-center p-3 bg-gray-50 rounded-lg">
-                                    <p className="text-2xl font-bold text-gray-900">{avgCount.toFixed(1)}</p>
-                                    <p className="text-xs text-gray-500">Average</p>
+                              </div>
+                              <div className="flex-1 overflow-auto p-5">
+                                {/* Stats Row */}
+                                <div className="grid grid-cols-3 gap-4 mb-6">
+                                  <div className="text-center p-4 bg-gray-50 rounded-xl">
+                                    <p className="text-3xl font-bold text-gray-900">{avgCoverage.toFixed(1)}</p>
+                                    <p className="text-sm text-gray-500">Average</p>
                                   </div>
-                                  <div className="text-center p-3 bg-green-50 rounded-lg">
-                                    <p className="text-2xl font-bold text-green-700">{maxCount}</p>
-                                    <p className="text-xs text-gray-500">Highest</p>
+                                  <div className="text-center p-4 bg-green-50 rounded-xl">
+                                    <p className="text-3xl font-bold text-green-700">{maxCoverage}</p>
+                                    <p className="text-sm text-gray-500">Highest</p>
                                   </div>
-                                  <div className="text-center p-3 bg-amber-50 rounded-lg">
-                                    <p className="text-2xl font-bold text-amber-700">{minCount}</p>
-                                    <p className="text-xs text-gray-500">Lowest</p>
+                                  <div className="text-center p-4 bg-blue-50 rounded-xl">
+                                    <p className="text-3xl font-bold text-blue-700">{sortedAnalysts.length > 0 ? sortedAnalysts[sortedAnalysts.length - 1][1].count : 0}</p>
+                                    <p className="text-sm text-gray-500">Lowest</p>
                                   </div>
                                 </div>
-
-                                {/* Distribution Chart */}
-                                <div>
-                                  <h4 className="text-sm font-medium text-gray-700 mb-3">Coverage by Analyst</h4>
-                                  <div className="space-y-2">
-                                    {counts
-                                      .sort((a, b) => b.count - a.count)
-                                      .map((analyst, idx) => (
-                                        <div key={idx} className="flex items-center gap-3">
-                                          <span className="text-sm text-gray-600 w-32 truncate">{analyst.name}</span>
-                                          <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
-                                            <div
-                                              className={clsx(
-                                                'h-full rounded-full transition-all',
-                                                analyst.count >= avgCount * 1.5 ? 'bg-red-500' :
-                                                analyst.count >= avgCount * 1.2 ? 'bg-yellow-500' :
-                                                analyst.count >= avgCount * 0.8 ? 'bg-green-500' : 'bg-blue-400'
-                                              )}
-                                              style={{ width: `${maxCount > 0 ? (analyst.count / maxCount) * 100 : 0}%` }}
-                                            />
+                                {/* Distribution Bars */}
+                                <h4 className="text-sm font-semibold text-gray-700 mb-3">Coverage by Analyst</h4>
+                                <div className="space-y-3">
+                                  {sortedAnalysts.map(([id, analyst]) => {
+                                    const workload = getWorkloadLevel(analyst.count)
+                                    const barWidth = maxCoverage > 0 ? (analyst.count / maxCoverage) * 100 : 0
+                                    return (
+                                      <div key={id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-lg" onClick={() => { setSelectedAnalystId(id); setSelectedStatCard(null) }}>
+                                        <span className="text-sm text-gray-700 w-36 truncate">{analyst.name}</span>
+                                        <div className="flex-1 h-7 bg-gray-100 rounded-lg overflow-hidden relative">
+                                          <div className="absolute top-0 bottom-0 w-1 bg-gray-700 z-10 shadow-sm" style={{ left: `${maxCoverage > 0 ? (avgCoverage / maxCoverage) * 100 : 50}%` }} />
+                                          <div className={clsx('h-full rounded-lg flex items-center justify-end pr-2', workload.color)} style={{ width: `${barWidth}%` }}>
+                                            <span className="text-xs font-bold text-white">{analyst.count}</span>
                                           </div>
-                                          <span className="text-sm font-medium text-gray-900 w-8 text-right">{analyst.count}</span>
                                         </div>
-                                      ))}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            </Card>
+                          ) : selectedStatCard === 'bandwidth' ? (
+                            /* Bandwidth Overview - All Categories */
+                            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-purple-50">
+                                <div className="flex items-center gap-2">
+                                  <BarChart3 className="h-5 w-5 text-purple-600" />
+                                  <h3 className="text-sm font-semibold text-gray-900">Bandwidth Distribution</h3>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Analysts categorized by workload relative to the team average ({avgCoverage.toFixed(1)} names)</p>
+                              </div>
+                              <div className="flex-1 overflow-auto p-4">
+                                <div className="space-y-6">
+                                  {/* Below Average Section */}
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <div className="w-3 h-3 rounded bg-blue-500" />
+                                      <h4 className="text-sm font-semibold text-gray-700">Below Average ({workloadCounts.light})</h4>
+                                      <span className="text-xs text-gray-400">≤70% of average</span>
+                                    </div>
+                                    {analystsByCategory.light.length > 0 ? (
+                                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {analystsByCategory.light.map(([id, analyst]) => {
+                                          const capacity = Math.round(avgCoverage - analyst.count)
+                                          return (
+                                            <div key={id} className="p-3 bg-blue-50 rounded-lg border border-blue-200 cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setSelectedAnalystId(id); setSelectedStatCard(null) }}>
+                                              <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                                  <span className="text-xs font-bold text-blue-700">{analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-sm font-medium text-gray-900 truncate">{analyst.name}</p>
+                                                  <p className="text-xs text-gray-500">{analyst.count} names <span className="text-blue-600">(+{capacity} capacity)</span></p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-gray-400 italic">No analysts below average</p>
+                                    )}
+                                  </div>
+
+                                  {/* Balanced Section */}
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <div className="w-3 h-3 rounded bg-green-500" />
+                                      <h4 className="text-sm font-semibold text-gray-700">Balanced ({workloadCounts.normal})</h4>
+                                      <span className="text-xs text-gray-400">70-120% of average</span>
+                                    </div>
+                                    {analystsByCategory.normal.length > 0 ? (
+                                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {analystsByCategory.normal.map(([id, analyst]) => {
+                                          const diff = analyst.count - avgCoverage
+                                          return (
+                                            <div key={id} className="p-3 bg-green-50 rounded-lg border border-green-200 cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setSelectedAnalystId(id); setSelectedStatCard(null) }}>
+                                              <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                                  <span className="text-xs font-bold text-green-700">{analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-sm font-medium text-gray-900 truncate">{analyst.name}</p>
+                                                  <p className="text-xs text-gray-500">{analyst.count} names {diff !== 0 && <span className="text-green-600">({diff > 0 ? '+' : ''}{diff.toFixed(1)})</span>}</p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-gray-400 italic">No balanced analysts</p>
+                                    )}
+                                  </div>
+
+                                  {/* Above Average Section */}
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <div className="w-3 h-3 rounded bg-amber-500" />
+                                      <h4 className="text-sm font-semibold text-gray-700">Above Average ({workloadCounts.moderate + workloadCounts.extended})</h4>
+                                      <span className="text-xs text-gray-400">&gt;120% of average</span>
+                                    </div>
+                                    {(analystsByCategory.moderate.length > 0 || analystsByCategory.extended.length > 0) ? (
+                                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {[...analystsByCategory.extended, ...analystsByCategory.moderate].map(([id, analyst]) => {
+                                          const workload = getWorkloadLevel(analyst.count)
+                                          const overload = Math.round(analyst.count - avgCoverage)
+                                          return (
+                                            <div key={id} className={clsx('p-3 rounded-lg border cursor-pointer hover:shadow-md transition-shadow', workload.level === 'extended' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')} onClick={() => { setSelectedAnalystId(id); setSelectedStatCard(null) }}>
+                                              <div className="flex items-center gap-2">
+                                                <div className={clsx('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0', workload.bgColor)}>
+                                                  <span className={clsx('text-xs font-bold', workload.textColor)}>{analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-sm font-medium text-gray-900 truncate">{analyst.name}</p>
+                                                  <p className="text-xs text-gray-500">{analyst.count} names <span className={workload.textColor}>(+{overload})</span></p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-gray-400 italic">No analysts above average</p>
+                                    )}
                                   </div>
                                 </div>
                               </div>
-                            )
-                          })()}
+                            </Card>
+                          ) : (
+                            /* Default - Comparative Overview */
+                            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+                                <div className="flex items-center justify-between">
+                                  <h3 className="text-sm font-semibold text-gray-900">Workload Comparison</h3>
+                                  <span className="text-xs text-gray-500">Click a metric above or an analyst to see details</span>
+                                </div>
+                              </div>
+                              <div className="flex-1 overflow-auto p-4">
+                                <div className="space-y-2">
+                                  {sortedAnalysts.map(([analystId, analyst]) => {
+                                    const workload = getWorkloadLevel(analyst.count)
+                                    const barWidth = maxCoverage > 0 ? (analyst.count / maxCoverage) * 100 : 0
+                                    const avgPosition = maxCoverage > 0 ? (avgCoverage / maxCoverage) * 100 : 50
+
+                                    return (
+                                      <div
+                                        key={analystId}
+                                        onClick={() => setSelectedAnalystId(analystId)}
+                                        className="flex items-center gap-4 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
+                                      >
+                                        <div className="w-36 flex-shrink-0">
+                                          <p className="text-sm font-medium text-gray-900 truncate group-hover:text-primary-600">{analyst.name}</p>
+                                        </div>
+                                        <div className="flex-1 relative">
+                                          <div className="h-7 bg-gray-100 rounded relative overflow-hidden">
+                                            <div className="absolute top-0 bottom-0 w-1 bg-gray-700 z-10 shadow-sm" style={{ left: `${avgPosition}%` }} />
+                                            <div className={clsx('h-full rounded transition-all flex items-center justify-end pr-2', workload.color)} style={{ width: `${barWidth}%` }}>
+                                              <span className="text-xs font-bold text-white drop-shadow">{analyst.count}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="w-28 flex-shrink-0 text-right">
+                                          <span className={clsx('px-2 py-1 text-xs font-semibold rounded-full', workload.bgColor, workload.textColor)}>
+                                            {workload.label}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                {totalAnalysts === 0 && (
+                                  <div className="text-center py-12 text-gray-500">
+                                    <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                                    <p>No coverage data available</p>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                                <div className="flex items-center justify-center gap-4">
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-3 h-3 rounded bg-blue-400" />
+                                    <span className="text-xs text-gray-600">Below Average</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-3 h-3 rounded bg-green-500" />
+                                    <span className="text-xs text-gray-600">Balanced</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-3 h-3 rounded bg-amber-500" />
+                                    <span className="text-xs text-gray-600">Above Average</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 ml-4">
+                                    <div className="w-0.5 h-4 bg-gray-400" />
+                                    <span className="text-xs text-gray-600">Avg ({avgCoverage.toFixed(1)})</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </Card>
+                          )}
                         </div>
-                      </Card>
-                    ) : (
-                      /* Default - Select a stat card prompt */
-                      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="flex-1 flex items-center justify-center text-center p-8">
-                          <div>
-                            <BarChart3 className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                            <p className="text-gray-500 font-medium">Select a stat card above</p>
-                            <p className="text-xs text-gray-400 mt-1">Or click an analyst on the left to view their coverage</p>
-                          </div>
-                        </div>
-                      </Card>
-                    )}
-                  </div>
+                      </>
+                    )
+                  })()}
                 </div>
               )}
 
               {/* Matrix View - Grouped */}
               {viewMode === 'matrix' && (
                 <div className="space-y-4">
-                  {/* Grouping Selector */}
-                  <div className="flex items-center justify-between">
+                  {/* Controls Row */}
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    {/* Grouping Selector */}
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-600">Group by:</span>
                       <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
@@ -4338,7 +6134,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           { value: 'analyst', label: 'Analyst' },
                           { value: 'portfolio', label: 'Portfolio' },
                           { value: 'team', label: 'Team' },
-                          { value: 'role', label: 'Role' }
+                          { value: 'holdings', label: 'Holdings' }
                         ].map(option => (
                           <button
                             key={option.value}
@@ -4358,38 +6154,79 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         ))}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    {/* Analyst Selector - Right aligned */}
+                    <div className="relative" ref={matrixAnalystPickerRef}>
                       <button
-                        onClick={() => setCollapsedGroups(new Set())}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                        onClick={() => setShowMatrixAnalystPicker(!showMatrixAnalystPicker)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
-                        Expand all
+                        <Users className="h-4 w-4 text-gray-500" />
+                        <span className="text-gray-700">
+                          {matrixSelectedAnalysts.size === 0
+                            ? 'All Analysts'
+                            : `${matrixSelectedAnalysts.size} Selected`}
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
-                      <span className="text-gray-300">|</span>
-                      <button
-                        onClick={() => {
-                          // Collapse all groups
-                          const allGroupKeys = new Set<string>()
-                          // This will be populated based on current grouping
-                          filteredCoverage.forEach(c => {
-                            if (matrixGroupBy === 'sector') allGroupKeys.add(c.assets?.sector || 'Uncategorized')
-                            else if (matrixGroupBy === 'analyst') allGroupKeys.add(c.analyst_name)
-                            else if (matrixGroupBy === 'portfolio') allGroupKeys.add(c.portfolios?.name || 'No Portfolio')
-                            else if (matrixGroupBy === 'team') allGroupKeys.add(c.teams?.name || 'Firm-wide')
-                            else if (matrixGroupBy === 'role') allGroupKeys.add(c.role || 'Unassigned')
-                          })
-                          setCollapsedGroups(allGroupKeys)
-                        }}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        Collapse all
-                      </button>
+                      {showMatrixAnalystPicker && (
+                        <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-80 overflow-auto">
+                          <div className="p-2 border-b border-gray-100">
+                            <button
+                              onClick={() => setMatrixSelectedAnalysts(new Set())}
+                              className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                            >
+                              Show All Analysts
+                            </button>
+                          </div>
+                          <div className="p-1">
+                            {[...new Set(filteredCoverage.map(c => c.analyst_name))].sort().map(analyst => {
+                              const isSelected = matrixSelectedAnalysts.size === 0 || matrixSelectedAnalysts.has(analyst)
+                              return (
+                                <label
+                                  key={analyst}
+                                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      const newSelected = new Set(matrixSelectedAnalysts)
+                                      if (matrixSelectedAnalysts.size === 0) {
+                                        // First selection - add all except this one
+                                        [...new Set(filteredCoverage.map(c => c.analyst_name))].forEach(a => {
+                                          if (a !== analyst) newSelected.add(a)
+                                        })
+                                      } else if (newSelected.has(analyst)) {
+                                        newSelected.delete(analyst)
+                                        if (newSelected.size === 0) {
+                                          // If none selected, show all
+                                          setMatrixSelectedAnalysts(new Set())
+                                          return
+                                        }
+                                      } else {
+                                        newSelected.add(analyst)
+                                      }
+                                      setMatrixSelectedAnalysts(newSelected)
+                                    }}
+                                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                  />
+                                  <span className="text-sm text-gray-700">{analyst}</span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {(() => {
-                    // Get unique analysts for column headers
-                    const analysts = [...new Set(filteredCoverage.map(c => c.analyst_name))].sort()
+                    // Get unique analysts for column headers - filter by selection
+                    const allAnalysts = [...new Set(filteredCoverage.map(c => c.analyst_name))].sort()
+                    const analysts = matrixSelectedAnalysts.size === 0
+                      ? allAnalysts
+                      : allAnalysts.filter(a => matrixSelectedAnalysts.has(a))
 
                     // Build groups based on selected grouping
                     const groups = new Map<string, {
@@ -4398,39 +6235,201 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       totalCount: number
                     }>()
 
-                    // Helper to get group key based on grouping type
+                    // Helper to get analyst's teams (via direct membership, portfolio parent, or portfolio links)
+                    const getAnalystTeamsForMatrix = (userId: string): string[] => {
+                      const allNodes = allOrgChartNodes?.allNodes || []
+                      const teamNodes = allNodes.filter(n => n.node_type === 'team')
+                      const result: string[] = []
+                      const userPortfolioNames = portfolioTeamMemberships?.get(userId) || []
+
+                      teamNodes.forEach(teamNode => {
+                        // Check if user is a member of this team (direct membership)
+                        const directMembers = userTeamMemberships?.get(userId) || []
+                        const isDirectMember = directMembers.some(m => m.nodeId === teamNode.id)
+
+                        // Check if user is in any portfolio that has this team as parent (primary relationship)
+                        const childPortfolios = allNodes
+                          .filter(n => n.node_type === 'portfolio' && n.parent_id === teamNode.id)
+                          .map(n => n.name)
+                        const isViaParent = childPortfolios.some(pName => userPortfolioNames.includes(pName))
+
+                        // Check if user is in any portfolio linked to this team (secondary relationship via org_chart_node_links)
+                        const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                        const linkedPortfolios = nodeLinks
+                          .filter(link => link.linked_node_id === teamNode.id)
+                          .map(link => {
+                            const portfolioNode = allNodes.find(n => n.id === link.node_id && n.node_type === 'portfolio')
+                            return portfolioNode?.name
+                          })
+                          .filter(Boolean)
+                        const isViaLink = linkedPortfolios.some(pName => userPortfolioNames.includes(pName!))
+
+                        if (isDirectMember || isViaParent || isViaLink) {
+                          result.push(teamNode.name)
+                        }
+                      })
+
+                      return result
+                    }
+
+                    // Helper to get group key based on grouping type (for sector/analyst groupings only)
                     const getGroupKey = (coverage: typeof filteredCoverage[0]) => {
                       switch (matrixGroupBy) {
                         case 'sector': return coverage.assets?.sector || 'Uncategorized'
                         case 'analyst': return coverage.analyst_name
-                        case 'portfolio': return coverage.portfolios?.name || 'No Portfolio'
-                        case 'team': return coverage.teams?.name || 'Firm-wide'
-                        case 'role': return coverage.role || 'Unassigned'
                         default: return 'Uncategorized'
                       }
                     }
 
-                    // Add covered assets
-                    filteredCoverage.forEach(c => {
-                      if (!c.assets) return
-                      const groupKey = getGroupKey(c)
-                      if (!groups.has(groupKey)) {
-                        groups.set(groupKey, { assets: [], coveredCount: 0, totalCount: 0 })
-                      }
-                      const group = groups.get(groupKey)!
-                      if (!group.assets.find(a => a.id === c.assets!.id)) {
-                        group.assets.push({
-                          id: c.assets.id,
-                          symbol: c.assets.symbol,
-                          name: c.assets.company_name,
-                          sector: c.assets.sector || 'Uncategorized',
-                          analyst: c.analyst_name,
-                          role: c.role || undefined
+                    // Helper to get analyst's portfolios (from their portfolio_team memberships)
+                    const getAnalystPortfoliosForMatrix = (userId: string): string[] => {
+                      return portfolioTeamMemberships?.get(userId) || []
+                    }
+
+                    // For team/portfolio grouping, we need special handling:
+                    // Show coverage under each team/portfolio the ANALYST belongs to (based on their memberships)
+                    if (matrixGroupBy === 'team') {
+                      filteredCoverage.forEach(c => {
+                        if (!c.assets) return
+                        // Get all teams this analyst belongs to
+                        const analystTeams = getAnalystTeamsForMatrix(c.user_id)
+                        const teamsToAdd = analystTeams.length > 0 ? analystTeams : ['Firm-wide']
+
+                        // Add this coverage to EACH team the analyst belongs to
+                        teamsToAdd.forEach(teamName => {
+                          if (!groups.has(teamName)) {
+                            groups.set(teamName, { assets: [], coveredCount: 0, totalCount: 0 })
+                          }
+                          const group = groups.get(teamName)!
+                          if (!group.assets.find(a => a.id === c.assets!.id)) {
+                            group.assets.push({
+                              id: c.assets!.id,
+                              symbol: c.assets!.symbol,
+                              name: c.assets!.company_name,
+                              sector: c.assets!.sector || 'Uncategorized',
+                              analyst: c.analyst_name,
+                              role: c.role || undefined
+                            })
+                            group.coveredCount++
+                            group.totalCount++
+                          }
                         })
-                        group.coveredCount++
-                        group.totalCount++
-                      }
-                    })
+                      })
+                    } else if (matrixGroupBy === 'portfolio') {
+                      // Portfolio grouping: based on portfolio investable universe filters
+                      // Create a set of covered asset IDs for quick lookup
+                      const coveredAssetIds = new Set<string>()
+                      filteredCoverage.forEach(c => {
+                        if (c.assets?.id) coveredAssetIds.add(c.assets.id)
+                      })
+
+                      // For each portfolio with a defined universe, add its assets to the group
+                      portfolioUniverseAssets?.forEach((universeAssets, portfolioName) => {
+                        if (universeAssets.length === 0) return
+
+                        if (!groups.has(portfolioName)) {
+                          groups.set(portfolioName, { assets: [], coveredCount: 0, totalCount: 0 })
+                        }
+                        const group = groups.get(portfolioName)!
+
+                        universeAssets.forEach(asset => {
+                          if (!group.assets.find(a => a.id === asset.id)) {
+                            const isCovered = coveredAssetIds.has(asset.id)
+                            // Find analyst if covered
+                            const coveringRecord = isCovered
+                              ? filteredCoverage.find(c => c.assets?.id === asset.id)
+                              : null
+
+                            group.assets.push({
+                              id: asset.id,
+                              symbol: asset.symbol,
+                              name: asset.name,
+                              sector: asset.sector,
+                              analyst: coveringRecord?.analyst_name,
+                              role: coveringRecord?.role || undefined
+                            })
+                            group.totalCount++
+                            if (isCovered) group.coveredCount++
+                          }
+                        })
+                      })
+                    } else if (matrixGroupBy === 'holdings') {
+                      // Holdings grouping: show portfolio holdings for portfolios the selected analysts are members of
+                      // First, get all portfolios that selected analysts are members of
+                      const relevantPortfolios = new Set<string>()
+                      const selectedAnalystIds = new Set<string>()
+
+                      // Get user IDs of selected analysts
+                      filteredCoverage.forEach(c => {
+                        selectedAnalystIds.add(c.user_id)
+                      })
+
+                      // Find all portfolios these analysts belong to
+                      selectedAnalystIds.forEach(userId => {
+                        const userPortfolios = getAnalystPortfoliosForMatrix(userId)
+                        userPortfolios.forEach(p => relevantPortfolios.add(p))
+                      })
+
+                      // Create a set of covered asset IDs for quick lookup
+                      const coveredAssetIds = new Set<string>()
+                      filteredCoverage.forEach(c => {
+                        if (c.assets?.id) coveredAssetIds.add(c.assets.id)
+                      })
+
+                      // For each relevant portfolio, add its holdings to the group
+                      relevantPortfolios.forEach(portfolioName => {
+                        const holdings = portfolioHoldings?.get(portfolioName) || []
+                        if (holdings.length === 0) return
+
+                        if (!groups.has(portfolioName)) {
+                          groups.set(portfolioName, { assets: [], coveredCount: 0, totalCount: 0 })
+                        }
+                        const group = groups.get(portfolioName)!
+
+                        holdings.forEach(holding => {
+                          if (!group.assets.find(a => a.id === holding.id)) {
+                            const isCovered = coveredAssetIds.has(holding.id)
+                            // Find analyst if covered
+                            const coveringRecord = isCovered
+                              ? filteredCoverage.find(c => c.assets?.id === holding.id)
+                              : null
+
+                            group.assets.push({
+                              id: holding.id,
+                              symbol: holding.symbol,
+                              name: holding.name,
+                              sector: holding.sector,
+                              analyst: coveringRecord?.analyst_name,
+                              role: coveringRecord?.role || undefined
+                            })
+                            group.totalCount++
+                            if (isCovered) group.coveredCount++
+                          }
+                        })
+                      })
+                    } else {
+                      // Sector/Analyst groupings: add covered assets normally
+                      filteredCoverage.forEach(c => {
+                        if (!c.assets) return
+                        const groupKey = getGroupKey(c)
+                        if (!groups.has(groupKey)) {
+                          groups.set(groupKey, { assets: [], coveredCount: 0, totalCount: 0 })
+                        }
+                        const group = groups.get(groupKey)!
+                        if (!group.assets.find(a => a.id === c.assets!.id)) {
+                          group.assets.push({
+                            id: c.assets.id,
+                            symbol: c.assets.symbol,
+                            name: c.assets.company_name,
+                            sector: c.assets.sector || 'Uncategorized',
+                            analyst: c.analyst_name,
+                            role: c.role || undefined
+                          })
+                          group.coveredCount++
+                          group.totalCount++
+                        }
+                      })
+                    }
 
                     // Add uncovered assets (only for sector grouping)
                     if (matrixGroupBy === 'sector') {
@@ -4454,14 +6453,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                     // Sort groups by name
                     const sortedGroups = Array.from(groups.entries())
-                      .sort((a, b) => {
-                        // For role grouping, sort by priority
-                        if (matrixGroupBy === 'role') {
-                          const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2, Unassigned: 3 }
-                          return (roleOrder[a[0]] ?? 99) - (roleOrder[b[0]] ?? 99)
-                        }
-                        return a[0].localeCompare(b[0])
-                      })
+                      .sort((a, b) => a[0].localeCompare(b[0]))
 
                     if (sortedGroups.length === 0) {
                       return (
@@ -4471,6 +6463,32 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         </Card>
                       )
                     }
+
+                    // Calculate overlap statistics for the summary
+                    const allAssetIds = new Set<string>()
+                    const assetCoverageCount = new Map<string, { count: number; symbol: string; analysts: string[] }>()
+                    filteredCoverage.forEach(c => {
+                      if (!c.assets) return
+                      if (!analysts.includes(c.analyst_name)) return // Only count selected analysts
+                      allAssetIds.add(c.assets.id)
+                      const existing = assetCoverageCount.get(c.assets.id)
+                      if (existing) {
+                        existing.count++
+                        if (!existing.analysts.includes(c.analyst_name)) {
+                          existing.analysts.push(c.analyst_name)
+                        }
+                      } else {
+                        assetCoverageCount.set(c.assets.id, {
+                          count: 1,
+                          symbol: c.assets.symbol,
+                          analysts: [c.analyst_name]
+                        })
+                      }
+                    })
+                    const overlapAssets = Array.from(assetCoverageCount.entries())
+                      .filter(([_, data]) => data.analysts.length > 1)
+                      .map(([id, data]) => ({ id, ...data }))
+                      .sort((a, b) => b.analysts.length - a.analysts.length)
 
                     const toggleGroup = (groupKey: string) => {
                       const newCollapsed = new Set(collapsedGroups)
@@ -4482,17 +6500,77 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       setCollapsedGroups(newCollapsed)
                     }
 
-                    return sortedGroups.map(([groupKey, group]) => {
-                      const isCollapsed = collapsedGroups.has(groupKey)
-                      const coveragePercent = group.totalCount > 0
-                        ? Math.round((group.coveredCount / group.totalCount) * 100)
-                        : 0
+                    return (
+                      <>
+                        {/* Overlap Summary - Clickable to filter */}
+                        {overlapAssets.length > 0 && (
+                          <button
+                            onClick={() => setMatrixShowOverlapsOnly(!matrixShowOverlapsOnly)}
+                            className={clsx(
+                              'w-full p-4 rounded-lg border text-left transition-all',
+                              matrixShowOverlapsOnly
+                                ? 'bg-amber-100 border-amber-400 ring-2 ring-amber-400'
+                                : 'bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300'
+                            )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={clsx(
+                                  'flex items-center justify-center w-10 h-10 rounded-lg',
+                                  matrixShowOverlapsOnly ? 'bg-amber-200' : 'bg-amber-100'
+                                )}>
+                                  <Users className="h-5 w-5 text-amber-600" />
+                                </div>
+                                <div>
+                                  <h3 className="text-sm font-semibold text-amber-900">
+                                    {matrixShowOverlapsOnly ? 'Showing Overlaps Only' : 'Coverage Overlap Detected'}
+                                  </h3>
+                                  <p className="text-xs text-amber-700">
+                                    {overlapAssets.length} {overlapAssets.length === 1 ? 'asset is' : 'assets are'} covered by multiple analysts
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {matrixShowOverlapsOnly ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-200 text-amber-800 rounded text-xs font-medium">
+                                    <X className="h-3 w-3" />
+                                    Clear Filter
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-amber-600">Click to filter</span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        )}
 
-                      return (
-                        <Card key={groupKey} className="overflow-hidden">
-                          {/* Group Header */}
+                        {sortedGroups.map(([groupKey, group]) => {
+                          const isCollapsed = collapsedGroups.has(groupKey)
+                          const coveragePercent = group.totalCount > 0
+                            ? Math.round((group.coveredCount / group.totalCount) * 100)
+                            : 0
+
+                          // Calculate filtered assets when overlap filter is active
+                          const displayedAssets = matrixShowOverlapsOnly
+                            ? group.assets.filter(asset => {
+                                const assetCov = filteredCoverage.filter(c => c.assets?.id === asset.id)
+                                const displayedCovering = assetCov.filter(c => analysts.includes(c.analyst_name))
+                                return displayedCovering.length > 1
+                              })
+                            : group.assets
+
+                          // Skip groups with no assets when filtering
+                          if (matrixShowOverlapsOnly && displayedAssets.length === 0) return null
+
+                          return (
+                          <Card key={groupKey} className="overflow-hidden">
+                            {/* Group Header */}
                           <button
                             onClick={() => toggleGroup(groupKey)}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              setMatrixGroupContextMenu({ x: e.clientX, y: e.clientY })
+                            }}
                             className="w-full px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between hover:bg-gray-100 transition-colors"
                           >
                             <div className="flex items-center gap-3">
@@ -4502,7 +6580,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               )} />
                               <h3 className="text-sm font-semibold text-gray-900">{groupKey}</h3>
                               <span className="text-xs text-gray-500">
-                                {group.assets.length} {group.assets.length === 1 ? 'asset' : 'assets'}
+                                {displayedAssets.length} {displayedAssets.length === 1 ? 'asset' : 'assets'}
+                                {matrixShowOverlapsOnly && <span className="text-amber-600 ml-1">(overlaps)</span>}
                               </span>
                             </div>
                             <div className="flex items-center gap-3">
@@ -4550,19 +6629,30 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                   {group.assets
+                                    .filter(asset => {
+                                      // When showing overlaps only, filter to assets with multiple analysts
+                                      if (!matrixShowOverlapsOnly) return true
+                                      const assetCov = filteredCoverage.filter(c => c.assets?.id === asset.id)
+                                      const displayedCovering = assetCov.filter(c => analysts.includes(c.analyst_name))
+                                      return displayedCovering.length > 1
+                                    })
                                     .sort((a, b) => a.symbol.localeCompare(b.symbol))
                                     .map(asset => {
                                       const assetCoverage = filteredCoverage.filter(c => c.assets?.id === asset.id)
                                       const isUncovered = assetCoverage.length === 0
+                                      // Count how many of the selected/displayed analysts cover this asset
+                                      const displayedAnalystsCovering = assetCoverage.filter(c => analysts.includes(c.analyst_name))
+                                      const hasOverlap = displayedAnalystsCovering.length > 1
 
                                       return (
                                         <tr key={asset.id} className={clsx(
                                           'hover:bg-gray-50',
-                                          isUncovered && 'bg-red-50/50'
+                                          isUncovered && 'bg-red-50/50',
+                                          hasOverlap && 'bg-amber-50/70'
                                         )}>
                                           <td className={clsx(
                                             'px-3 py-2 sticky left-0',
-                                            isUncovered ? 'bg-red-50/50' : 'bg-white'
+                                            isUncovered ? 'bg-red-50/50' : hasOverlap ? 'bg-amber-50/70' : 'bg-white'
                                           )}>
                                             <div className="flex items-center gap-2">
                                               {isUncovered && (
@@ -4579,17 +6669,30 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           {analysts.map(analyst => {
                                             const coverage = assetCoverage.find(c => c.analyst_name === analyst)
                                             return (
-                                              <td key={analyst} className="px-2 py-2 text-center">
+                                              <td key={analyst} className={clsx(
+                                                'px-2 py-2 text-center',
+                                                coverage && hasOverlap && 'bg-amber-100/50'
+                                              )}>
                                                 {coverage ? (
                                                   <div className="flex justify-center">
                                                     {/* When hierarchy is enabled, show role badge */}
                                                     {coverageSettings?.enable_hierarchy && coverage.role ? (
-                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-100 text-purple-700 rounded-full" title={`${coverage.role} - ${analyst}`}>
+                                                      <span className={clsx(
+                                                        'inline-flex items-center justify-center w-6 h-6 rounded-full',
+                                                        hasOverlap
+                                                          ? 'bg-amber-200 text-amber-800 ring-2 ring-amber-400'
+                                                          : 'bg-purple-100 text-purple-700'
+                                                      )} title={`${coverage.role} - ${analyst}${hasOverlap ? ' (overlap)' : ''}`}>
                                                         <User className="h-3.5 w-3.5" />
                                                       </span>
                                                     ) : (
                                                       /* When hierarchy is disabled, show simple checkmark - no differentiation */
-                                                      <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-700 rounded-full" title={`Assigned - ${analyst}`}>
+                                                      <span className={clsx(
+                                                        'inline-flex items-center justify-center w-6 h-6 rounded-full',
+                                                        hasOverlap
+                                                          ? 'bg-amber-200 text-amber-800 ring-2 ring-amber-400'
+                                                          : 'bg-green-100 text-green-700'
+                                                      )} title={`Assigned - ${analyst}${hasOverlap ? ' (overlap)' : ''}`}>
                                                         <CheckCircle className="h-3.5 w-3.5" />
                                                       </span>
                                                     )}
@@ -4607,9 +6710,11 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               </table>
                             </div>
                           )}
-                        </Card>
-                      )
-                    })
+                          </Card>
+                        )
+                      })}
+                      </>
+                    )
                   })()}
 
                   {/* Legend */}
@@ -4629,788 +6734,109 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       </div>
                     )}
                     <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 bg-amber-200 text-amber-800 rounded-full ring-2 ring-amber-400">
+                        <Users className="h-3 w-3" />
+                      </span>
+                      <span className="text-xs text-gray-600">Overlap</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       <AlertCircle className="h-4 w-4 text-red-500" />
                       <span className="text-xs text-gray-600">Uncovered</span>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* Calendar View - Gantt-style Coverage Changes Timeline */}
-              {viewMode === 'calendar' && (
-                <div className="space-y-4">
-                  {(() => {
-                    const today = new Date()
-                    const DAYS_BACK = 30
-                    const DAYS_FORWARD = 30
-                    const TOTAL_DAYS = DAYS_BACK + DAYS_FORWARD + 1
-
-                    const startDate = new Date(today.getTime() - DAYS_BACK * 24 * 60 * 60 * 1000)
-                    const endDate = new Date(today.getTime() + DAYS_FORWARD * 24 * 60 * 60 * 1000)
-
-                    // Build coverage events from all coverage records
-                    type CoverageEvent = {
-                      id: string
-                      type: 'started' | 'ended' | 'upcoming_end' | 'transition' | 'role_change' | 'dates_changed'
-                      date: Date
-                      dayIndex: number
-                      assetSymbol: string
-                      assetName: string
-                      assetId: string
-                      analystName: string
-                      role: string | null
-                      // For transitions
-                      fromAnalyst?: string
-                      toAnalyst?: string
-                      // For role changes
-                      oldRole?: string
-                      newRole?: string
-                    }
-
-                    const events: CoverageEvent[] = []
-
-                    const getDayIndex = (date: Date) => {
-                      const diffTime = date.getTime() - startDate.getTime()
-                      return Math.floor(diffTime / (1000 * 60 * 60 * 24))
-                    }
-
-                    // Get starts (from active coverage)
-                    filteredCoverage.forEach(c => {
-                      if (!c.start_date || !c.assets) return
-                      const eventDate = new Date(c.start_date)
-
-                      if (eventDate >= startDate && eventDate <= endDate) {
-                        events.push({
-                          id: `start-${c.id}`,
-                          type: 'started',
-                          date: eventDate,
-                          dayIndex: getDayIndex(eventDate),
-                          assetSymbol: c.assets.symbol,
-                          assetName: c.assets.company_name,
-                          assetId: c.assets.id,
-                          analystName: c.analyst_name,
-                          role: c.role || null
-                        })
-                      }
-
-                      // Upcoming ends
-                      if (c.end_date) {
-                        const eventEndDate = new Date(c.end_date)
-                        if (eventEndDate >= startDate && eventEndDate <= endDate) {
-                          events.push({
-                            id: `upcoming-end-${c.id}`,
-                            type: eventEndDate <= today ? 'ended' : 'upcoming_end',
-                            date: eventEndDate,
-                            dayIndex: getDayIndex(eventEndDate),
-                            assetSymbol: c.assets.symbol,
-                            assetName: c.assets.company_name,
-                            assetId: c.assets.id,
-                            analystName: c.analyst_name,
-                            role: c.role || null
-                          })
-                        }
-                      }
-                    })
-
-                    // Get historical events from coverage history
-                    if (filteredCoverageEvents) {
-                      // First pass: detect transitions by finding created + dates_changed pairs
-                      const transitionPairs = new Set<string>()
-
-                      filteredCoverageEvents.forEach(createdEvent => {
-                        if (createdEvent.change_type !== 'created' || !createdEvent.assets) return
-
-                        // Look for matching end event (dates_changed that sets end_date)
-                        const matchingEnd = filteredCoverageEvents.find(endEvent =>
-                          endEvent.change_type === 'dates_changed' &&
-                          endEvent.asset_id === createdEvent.asset_id &&
-                          endEvent.old_analyst_name !== createdEvent.new_analyst_name &&
-                          endEvent.new_end_date &&
-                          Math.abs(new Date(createdEvent.changed_at).getTime() - new Date(endEvent.changed_at).getTime()) < 10000
-                        )
-
-                        if (matchingEnd) {
-                          transitionPairs.add(createdEvent.id)
-                          transitionPairs.add(matchingEnd.id)
-
-                          const eventDate = new Date(createdEvent.changed_at)
-                          if (eventDate >= startDate && eventDate <= endDate) {
-                            events.push({
-                              id: `transition-${createdEvent.id}`,
-                              type: 'transition',
-                              date: eventDate,
-                              dayIndex: getDayIndex(eventDate),
-                              assetSymbol: createdEvent.assets.symbol,
-                              assetName: createdEvent.assets.company_name,
-                              assetId: createdEvent.asset_id,
-                              analystName: createdEvent.new_analyst_name,
-                              role: createdEvent.new_role || null,
-                              fromAnalyst: matchingEnd.old_analyst_name,
-                              toAnalyst: createdEvent.new_analyst_name
+                  {/* Matrix Group Context Menu */}
+                  {matrixGroupContextMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setMatrixGroupContextMenu(null)}
+                      />
+                      <div
+                        className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px]"
+                        style={{
+                          left: matrixGroupContextMenu.x,
+                          top: matrixGroupContextMenu.y,
+                        }}
+                      >
+                        <button
+                          onClick={() => {
+                            setCollapsedGroups(new Set())
+                            setMatrixGroupContextMenu(null)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                        >
+                          <Maximize2 className="h-4 w-4 text-gray-400" />
+                          <span className="text-gray-700">Expand All</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Collapse all groups - get all group keys
+                            const allGroupKeys = new Set<string>()
+                            const getTeamsForUser = (userId: string): string[] => {
+                              const allNodes = allOrgChartNodes?.allNodes || []
+                              const teamNodes = allNodes.filter(n => n.node_type === 'team')
+                              const userPortfolioNames = portfolioTeamMemberships?.get(userId) || []
+                              const result: string[] = []
+                              for (const teamNode of teamNodes) {
+                                const directMembers = userTeamMemberships?.get(userId) || []
+                                const isDirectMember = directMembers.some(m => m.nodeId === teamNode.id)
+                                const childPortfolios = allNodes
+                                  .filter(n => n.node_type === 'portfolio' && n.parent_id === teamNode.id)
+                                  .map(n => n.name)
+                                const isViaParent = childPortfolios.some(pName => userPortfolioNames.includes(pName))
+                                const nodeLinks = allOrgChartNodes?.nodeLinks || []
+                                const linkedPortfolios = nodeLinks
+                                  .filter(link => link.linked_node_id === teamNode.id)
+                                  .map(link => {
+                                    const portfolioNode = allNodes.find(n => n.id === link.node_id && n.node_type === 'portfolio')
+                                    return portfolioNode?.name
+                                  })
+                                  .filter(Boolean)
+                                const isViaLink = linkedPortfolios.some(pName => userPortfolioNames.includes(pName!))
+                                if (isDirectMember || isViaParent || isViaLink) result.push(teamNode.name)
+                              }
+                              return result
+                            }
+                            filteredCoverage.forEach(c => {
+                              if (matrixGroupBy === 'sector') allGroupKeys.add(c.assets?.sector || 'Uncategorized')
+                              else if (matrixGroupBy === 'analyst') allGroupKeys.add(c.analyst_name)
+                              else if (matrixGroupBy === 'portfolio') {
+                                // Portfolio grouping: based on portfolio universe filters
+                                portfolioUniverseAssets?.forEach((_, portfolioName) => {
+                                  allGroupKeys.add(portfolioName)
+                                })
+                              }
+                              else if (matrixGroupBy === 'team') {
+                                const teams = getTeamsForUser(c.user_id)
+                                if (teams.length > 0) {
+                                  teams.forEach(t => allGroupKeys.add(t))
+                                } else {
+                                  allGroupKeys.add('Firm-wide')
+                                }
+                              }
+                              else if (matrixGroupBy === 'holdings') {
+                                // Holdings grouping: based on analyst's portfolio memberships
+                                const portfolios = portfolioTeamMemberships?.get(c.user_id) || []
+                                portfolios.forEach(p => {
+                                  if (portfolioHoldings?.has(p)) allGroupKeys.add(p)
+                                })
+                              }
                             })
-                          }
-                        }
-                      })
-
-                      // Second pass: add other events that aren't part of transitions
-                      filteredCoverageEvents.forEach(event => {
-                        if (!event.assets || transitionPairs.has(event.id)) return
-
-                        const eventDate = new Date(event.changed_at)
-                        if (eventDate < startDate || eventDate > endDate) return
-
-                        // Handle analyst_changed (handoffs recorded directly)
-                        if (event.change_type === 'analyst_changed') {
-                          events.push({
-                            id: `analyst-change-${event.id}`,
-                            type: 'transition',
-                            date: eventDate,
-                            dayIndex: getDayIndex(eventDate),
-                            assetSymbol: event.assets.symbol,
-                            assetName: event.assets.company_name,
-                            assetId: event.asset_id,
-                            analystName: event.new_analyst_name || event.old_analyst_name,
-                            role: event.new_role || event.old_role || null,
-                            fromAnalyst: event.old_analyst_name,
-                            toAnalyst: event.new_analyst_name
-                          })
-                        }
-
-                        // Handle role changes
-                        if (event.change_type === 'role_changed' ||
-                            (event.old_role && event.new_role && event.old_role !== event.new_role)) {
-                          events.push({
-                            id: `role-change-${event.id}`,
-                            type: 'role_change',
-                            date: eventDate,
-                            dayIndex: getDayIndex(eventDate),
-                            assetSymbol: event.assets.symbol,
-                            assetName: event.assets.company_name,
-                            assetId: event.asset_id,
-                            analystName: event.new_analyst_name || event.old_analyst_name,
-                            role: event.new_role || null,
-                            oldRole: event.old_role,
-                            newRole: event.new_role
-                          })
-                        }
-
-                        // Handle deletions (coverage ended)
-                        if (event.change_type === 'deleted' && event.end_date) {
-                          const endDate = new Date(event.end_date)
-                          if (endDate >= startDate && endDate <= today) {
-                            const exists = events.some(e =>
-                              e.assetId === event.asset_id &&
-                              e.analystName === event.analyst_name &&
-                              e.type === 'ended' &&
-                              Math.abs(e.date.getTime() - endDate.getTime()) < 24 * 60 * 60 * 1000
-                            )
-                            if (!exists) {
-                              events.push({
-                                id: `ended-${event.id}`,
-                                type: 'ended',
-                                date: endDate,
-                                dayIndex: getDayIndex(endDate),
-                                assetSymbol: event.assets.symbol,
-                                assetName: event.assets.company_name,
-                                assetId: event.asset_id,
-                                analystName: event.analyst_name,
-                                role: event.role || null
-                              })
-                            }
-                          }
-                        }
-
-                        // Handle dates_changed that set end dates (not part of transitions)
-                        if (event.change_type === 'dates_changed' && event.new_end_date) {
-                          const endDate = new Date(event.new_end_date)
-                          if (endDate >= startDate && endDate <= today) {
-                            const exists = events.some(e =>
-                              e.assetId === event.asset_id &&
-                              e.analystName === event.old_analyst_name &&
-                              (e.type === 'ended' || e.type === 'upcoming_end') &&
-                              Math.abs(e.date.getTime() - endDate.getTime()) < 24 * 60 * 60 * 1000
-                            )
-                            if (!exists) {
-                              events.push({
-                                id: `dates-ended-${event.id}`,
-                                type: endDate <= today ? 'ended' : 'upcoming_end',
-                                date: endDate,
-                                dayIndex: getDayIndex(endDate),
-                                assetSymbol: event.assets.symbol,
-                                assetName: event.assets.company_name,
-                                assetId: event.asset_id,
-                                analystName: event.old_analyst_name,
-                                role: event.old_role || null
-                              })
-                            }
-                          }
-                        }
-                      })
-                    }
-
-                    // Group events by asset for the Gantt rows
-                    const eventsByAsset = new Map<string, CoverageEvent[]>()
-                    events.forEach(event => {
-                      const key = event.assetId
-                      if (!eventsByAsset.has(key)) {
-                        eventsByAsset.set(key, [])
-                      }
-                      eventsByAsset.get(key)!.push(event)
-                    })
-
-                    // Sort assets by most recent event
-                    const sortedAssets = Array.from(eventsByAsset.entries())
-                      .map(([assetId, assetEvents]) => ({
-                        assetId,
-                        symbol: assetEvents[0].assetSymbol,
-                        name: assetEvents[0].assetName,
-                        events: assetEvents.sort((a, b) => a.date.getTime() - b.date.getTime()),
-                        latestEventDate: Math.max(...assetEvents.map(e => e.date.getTime()))
-                      }))
-                      .sort((a, b) => b.latestEventDate - a.latestEventDate)
-
-                    // Generate date labels for the timeline header
-                    const dateLabels: { date: Date; label: string; isToday: boolean; isWeekStart: boolean }[] = []
-                    for (let i = 0; i < TOTAL_DAYS; i++) {
-                      const d = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
-                      const isToday = d.toDateString() === today.toDateString()
-                      const isWeekStart = d.getDay() === 1 // Monday
-                      dateLabels.push({
-                        date: d,
-                        label: d.getDate().toString(),
-                        isToday,
-                        isWeekStart
-                      })
-                    }
-
-                    // Group by weeks for header
-                    const weeks: { start: Date; end: Date; label: string }[] = []
-                    let currentWeekStart = new Date(startDate)
-                    while (currentWeekStart <= endDate) {
-                      const weekEnd = new Date(currentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000)
-                      weeks.push({
-                        start: new Date(currentWeekStart),
-                        end: weekEnd > endDate ? endDate : weekEnd,
-                        label: currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      })
-                      currentWeekStart = new Date(currentWeekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
-                    }
-
-                    const todayIndex = getDayIndex(today)
-
-                    // Find potential coverage gaps
-                    const potentialGaps = events.filter(e => {
-                      if (e.type !== 'upcoming_end') return false
-                      const otherCoverage = filteredCoverage.filter(c =>
-                        c.assets?.id === e.assetId &&
-                        c.analyst_name !== e.analystName &&
-                        c.is_active
-                      )
-                      return otherCoverage.length === 0
-                    })
-
-                    if (events.length === 0) {
-                      return (
-                        <Card className="p-8 text-center">
-                          <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                          <p className="text-gray-600 font-medium">No coverage changes in this period</p>
-                          <p className="text-sm text-gray-500 mt-1">Coverage starts, ends, and transitions will appear here</p>
-                        </Card>
-                      )
-                    }
-
-                    return (
-                      <>
-                        {/* Summary Stats */}
-                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                          <Card className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-green-100 rounded">
-                                <Plus className="h-4 w-4 text-green-600" />
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold text-gray-900">
-                                  {events.filter(e => e.type === 'started').length}
-                                </p>
-                                <p className="text-xs text-gray-500">Started</p>
-                              </div>
-                            </div>
-                          </Card>
-                          <Card className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-gray-100 rounded">
-                                <X className="h-4 w-4 text-gray-600" />
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold text-gray-900">
-                                  {events.filter(e => e.type === 'ended').length}
-                                </p>
-                                <p className="text-xs text-gray-500">Ended</p>
-                              </div>
-                            </div>
-                          </Card>
-                          <Card className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-blue-100 rounded">
-                                <ArrowRightLeft className="h-4 w-4 text-blue-600" />
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold text-gray-900">
-                                  {events.filter(e => e.type === 'transition').length}
-                                </p>
-                                <p className="text-xs text-gray-500">Transitions</p>
-                              </div>
-                            </div>
-                          </Card>
-                          <Card className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-purple-100 rounded">
-                                <Shield className="h-4 w-4 text-purple-600" />
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold text-gray-900">
-                                  {events.filter(e => e.type === 'role_change').length}
-                                </p>
-                                <p className="text-xs text-gray-500">Role Changes</p>
-                              </div>
-                            </div>
-                          </Card>
-                          <Card className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-orange-100 rounded">
-                                <Clock className="h-4 w-4 text-orange-600" />
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold text-gray-900">
-                                  {events.filter(e => e.type === 'upcoming_end').length}
-                                </p>
-                                <p className="text-xs text-gray-500">Upcoming Ends</p>
-                              </div>
-                            </div>
-                          </Card>
-                          <Card className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-amber-100 rounded">
-                                <AlertCircle className="h-4 w-4 text-amber-600" />
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold text-gray-900">
-                                  {potentialGaps.length}
-                                </p>
-                                <p className="text-xs text-gray-500">Gap Risks</p>
-                              </div>
-                            </div>
-                          </Card>
-                        </div>
-
-                        {/* Gantt Timeline */}
-                        <Card className="overflow-hidden">
-                          {/* Legend at top */}
-                          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600" />
-                                <span className="text-xs text-gray-600">Started</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-500" />
-                                <span className="text-xs text-gray-600">Ended</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-blue-600" />
-                                <span className="text-xs text-gray-600">Transition</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-purple-500 border-2 border-purple-600" />
-                                <span className="text-xs text-gray-600">Role Change</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-orange-400 border-2 border-orange-500" />
-                                <span className="text-xs text-gray-600">Upcoming End</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-amber-400 border-2 border-amber-500 ring-2 ring-amber-200" />
-                                <span className="text-xs text-gray-600">Gap Risk</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-0.5 h-4 bg-primary-500" />
-                                <span className="text-xs text-gray-600">Today</span>
-                              </div>
-                              <span className="text-xs text-gray-400 ml-4">Scroll horizontally to navigate timeline</span>
-                            </div>
-                          </div>
-
-                          {/* Scrollable Timeline Container */}
-                          <div className="overflow-x-auto overflow-y-auto max-h-[500px]" style={{ scrollbarWidth: 'thin' }}>
-                            <table className="border-collapse" style={{ minWidth: `${160 + TOTAL_DAYS * 32}px` }}>
-                              {/* Table Header */}
-                              <thead className="sticky top-0 z-20 bg-gray-50">
-                                <tr>
-                                  {/* Asset Column Header */}
-                                  <th className="sticky left-0 z-30 w-[160px] min-w-[160px] px-3 py-2 bg-gray-50 border-b border-r border-gray-200 text-left">
-                                    <span className="text-xs font-medium text-gray-500 uppercase">Asset</span>
-                                  </th>
-                                  {/* Date Column Headers */}
-                                  {dateLabels.map((dl, i) => (
-                                    <th
-                                      key={i}
-                                      className={clsx(
-                                        'w-8 min-w-[32px] px-0 py-1 border-b border-r text-center',
-                                        dl.isToday ? 'bg-primary-100 border-primary-200' : 'bg-gray-50 border-gray-100',
-                                        dl.isWeekStart && !dl.isToday && 'border-l-2 border-l-gray-300'
-                                      )}
-                                    >
-                                      <div className="flex flex-col items-center">
-                                        <span className={clsx(
-                                          'text-[9px] uppercase leading-tight',
-                                          dl.isToday ? 'text-primary-600 font-medium' : 'text-gray-400'
-                                        )}>
-                                          {dl.date.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
-                                        </span>
-                                        <span className={clsx(
-                                          'text-xs leading-tight',
-                                          dl.isToday ? 'font-bold text-primary-700' : 'text-gray-600'
-                                        )}>
-                                          {dl.label}
-                                        </span>
-                                        {dl.date.getDate() === 1 && (
-                                          <span className="text-[8px] text-gray-400 uppercase leading-tight">
-                                            {dl.date.toLocaleDateString('en-US', { month: 'short' })}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {sortedAssets.slice(0, 50).map(({ assetId, symbol, name, events: assetEvents }) => (
-                                  <tr key={assetId} className="hover:bg-gray-50/50">
-                                    {/* Asset Label - Sticky */}
-                                    <td className="sticky left-0 z-10 w-[160px] min-w-[160px] px-3 py-2 bg-white border-r border-b border-gray-200">
-                                      <div className="flex flex-col min-w-0">
-                                        <span className="text-sm font-medium text-gray-900 truncate">{symbol}</span>
-                                        <span className="text-[10px] text-gray-500 truncate" title={name}>{name}</span>
-                                      </div>
-                                    </td>
-                                    {/* Timeline Cells */}
-                                    {dateLabels.map((dl, i) => {
-                                      // Find events on this day
-                                      const dayEvents = assetEvents.filter(e => e.dayIndex === i)
-                                      const isToday = dl.isToday
-
-                                      return (
-                                        <td
-                                          key={i}
-                                          className={clsx(
-                                            'w-8 min-w-[32px] h-12 border-r border-b relative',
-                                            isToday ? 'bg-primary-50/30 border-primary-100' : 'border-gray-100',
-                                            dl.isWeekStart && !isToday && 'border-l-2 border-l-gray-200'
-                                          )}
-                                        >
-                                          {/* Today line */}
-                                          {isToday && (
-                                            <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-primary-500 -translate-x-1/2 z-10" />
-                                          )}
-                                          {/* Event Markers */}
-                                          {dayEvents.map((event, eventIdx) => {
-                                            const isGap = potentialGaps.some(g => g.id === event.id)
-                                            return (
-                                              <div
-                                                key={event.id}
-                                                className="absolute left-1/2 -translate-x-1/2 z-20 group"
-                                                style={{ top: dayEvents.length > 1 ? `${25 + (eventIdx - (dayEvents.length - 1) / 2) * 14}%` : '50%', transform: `translateX(-50%) translateY(-50%)` }}
-                                              >
-                                                {/* Event Marker */}
-                                                <div className={clsx(
-                                                  'w-4 h-4 rounded-full border-2 cursor-pointer transition-all hover:scale-125 shadow-sm',
-                                                  event.type === 'started' && 'bg-green-500 border-green-600',
-                                                  event.type === 'ended' && 'bg-gray-400 border-gray-500',
-                                                  event.type === 'transition' && 'bg-blue-500 border-blue-600',
-                                                  event.type === 'role_change' && 'bg-purple-500 border-purple-600',
-                                                  event.type === 'upcoming_end' && !isGap && 'bg-orange-400 border-orange-500',
-                                                  event.type === 'upcoming_end' && isGap && 'bg-amber-400 border-amber-500 ring-2 ring-amber-200'
-                                                )} />
-                                                {/* Tooltip */}
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
-                                                  <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
-                                                    <div className="font-medium">
-                                                      {event.type === 'started' && 'Coverage Started'}
-                                                      {event.type === 'ended' && 'Coverage Ended'}
-                                                      {event.type === 'transition' && 'Analyst Transition'}
-                                                      {event.type === 'role_change' && 'Role Changed'}
-                                                      {event.type === 'upcoming_end' && (isGap ? 'Ending (Gap Risk!)' : 'Coverage Ending')}
-                                                    </div>
-                                                    <div className="text-gray-300 mt-1">
-                                                      {event.type === 'transition' && event.fromAnalyst && event.toAnalyst ? (
-                                                        <>{event.fromAnalyst} → {event.toAnalyst}</>
-                                                      ) : event.type === 'role_change' && event.oldRole && event.newRole ? (
-                                                        <>{event.analystName}: {event.oldRole} → {event.newRole}</>
-                                                      ) : (
-                                                        <>{event.analystName}{event.role && ` (${event.role})`}</>
-                                                      )}
-                                                    </div>
-                                                    <div className="text-gray-400 mt-0.5">
-                                                      {event.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                                                    </div>
-                                                    {/* Tooltip arrow */}
-                                                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            )
-                                          })}
-                                        </td>
-                                      )
-                                    })}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          {sortedAssets.length > 50 && (
-                            <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-center">
-                              <span className="text-sm text-gray-500">
-                                Showing 50 of {sortedAssets.length} assets with changes
-                              </span>
-                            </div>
-                          )}
-                        </Card>
-                      </>
-                    )
-                  })()}
+                            setCollapsedGroups(allGroupKeys)
+                            setMatrixGroupContextMenu(null)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                        >
+                          <Minimize2 className="h-4 w-4 text-gray-400" />
+                          <span className="text-gray-700">Collapse All</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
-              {/* Team View - Team-centric coverage dashboard */}
-              {viewMode === 'team' && (
-                <div className="space-y-4">
-                  {(() => {
-                    // Group coverage by team
-                    type TeamStats = {
-                      id: string
-                      name: string
-                      analysts: Map<string, { name: string; count: number; primaryCount: number }>
-                      assets: Set<string>
-                      coveredAssets: Set<string>
-                      primaryCount: number
-                      secondaryCount: number
-                      tertiaryCount: number
-                      portfolios: Map<string, { name: string; count: number }>
-                      sectors: Map<string, number>
-                    }
-
-                    const teamStats = new Map<string, TeamStats>()
-                    const noTeamStats: TeamStats = {
-                      id: 'no-team',
-                      name: 'Unassigned',
-                      analysts: new Map(),
-                      assets: new Set(),
-                      coveredAssets: new Set(),
-                      primaryCount: 0,
-                      secondaryCount: 0,
-                      tertiaryCount: 0,
-                      portfolios: new Map(),
-                      sectors: new Map()
-                    }
-
-                    // Process all coverage records
-                    filteredCoverage.forEach(c => {
-                      const teamId = c.team_id || 'no-team'
-                      const teamName = c.teams?.name || 'Unassigned'
-
-                      if (!teamStats.has(teamId) && teamId !== 'no-team') {
-                        teamStats.set(teamId, {
-                          id: teamId,
-                          name: teamName,
-                          analysts: new Map(),
-                          assets: new Set(),
-                          coveredAssets: new Set(),
-                          primaryCount: 0,
-                          secondaryCount: 0,
-                          tertiaryCount: 0,
-                          portfolios: new Map(),
-                          sectors: new Map()
-                        })
-                      }
-
-                      const stats = teamId === 'no-team' ? noTeamStats : teamStats.get(teamId)!
-
-                      // Track analysts
-                      const existingAnalyst = stats.analysts.get(c.user_id)
-                      if (existingAnalyst) {
-                        existingAnalyst.count++
-                        if (c.role === 'primary') existingAnalyst.primaryCount++
-                      } else {
-                        stats.analysts.set(c.user_id, {
-                          name: c.analyst_name,
-                          count: 1,
-                          primaryCount: c.role === 'primary' ? 1 : 0
-                        })
-                      }
-
-                      // Track assets
-                      if (c.asset_id) {
-                        stats.assets.add(c.asset_id)
-                        stats.coveredAssets.add(c.asset_id)
-                      }
-
-                      // Track roles
-                      if (c.role === 'primary') stats.primaryCount++
-                      else if (c.role === 'secondary') stats.secondaryCount++
-                      else if (c.role === 'tertiary') stats.tertiaryCount++
-
-                      // Track portfolios
-                      if (c.portfolio_id && c.portfolios) {
-                        const existingPortfolio = stats.portfolios.get(c.portfolio_id)
-                        if (existingPortfolio) {
-                          existingPortfolio.count++
-                        } else {
-                          stats.portfolios.set(c.portfolio_id, { name: c.portfolios.name, count: 1 })
-                        }
-                      }
-
-                      // Track sectors
-                      if (c.assets?.sector) {
-                        stats.sectors.set(c.assets.sector, (stats.sectors.get(c.assets.sector) || 0) + 1)
-                      }
-                    })
-
-                    // Add no-team stats if it has data
-                    if (noTeamStats.analysts.size > 0) {
-                      teamStats.set('no-team', noTeamStats)
-                    }
-
-                    const sortedTeams = Array.from(teamStats.values()).sort((a, b) => {
-                      if (a.id === 'no-team') return 1
-                      if (b.id === 'no-team') return -1
-                      return b.assets.size - a.assets.size
-                    })
-
-                    return (
-                      <>
-                        {/* Team Summary Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {sortedTeams.map(team => {
-                            const avgCoverage = team.analysts.size > 0 ? team.assets.size / team.analysts.size : 0
-                            const sortedAnalysts = Array.from(team.analysts.values()).sort((a, b) => b.count - a.count)
-                            const topSectors = Array.from(team.sectors.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3)
-
-                            return (
-                              <Card key={team.id} className="overflow-hidden">
-                                {/* Team Header */}
-                                <div className={clsx(
-                                  "px-4 py-3 border-b",
-                                  team.id === 'no-team' ? "bg-gray-100 border-gray-200" : "bg-gradient-to-r from-primary-50 to-white border-primary-100"
-                                )}>
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <Building2 className={clsx("h-5 w-5", team.id === 'no-team' ? "text-gray-400" : "text-primary-600")} />
-                                      <h3 className="font-semibold text-gray-900">{team.name}</h3>
-                                    </div>
-                                    <span className="text-xs text-gray-500">{team.analysts.size} analysts</span>
-                                  </div>
-                                </div>
-
-                                {/* Team Stats */}
-                                <div className="p-4 space-y-4">
-                                  {/* Coverage Stats */}
-                                  <div className="grid grid-cols-3 gap-2 text-center">
-                                    <div className="p-2 bg-gray-50 rounded-lg">
-                                      <p className="text-lg font-bold text-gray-900">{team.assets.size}</p>
-                                      <p className="text-[10px] text-gray-500">Assets</p>
-                                    </div>
-                                    <div className="p-2 bg-yellow-50 rounded-lg">
-                                      <p className="text-lg font-bold text-yellow-700">{team.primaryCount}</p>
-                                      <p className="text-[10px] text-gray-500">Primary</p>
-                                    </div>
-                                    <div className="p-2 bg-blue-50 rounded-lg">
-                                      <p className="text-lg font-bold text-blue-700">{team.secondaryCount}</p>
-                                      <p className="text-[10px] text-gray-500">Secondary</p>
-                                    </div>
-                                  </div>
-
-                                  {/* Analyst Workload */}
-                                  <div>
-                                    <h4 className="text-xs font-semibold text-gray-700 mb-2">Analyst Workload</h4>
-                                    <div className="space-y-1.5">
-                                      {sortedAnalysts.slice(0, 4).map(analyst => {
-                                        const loadPercent = avgCoverage > 0 ? Math.min(100, (analyst.count / (avgCoverage * 2)) * 100) : 50
-                                        return (
-                                          <div key={analyst.name} className="flex items-center gap-2">
-                                            <span className="text-[10px] text-gray-600 w-20 truncate">{analyst.name.split(' ')[0]}</span>
-                                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                                              <div
-                                                className={clsx(
-                                                  "h-full rounded-full",
-                                                  loadPercent > 75 ? "bg-red-400" : loadPercent > 50 ? "bg-yellow-400" : "bg-green-400"
-                                                )}
-                                                style={{ width: `${loadPercent}%` }}
-                                              />
-                                            </div>
-                                            <span className="text-[10px] font-medium text-gray-700 w-6 text-right">{analyst.count}</span>
-                                          </div>
-                                        )
-                                      })}
-                                      {sortedAnalysts.length > 4 && (
-                                        <p className="text-[10px] text-gray-400">+{sortedAnalysts.length - 4} more</p>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Top Sectors */}
-                                  {topSectors.length > 0 && (
-                                    <div>
-                                      <h4 className="text-xs font-semibold text-gray-700 mb-2">Top Sectors</h4>
-                                      <div className="flex flex-wrap gap-1">
-                                        {topSectors.map(([sector, count]) => (
-                                          <span key={sector} className="inline-flex items-center px-2 py-0.5 text-[10px] bg-gray-100 text-gray-700 rounded-full">
-                                            {sector} <span className="ml-1 font-semibold">{count}</span>
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Portfolios */}
-                                  {team.portfolios.size > 0 && (
-                                    <div>
-                                      <h4 className="text-xs font-semibold text-gray-700 mb-2">Portfolios</h4>
-                                      <div className="flex flex-wrap gap-1">
-                                        {Array.from(team.portfolios.values()).slice(0, 3).map(portfolio => (
-                                          <span key={portfolio.name} className="inline-flex items-center px-2 py-0.5 text-[10px] bg-primary-50 text-primary-700 rounded-full">
-                                            <FolderOpen className="h-2.5 w-2.5 mr-1" />
-                                            {portfolio.name}
-                                          </span>
-                                        ))}
-                                        {team.portfolios.size > 3 && (
-                                          <span className="text-[10px] text-gray-400">+{team.portfolios.size - 3} more</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </Card>
-                            )
-                          })}
-                        </div>
-
-                        {/* Empty State */}
-                        {sortedTeams.length === 0 && (
-                          <Card className="p-12 text-center">
-                            <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">No team coverage data</h3>
-                            <p className="text-gray-500">Coverage records don't have team assignments yet</p>
-                          </Card>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
-              )}
               </>
             )}
 
@@ -7607,6 +9033,90 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Group Context Menu */}
+      {groupContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setGroupContextMenu(null)}
+          />
+          <div
+            className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px]"
+            style={{
+              left: groupContextMenu.x,
+              top: groupContextMenu.y,
+            }}
+          >
+            <button
+              onClick={() => {
+                setCollapsedGroups(new Set())
+                setGroupContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+            >
+              <Maximize2 className="h-4 w-4 text-gray-400" />
+              <span className="text-gray-700">Expand All</span>
+            </button>
+            <button
+              onClick={() => {
+                // Collapse all groups - collect all possible group keys
+                const allGroupKeys = new Set<string>()
+                const collectGroupKeys = (prefix: string, depth: number) => {
+                  if (depth >= listGroupByLevels.length) return
+                  const level = listGroupByLevels[depth]
+                  // Add all org chart nodes of this type
+                  if (['team', 'division', 'department', 'portfolio'].includes(level)) {
+                    (allOrgChartNodes?.allNodes || []).forEach((n: any) => {
+                      if (n.node_type === level) {
+                        const key = `list-${prefix}-${n.name}`
+                        allGroupKeys.add(key)
+                        collectGroupKeys(`${prefix}-${n.name}`, depth + 1)
+                      }
+                    })
+                  }
+                  // Add coverage-based keys
+                  filteredCoverage.forEach(c => {
+                    let key = ''
+                    switch (level) {
+                      case 'sector': key = c.assets?.sector || 'Unknown Sector'; break
+                      case 'industry': key = (c.assets as any)?.industry || 'Unknown Industry'; break
+                      case 'analyst': key = c.analyst_name || 'Unknown Analyst'; break
+                    }
+                    if (key) {
+                      const fullKey = `list-${prefix}-${key}`
+                      allGroupKeys.add(fullKey)
+                      collectGroupKeys(`${prefix}-${key}`, depth + 1)
+                    }
+                  })
+                }
+                collectGroupKeys('root', 0)
+                setCollapsedGroups(allGroupKeys)
+                setGroupContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+            >
+              <Minimize2 className="h-4 w-4 text-gray-400" />
+              <span className="text-gray-700">Collapse All</span>
+            </button>
+            <div className="border-t border-gray-100 my-1" />
+            <button
+              onClick={() => {
+                setHiddenGroups(prev => {
+                  const next = new Set(prev)
+                  next.add(groupContextMenu.groupKey)
+                  return next
+                })
+                setGroupContextMenu(null)
+              }}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+            >
+              <EyeOff className="h-4 w-4 text-gray-400" />
+              <span className="text-gray-700">Hide "{groupContextMenu.groupName}"</span>
+            </button>
+          </div>
+        </>
       )}
     </>
   )

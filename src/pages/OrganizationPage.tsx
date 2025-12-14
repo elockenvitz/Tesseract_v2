@@ -252,7 +252,13 @@ function LoadingScreen() {
 function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<TabType>('teams')
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const savedTab = localStorage.getItem('organization-active-tab')
+    if (savedTab && ['teams', 'people', 'portfolios', 'requests', 'settings'].includes(savedTab)) {
+      return savedTab as TabType
+    }
+    return 'teams'
+  })
   const [searchTerm, setSearchTerm] = useState('')
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set())
   const [showAddMemberModal, setShowAddMemberModal] = useState(false)
@@ -297,6 +303,11 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   const [selectedPortfolioForTeam, setSelectedPortfolioForTeam] = useState<Portfolio | null>(null)
   const [editingPortfolioTeamMember, setEditingPortfolioTeamMember] = useState<PortfolioTeamMember | null>(null)
   const [deletePortfolioTeamConfirm, setDeletePortfolioTeamConfirm] = useState<{isOpen: boolean, member: PortfolioTeamMember | null}>({ isOpen: false, member: null })
+
+  // Persist active tab to localStorage
+  useEffect(() => {
+    localStorage.setItem('organization-active-tab', activeTab)
+  }, [activeTab])
 
   // Fetch organization data
   const { data: organization } = useQuery({
