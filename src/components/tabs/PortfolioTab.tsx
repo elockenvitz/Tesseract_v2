@@ -171,7 +171,6 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
           portfolio_id,
           user_id,
           role,
-          focus,
           created_at,
           user:users!inner (
             id,
@@ -184,6 +183,33 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         .order('created_at', { ascending: true })
       if (error) throw error
       return (data || []).filter(r => r.user !== null)
+    },
+  })
+
+  // Fetch user profile extended data for team members (sector_focus, investment_style)
+  const { data: teamMemberProfiles } = useQuery({
+    queryKey: ['team-member-profiles', portfolio.id],
+    enabled: !!teamWithUsers && teamWithUsers.length > 0,
+    queryFn: async () => {
+      const userIds = teamWithUsers?.map((t: any) => t.user_id) || []
+      if (userIds.length === 0) return new Map()
+
+      const { data, error } = await supabase
+        .from('user_profile_extended')
+        .select('user_id, sector_focus, investment_style')
+        .in('user_id', userIds)
+
+      if (error) throw error
+
+      // Return as a Map for easy lookup
+      const profileMap = new Map<string, { sector_focus: string[], investment_style: string[] }>()
+      data?.forEach(profile => {
+        profileMap.set(profile.user_id, {
+          sector_focus: profile.sector_focus || [],
+          investment_style: profile.investment_style || []
+        })
+      })
+      return profileMap
     },
   })
 
@@ -349,25 +375,25 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       )
 
       if (existingUserIndex !== -1) {
-        // User exists, add focus to their focuses array
-        if (row.focus && !grouped[role][existingUserIndex].focuses.includes(row.focus)) {
-          grouped[role][existingUserIndex].focuses.push(row.focus)
-        }
         // Keep track of all team record IDs for deletion purposes
         grouped[role][existingUserIndex].teamRecordIds.push(row.id)
       } else {
+        // Get profile data for this user
+        const profile = teamMemberProfiles?.get(row.user.id)
+
         // New user for this role
         grouped[role].push({
           id: row.id, // Primary team record ID
           teamRecordIds: [row.id], // Array of all team record IDs
           user: row.user,
-          focuses: row.focus ? [row.focus] : [], // Array of focuses
+          sectorFocus: profile?.sector_focus || [],
+          investmentStyle: profile?.investment_style || [],
           created_at: row.created_at,
         })
       }
     }
     return grouped
-  }, [teamWithUsers])
+  }, [teamWithUsers, teamMemberProfiles])
 
   // Delete team member mutation
   const deleteTeamMemberMutation = useMutation({
@@ -1698,10 +1724,19 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                                   <div>
                                     <h4 className="font-semibold text-gray-900">{displayName}</h4>
                                     <p className="text-sm text-gray-600">{u?.email || '—'}</p>
-                                    {member.focuses && member.focuses.length > 0 && (
-                                      <p className="text-xs text-gray-500">
-                                        Focus: {member.focuses.join(', ')}
-                                      </p>
+                                    {(member.sectorFocus?.length > 0 || member.investmentStyle?.length > 0) && (
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {member.sectorFocus?.map((sector: string) => (
+                                          <span key={sector} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gradient-to-r from-blue-50 to-indigo-50 text-indigo-700 border border-indigo-200/60 shadow-sm capitalize">
+                                            {sector}
+                                          </span>
+                                        ))}
+                                        {member.investmentStyle?.map((style: string) => (
+                                          <span key={style} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gradient-to-r from-purple-50 to-fuchsia-50 text-purple-700 border border-purple-200/60 shadow-sm capitalize">
+                                            {style}
+                                          </span>
+                                        ))}
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -1714,7 +1749,6 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                                         id: member.id,
                                         user_id: member.user.id,
                                         role: role,
-                                        focus: member.focuses && member.focuses.length > 0 ? member.focuses[0] : null
                                       })
                                       setShowAddTeamMemberModal(true)
                                     }}
@@ -1801,7 +1835,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         onClose={handleCancelDelete}
         onConfirm={handleConfirmDelete}
         title="Remove Team Member"
-        message={`Are you sure you want to remove ${deleteConfirm.userName} as "${deleteConfirm.role}" from this portfolio? This will remove all focus areas for this role.`}
+        message={`Are you sure you want to remove ${deleteConfirm.userName} as "${deleteConfirm.role}" from this portfolio?`}
         confirmText="Remove"
         cancelText="Cancel"
         variant="danger"

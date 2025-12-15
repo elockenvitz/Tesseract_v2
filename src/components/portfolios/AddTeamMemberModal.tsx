@@ -17,7 +17,6 @@ interface AddTeamMemberModalProps {
     id: string
     user_id: string
     role: string
-    focus: string | null
   } | null
   onMemberAdded?: () => void
 }
@@ -39,7 +38,6 @@ export function AddTeamMemberModal({
 }: AddTeamMemberModalProps) {
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null)
   const [role, setRole] = useState(editingMember?.role || '')
-  const [focus, setFocus] = useState<string | null>(editingMember?.focus || null)
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
 
@@ -47,10 +45,8 @@ export function AddTeamMemberModal({
   useEffect(() => {
     if (editingMember) {
       setRole(editingMember.role || '')
-      setFocus(editingMember.focus || null)
     } else {
       setRole('')
-      setFocus(null)
       setSelectedUser(null)
     }
   }, [editingMember])
@@ -62,21 +58,6 @@ export function AddTeamMemberModal({
     { value: 'Portfolio Manager', label: 'Portfolio Manager' },
     { value: 'Analyst', label: 'Analyst' },
     { value: 'Trader', label: 'Trader' },
-  ]
-
-  const focusOptions = [
-    'Generalist',
-    'Technology',
-    'Healthcare',
-    'Energy',
-    'Financials',
-    'Consumer',
-    'Industrials',
-    'Utilities',
-    'Materials',
-    'Real Estate',
-    'Quant',
-    'Technical',
   ]
 
   // Moved getUserDisplayName function definition here
@@ -104,13 +85,13 @@ export function AddTeamMemberModal({
   })
 
   const { data: existingTeamMembers, isLoading: existingTeamLoading } = useQuery<
-    Array<{ user_id: string; role: string; focus: string }>
+    Array<{ user_id: string; role: string }>
   >({
     queryKey: ['portfolio-team', portfolioId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_team')
-        .select('user_id, role, focus')
+        .select('user_id, role')
         .eq('portfolio_id', portfolioId)
       if (error) throw error
       return data || []
@@ -123,14 +104,14 @@ export function AddTeamMemberModal({
   const userOptions = useMemo(() => {
     if (!allUsers) return []
 
-    const existingRoleFocusCombinations = new Set(
-      (existingTeamMembers || []).map((tm) => `${tm.user_id}-${tm.role}-${tm.focus || 'null'}`)
+    const existingRoleCombinations = new Set(
+      (existingTeamMembers || []).map((tm) => `${tm.user_id}-${tm.role}`)
     )
 
     return allUsers.filter((u) => {
-      // Filter out users only if they already have this exact role+focus combination
-      const currentCombination = `${u.id}-${role}-${focus || 'null'}`
-      const isAlreadyAssignedExactCombo = role ? existingRoleFocusCombinations.has(currentCombination) : false;
+      // Filter out users only if they already have this exact role combination
+      const currentCombination = `${u.id}-${role}`
+      const isAlreadyAssignedExactCombo = role ? existingRoleCombinations.has(currentCombination) : false;
 
       return !isAlreadyAssignedExactCombo;
     }).map((user) => ({
@@ -141,7 +122,7 @@ export function AddTeamMemberModal({
       last_name: user.last_name,
       ...user // Spread all user properties
     }));
-  }, [allUsers, existingTeamMembers, role, focus, currentUser]);
+  }, [allUsers, existingTeamMembers, role, currentUser]);
 
 
   const addTeamMemberMutation = useMutation({
@@ -159,7 +140,6 @@ export function AddTeamMemberModal({
           .from('portfolio_team')
           .update({
             role: role.trim(),
-            focus: focus || null,
           })
           .eq('id', editingMember.id)
 
@@ -170,7 +150,6 @@ export function AddTeamMemberModal({
           portfolio_id: portfolioId,
           user_id: selectedUser!.id,
           role: role.trim(),
-          focus: focus || null,
         }
 
         const { data, error } = await supabase
@@ -196,7 +175,6 @@ export function AddTeamMemberModal({
       // reset form
       setSelectedUser(null)
       setRole('')
-      setFocus(null)
 
       onMemberAdded?.()
       onClose()
@@ -250,39 +228,6 @@ export function AddTeamMemberModal({
               onChange={(e) => setRole(e.target.value)}
               options={roleOptions}
             />
-
-            {/* Focus - Multi-select pills */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Focus (select multiple)</label>
-              <div className="flex flex-wrap gap-2">
-                {focusOptions.map(focusOption => {
-                  const currentFocuses = focus ? focus.split(', ').filter(Boolean) : []
-                  const isSelected = currentFocuses.includes(focusOption)
-                  return (
-                    <button
-                      key={focusOption}
-                      type="button"
-                      onClick={() => {
-                        let newFocuses: string[]
-                        if (isSelected) {
-                          newFocuses = currentFocuses.filter(f => f !== focusOption)
-                        } else {
-                          newFocuses = [...currentFocuses, focusOption]
-                        }
-                        setFocus(newFocuses.length > 0 ? newFocuses.join(', ') : null)
-                      }}
-                      className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                        isSelected
-                          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      {focusOption}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
           </div>
 
           {/* Actions */}

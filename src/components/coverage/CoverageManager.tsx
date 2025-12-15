@@ -104,7 +104,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const [collapsedGapsGroups, setCollapsedGapsGroups] = useState<Set<string>>(() => getInitialState('collapsedGapsGroups', new Set()))
 
   // List View Configuration - Columns, Sorting, Filtering, Grouping
-  type ListColumnId = 'asset' | 'analyst' | 'role' | 'visibility' | 'sector' | 'startDate' | 'tenure' | 'industry' | 'marketCap'
+  type ListColumnId = 'asset' | 'analyst' | 'visibility' | 'sector' | 'startDate' | 'tenure' | 'industry' | 'marketCap'
   type ListGroupByLevel = 'division' | 'department' | 'team' | 'portfolio' | 'sector' | 'industry' | 'analyst'
   const [listVisibleColumns, setListVisibleColumns] = useState<ListColumnId[]>(() => getInitialState('listVisibleColumns', ['asset', 'analyst', 'visibility', 'sector']))
   const [listGroupByLevels, setListGroupByLevels] = useState<ListGroupByLevel[]>(() => getInitialState('listGroupByLevels', [])) // Multi-level grouping
@@ -142,8 +142,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     }
   }, [activeView, viewMode, matrixGroupBy, collapsedGroups, hiddenGroups, hideEmptyGroups, collapsedGapsGroups, listVisibleColumns, listGroupByLevels, listSortColumn, listSortDirection])
 
-  // Sync activeView with initialView only when modal first opens (not on subsequent renders)
+  // Sync activeView with initialView when modal first opens or when initialView changes
   const hasInitialized = useRef(false)
+  const prevInitialView = useRef(initialView)
   useEffect(() => {
     if (isVisible && !hasInitialized.current) {
       // Only sync with initialView if coming from a specific navigation (e.g., clicking Requests tab)
@@ -151,6 +152,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
         setActiveView(initialView)
       }
       hasInitialized.current = true
+      prevInitialView.current = initialView
+    } else if (isVisible && initialView !== prevInitialView.current) {
+      // Handle navigation to a different view while tab is already open
+      // (e.g., clicking a coverage request notification when coverage tab is already open)
+      setActiveView(initialView)
+      prevInitialView.current = initialView
     }
     if (!isVisible) {
       hasInitialized.current = false
@@ -354,7 +361,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const listColumnDefinitions: Record<ListColumnId, { label: string; width: number; filterable: boolean; sortable: boolean }> = {
     asset: { label: 'Asset', width: 3, filterable: true, sortable: true },
     analyst: { label: 'Analyst', width: 2, filterable: true, sortable: true },
-    role: { label: 'Role', width: 1, filterable: true, sortable: true },
     visibility: { label: 'Visibility', width: 1, filterable: true, sortable: true },
     sector: { label: 'Sector', width: 2, filterable: true, sortable: true },
     startDate: { label: 'Start Date', width: 1, filterable: false, sortable: true },
@@ -423,7 +429,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       let value: string | undefined
       switch (columnId) {
         case 'analyst': value = coverage.analyst_name; break
-        case 'role': value = coverage.role || 'Unassigned'; break
         case 'visibility': value = coverage.visibility || 'team'; break
         case 'sector': value = coverage.assets?.sector; break
         case 'industry': value = (coverage.assets as any)?.industry; break
@@ -541,6 +546,24 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
       if (error) throw error
       return data || []
+    }
+  })
+
+  // Fetch user profile extended data for sector focus
+  const { data: userProfilesExtended } = useQuery({
+    queryKey: ['user-profiles-extended'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_profile_extended')
+        .select('user_id, sector_focus')
+
+      if (error) throw error
+      // Return as a Map for easy lookup by user_id
+      const profileMap = new Map<string, string[]>()
+      data?.forEach(profile => {
+        profileMap.set(profile.user_id, profile.sector_focus || [])
+      })
+      return profileMap
     }
   })
 
@@ -2016,9 +2039,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             case 'analyst':
               if (!coverage.analyst_name?.toLowerCase().includes(lowerFilter)) return false
               break
-            case 'role':
-              if (!(coverage.role || 'unassigned').toLowerCase().includes(lowerFilter)) return false
-              break
             case 'visibility':
               if (!(coverage.visibility || 'team').toLowerCase().includes(lowerFilter)) return false
               break
@@ -2047,11 +2067,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             aVal = a.analyst_name || ''
             bVal = b.analyst_name || ''
             break
-          case 'role':
-            const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
-            aVal = roleOrder[a.role || ''] ?? 3
-            bVal = roleOrder[b.role || ''] ?? 3
-            return listSortDirection === 'asc' ? aVal - bVal : bVal - aVal
           case 'visibility':
             const visOrder: Record<string, number> = { team: 0, division: 1, firm: 2 }
             aVal = visOrder[a.visibility || 'team'] ?? 0
@@ -4386,18 +4401,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     </div>
                                   )}
                                   {colId === 'analyst' && <span className="text-sm text-gray-700 truncate block">{coverage.analyst_name}</span>}
-                                  {colId === 'role' && (coverageSettings?.enable_hierarchy && coverage.role ? (
-                                    <span className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded w-fit',
-                                      coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
-                                      coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
-                                      coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
-                                    )}>
-                                      {coverage.role === 'primary' && <Star className="h-2.5 w-2.5" />}
-                                      {coverage.role === 'secondary' && <Shield className="h-2.5 w-2.5" />}
-                                      {coverage.role === 'tertiary' && <UserCheck className="h-2.5 w-2.5" />}
-                                      {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                    </span>
-                                  ) : <span className="text-xs text-gray-400">—</span>)}
                                   {colId === 'visibility' && (
                                     <span className={clsx('inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full',
                                       coverage.visibility === 'firm' && 'bg-purple-100 text-purple-800',
@@ -4572,23 +4575,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     {coverage.analyst_name}
                                   </span>
                                 )}
-                                {colId === 'role' && (
-                                  coverageSettings?.enable_hierarchy && coverage.role ? (
-                                    <span className={clsx(
-                                      'inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded w-fit',
-                                      coverage.role === 'primary' && 'bg-yellow-100 text-yellow-800',
-                                      coverage.role === 'secondary' && 'bg-blue-100 text-blue-800',
-                                      coverage.role === 'tertiary' && 'bg-gray-100 text-gray-700'
-                                    )}>
-                                      {coverage.role === 'primary' && <Star className="h-2.5 w-2.5" />}
-                                      {coverage.role === 'secondary' && <Shield className="h-2.5 w-2.5" />}
-                                      {coverage.role === 'tertiary' && <UserCheck className="h-2.5 w-2.5" />}
-                                      {coverage.role.charAt(0).toUpperCase() + coverage.role.slice(1)}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-gray-400">—</span>
-                                  )
-                                )}
                                 {colId === 'visibility' && (
                                   <div className="relative inline-block">
                                     <button
@@ -4706,7 +4692,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                         No Coverage
                                       </span>
                                     )}
-                                    {colId === 'role' && <span className="text-xs text-gray-400">—</span>}
                                     {colId === 'visibility' && <span className="text-xs text-gray-400">—</span>}
                                     {colId === 'sector' && <span className="text-xs text-gray-600 truncate block">{asset.sector || '—'}</span>}
                                     {colId === 'portfolio' && <span className="text-xs text-gray-400">—</span>}
@@ -5354,7 +5339,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       tertiaryCount: number
                       portfolios: Map<string, { name: string; count: number }>
                       teams: Map<string, { name: string; count: number }>
-                      sectors: Map<string, number>
+                      sectors: string[] // From user profile settings
                     }>()
 
                     // Helper to get portfolios for a user from portfolio_team memberships
@@ -5403,7 +5388,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       const analystId = coverage.user_id || 'unknown'
                       const existing = analystWorkload.get(analystId)
                       const role = coverage.role || null
-                      const sector = coverage.assets?.sector || 'Uncategorized'
 
                       // Get analyst's portfolios and teams from org chart memberships
                       const analystPortfolios = getAnalystPortfolios(analystId)
@@ -5414,7 +5398,6 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         if (role === 'primary') existing.primaryCount++
                         else if (role === 'secondary') existing.secondaryCount++
                         else if (role === 'tertiary') existing.tertiaryCount++
-                        existing.sectors.set(sector, (existing.sectors.get(sector) || 0) + 1)
                         // Add coverage to all analyst's portfolios
                         analystPortfolios.forEach(portfolio => {
                           const p = existing.portfolios.get(portfolio.id)
@@ -5445,7 +5428,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           tertiaryCount: role === 'tertiary' ? 1 : 0,
                           portfolios,
                           teams,
-                          sectors: new Map([[sector, 1]])
+                          sectors: userProfilesExtended?.get(analystId) || []
                         })
                       }
                     })
@@ -5459,14 +5442,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       ? Math.max(...analystEntries.map(([, a]) => a.count))
                       : 0
 
-                    // Calculate total assets in each sector/portfolio/team for percentage calculations
-                    const totalBySector = new Map<string, number>()
+                    // Calculate total assets in each portfolio/team for percentage calculations
                     const totalByPortfolio = new Map<string, { name: string; count: number }>()
                     const totalByTeam = new Map<string, { name: string; count: number }>()
                     filteredCoverage.forEach(c => {
-                      const sector = c.assets?.sector || 'Uncategorized'
-                      totalBySector.set(sector, (totalBySector.get(sector) || 0) + 1)
-
                       // Get analyst's portfolios and teams from org chart memberships
                       const analystPortfolios = getAnalystPortfolios(c.user_id)
                       const analystTeams = getAnalystTeams(c.user_id)
@@ -5646,8 +5625,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 const diff = analyst.count - avgCoverage
                                 const analystCoverage = filteredCoverage.filter(c => c.user_id === selectedAnalystId)
 
-                                // Sort sectors, portfolios, teams by count
-                                const sortedSectors = Array.from(analyst.sectors.entries()).sort((a, b) => b[1] - a[1])
+                                // Get sectors from profile, portfolios and teams sorted by count
+                                const profileSectors = analyst.sectors // Already an array from profile settings
                                 const sortedPortfolios = Array.from(analyst.portfolios.entries()).sort((a, b) => b[1].count - a[1].count)
                                 const sortedTeams = Array.from(analyst.teams.entries()).sort((a, b) => b[1].count - a[1].count)
 
@@ -5701,37 +5680,19 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                               <BarChart3 className="h-5 w-5 text-indigo-600" />
                                             </div>
                                             <div>
-                                              <h4 className="text-sm font-semibold text-gray-900">By Sector</h4>
-                                              <p className="text-xs text-gray-500">{sortedSectors.length} sectors</p>
+                                              <h4 className="text-sm font-semibold text-gray-900">Sector Focus</h4>
+                                              <p className="text-xs text-gray-500">{profileSectors.length} sector{profileSectors.length !== 1 ? 's' : ''}</p>
                                             </div>
                                           </div>
-                                          <div className="flex-1 overflow-auto space-y-3">
-                                            {sortedSectors.map(([sector, count]) => {
-                                              const coveragePercent = ((count / analyst.count) * 100)
-                                              const totalInSector = totalBySector.get(sector) || count
-                                              const sectorPercent = ((count / totalInSector) * 100)
-                                              return (
-                                                <div key={sector} className="bg-white rounded-lg p-3 border border-indigo-100 shadow-sm">
-                                                  <div className="flex items-center justify-between mb-2">
-                                                    <span className="text-sm font-medium text-gray-900 truncate flex-1" title={sector}>{sector}</span>
-                                                    <span className="text-lg font-bold text-indigo-600 ml-2">{count}</span>
-                                                  </div>
-                                                  <div className="h-2 bg-indigo-100 rounded-full overflow-hidden mb-1">
-                                                    <div
-                                                      className="h-full bg-indigo-500 rounded-full transition-all"
-                                                      style={{ width: `${coveragePercent}%` }}
-                                                    />
-                                                  </div>
-                                                  <div className="flex justify-between text-[10px] text-gray-500">
-                                                    <span>{coveragePercent.toFixed(0)}% of {analyst.name.split(' ')[0]}'s coverage</span>
-                                                    <span>{sectorPercent.toFixed(0)}% of {sector}</span>
-                                                  </div>
-                                                </div>
-                                              )
-                                            })}
-                                            {sortedSectors.length === 0 && (
-                                              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-                                                No sector data
+                                          <div className="flex-1 overflow-auto space-y-2">
+                                            {profileSectors.map((sector) => (
+                                              <div key={sector} className="bg-white rounded-lg px-3 py-2 border border-indigo-100 shadow-sm">
+                                                <span className="text-sm font-medium text-gray-900">{sector}</span>
+                                              </div>
+                                            ))}
+                                            {profileSectors.length === 0 && (
+                                              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm py-4">
+                                                No sector focus set
                                               </div>
                                             )}
                                           </div>
@@ -5879,7 +5840,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                             </span>
                                           </td>
                                           <td className="px-4 py-3 text-sm text-gray-500">
-                                            {Array.from(analyst.sectors.keys()).slice(0, 2).join(', ')}{analyst.sectors.size > 2 ? '...' : ''}
+                                            {analyst.sectors.slice(0, 2).join(', ')}{analyst.sectors.length > 2 ? '...' : ''}{analyst.sectors.length === 0 && '—'}
                                           </td>
                                         </tr>
                                       )

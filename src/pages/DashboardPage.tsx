@@ -518,11 +518,14 @@ export function DashboardPage() {
     }
 
     // Check if a tab with this ID or symbol already exists (for asset tabs)
+    // Also check for coverage tabs by type since they should be singleton
     const existingTab = tabs.find(tab => {
       if (tab.id === result.id) return true
       // For asset tabs, also check by symbol
       if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
       if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
+      // For coverage tabs, check by type (singleton - only one coverage tab allowed)
+      if (result.type === 'coverage' && tab.type === 'coverage') return true
       return false
     })
 

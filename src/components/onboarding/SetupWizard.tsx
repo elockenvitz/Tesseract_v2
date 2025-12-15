@@ -157,8 +157,9 @@ const GEOGRAPHY_OPTIONS = [
 ]
 
 const SECTOR_OPTIONS = [
-  'Technology', 'Healthcare', 'Financials', 'Consumer Discretionary', 'Consumer Staples',
-  'Industrials', 'Energy', 'Materials', 'Utilities', 'Real Estate', 'Communication Services'
+  'Communication Services', 'Consumer Discretionary', 'Consumer Staples', 'Energy',
+  'Financials', 'Generalist', 'Healthcare', 'Industrials', 'Materials', 'Real Estate',
+  'Technology', 'Utilities'
 ]
 
 const ASSET_CLASS_OPTIONS = [
@@ -235,7 +236,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
   const [skippedSteps, setSkippedSteps] = useState<string[]>([])
 
   // Fetch existing onboarding status
-  const { data: onboardingStatus } = useQuery({
+  const { data: onboardingStatus, isLoading: isLoadingStatus } = useQuery({
     queryKey: ['onboarding-status', user?.id],
     queryFn: async () => {
       if (!user?.id) return null
@@ -251,9 +252,9 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
     enabled: !!user?.id,
   })
 
-  // Fetch existing profile
-  const { data: existingProfile } = useQuery({
-    queryKey: ['user-profile-extended', user?.id],
+  // Fetch existing profile (using same query key as useOnboarding hook for cache consistency)
+  const { data: existingProfile, isLoading: isLoadingProfile } = useQuery({
+    queryKey: ['profile-extended', user?.id],
     queryFn: async () => {
       if (!user?.id) return null
       const { data, error } = await supabase
@@ -342,6 +343,9 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
   // Track if we've initialized from existing data
   const [initialized, setInitialized] = useState(false)
 
+  // Combined loading state (declared after initialized state)
+  const isLoading = isLoadingStatus || isLoadingProfile || !initialized
+
   // Initialize form with existing data (only once on initial load)
   useEffect(() => {
     if (initialized) return
@@ -424,7 +428,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-status'] })
-      queryClient.invalidateQueries({ queryKey: ['user-profile-extended'] })
+      queryClient.invalidateQueries({ queryKey: ['profile-extended'] })
     },
   })
 
@@ -624,9 +628,18 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
 
   return (
     <div className={clsx(
-      'flex flex-col',
+      'flex flex-col relative',
       isModal ? 'h-full' : 'min-h-screen bg-gray-50'
     )}>
+      {/* Loading overlay with blur */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            <p className="text-sm text-gray-500">Loading your profile...</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto">
@@ -1456,39 +1469,6 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
               {sector}
             </button>
           ))}
-        </div>
-      </Card>
-
-      {/* Universe Scope */}
-      <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Universe Scope</h3>
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <button
-            onClick={() => setProfile(prev => ({ ...prev, universe_scope: 'broad' }))}
-            className={clsx(
-              'p-4 rounded-lg border-2 text-left transition-all',
-              profile.universe_scope === 'broad'
-                ? 'border-green-500 bg-green-50'
-                : 'border-gray-200 hover:border-gray-300'
-            )}
-          >
-            <Globe className="h-6 w-6 mb-2 text-gray-400" />
-            <div className="font-medium">Broad Universe</div>
-            <div className="text-xs text-gray-500">I follow the market broadly</div>
-          </button>
-          <button
-            onClick={() => setProfile(prev => ({ ...prev, universe_scope: 'specific' }))}
-            className={clsx(
-              'p-4 rounded-lg border-2 text-left transition-all',
-              profile.universe_scope === 'specific'
-                ? 'border-green-500 bg-green-50'
-                : 'border-gray-200 hover:border-gray-300'
-            )}
-          >
-            <Target className="h-6 w-6 mb-2 text-gray-400" />
-            <div className="font-medium">Specific Universe</div>
-            <div className="text-xs text-gray-500">I focus on specific names</div>
-          </button>
         </div>
       </Card>
 
