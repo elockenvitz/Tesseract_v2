@@ -1102,6 +1102,213 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                 <p className="text-sm text-gray-600">This workflow will always be available to work on and will not trigger automatically.</p>
               </div>
             )}
+
+            {/* Branch Ending: Time After Creation */}
+            {formData.conditionType === 'time_after_creation' && (
+              <div className="space-y-4">
+                {/* Primary Duration */}
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-3">Duration After Creation</h5>
+                  <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.conditionValue.amount ?? ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, amount: e.target.value === '' ? null : parseInt(e.target.value) }
+                      })}
+                      onBlur={(e) => {
+                        if (!e.target.value || parseInt(e.target.value) < 1) {
+                          setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, amount: 1 }
+                          })
+                        }
+                      }}
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <select
+                      value={formData.conditionValue.unit || 'days'}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, unit: e.target.value }
+                      })}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                      <option value="days">days</option>
+                      <option value="weeks">weeks</option>
+                      <option value="months">months</option>
+                    </select>
+
+                    {/* Secondary duration */}
+                    {formData.conditionValue.secondaryAmount == null ? (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({
+                          ...formData,
+                          conditionValue: {
+                            ...formData.conditionValue,
+                            secondaryAmount: 0,
+                            secondaryUnit: formData.conditionValue.unit === 'weeks' ? 'days' :
+                                           formData.conditionValue.unit === 'months' ? 'days' :
+                                           formData.conditionValue.unit === 'days' ? 'hours' : 'minutes'
+                          }
+                        })}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        + Add more time
+                      </button>
+                    ) : (
+                      <>
+                        <span className="text-sm text-gray-500">and</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.conditionValue.secondaryAmount ?? ''}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, secondaryAmount: e.target.value === '' ? null : parseInt(e.target.value) }
+                          })}
+                          onBlur={(e) => {
+                            if (e.target.value === '' || isNaN(parseInt(e.target.value))) {
+                              setFormData({
+                                ...formData,
+                                conditionValue: { ...formData.conditionValue, secondaryAmount: 0 }
+                              })
+                            }
+                          }}
+                          className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <select
+                          value={formData.conditionValue.secondaryUnit || 'hours'}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, secondaryUnit: e.target.value }
+                          })}
+                          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                          <option value="weeks">weeks</option>
+                          <option value="months">months</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, secondaryAmount: null, secondaryUnit: null }
+                          })}
+                          className="text-sm text-gray-400 hover:text-red-500"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Duration summary */}
+                  <p className="text-xs text-gray-500 mt-2">
+                    {(() => {
+                      const cv = formData.conditionValue
+                      const amount = cv.amount || 0
+                      const unit = cv.unit || 'days'
+                      const secondaryAmount = cv.secondaryAmount || 0
+                      const secondaryUnit = cv.secondaryUnit
+
+                      const toMinutes = (amt: number, u: string) => {
+                        switch (u) {
+                          case 'minutes': return amt
+                          case 'hours': return amt * 60
+                          case 'days': return amt * 60 * 24
+                          case 'weeks': return amt * 60 * 24 * 7
+                          case 'months': return amt * 60 * 24 * 30
+                          default: return amt
+                        }
+                      }
+
+                      const totalMinutes = toMinutes(amount, unit) + (secondaryAmount ? toMinutes(secondaryAmount, secondaryUnit || 'minutes') : 0)
+
+                      if (totalMinutes >= 60 * 24 * 30) {
+                        return `≈ ${(totalMinutes / (60 * 24 * 30)).toFixed(1)} months total`
+                      } else if (totalMinutes >= 60 * 24 * 7) {
+                        return `≈ ${(totalMinutes / (60 * 24 * 7)).toFixed(1)} weeks total`
+                      } else if (totalMinutes >= 60 * 24) {
+                        return `≈ ${(totalMinutes / (60 * 24)).toFixed(1)} days total`
+                      } else if (totalMinutes >= 60) {
+                        return `≈ ${(totalMinutes / 60).toFixed(1)} hours total`
+                      }
+                      return `${totalMinutes} minutes total`
+                    })()}
+                  </p>
+                </div>
+
+                {/* Specific Time of Day */}
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.conditionValue.atSpecificTime || false}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, atSpecificTime: e.target.checked }
+                      })}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Trigger at a specific time of day</span>
+                  </label>
+
+                  {formData.conditionValue.atSpecificTime && (
+                    <div className="mt-3 flex items-center space-x-2">
+                      <span className="text-sm text-gray-600">At</span>
+                      <input
+                        type="time"
+                        value={formData.conditionValue.triggerTime || '09:00'}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
+                        })}
+                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-gray-500">(your local time)</span>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            {/* Branch Ending: Specific Date */}
+            {formData.conditionType === 'specific_date' && (
+              <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                <h5 className="text-sm font-semibold text-gray-900 mb-3">End Date & Time</h5>
+                <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+                  <input
+                    type="date"
+                    value={formData.conditionValue.date || ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      conditionValue: { ...formData.conditionValue, date: e.target.value }
+                    })}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-500">at</span>
+                  <input
+                    type="time"
+                    value={formData.conditionValue.triggerTime || '09:00'}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
+                    })}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-xs text-gray-500">(your local time)</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Configuration - Only shown for non-perpetual rules */}

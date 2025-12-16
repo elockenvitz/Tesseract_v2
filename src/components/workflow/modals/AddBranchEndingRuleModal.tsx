@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react'
-import { X, XCircle, Clock, CheckCircle, Calendar, Zap, Archive, Trash2, Bell } from 'lucide-react'
+import { X, XCircle, Clock, CheckCircle, Calendar, Zap, Archive, Bell } from 'lucide-react'
 import { Button } from '../../ui/Button'
 
 export interface AddBranchEndingRuleModalProps {
@@ -29,11 +29,22 @@ export function AddBranchEndingRuleModal({
   onClose,
   onSave
 }: AddBranchEndingRuleModalProps) {
+  type TimeUnit = 'minutes' | 'hours' | 'days' | 'weeks' | 'months'
+
   const [formData, setFormData] = useState({
     name: '',
     type: 'time',
-    conditionType: 'days_after_creation',
-    conditionValue: { days: 30 },
+    conditionType: 'time_after_creation',
+    conditionValue: {
+      amount: 30,
+      unit: 'days' as TimeUnit,
+      // Optional secondary duration for compound time (e.g., "2 weeks and 3 days")
+      secondaryAmount: null as number | null,
+      secondaryUnit: null as TimeUnit | null,
+      // Optional specific time of day
+      atSpecificTime: false,
+      triggerTime: '09:00'
+    },
     actionType: 'archive_branch',
     actionValue: {},
     isActive: true
@@ -96,7 +107,7 @@ export function AddBranchEndingRuleModal({
               </label>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { value: 'days_after_creation', label: 'Days After Creation', icon: Clock, desc: 'X days after branch was created' },
+                  { value: 'time_after_creation', label: 'Time After Creation', icon: Clock, desc: 'After a set amount of time' },
                   { value: 'all_assets_completed', label: 'All Assets Complete', icon: CheckCircle, desc: 'When all assets reach final stage' },
                   { value: 'specific_date', label: 'Specific Date', icon: Calendar, desc: 'On a specific calendar date' },
                   { value: 'manual_trigger', label: 'Manual Only', icon: Zap, desc: 'Triggered manually by user' }
@@ -107,11 +118,18 @@ export function AddBranchEndingRuleModal({
                       key={option.value}
                       type="button"
                       onClick={() => {
-                        let conditionValue = {}
-                        if (option.value === 'days_after_creation') {
-                          conditionValue = { days: 30 }
+                        let conditionValue: any = {}
+                        if (option.value === 'time_after_creation') {
+                          conditionValue = {
+                            amount: 30,
+                            unit: 'days',
+                            secondaryAmount: null,
+                            secondaryUnit: null,
+                            atSpecificTime: false,
+                            triggerTime: '09:00'
+                          }
                         } else if (option.value === 'specific_date') {
-                          conditionValue = { date: '' }
+                          conditionValue = { date: '', triggerTime: '09:00' }
                         }
                         setFormData({
                           ...formData,
@@ -141,41 +159,223 @@ export function AddBranchEndingRuleModal({
             </div>
 
             {/* Trigger Configuration */}
-            {formData.conditionType === 'days_after_creation' && (
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">Time Configuration</h4>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">End branch</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.conditionValue.days || 30}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      conditionValue: { ...formData.conditionValue, days: parseInt(e.target.value) || 1 }
-                    })}
-                    className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-600">days after branch creation</span>
+            {formData.conditionType === 'time_after_creation' && (
+              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <h4 className="text-sm font-medium text-gray-900">Time Configuration</h4>
+
+                {/* Primary Duration */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Duration After Creation</label>
+                  <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.conditionValue.amount ?? ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, amount: e.target.value === '' ? null : parseInt(e.target.value) }
+                      })}
+                      onBlur={(e) => {
+                        if (!e.target.value || parseInt(e.target.value) < 1) {
+                          setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, amount: 1 }
+                          })
+                        }
+                      }}
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <select
+                      value={formData.conditionValue.unit || 'days'}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, unit: e.target.value as TimeUnit }
+                      })}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                      <option value="days">days</option>
+                      <option value="weeks">weeks</option>
+                      <option value="months">months</option>
+                    </select>
+
+                    {/* Secondary duration toggle */}
+                    {formData.conditionValue.secondaryAmount === null ? (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({
+                          ...formData,
+                          conditionValue: {
+                            ...formData.conditionValue,
+                            secondaryAmount: 0,
+                            secondaryUnit: formData.conditionValue.unit === 'weeks' ? 'days' :
+                                           formData.conditionValue.unit === 'months' ? 'days' :
+                                           formData.conditionValue.unit === 'days' ? 'hours' : 'minutes'
+                          }
+                        })}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        + Add more time
+                      </button>
+                    ) : (
+                      <>
+                        <span className="text-sm text-gray-500">and</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.conditionValue.secondaryAmount ?? ''}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, secondaryAmount: e.target.value === '' ? null : parseInt(e.target.value) }
+                          })}
+                          onBlur={(e) => {
+                            if (e.target.value === '' || isNaN(parseInt(e.target.value))) {
+                              setFormData({
+                                ...formData,
+                                conditionValue: { ...formData.conditionValue, secondaryAmount: 0 }
+                              })
+                            }
+                          }}
+                          className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <select
+                          value={formData.conditionValue.secondaryUnit || 'hours'}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, secondaryUnit: e.target.value as TimeUnit }
+                          })}
+                          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                          <option value="weeks">weeks</option>
+                          <option value="months">months</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({
+                            ...formData,
+                            conditionValue: { ...formData.conditionValue, secondaryAmount: null, secondaryUnit: null }
+                          })}
+                          className="text-sm text-gray-400 hover:text-red-500"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Duration summary/conversion */}
+                  <p className="text-xs text-gray-500 mt-2">
+                    {(() => {
+                      const cv = formData.conditionValue
+                      const amount = cv.amount || 0
+                      const unit = cv.unit
+                      const secondaryAmount = cv.secondaryAmount || 0
+                      const secondaryUnit = cv.secondaryUnit
+
+                      // Calculate total in minutes for conversion display
+                      const toMinutes = (amt: number, u: string) => {
+                        switch (u) {
+                          case 'minutes': return amt
+                          case 'hours': return amt * 60
+                          case 'days': return amt * 60 * 24
+                          case 'weeks': return amt * 60 * 24 * 7
+                          case 'months': return amt * 60 * 24 * 30
+                          default: return amt
+                        }
+                      }
+
+                      const totalMinutes = toMinutes(amount, unit) + (secondaryAmount ? toMinutes(secondaryAmount, secondaryUnit || 'minutes') : 0)
+
+                      if (totalMinutes >= 60 * 24 * 30) {
+                        return `≈ ${(totalMinutes / (60 * 24 * 30)).toFixed(1)} months total`
+                      } else if (totalMinutes >= 60 * 24 * 7) {
+                        return `≈ ${(totalMinutes / (60 * 24 * 7)).toFixed(1)} weeks total`
+                      } else if (totalMinutes >= 60 * 24) {
+                        return `≈ ${(totalMinutes / (60 * 24)).toFixed(1)} days total`
+                      } else if (totalMinutes >= 60) {
+                        return `≈ ${(totalMinutes / 60).toFixed(1)} hours total`
+                      }
+                      return `${totalMinutes} minutes total`
+                    })()}
+                  </p>
                 </div>
+
+                {/* Specific Time of Day */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.conditionValue.atSpecificTime || false}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, atSpecificTime: e.target.checked }
+                      })}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Trigger at a specific time of day</span>
+                  </label>
+
+                  {formData.conditionValue.atSpecificTime && (
+                    <div className="mt-3 flex items-center space-x-2">
+                      <span className="text-sm text-gray-600">At</span>
+                      <input
+                        type="time"
+                        value={formData.conditionValue.triggerTime || '09:00'}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
+                        })}
+                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-gray-500">(your local time)</span>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-500 mt-2">
+                    {formData.conditionValue.atSpecificTime
+                      ? `The action will trigger at ${formData.conditionValue.triggerTime || '09:00'} on the day the duration expires.`
+                      : 'The action will trigger as soon as the duration expires.'
+                    }
+                  </p>
+                </div>
+
               </div>
             )}
 
             {formData.conditionType === 'specific_date' && (
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">Date Configuration</h4>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">End branch on</span>
-                  <input
-                    type="date"
-                    value={formData.conditionValue.date || ''}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      conditionValue: { ...formData.conditionValue, date: e.target.value }
-                    })}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <h4 className="text-sm font-medium text-gray-900">Date & Time Configuration</h4>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">End Date</label>
+                  <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+                    <input
+                      type="date"
+                      value={formData.conditionValue.date || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, date: e.target.value }
+                      })}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-500">at</span>
+                    <input
+                      type="time"
+                      value={formData.conditionValue.triggerTime || '09:00'}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
+                      })}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-xs text-gray-500">(your local time)</span>
+                  </div>
                 </div>
+
               </div>
             )}
 
@@ -242,30 +442,6 @@ export function AddBranchEndingRuleModal({
                   </div>
                 </label>
 
-                {/* Delete Branch */}
-                <label className={`flex items-start p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                  formData.actionType === 'delete_branch'
-                    ? 'border-red-500 bg-red-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}>
-                  <input
-                    type="radio"
-                    name="actionType"
-                    checked={formData.actionType === 'delete_branch'}
-                    onChange={() => setFormData({ ...formData, actionType: 'delete_branch', actionValue: {} })}
-                    className="mt-1 mr-3"
-                  />
-                  <div className="flex items-start space-x-3">
-                    <Trash2 className={`w-5 h-5 mt-0.5 ${formData.actionType === 'delete_branch' ? 'text-red-600' : 'text-gray-400'}`} />
-                    <div>
-                      <div className="font-medium text-gray-900">Delete Branch</div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Permanently delete the branch. This action cannot be easily undone.
-                      </p>
-                    </div>
-                  </div>
-                </label>
-
                 {/* Mark Complete */}
                 <label className={`flex items-start p-3 border-2 rounded-lg cursor-pointer transition-all ${
                   formData.actionType === 'mark_complete'
@@ -315,21 +491,6 @@ export function AddBranchEndingRuleModal({
                 </label>
               </div>
 
-              {/* Additional options for delete action */}
-              {formData.actionType === 'delete_branch' && (
-                <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
-                  <div className="flex items-start space-x-2">
-                    <Trash2 className="w-4 h-4 text-red-600 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-medium text-red-800">Warning: Deletion is permanent</p>
-                      <p className="text-xs text-red-700 mt-1">
-                        Deleted branches and their asset progress will be moved to the deleted state.
-                        Consider using Archive instead for recoverable cleanup.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Notification Options */}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar, AlertTriangle, CheckCircle2, Play, ChevronRight, ChevronLeft, ChevronDown, Plus, Zap, ArrowRight } from 'lucide-react'
+import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar, AlertTriangle, CheckCircle2, Play, ChevronRight, ChevronLeft, ChevronDown, Plus, Zap, ArrowRight, MessageSquareText, FolderOpen } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { supabase } from '../lib/supabase'
@@ -31,6 +31,9 @@ import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
 // Project widgets removed - content now in Command Center carousel
 import { TradeQueuePage } from './TradeQueuePage'
+import { ReasonsPage } from './ReasonsPage'
+import { FilesPage } from './FilesPage'
+import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
 import { AssetAllocationPage } from './AssetAllocationPage'
 import { TDFListPage } from './TDFListPage'
@@ -713,6 +716,12 @@ export function DashboardPage() {
         return <CoveragePage initialView={activeTab.data?.initialView} />
       case 'organization':
         return <OrganizationPage />
+      case 'reasons':
+        return <ReasonsPage onItemSelect={handleSearchResult} />
+      case 'files':
+        return <FilesPage onItemSelect={handleSearchResult} />
+      case 'charting':
+        return <ChartingPage onItemSelect={handleSearchResult} />
       default:
         return renderDashboardContent()
     }
@@ -1306,6 +1315,16 @@ export function DashboardPage() {
                     <ListTodo className="h-4 w-4 text-amber-500" />
                     <span className="text-sm font-medium text-gray-700">Prioritizer</span>
                   </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'files', title: 'Files', type: 'files', data: null })
+                      setShowEfficiencyMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <FolderOpen className="h-4 w-4 text-violet-500" />
+                    <span className="text-sm font-medium text-gray-700">Files</span>
+                  </button>
                 </div>
               </>
             )}
@@ -1393,6 +1412,16 @@ export function DashboardPage() {
                     <Clock className="h-4 w-4 text-amber-500" />
                     <span className="text-sm font-medium text-gray-700">TDF</span>
                   </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'charting', title: 'Charting', type: 'charting', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <Activity className="h-4 w-4 text-cyan-500" />
+                    <span className="text-sm font-medium text-gray-700">Charting</span>
+                  </button>
                 </div>
               </>
             )}
@@ -1449,6 +1478,16 @@ export function DashboardPage() {
                   >
                     <Beaker className="h-4 w-4 text-cyan-500" />
                     <span className="text-sm font-medium text-gray-700">Trade Lab</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'reasons', title: 'Reasons', type: 'reasons', data: null })
+                      setShowTradeMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <MessageSquareText className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-gray-700">Reasons</span>
                   </button>
                 </div>
               </>

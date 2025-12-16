@@ -3527,7 +3527,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             {/* Search and Filter Buttons */}
             <div className="space-y-2">
               <div className="flex items-center gap-3">
-                <div className="relative flex-1">
+                <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input
                     type="text"
@@ -3538,8 +3538,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   />
                 </div>
 
-                {/* Group By Dropdown - Multi-level (hidden for Workload and Matrix views) */}
-                {viewMode !== 'workload' && viewMode !== 'matrix' && (
+                {/* Group By Dropdown - Multi-level (hidden for Workload, Matrix, History, and Requests views) */}
+                {viewMode !== 'workload' && viewMode !== 'matrix' && activeView !== 'history' && activeView !== 'requests' && (
                 <div className="relative" ref={groupByRef}>
                   <button
                     onClick={() => setShowGroupByDropdown(!showGroupByDropdown)}
@@ -3703,7 +3703,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 </div>
                 )}
 
-                <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
+                <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100 ml-auto">
                 <button
                   onClick={() => setActiveView('active')}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${

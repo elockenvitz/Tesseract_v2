@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2 } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2, MessageSquareText, FolderOpen, LineChart } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -27,7 +27,7 @@ export interface Tab {
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
   | 'idea-generator' | 'workflows' | 'projects-list' | 'project'
   | 'trade-queue' | 'simulation' | 'trade-lab' | 'tdf' | 'tdf-list' | 'asset-allocation'
-  | 'calendar' | 'prioritizer' | 'coverage' | 'organization'
+  | 'calendar' | 'prioritizer' | 'coverage' | 'organization' | 'reasons' | 'files' | 'charting'
   data?: any
   isActive: boolean
   isBlank?: boolean
@@ -302,6 +302,9 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       case 'prioritizer': return <ListTodo className="h-3.5 w-3.5" />
       case 'coverage': return <Users className="h-3.5 w-3.5" />
       case 'organization': return <Building2 className="h-3.5 w-3.5" />
+      case 'reasons': return <MessageSquareText className="h-3.5 w-3.5" />
+      case 'files': return <FolderOpen className="h-3.5 w-3.5" />
+      case 'charting': return <LineChart className="h-3.5 w-3.5" />
       case 'dashboard': return <Home className="h-3.5 w-3.5" />
       case 'profile': return <User className="h-3.5 w-3.5" />
       case 'settings': return <Settings className="h-3.5 w-3.5" />

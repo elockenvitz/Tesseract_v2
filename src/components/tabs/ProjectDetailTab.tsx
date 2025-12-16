@@ -335,7 +335,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.title}</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Created {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+                      {project.created_at ? `Created ${formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}` : 'Recently created'}
                     </p>
                   </div>
                 </div>
@@ -348,13 +348,17 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
               </div>
 
               <div className="flex items-center gap-3 mb-4">
-                <Badge className={clsx('flex items-center gap-1', getStatusColor(project.status))}>
-                  {getStatusIcon(project.status)}
-                  <span className="capitalize">{project.status.replace('_', ' ')}</span>
-                </Badge>
-                <Badge className={getPriorityColor(project.priority)}>
-                  <span className="capitalize">{project.priority}</span>
-                </Badge>
+                {project.status && (
+                  <Badge className={clsx('flex items-center gap-1', getStatusColor(project.status))}>
+                    {getStatusIcon(project.status)}
+                    <span className="capitalize">{project.status.replace('_', ' ')}</span>
+                  </Badge>
+                )}
+                {project.priority && (
+                  <Badge className={getPriorityColor(project.priority)}>
+                    <span className="capitalize">{project.priority}</span>
+                  </Badge>
+                )}
                 {project.due_date && (
                   <Badge className={clsx(
                     'flex items-center gap-1',
@@ -436,18 +440,26 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   <div>
                     <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
                     <dd className="mt-1">
-                      <Badge className={clsx('flex items-center gap-1 w-fit', getStatusColor(project.status))}>
-                        {getStatusIcon(project.status)}
-                        <span className="capitalize">{project.status.replace('_', ' ')}</span>
-                      </Badge>
+                      {project.status ? (
+                        <Badge className={clsx('flex items-center gap-1 w-fit', getStatusColor(project.status))}>
+                          {getStatusIcon(project.status)}
+                          <span className="capitalize">{project.status.replace('_', ' ')}</span>
+                        </Badge>
+                      ) : (
+                        <span className="text-sm text-gray-500">Not set</span>
+                      )}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Priority</dt>
                     <dd className="mt-1">
-                      <Badge className={clsx('w-fit', getPriorityColor(project.priority))}>
-                        <span className="capitalize">{project.priority}</span>
-                      </Badge>
+                      {project.priority ? (
+                        <Badge className={clsx('w-fit', getPriorityColor(project.priority))}>
+                          <span className="capitalize">{project.priority}</span>
+                        </Badge>
+                      ) : (
+                        <span className="text-sm text-gray-500">Not set</span>
+                      )}
                     </dd>
                   </div>
                   {project.due_date && (
@@ -465,7 +477,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   <div>
                     <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Created</dt>
                     <dd className="mt-1 text-sm text-gray-900 dark:text-white">
-                      {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+                      {project.created_at ? formatDistanceToNow(new Date(project.created_at), { addSuffix: true }) : 'Unknown'}
                     </dd>
                   </div>
                 </dl>
@@ -611,8 +623,12 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         </p>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           <span className="capitalize">{member.role}</span>
-                          {' • '}
-                          Added {formatDistanceToNow(new Date(member.assigned_at), { addSuffix: true })}
+                          {member.assigned_at && (
+                            <>
+                              {' • '}
+                              Added {formatDistanceToNow(new Date(member.assigned_at), { addSuffix: true })}
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -672,7 +688,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                               : comment.user?.email || 'Unknown User'}
                           </p>
                           <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                            {comment.created_at ? formatDistanceToNow(new Date(comment.created_at), { addSuffix: true }) : ''}
                           </span>
                         </div>
                         <p className="text-gray-600 dark:text-gray-400">

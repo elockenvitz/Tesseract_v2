@@ -1888,6 +1888,56 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       if (rule.conditionType === 'days_after_earnings') return `${rule.conditionValue?.days_offset || 0} days after earnings`
       if (rule.conditionType === 'manual_trigger') return 'Manual only'
 
+      // Branch ending rules
+      if (rule.conditionType === 'time_after_creation') {
+        const cv = rule.conditionValue || {}
+        const amount = cv.amount || 30
+        const unit = cv.unit || 'days'
+        let timeStr = `${amount} ${unit}`
+
+        // Add secondary duration if present
+        if (cv.secondaryAmount && cv.secondaryUnit) {
+          timeStr += ` and ${cv.secondaryAmount} ${cv.secondaryUnit}`
+        }
+
+        // Add specific time if enabled
+        if (cv.atSpecificTime && cv.triggerTime) {
+          const formatTime = (time: string): string => {
+            if (!time) return ''
+            const [hours, minutes] = time.split(':')
+            const hour = parseInt(hours, 10)
+            const ampm = hour >= 12 ? 'PM' : 'AM'
+            const hour12 = hour % 12 || 12
+            return `${hour12}:${minutes} ${ampm}`
+          }
+          timeStr += ` at ${formatTime(cv.triggerTime)}`
+        }
+
+        return `${timeStr} after branch creation`
+      }
+      if (rule.conditionType === 'days_after_creation') {
+        // Legacy support
+        return `${rule.conditionValue?.days || 30} days after branch creation`
+      }
+      if (rule.conditionType === 'specific_date') {
+        const cv = rule.conditionValue || {}
+        let desc = cv.date
+          ? `On ${new Date(cv.date).toLocaleDateString()}`
+          : 'On a specific date'
+        if (cv.triggerTime) {
+          const formatTime = (time: string): string => {
+            if (!time) return ''
+            const [hours, minutes] = time.split(':')
+            const hour = parseInt(hours, 10)
+            const ampm = hour >= 12 ? 'PM' : 'AM'
+            const hour12 = hour % 12 || 12
+            return `${hour12}:${minutes} ${ampm}`
+          }
+          desc += ` at ${formatTime(cv.triggerTime)}`
+        }
+        return desc
+      }
+
       return rule.conditionType
     }
 

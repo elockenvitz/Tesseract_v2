@@ -237,6 +237,53 @@ export function CadenceView({
       return 'Manual trigger only'
     }
 
+    // Handle branch ending triggers
+    if (condition_type === 'time_after_creation') {
+      const amount = cv.amount || 30
+      const unit = cv.unit || 'days'
+      let timeStr = `${amount} ${unit}`
+
+      // Add secondary duration if present
+      if (cv.secondaryAmount && cv.secondaryUnit) {
+        timeStr += ` and ${cv.secondaryAmount} ${cv.secondaryUnit}`
+      }
+
+      // Add specific time if enabled
+      if (cv.atSpecificTime && cv.triggerTime) {
+        const formatTime = (time: string): string => {
+          if (!time) return ''
+          const [hours, minutes] = time.split(':')
+          const hour = parseInt(hours, 10)
+          const ampm = hour >= 12 ? 'PM' : 'AM'
+          const hour12 = hour % 12 || 12
+          return `${hour12}:${minutes} ${ampm}`
+        }
+        timeStr += ` at ${formatTime(cv.triggerTime)}`
+      }
+
+      return `${timeStr} after branch creation`
+    }
+    if (condition_type === 'days_after_creation') {
+      // Legacy support for old format
+      const days = cv.days || 30
+      return `${days} days after branch creation`
+    }
+    if (condition_type === 'specific_date') {
+      let desc = cv.date ? `On ${new Date(cv.date).toLocaleDateString()}` : 'On a specific date'
+      if (cv.triggerTime) {
+        const formatTime = (time: string): string => {
+          if (!time) return ''
+          const [hours, minutes] = time.split(':')
+          const hour = parseInt(hours, 10)
+          const ampm = hour >= 12 ? 'PM' : 'AM'
+          const hour12 = hour % 12 || 12
+          return `${hour12}:${minutes} ${ampm}`
+        }
+        desc += ` at ${formatTime(cv.triggerTime)}`
+      }
+      return desc
+    }
+
     return condition_type?.replace(/_/g, ' ') || 'Trigger configured'
   }
 
