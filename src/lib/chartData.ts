@@ -112,9 +112,11 @@ class ChartDataService {
     const interval = intervalMap[request.interval] || '1d'
     const range = rangeMap[request.range] || '1mo'
 
+    // Multiple CORS proxies for redundancy - order matters (most reliable first)
     const corsProxies = [
+      'https://corsproxy.io/?',
       'https://api.allorigins.win/raw?url=',
-      'https://thingproxy.freeboard.io/fetch/'
+      'https://api.codetabs.com/v1/proxy?quest='
     ]
 
     const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${request.symbol}?interval=${interval}&range=${range}`
@@ -122,7 +124,13 @@ class ChartDataService {
     for (const proxyUrl of corsProxies) {
       try {
         const url = proxyUrl + encodeURIComponent(targetUrl)
-        const response = await fetch(url)
+
+        // Add timeout to prevent hanging
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+        const response = await fetch(url, { signal: controller.signal })
+        clearTimeout(timeoutId)
 
         if (!response.ok) continue
 
@@ -198,9 +206,11 @@ class ChartDataService {
     const period2 = Math.floor(endTime)
     const intervalParam = intervalMap[interval] || '1d'
 
+    // Multiple CORS proxies for redundancy - order matters (most reliable first)
     const corsProxies = [
+      'https://corsproxy.io/?',
       'https://api.allorigins.win/raw?url=',
-      'https://corsproxy.io/?'
+      'https://api.codetabs.com/v1/proxy?quest='
     ]
 
     const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${intervalParam}&period1=${period1}&period2=${period2}`
@@ -208,7 +218,13 @@ class ChartDataService {
     for (const proxyUrl of corsProxies) {
       try {
         const url = proxyUrl + encodeURIComponent(targetUrl)
-        const response = await fetch(url)
+
+        // Add timeout to prevent hanging
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+        const response = await fetch(url, { signal: controller.signal })
+        clearTimeout(timeoutId)
 
         if (!response.ok) continue
 
@@ -301,11 +317,11 @@ class ChartDataService {
       rangeParam
     })
 
-    // Multiple CORS proxies for redundancy
+    // Multiple CORS proxies for redundancy - order matters (most reliable first)
     const corsProxies = [
+      'https://corsproxy.io/?',
       'https://api.allorigins.win/raw?url=',
-      'https://thingproxy.freeboard.io/fetch/',
-      'https://corsproxy.io/?'
+      'https://api.codetabs.com/v1/proxy?quest='
     ]
 
     // Try range-based URL first (more reliable), then period-based as fallback

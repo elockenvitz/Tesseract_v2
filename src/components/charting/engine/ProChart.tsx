@@ -74,6 +74,7 @@ interface ProChartProps {
   events?: ChartEvent[]
   annotations?: Annotation[]
   onCrosshairMove?: (price: number | null, time: number | null) => void
+  onContextMenu?: (e: React.MouseEvent, chartTime: number, chartPrice: number) => void
 }
 
 // Convert API data to OHLC format
@@ -100,7 +101,8 @@ export function ProChart({
   indicators = [],
   events = [],
   annotations = [],
-  onCrosshairMove
+  onCrosshairMove,
+  onContextMenu
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -319,12 +321,16 @@ export function ProChart({
           const timeRange = ChartTransform.calculateTimeRange(ohlcData)
           const priceRange = ChartTransform.calculatePriceRange(ohlcData)
 
-          // Add extra time on the right for future scrolling
-          const extraTime = (timeRange.end - timeRange.start) * 0.1
+          // Minimal padding on the right (just enough for the last candle to be fully visible)
+          // Use ~1 candle width worth of padding based on data density
+          const avgCandleWidth = ohlcData.length > 1
+            ? (timeRange.end - timeRange.start) / ohlcData.length
+            : 0
+          const rightPadding = avgCandleWidth * 2 // 2 candle widths of padding
 
           setView({
             startTime: timeRange.start,
-            endTime: timeRange.end + extraTime,
+            endTime: timeRange.end + rightPadding,
             minPrice: priceRange.min,
             maxPrice: priceRange.max,
             autoScalePrice: true
@@ -720,6 +726,27 @@ export function ProChart({
     }
   }, [onCrosshairMove])
 
+  // Context menu handler for right-click annotations
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onContextMenu || !transformRef.current) return
+
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const area = transformRef.current.chartArea
+
+    // Only show context menu if clicking within the chart area
+    if (x >= area.x && x <= area.x + area.width &&
+        y >= area.y && y <= area.y + area.height) {
+      e.preventDefault()
+      const chartTime = transformRef.current.xToTime(x)
+      const chartPrice = transformRef.current.yToPrice(y)
+      onContextMenu(e, chartTime, chartPrice)
+    }
+  }, [onContextMenu])
+
   // Handle window-level mouse events for dragging outside canvas
   useEffect(() => {
     if (!isDragging) return
@@ -862,11 +889,16 @@ export function ProChart({
 
     const timeRange = ChartTransform.calculateTimeRange(data)
     const priceRange = ChartTransform.calculatePriceRange(data)
-    const extraTime = (timeRange.end - timeRange.start) * 0.1
+
+    // Minimal padding on the right (2 candle widths)
+    const avgCandleWidth = data.length > 1
+      ? (timeRange.end - timeRange.start) / data.length
+      : 0
+    const rightPadding = avgCandleWidth * 2
 
     setView({
       startTime: timeRange.start,
-      endTime: timeRange.end + extraTime,
+      endTime: timeRange.end + rightPadding,
       minPrice: priceRange.min,
       maxPrice: priceRange.max,
       autoScalePrice: true
@@ -971,6 +1003,7 @@ export function ProChart({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
       />
 
       {/* No data message */}

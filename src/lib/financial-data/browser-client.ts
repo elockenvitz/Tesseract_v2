@@ -232,11 +232,11 @@ export class BrowserFinancialService {
 
   private async fetchFromYahooFinance(symbol: string): Promise<Quote | null> {
     try {
-      // Use different CORS proxy services as fallbacks (most reliable first)
+      // Multiple CORS proxies for redundancy - order matters (most reliable first)
       const corsProxies = [
+        'https://corsproxy.io/?',
         'https://api.allorigins.win/raw?url=',
-        'https://cors.sh/',
-        'https://thingproxy.freeboard.io/fetch/'
+        'https://api.codetabs.com/v1/proxy?quest='
       ]
 
       const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
@@ -245,12 +245,17 @@ export class BrowserFinancialService {
       for (const proxyUrl of corsProxies) {
         try {
           const url = proxyUrl + encodeURIComponent(targetUrl)
-          console.log(`Trying Yahoo Finance for ${symbol} via proxy: ${proxyUrl}`)
+          console.log(`Trying Yahoo Finance for ${symbol} via proxy: ${proxyUrl.substring(0, 30)}...`)
 
-          const response = await fetch(url)
+          // Add timeout to prevent hanging
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+          const response = await fetch(url, { signal: controller.signal })
+          clearTimeout(timeoutId)
 
           if (!response.ok) {
-            console.warn(`Proxy ${proxyUrl} failed: ${response.status} ${response.statusText}`)
+            console.warn(`Proxy ${proxyUrl.substring(0, 25)}... failed: ${response.status}`)
             continue // Try next proxy
           }
 
@@ -309,8 +314,12 @@ export class BrowserFinancialService {
           console.log(`🔍 Yahoo Finance volume for ${symbol}: regularMarketVolume=${meta.regularMarketVolume}, volumes[latest]=${volumes[latestIndex]}`)
           return result
 
-        } catch (proxyError) {
-          console.warn(`Proxy ${proxyUrl} failed:`, proxyError)
+        } catch (proxyError: any) {
+          if (proxyError.name === 'AbortError') {
+            console.warn(`Proxy ${proxyUrl.substring(0, 25)}... timed out`)
+          } else {
+            console.warn(`Proxy ${proxyUrl.substring(0, 25)}... failed:`, proxyError.message || proxyError)
+          }
           continue // Try next proxy
         }
       }
@@ -460,10 +469,3 @@ export class BrowserFinancialService {
 
 // Export singleton instance
 export const financialDataService = new BrowserFinancialService()
-
-// Clear cache on module load to ensure fresh data
-financialDataService.clearCache()
-
-// Force cache refresh for testing - remove this line after verification
-console.log('🚀 Financial data service reloaded with Yahoo Finance fallback enabled - VOLUME FIX APPLIED')
-financialDataService.clearCache()

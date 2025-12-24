@@ -159,7 +159,6 @@ export function DashboardPage() {
               description,
               theme_type,
               color,
-              thesis,
               where_different,
               risks_to_thesis,
               created_at,
@@ -375,7 +374,7 @@ export function DashboardPage() {
         .order('due_date', { ascending: true })
         .limit(10)
 
-      // Fetch incomplete deliverables with due dates
+      // Fetch incomplete deliverables for user's projects
       const { data: deliverables } = await supabase
         .from('project_deliverables')
         .select(`
@@ -389,9 +388,7 @@ export function DashboardPage() {
         `)
         .eq('projects.project_assignments.assigned_to', userId)
         .eq('completed', false)
-        .not('due_date', 'is', null)
-        .lte('due_date', endOfWeek.toISOString())
-        .order('due_date', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(10)
 
       // Fetch upcoming calendar events
@@ -422,13 +419,13 @@ export function DashboardPage() {
       if (!userId) return []
 
       // Get assets assigned to user in active workflow stages
+      // Note: workflow_stages is joined via workflow_id + current_stage_key, not a direct FK
       const { data: workflowProgress } = await supabase
         .from('asset_workflow_progress')
         .select(`
           *,
           assets!inner(id, symbol, company_name, priority, process_stage),
-          workflows!inner(id, name),
-          workflow_stages!inner(id, name, stage_order)
+          workflows!inner(id, name)
         `)
         .eq('is_started', true)
         .eq('is_completed', false)
@@ -440,29 +437,12 @@ export function DashboardPage() {
   })
 
   // Fetch team activity
+  // Note: project_activity table doesn't exist yet - returning empty array
   const { data: teamActivity } = useQuery({
     queryKey: ['dashboard-team-activity'],
     queryFn: async () => {
-      const user = await supabase.auth.getUser()
-      const userId = user.data.user?.id
-      if (!userId) return []
-
-      // Get recent project activity from projects the user is assigned to
-      const { data: activity } = await supabase
-        .from('project_activity')
-        .select(`
-          *,
-          projects!inner(
-            id,
-            title,
-            project_assignments!inner(assigned_to)
-          )
-        `)
-        .eq('projects.project_assignments.assigned_to', userId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-
-      return activity || []
+      // TODO: Create project_activity table or use notifications/asset_field_history
+      return []
     }
   })
 

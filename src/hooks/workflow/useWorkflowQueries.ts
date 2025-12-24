@@ -15,8 +15,8 @@
  * Note: Modal-specific queries (user search, etc.) remain in their respective modal components
  */
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 
 interface UseWorkflowQueriesParams {
@@ -487,6 +487,58 @@ export function useWorkflowQueries({
     staleTime: 1000 * 60 * 10,
   })
 
+  // Track if we've already processed branch ending rules this session
+  const hasProcessedBranchEndingRules = useRef(false)
+
+  // Process branch ending rules mutation
+  const processBranchEndingRules = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc('process_branch_ending_rules')
+      if (error) {
+        console.error('Error processing branch ending rules:', error)
+        throw error
+      }
+      return data
+    },
+    onSuccess: (data) => {
+      if (data && data.length > 0) {
+        console.log('[Workflow] Auto-processed branch ending rules:', data)
+        // Invalidate branches queries to reflect the changes
+        queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
+        queryClient.invalidateQueries({ queryKey: ['all-workflow-branches'] })
+        queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      }
+    }
+  })
+
+  // Auto-process branch ending rules once per session when workflows are loaded
+  useEffect(() => {
+    if (workflowsQuery.data && !hasProcessedBranchEndingRules.current && userId) {
+      hasProcessedBranchEndingRules.current = true
+      // Process branch ending rules in the background
+      processBranchEndingRules.mutate()
+    }
+  }, [workflowsQuery.data, userId])
+
+  // Query to get pending branch endings for UI display
+  const pendingBranchEndingsQuery = useQuery({
+    queryKey: ['pending-branch-endings', selectedWorkflowId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_pending_branch_endings')
+      if (error) {
+        console.error('Error fetching pending branch endings:', error)
+        return []
+      }
+      // Filter to selected workflow if applicable
+      if (selectedWorkflowId && data) {
+        return data.filter((item: any) => item.parent_workflow_id === selectedWorkflowId)
+      }
+      return data || []
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60, // 1 minute
+  })
+
   return {
     // Main data
     workflows: workflowsQuery.data,
@@ -527,5 +579,11 @@ export function useWorkflowQueries({
     // Template versions
     templateVersions: templateVersionsQuery.data,
     refetchVersions: templateVersionsQuery.refetch,
+
+    // Branch ending rules
+    pendingBranchEndings: pendingBranchEndingsQuery.data,
+    refetchPendingBranchEndings: pendingBranchEndingsQuery.refetch,
+    processBranchEndingRules: processBranchEndingRules.mutate,
+    isProcessingBranchEndingRules: processBranchEndingRules.isPending,
   }
 }

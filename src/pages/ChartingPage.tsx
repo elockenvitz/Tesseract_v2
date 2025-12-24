@@ -1,14 +1,77 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
   BarChart3, CandlestickChart, Activity, Layers, Settings, Maximize2,
-  Download, Share2, Star, Clock, Grid3X3, LayoutGrid, Calendar, X
+  Download, Share2, Star, Clock, Grid3X3, LayoutGrid, Calendar, X,
+  DollarSign, BarChart2, PieChart, Percent, TrendingUp as TrendIcon,
+  Minus, ArrowRight, Square, Circle, Type, MousePointer, Trash2, Lock, Unlock, Move
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
+import { Annotation, AnnotationType } from '../components/charting/engine/annotations'
+
+// Metric types for charting
+type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
+
+const metricOptions: { value: MetricType; label: string; icon: any; description: string }[] = [
+  { value: 'price', label: 'Price', icon: DollarSign, description: 'Stock price (OHLC)' },
+  { value: 'volume', label: 'Volume', icon: BarChart2, description: 'Trading volume' },
+  { value: 'market_cap', label: 'Market Cap', icon: PieChart, description: 'Market capitalization' },
+  { value: 'pe_ratio', label: 'P/E Ratio', icon: Percent, description: 'Price to earnings ratio' },
+  { value: 'eps', label: 'EPS', icon: TrendIcon, description: 'Earnings per share' },
+  { value: 'revenue', label: 'Revenue', icon: BarChart2, description: 'Quarterly revenue' },
+  { value: 'dividend_yield', label: 'Div Yield', icon: Percent, description: 'Dividend yield %' },
+]
+
+// Annotation tool options for context menu
+const annotationTools: { type: AnnotationType; label: string; icon: any }[] = [
+  { type: 'horizontal-line', label: 'Horizontal Line', icon: Minus },
+  { type: 'vertical-line', label: 'Vertical Line', icon: Minus },
+  { type: 'trend-line', label: 'Trend Line', icon: TrendIcon },
+  { type: 'ray', label: 'Ray', icon: ArrowRight },
+  { type: 'rectangle', label: 'Rectangle', icon: Square },
+  { type: 'ellipse', label: 'Ellipse', icon: Circle },
+  { type: 'fibonacci', label: 'Fibonacci', icon: Layers },
+  { type: 'text', label: 'Text', icon: Type },
+  { type: 'arrow', label: 'Arrow', icon: ArrowRight },
+]
+
+// Helper to create a new annotation at the given coordinates
+function createAnnotation(type: AnnotationType, time: number, price: number): Annotation {
+  const id = `annotation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  const defaultStyle = {
+    color: '#2563eb',
+    lineWidth: 2,
+    lineStyle: 'solid' as const,
+    fillColor: '#2563eb',
+    fillOpacity: 0.1,
+    fontSize: 12
+  }
+
+  switch (type) {
+    case 'horizontal-line':
+      return { id, type, style: defaultStyle, price, label: `$${price.toFixed(2)}` }
+    case 'vertical-line':
+      return { id, type, style: defaultStyle, time }
+    case 'trend-line':
+    case 'ray':
+      return { id, type, style: defaultStyle, startTime: time, startPrice: price, endTime: time + 86400 * 30, endPrice: price * 1.05 }
+    case 'rectangle':
+    case 'ellipse':
+      return { id, type, style: { ...defaultStyle, fillOpacity: 0.2 }, startTime: time, startPrice: price, endTime: time + 86400 * 30, endPrice: price * 0.95 }
+    case 'fibonacci':
+      return { id, type, style: defaultStyle, startTime: time, startPrice: price, endTime: time + 86400 * 60, endPrice: price * 0.8, levels: [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] }
+    case 'text':
+      return { id, type, style: { ...defaultStyle, fontSize: 14 }, time, price, text: 'Note', anchor: 'left' }
+    case 'arrow':
+      return { id, type, style: defaultStyle, startTime: time, startPrice: price, endTime: time + 86400 * 15, endPrice: price * 1.03 }
+    default:
+      return { id, type: 'horizontal-line', style: defaultStyle, price }
+  }
+}
 
 interface ChartingPageProps {
   onItemSelect?: (item: any) => void
@@ -24,12 +87,23 @@ interface ChartPanel {
   timeFrame: TimeFrame
   customRange?: CustomDateRange
   indicators: string[]
+  metric: MetricType
+  annotations: Annotation[]
   // Track selected frequency for highlighting
   selectedFreq?: {
     frequencyKey: string
     interval: string
     isIntraday: boolean
   }
+}
+
+// Context menu state
+interface ContextMenuState {
+  visible: boolean
+  x: number
+  y: number
+  chartX: number  // Position in chart coordinates (time)
+  chartY: number  // Position in chart coordinates (price)
 }
 
 // Frequency/Interval configuration
@@ -77,12 +151,23 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('single')
   const [panels, setPanels] = useState<ChartPanel[]>([
-    { id: '1', symbol: '', companyName: '', chartType: 'candlestick', timeFrame: '1M', indicators: [] }
+    { id: '1', symbol: '', companyName: '', chartType: 'candlestick', timeFrame: '1M', indicators: [], metric: 'price', annotations: [] }
   ])
   const [activePanel, setActivePanel] = useState('1')
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
   const [showFreqPicker, setShowFreqPicker] = useState(false)
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false)
+  const [showMetricMenu, setShowMetricMenu] = useState(false)
+
+  // Context menu state for right-click annotations
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    chartX: 0,
+    chartY: 0
+  })
+  const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
 
   // Custom date picker state
   const [customStartDate, setCustomStartDate] = useState(() => {
@@ -145,10 +230,55 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
       companyName: '',
       chartType: 'candlestick',
       timeFrame: '1M',
-      indicators: []
+      indicators: [],
+      metric: 'price',
+      annotations: []
     }])
     setActivePanel(newId)
   }
+
+  // Context menu handlers
+  const handleChartContextMenu = useCallback((e: React.MouseEvent, chartTime: number, chartPrice: number) => {
+    e.preventDefault()
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      chartX: chartTime,
+      chartY: chartPrice
+    })
+  }, [])
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, visible: false }))
+  }, [])
+
+  const addAnnotation = useCallback((type: AnnotationType) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+
+    const newAnnotation: Annotation = createAnnotation(type, contextMenu.chartX, contextMenu.chartY)
+
+    updatePanel(activePanel, {
+      annotations: [...panel.annotations, newAnnotation]
+    })
+    closeContextMenu()
+  }, [activePanel, panels, contextMenu])
+
+  const deleteAnnotation = useCallback((annotationId: string) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+
+    updatePanel(activePanel, {
+      annotations: panel.annotations.filter(a => a.id !== annotationId)
+    })
+    setSelectedAnnotation(null)
+  }, [activePanel, panels])
+
+  const clearAllAnnotations = useCallback(() => {
+    updatePanel(activePanel, { annotations: [] })
+    closeContextMenu()
+  }, [activePanel])
 
   const removePanel = (panelId: string) => {
     if (panels.length > 1) {
@@ -521,6 +651,58 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
               })}
             </div>
 
+            {/* Metric Selector */}
+            <div className="relative">
+              <button
+                onClick={() => setShowMetricMenu(!showMetricMenu)}
+                className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                  showMetricMenu ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {(() => {
+                  const metric = metricOptions.find(m => m.value === currentPanel.metric)
+                  const Icon = metric?.icon || DollarSign
+                  return <Icon className="w-4 h-4" />
+                })()}
+                <span>{metricOptions.find(m => m.value === currentPanel.metric)?.label || 'Price'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+
+              {showMetricMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMetricMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
+                    <div className="p-2">
+                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1">Select Metric</div>
+                      {metricOptions.map((metric) => {
+                        const Icon = metric.icon
+                        const isSelected = currentPanel.metric === metric.value
+                        return (
+                          <button
+                            key={metric.value}
+                            onClick={() => {
+                              updatePanel(activePanel, { metric: metric.value })
+                              setShowMetricMenu(false)
+                            }}
+                            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${
+                              isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" />
+                            <div className="text-left">
+                              <div className="text-sm font-medium">{metric.label}</div>
+                              <div className="text-xs text-gray-500">{metric.description}</div>
+                            </div>
+                            {isSelected && <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             {/* Indicators */}
             <div className="relative">
               <button
@@ -633,7 +815,7 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
       )}
 
       {/* Main Chart Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden" onClick={closeContextMenu}>
         {/* Chart Canvas */}
         <div className="flex-1 overflow-hidden">
           {viewMode === 'single' ? (
@@ -646,6 +828,8 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
                   customRange={currentPanel.customRange}
                   showVolume={currentPanel.indicators.includes('volume')}
                   indicators={currentPanel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
+                  annotations={currentPanel.annotations}
+                  onContextMenu={handleChartContextMenu}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center">
@@ -679,6 +863,8 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
                       customRange={panel.customRange}
                       showVolume={panel.indicators.includes('volume')}
                       indicators={panel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
+                      annotations={panel.annotations}
+                      onContextMenu={panel.id === activePanel ? handleChartContextMenu : undefined}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center">
@@ -694,6 +880,57 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
           )}
         </div>
       </div>
+
+      {/* Right-Click Context Menu for Annotations */}
+      {contextMenu.visible && (
+        <>
+          <div className="fixed inset-0 z-50" onClick={closeContextMenu} />
+          <div
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-2 min-w-[200px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {/* Drawing Tools Section */}
+            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Add Annotation
+            </div>
+            {annotationTools.map((tool) => {
+              const Icon = tool.icon
+              return (
+                <button
+                  key={tool.type}
+                  onClick={() => addAnnotation(tool.type)}
+                  className="w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-100 transition-colors text-left"
+                >
+                  <Icon className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm text-gray-700">{tool.label}</span>
+                </button>
+              )
+            })}
+
+            {/* Divider */}
+            <div className="my-2 border-t border-gray-200" />
+
+            {/* Actions */}
+            {currentPanel.annotations.length > 0 && (
+              <>
+                <button
+                  onClick={clearAllAnnotations}
+                  className="w-full flex items-center space-x-3 px-3 py-2 hover:bg-red-50 transition-colors text-left text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="text-sm">Clear All Annotations</span>
+                </button>
+              </>
+            )}
+
+            {/* Price/Time at cursor */}
+            <div className="px-3 py-2 text-xs text-gray-500 border-t border-gray-200 mt-2">
+              <div>Price: ${contextMenu.chartY.toFixed(2)}</div>
+              <div>Time: {new Date(contextMenu.chartX * 1000).toLocaleDateString()}</div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
