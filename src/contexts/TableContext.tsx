@@ -356,7 +356,7 @@ interface TableContextValue {
   toggleKeyboardHelp: () => void
 }
 
-const TableContext = createContext<TableContextValue | null>(null)
+export const TableContext = createContext<TableContextValue | null>(null)
 
 // ============================================================================
 // Provider

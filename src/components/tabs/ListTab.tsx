@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, TrendingUp, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Settings, Eye, EyeOff, Edit3, X, Check } from 'lucide-react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { List, TrendingUp, TrendingDown, Plus, Search, Calendar, User, Users, Share2, Trash2, MoreVertical, Target, FileText, Filter, ChevronDown, ChevronRight, ArrowUpDown, Grid, BarChart3, Star, GripVertical, ArrowUpRight, ArrowDownRight, AlertTriangle, Zap, CheckCircle, Settings, Eye, EyeOff, Edit3, X, Check, CheckSquare, Square } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { useAuth } from '../../hooks/useAuth'
@@ -11,6 +12,8 @@ import { PriorityBadge } from '../ui/PriorityBadge'
 import { Select } from '../ui/Select'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
+import { DensityToggle } from '../table/DensityToggle'
+import { DENSITY_CONFIG } from '../../contexts/TableContext'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 
@@ -211,6 +214,32 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [assetSearchQuery, setAssetSearchQuery] = useState('')
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
   const [showColumnSettings, setShowColumnSettings] = useState(false)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set())
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+
+  // Density state - synced with localStorage
+  type DensityMode = 'comfortable' | 'compact' | 'ultra'
+  const [density, setDensity] = useState<DensityMode>(() => {
+    const saved = localStorage.getItem('table-density')
+    return (saved as DensityMode) || 'comfortable'
+  })
+
+  // Listen for density changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const saved = localStorage.getItem('table-density')
+      if (saved && saved !== density) {
+        setDensity(saved as DensityMode)
+      }
+    }
+    const interval = setInterval(handleStorageChange, 200)
+    return () => clearInterval(interval)
+  }, [density])
+
+  const densityConfig = DENSITY_CONFIG[density]
+  const densityRowHeight = densityConfig.rowHeight
 
   // Column management state
   const [resizingColumn, setResizingColumn] = useState<string | null>(null)
@@ -1583,96 +1612,186 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
       </div>
   )
 
-  const renderTableRow = (item: ListItem) => (
-    <div
-      key={item.id}
-      draggable
-      onDragStart={(e) => handleDragStart(e, item.id)}
-      onDragOver={handleDragOver}
-      onDragEnter={(e) => handleDragEnter(e, item.id)}
-      onDragLeave={handleDragLeave}
-      onDrop={(e) => handleDrop(e, item.id)}
-      onDragEnd={handleDragEnd}
-      className={clsx(
-        "pl-2 pr-4 py-4 transition-all duration-200 group relative",
-        !isDragging && "hover:bg-gray-50 cursor-move",
-        draggedItem === item.id && 'opacity-30 scale-95 z-10',
-        draggedOverItem === item.id && dragPosition === 'above' && 'border-t-4 border-primary-500',
-        draggedOverItem === item.id && dragPosition === 'below' && 'border-b-4 border-primary-500',
-        draggedOverItem === item.id && 'bg-primary-25'
-      )}
-      onContextMenu={(e) => handleRowRightClick(e, item.id)}
-      style={{
-        transform: draggedItem === item.id ? 'rotate(1deg)' : 'none',
-        boxShadow: draggedItem === item.id ? '0 8px 25px rgba(0, 0, 0, 0.15)' : 'none'
-      }}
-    >
-      {/* Drop indicator lines */}
-      {draggedOverItem === item.id && dragPosition === 'above' && (
-        <div className="absolute top-0 left-2 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
-      )}
-      {draggedOverItem === item.id && dragPosition === 'below' && (
-        <div className="absolute bottom-0 left-2 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
-      )}
-      
-      <div className="flex items-center gap-2">
-        {/* Drag Handle */}
-        <div className="flex-shrink-0 w-6">
-          <div className={clsx(
-            "p-1 hover:bg-gray-200 rounded transition-all duration-200",
-            isDragging ? "opacity-0" : "opacity-0 group-hover:opacity-100"
-          )}
-          disabled={isDragging}
-          >
-            <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
-          </div>
-        </div>
+  const renderTableRow = (item: ListItem) => {
+    const quote = financialData?.[item.assets?.symbol || '']
+    const changePercent = quote?.changePercent
 
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            {/* Symbol column - matches header */}
-            <div className="flex-shrink-0" style={{ width: `${symbolColumn.width}px` }}>
-              <div
-                className="cursor-pointer"
-                onClick={() => item.assets && handleAssetClick(item.assets)}
-              >
-                <h4 className="font-semibold text-gray-900">
-                  {item.assets?.symbol || 'Unknown'}
-                </h4>
-                <p className="text-sm text-gray-600 truncate">
-                  {item.assets?.company_name || 'Unknown Company'}
-                </p>
-                {item.assets?.sector && (
-                  <p className="text-xs text-gray-500">{item.assets.sector}</p>
-                )}
-              </div>
+    return (
+      <div
+        key={item.id}
+        draggable
+        onDragStart={(e) => handleDragStart(e, item.id)}
+        onDragOver={handleDragOver}
+        onDragEnter={(e) => handleDragEnter(e, item.id)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, item.id)}
+        onDragEnd={handleDragEnd}
+        className={clsx(
+          "transition-all duration-200 group relative border-b border-gray-100",
+          !isDragging && "hover:bg-gray-50 cursor-move",
+          draggedItem === item.id && 'opacity-30 scale-95 z-10',
+          draggedOverItem === item.id && dragPosition === 'above' && 'border-t-4 border-primary-500',
+          draggedOverItem === item.id && dragPosition === 'below' && 'border-b-4 border-primary-500',
+          draggedOverItem === item.id && 'bg-primary-25',
+          selectedItemIds.has(item.id) && 'bg-blue-50 hover:bg-blue-100'
+        )}
+        onContextMenu={(e) => handleRowRightClick(e, item.id)}
+        style={{
+          transform: draggedItem === item.id ? 'rotate(1deg)' : 'none',
+          boxShadow: draggedItem === item.id ? '0 8px 25px rgba(0, 0, 0, 0.15)' : 'none',
+          height: densityRowHeight
+        }}
+      >
+        {/* Drop indicator lines */}
+        {draggedOverItem === item.id && dragPosition === 'above' && (
+          <div className="absolute top-0 left-2 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
+        )}
+        {draggedOverItem === item.id && dragPosition === 'below' && (
+          <div className="absolute bottom-0 left-2 right-6 h-0.5 bg-primary-500 rounded-full z-20" />
+        )}
+
+        <div className={clsx("flex items-center gap-2 h-full", densityConfig.padding)}>
+          {/* Drag Handle */}
+          <div className="flex-shrink-0 w-6">
+            <div className={clsx(
+              "p-1 hover:bg-gray-200 rounded transition-all duration-200",
+              isDragging ? "opacity-0" : "opacity-0 group-hover:opacity-100"
+            )}
+            >
+              <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
             </div>
+          </div>
 
-            {/* Dynamic columns */}
-            {dynamicColumns.map(column => (
-              <div
-                key={column.id}
-                className="flex-shrink-0"
-                style={{ width: `${column.width}px` }}
-              >
-                {financialDataLoading && column.type === 'currency' ? (
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              {/* Asset column - density aware */}
+              <div className="flex-shrink-0" style={{ width: `${symbolColumn.width}px` }}>
+                <div
+                  className="cursor-pointer min-w-0"
+                  onClick={() => item.assets && handleAssetClick(item.assets)}
+                >
+                  {density === 'comfortable' ? (
+                    <>
+                      <h4 className={clsx("font-semibold text-gray-900", densityConfig.fontSize)}>
+                        {item.assets?.symbol || 'Unknown'}
+                      </h4>
+                      <p className={clsx("text-gray-600 truncate", densityConfig.fontSize)}>
+                        {item.assets?.company_name || 'Unknown Company'}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className={clsx(
+                        "font-semibold text-gray-900",
+                        density === 'ultra' ? 'text-xs' : 'text-sm'
+                      )}>
+                        {item.assets?.symbol || 'Unknown'}
+                      </span>
+                      <span className={clsx(
+                        "text-gray-400",
+                        density === 'ultra' ? 'text-xs' : 'text-sm'
+                      )}>·</span>
+                      <span className={clsx(
+                        "text-gray-600 truncate",
+                        density === 'ultra' ? 'text-xs' : 'text-sm'
+                      )}>
+                        {item.assets?.company_name || 'Unknown Company'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Price column - density aware */}
+              <div className="flex-shrink-0" style={{ width: '100px' }}>
+                {financialDataLoading ? (
                   <div className="animate-pulse">
                     <div className="h-4 bg-gray-200 rounded w-16"></div>
                   </div>
+                ) : density === 'comfortable' ? (
+                  <div>
+                    <p className={clsx("font-medium text-gray-900", densityConfig.fontSize)}>
+                      ${quote?.price?.toFixed(2) || item.assets?.current_price?.toFixed(2) || '—'}
+                    </p>
+                    {changePercent !== undefined && (
+                      <p className={clsx(
+                        "text-xs font-medium flex items-center",
+                        changePercent >= 0 ? 'text-green-600' : 'text-red-600'
+                      )}>
+                        {changePercent >= 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                        {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
+                      </p>
+                    )}
+                  </div>
                 ) : (
-                  <div className="text-sm">
-                    {renderCellContent(item, column)}
+                  <div className="flex items-center gap-1.5">
+                    <span className={clsx(
+                      "font-medium text-gray-900",
+                      density === 'ultra' ? 'text-xs' : 'text-sm'
+                    )}>
+                      ${quote?.price?.toFixed(2) || item.assets?.current_price?.toFixed(2) || '—'}
+                    </span>
+                    {changePercent !== undefined && (
+                      <span className={clsx(
+                        "font-medium",
+                        density === 'ultra' ? 'text-xs' : 'text-xs',
+                        changePercent >= 0 ? 'text-green-600' : 'text-red-600'
+                      )}>
+                        {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
-            ))}
 
-            {/* No actions column - will use right-click */}
+              {/* Priority column */}
+              <div className="flex-shrink-0" style={{ width: '90px' }}>
+                {item.assets?.priority && <PriorityBadge priority={item.assets.priority} />}
+              </div>
+
+              {/* Sector column */}
+              <div className="flex-shrink-0" style={{ width: '120px' }}>
+                <span className={clsx(
+                  "text-gray-600 truncate",
+                  density === 'ultra' ? 'text-xs' : 'text-sm'
+                )}>
+                  {item.assets?.sector || '—'}
+                </span>
+              </div>
+
+              {/* Notes column */}
+              <div className="flex-shrink-0" style={{ width: '150px' }}>
+                <span className={clsx(
+                  "text-gray-600 truncate italic",
+                  density === 'ultra' ? 'text-xs' : 'text-sm'
+                )}>
+                  {item.notes || '—'}
+                </span>
+              </div>
+
+              {/* Row actions */}
+              <div className="flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowRemoveConfirm({
+                      isOpen: true,
+                      itemId: item.id,
+                      assetSymbol: item.assets?.symbol || 'Unknown'
+                    })
+                  }}
+                  className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                  title="Remove from list"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   const renderKanbanColumn = (categoryId: string, items: ListItem[], categoryConfig: any) => {
     const CategoryIcon = categoryConfig.icon
@@ -1742,25 +1861,26 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           </div>
         </div>
         
-        <div className="flex items-start space-x-3">
-          <Button
-            onClick={() => setShowAddAssetDialog(true)}
-            variant="primary"
-            size="sm"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Asset
-          </Button>
+        <div className="flex items-center gap-2">
+          <DensityToggle />
           {list.created_by === user?.id && (
             <Button
               onClick={() => setShowShareDialog(true)}
               variant="outline"
               size="sm"
             >
-              <Share2 className="h-4 w-4 mr-2" />
+              <Share2 className="h-4 w-4 mr-1.5" />
               Share{collaborators && collaborators.length > 0 && ` (${collaborators.length})`}
             </Button>
           )}
+          <Button
+            onClick={() => setShowAddAssetDialog(true)}
+            variant="primary"
+            size="sm"
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            Add Asset
+          </Button>
         </div>
       </div>
 

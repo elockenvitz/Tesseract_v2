@@ -5,11 +5,13 @@
  * - Comfortable: Spacious rows with full info (64px)
  * - Compact: Balanced density (44px)
  * - Ultra: Maximum data density (32px)
+ *
+ * Can work both within TableProvider context or standalone (using localStorage)
  */
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useContext } from 'react'
 import { LayoutList, AlignJustify, List, Check } from 'lucide-react'
-import { DensityMode, DENSITY_CONFIG, useTableContext } from '../../contexts/TableContext'
+import { DensityMode, DENSITY_CONFIG, TableContext } from '../../contexts/TableContext'
 
 const DENSITY_OPTIONS: { mode: DensityMode; label: string; description: string; icon: React.ReactNode }[] = [
   {
@@ -32,12 +34,54 @@ const DENSITY_OPTIONS: { mode: DensityMode; label: string; description: string; 
   }
 ]
 
+const DENSITY_ORDER: DensityMode[] = ['comfortable', 'compact', 'ultra']
+
 interface DensityToggleProps {
   className?: string
 }
 
+// Hook that works with or without TableContext
+function useDensityState() {
+  const context = useContext(TableContext)
+
+  // Standalone state (used when outside TableProvider)
+  const [standaloneDensity, setStandaloneDensity] = useState<DensityMode>(() => {
+    const saved = localStorage.getItem('table-density')
+    return (saved as DensityMode) || 'comfortable'
+  })
+
+  // If we have context, use it
+  if (context) {
+    return {
+      density: context.state.density,
+      setDensity: context.setDensity,
+      cycleDensity: context.cycleDensity
+    }
+  }
+
+  // Standalone fallback
+  const setDensity = (mode: DensityMode) => {
+    setStandaloneDensity(mode)
+    localStorage.setItem('table-density', mode)
+    // Dispatch a storage event so other components can sync
+    window.dispatchEvent(new StorageEvent('storage', { key: 'table-density', newValue: mode }))
+  }
+
+  const cycleDensity = () => {
+    const currentIndex = DENSITY_ORDER.indexOf(standaloneDensity)
+    const nextIndex = (currentIndex + 1) % DENSITY_ORDER.length
+    setDensity(DENSITY_ORDER[nextIndex])
+  }
+
+  return {
+    density: standaloneDensity,
+    setDensity,
+    cycleDensity
+  }
+}
+
 export function DensityToggle({ className = '' }: DensityToggleProps) {
-  const { state, setDensity, cycleDensity } = useTableContext()
+  const { density, setDensity, cycleDensity } = useDensityState()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -69,8 +113,8 @@ export function DensityToggle({ className = '' }: DensityToggleProps) {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [isOpen])
 
-  const currentOption = DENSITY_OPTIONS.find(opt => opt.mode === state.density) || DENSITY_OPTIONS[0]
-  const densityConfig = DENSITY_CONFIG[state.density]
+  const currentOption = DENSITY_OPTIONS.find(opt => opt.mode === density) || DENSITY_OPTIONS[0]
+  const densityConfig = DENSITY_CONFIG[density]
 
   return (
     <div ref={dropdownRef} className={`relative ${className}`}>
@@ -118,7 +162,7 @@ export function DensityToggle({ className = '' }: DensityToggleProps) {
           {/* Options */}
           <div className="py-1">
             {DENSITY_OPTIONS.map((option) => {
-              const isActive = state.density === option.mode
+              const isActive = density === option.mode
               const config = DENSITY_CONFIG[option.mode]
 
               return (
@@ -182,12 +226,12 @@ export function DensityToggle({ className = '' }: DensityToggleProps) {
  * Inline density toggle - simpler 3-button variant for tight spaces
  */
 export function DensityToggleInline({ className = '' }: DensityToggleProps) {
-  const { state, setDensity } = useTableContext()
+  const { density, setDensity } = useDensityState()
 
   return (
     <div className={`flex items-center rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden ${className}`}>
       {DENSITY_OPTIONS.map((option) => {
-        const isActive = state.density === option.mode
+        const isActive = density === option.mode
 
         return (
           <button
