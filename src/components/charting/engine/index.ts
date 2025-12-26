@@ -1,5 +1,5 @@
 export { ProChart } from './ProChart'
-export type { TimeFrame, IndicatorType, CustomDateRange } from './ProChart'
+export type { TimeFrame, IndicatorType, CustomDateRange, CompareSymbol, DisplayMode } from './ProChart'
 export type { ChartType, ChartTheme, OHLC, ViewState } from './types'
 export { defaultLightTheme, defaultDarkTheme } from './types'
 export { ChartTransform } from './transform'

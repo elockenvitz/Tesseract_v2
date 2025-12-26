@@ -17,6 +17,7 @@ interface LayoutProps {
   onTabClose: (tabId: string) => void
   onNewTab: () => void
   onTabReorder: (fromIndex: number, toIndex: number) => void
+  onTabsReorder?: (newTabs: Tab[]) => void
   onSearchResult?: (result: any) => void
   onFocusSearch?: () => void
 }
@@ -32,6 +33,7 @@ export function Layout({
   onTabClose,
   onNewTab,
   onTabReorder,
+  onTabsReorder,
   onSearchResult,
   onFocusSearch
 }: LayoutProps) {
@@ -340,6 +342,7 @@ export function Layout({
         onTabClose={onTabClose}
         onNewTab={onNewTab}
         onTabReorder={onTabReorder}
+        onTabsReorder={onTabsReorder}
         onFocusSearch={onFocusSearch}
       />
       <main className="flex-1 h-[calc(100vh-8rem)]">

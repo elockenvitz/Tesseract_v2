@@ -12,6 +12,8 @@ import {
   DragStartEvent,
   DragOverlay,
   Modifier,
+  pointerWithin,
+  rectIntersection,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -38,6 +40,7 @@ interface TabManagerProps {
   tabs: Tab[]
   activeTabId?: string
   onTabReorder: (fromIndex: number, toIndex: number) => void
+  onTabsReorder?: (newTabs: Tab[]) => void // For moving multiple tabs (groups)
   onTabChange: (tabId: string) => void
   onTabClose: (tabId: string) => void
   onNewTab: () => void
@@ -453,7 +456,7 @@ function SortableTab({ tab, isActive, onTabChange, onTabClose, getTabIcon }: Sor
   )
 }
 
-export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewTab, onFocusSearch }: TabManagerProps) {
+export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onTabClose, onNewTab, onFocusSearch }: TabManagerProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showLeftArrow, setShowLeftArrow] = useState(false)
   const [showRightArrow, setShowRightArrow] = useState(false)
@@ -560,7 +563,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5,
+        distance: 10,
       },
     })
   )
@@ -571,17 +574,74 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
+    setActiveId(null)
 
-    if (over && active.id !== over.id) {
-      const oldIndex = tabs.findIndex(tab => tab.id === active.id)
-      const newIndex = tabs.findIndex(tab => tab.id === over.id)
+    if (!over) return
 
-      if (oldIndex !== -1 && newIndex !== -1) {
+    const activeIdStr = String(active.id)
+    const overIdStr = String(over.id)
+
+    if (activeIdStr === overIdStr) return
+
+    // Get sortable items (same as SortableContext)
+    const sortableItems = consolidatedTabs.map(item =>
+      item.type === 'single' && item.tab ? item.tab.id :
+      item.type === 'group' && item.tabs ? item.tabs[0].id : item.key
+    )
+
+    const activeIndex = sortableItems.indexOf(activeIdStr)
+    const overIndex = sortableItems.indexOf(overIdStr)
+
+    if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return
+
+    // Get the consolidated item being moved
+    const activeConsolidated = consolidatedTabs[activeIndex]
+
+    // Get all tab IDs being moved (single tab or all tabs in group)
+    const movingTabIds: string[] = []
+    if (activeConsolidated.type === 'single' && activeConsolidated.tab) {
+      movingTabIds.push(activeConsolidated.tab.id)
+    } else if (activeConsolidated.type === 'group' && activeConsolidated.tabs) {
+      activeConsolidated.tabs.forEach(t => movingTabIds.push(t.id))
+    }
+
+    if (movingTabIds.length === 0) return
+
+    // For single tab moves, use the simple callback
+    if (movingTabIds.length === 1) {
+      const oldIndex = tabs.findIndex(t => t.id === movingTabIds[0])
+      const newIndex = tabs.findIndex(t => t.id === overIdStr)
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
         onTabReorder(oldIndex, newIndex)
+      }
+      return
+    }
+
+    // For group moves, we need to move all tabs together
+    if (!onTabsReorder) {
+      // Fallback: just move the first tab
+      const oldIndex = tabs.findIndex(t => t.id === movingTabIds[0])
+      const newIndex = tabs.findIndex(t => t.id === overIdStr)
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        onTabReorder(oldIndex, newIndex)
+      }
+      return
+    }
+
+    // Use arrayMove on consolidated items to get new order
+    const newConsolidatedOrder = arrayMove(consolidatedTabs, activeIndex, overIndex)
+
+    // Rebuild tabs array based on new consolidated order
+    const newTabs: Tab[] = []
+    for (const item of newConsolidatedOrder) {
+      if (item.type === 'single' && item.tab) {
+        newTabs.push(item.tab)
+      } else if (item.type === 'group' && item.tabs) {
+        newTabs.push(...item.tabs)
       }
     }
 
-    setActiveId(null)
+    onTabsReorder(newTabs)
   }
 
   const checkScrollVisibility = () => {

@@ -9,7 +9,7 @@ import {
   defaultDimensions
 } from './types'
 import { ChartTransform } from './transform'
-import { ChartRenderer, IndicatorRenderConfig } from './renderer'
+import { ChartRenderer, IndicatorRenderConfig, LineStyle } from './renderer'
 import { SubPanelRenderer, SubPanelData } from './SubPanelRenderer'
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
 import {
@@ -63,6 +63,25 @@ const INDICATOR_COLORS: Record<string, string> = {
   adx: '#ef4444'
 }
 
+// Comparison symbol configuration
+export interface CompareSymbol {
+  symbol: string
+  companyName?: string
+  color?: string
+  lineWidth?: number
+  lineStyle?: LineStyle
+}
+
+// Display modes for comparison
+export type DisplayMode = 'absolute' | 'indexed' | 'relative'
+
+// Main symbol style configuration
+export interface MainSymbolStyle {
+  color?: string
+  lineWidth?: number
+  lineStyle?: LineStyle
+}
+
 interface ProChartProps {
   symbol: string
   chartType: ChartType
@@ -73,8 +92,15 @@ interface ProChartProps {
   indicators?: IndicatorType[]
   events?: ChartEvent[]
   annotations?: Annotation[]
+  compareSymbols?: CompareSymbol[]
+  displayMode?: DisplayMode
+  indexBase?: number
+  selectedLine?: string | null // Currently selected line symbol
+  mainSymbolStyle?: MainSymbolStyle // Styling for main symbol
   onCrosshairMove?: (price: number | null, time: number | null) => void
   onContextMenu?: (e: React.MouseEvent, chartTime: number, chartPrice: number) => void
+  onLineContextMenu?: (e: React.MouseEvent, symbol: string, isMainSymbol: boolean) => void
+  onLineClick?: (symbol: string, isMainSymbol: boolean) => void // Left-click on line to select
 }
 
 // Convert API data to OHLC format
@@ -101,8 +127,15 @@ export function ProChart({
   indicators = [],
   events = [],
   annotations = [],
+  compareSymbols = [],
+  displayMode = 'absolute',
+  indexBase = 100,
+  selectedLine = null,
+  mainSymbolStyle,
   onCrosshairMove,
-  onContextMenu
+  onContextMenu,
+  onLineContextMenu,
+  onLineClick
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -114,6 +147,7 @@ export function ProChart({
 
   const [dimensions, setDimensions] = useState<ChartDimensions>(defaultDimensions)
   const [data, setData] = useState<OHLC[]>([])
+  const [compareData, setCompareData] = useState<Map<string, OHLC[]>>(new Map())
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -247,6 +281,7 @@ export function ProChart({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0 })
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   const [cursorStyle, setCursorStyle] = useState('crosshair')
+  const [hoveredLine, setHoveredLine] = useState<string | null>(null) // symbol of hovered line
 
   // Device pixel ratio for sharp rendering
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
@@ -349,6 +384,252 @@ export function ProChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, timeFrame, customRangeKey, customRange])
 
+  // Fetch comparison symbol data
+  useEffect(() => {
+    if (compareSymbols.length === 0) {
+      setCompareData(new Map())
+      return
+    }
+
+    const fetchCompareData = async () => {
+      const newCompareData = new Map<string, OHLC[]>()
+
+      for (const compare of compareSymbols) {
+        try {
+          let rawData: CandlestickData[]
+
+          if (timeFrame === 'CUSTOM' && customRange) {
+            rawData = await chartDataService.getCustomRangeData(
+              compare.symbol.toUpperCase(),
+              customRange.startDate,
+              customRange.endDate,
+              customRange.interval
+            )
+          } else {
+            const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
+            rawData = await chartDataService.getChartData({
+              symbol: compare.symbol.toUpperCase(),
+              interval: params.interval as any,
+              range: params.range as any
+            })
+          }
+
+          if (rawData.length > 0) {
+            newCompareData.set(compare.symbol, convertToOHLC(rawData))
+          }
+        } catch (err) {
+          console.error(`Failed to load comparison data for ${compare.symbol}:`, err)
+        }
+      }
+
+      setCompareData(newCompareData)
+    }
+
+    fetchCompareData()
+  }, [compareSymbols, timeFrame, customRange])
+
+  // Transform data based on display mode
+  const transformedData = useMemo(() => {
+    if (data.length === 0) return { main: data, compare: new Map<string, OHLC[]>() }
+
+    if (displayMode === 'absolute') {
+      return { main: data, compare: compareData }
+    }
+
+    // For indexed/relative modes, find common starting time across all series
+    // Use the LATEST first timestamp so all series have data at that point
+    let commonStartTime = data[0]?.time || 0
+    compareData.forEach((compData) => {
+      if (compData.length > 0 && compData[0].time > commonStartTime) {
+        commonStartTime = compData[0].time
+      }
+    })
+
+    // Helper to find close price at or after a given time
+    const findCloseAtTime = (series: OHLC[], targetTime: number): number => {
+      const point = series.find(d => d.time >= targetTime)
+      return point?.close || series[0]?.close || 1
+    }
+
+    // Get base close prices at the common start time
+    const mainBaseClose = findCloseAtTime(data, commonStartTime)
+
+    // Index mode: normalize to indexBase (default 100) at common start
+    if (displayMode === 'indexed') {
+      const indexedMain = data.map(d => ({
+        ...d,
+        open: (d.open / mainBaseClose) * indexBase,
+        high: (d.high / mainBaseClose) * indexBase,
+        low: (d.low / mainBaseClose) * indexBase,
+        close: (d.close / mainBaseClose) * indexBase
+      }))
+
+      const indexedCompare = new Map<string, OHLC[]>()
+      compareData.forEach((compData, sym) => {
+        const compBaseClose = findCloseAtTime(compData, commonStartTime)
+        indexedCompare.set(sym, compData.map(d => ({
+          ...d,
+          open: (d.open / compBaseClose) * indexBase,
+          high: (d.high / compBaseClose) * indexBase,
+          low: (d.low / compBaseClose) * indexBase,
+          close: (d.close / compBaseClose) * indexBase
+        })))
+      })
+
+      return { main: indexedMain, compare: indexedCompare }
+    }
+
+    // Relative mode: show % change from common start
+    if (displayMode === 'relative') {
+      const relativeMain = data.map(d => ({
+        ...d,
+        open: ((d.open - mainBaseClose) / mainBaseClose) * 100,
+        high: ((d.high - mainBaseClose) / mainBaseClose) * 100,
+        low: ((d.low - mainBaseClose) / mainBaseClose) * 100,
+        close: ((d.close - mainBaseClose) / mainBaseClose) * 100
+      }))
+
+      const relativeCompare = new Map<string, OHLC[]>()
+      compareData.forEach((compData, sym) => {
+        const compBaseClose = findCloseAtTime(compData, commonStartTime)
+        relativeCompare.set(sym, compData.map(d => ({
+          ...d,
+          open: ((d.open - compBaseClose) / compBaseClose) * 100,
+          high: ((d.high - compBaseClose) / compBaseClose) * 100,
+          low: ((d.low - compBaseClose) / compBaseClose) * 100,
+          close: ((d.close - compBaseClose) / compBaseClose) * 100
+        })))
+      })
+
+      return { main: relativeMain, compare: relativeCompare }
+    }
+
+    return { main: data, compare: compareData }
+  }, [data, compareData, displayMode, indexBase])
+
+  // Helper function to calculate distance from point to line segment
+  const distanceToLineSegment = useCallback((px: number, py: number, x1: number, y1: number, x2: number, y2: number): number => {
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const lengthSquared = dx * dx + dy * dy
+
+    if (lengthSquared === 0) {
+      // Segment is a point
+      return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2)
+    }
+
+    // Project point onto line segment
+    let t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared
+    t = Math.max(0, Math.min(1, t)) // Clamp to segment
+
+    const closestX = x1 + t * dx
+    const closestY = y1 + t * dy
+
+    return Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2)
+  }, [])
+
+  // Helper function to detect which line is near a given point
+  const detectLineAtPoint = useCallback((x: number, y: number): string | null => {
+    if (!transformRef.current || data.length === 0) return null
+
+    const threshold = 10 // pixels threshold for line detection
+
+    // Helper to check if click is near any segment of a line
+    const isNearLine = (lineData: OHLC[]): boolean => {
+      // Filter to visible data only for performance
+      const visibleData = lineData.filter(d =>
+        d.time >= view.startTime && d.time <= view.endTime
+      )
+
+      for (let i = 0; i < visibleData.length - 1; i++) {
+        const x1 = transformRef.current!.timeToX(visibleData[i].time)
+        const y1 = transformRef.current!.priceToY(visibleData[i].close)
+        const x2 = transformRef.current!.timeToX(visibleData[i + 1].time)
+        const y2 = transformRef.current!.priceToY(visibleData[i + 1].close)
+
+        const dist = distanceToLineSegment(x, y, x1, y1, x2, y2)
+        if (dist < threshold) return true
+      }
+      return false
+    }
+
+    // Helper to check if click is near any candlestick/bar
+    const isNearCandle = (candleData: OHLC[]): boolean => {
+      const visibleData = candleData.filter(d =>
+        d.time >= view.startTime && d.time <= view.endTime
+      )
+
+      // Calculate candle width based on visible data
+      const candleWidth = visibleData.length > 1
+        ? Math.abs(transformRef.current!.timeToX(visibleData[1].time) - transformRef.current!.timeToX(visibleData[0].time)) * 0.8
+        : 10
+
+      for (const candle of visibleData) {
+        const candleX = transformRef.current!.timeToX(candle.time)
+        const highY = transformRef.current!.priceToY(candle.high)
+        const lowY = transformRef.current!.priceToY(candle.low)
+
+        // Check if click is within candle horizontal bounds (with threshold)
+        if (x >= candleX - candleWidth / 2 - threshold && x <= candleX + candleWidth / 2 + threshold) {
+          // Check if click is within candle vertical bounds (wick from low to high)
+          if (y >= highY - threshold && y <= lowY + threshold) {
+            return true
+          }
+        }
+      }
+      return false
+    }
+
+    // Check main symbol - use candle detection for candlestick/bar charts, line detection for others
+    if (chartType === 'candlestick' || chartType === 'bar') {
+      if (isNearCandle(transformedData.main)) {
+        return symbol
+      }
+    } else {
+      if (isNearLine(transformedData.main)) {
+        return symbol
+      }
+    }
+
+    // Check comparison lines (always rendered as lines)
+    for (const cs of compareSymbols) {
+      const compData = transformedData.compare.get(cs.symbol)
+      if (!compData || compData.length === 0) continue
+
+      if (isNearLine(compData)) {
+        return cs.symbol
+      }
+    }
+
+    return null
+  }, [data, symbol, compareSymbols, transformedData, view.startTime, view.endTime, distanceToLineSegment, chartType])
+
+  // Calculate comparison symbol lines (after transformedData is available)
+  const comparisonLines: IndicatorRenderConfig[] = useMemo(() => {
+    const lines: IndicatorRenderConfig[] = []
+
+    compareSymbols.forEach((compare) => {
+      const compData = transformedData.compare.get(compare.symbol)
+      if (compData && compData.length > 0) {
+        // Create line data from close prices
+        const lineData = compData.map(d => ({
+          time: d.time,
+          value: d.close
+        }))
+        lines.push({
+          type: 'line',
+          data: lineData,
+          color: compare.color || '#666666',
+          lineWidth: compare.lineWidth || 2,
+          lineStyle: compare.lineStyle || 'solid',
+          label: compare.symbol
+        })
+      }
+    })
+
+    return lines
+  }, [compareSymbols, transformedData.compare])
+
   // Handle resize
   useEffect(() => {
     if (!containerRef.current) return
@@ -426,18 +707,22 @@ export function ProChart({
     rendererRef.current.setTransform(transformRef.current)
     rendererRef.current.setTheme(theme)
 
+    // Use transformed data for rendering (handles indexed/relative modes)
+    const renderData = transformedData.main
+
     // Filter visible data
-    const visibleData = data.filter(
+    const visibleData = renderData.filter(
       d => d.time >= view.startTime && d.time <= view.endTime
     )
 
-    // Render main chart with indicators
+    // Render main chart with indicators and comparison lines
     rendererRef.current.renderWithIndicators(
       visibleData,
       chartType,
       showVolume,
-      indicatorData.main,
-      crosshair || undefined
+      [...indicatorData.main, ...comparisonLines],
+      crosshair || undefined,
+      mainSymbolStyle
     )
 
     // Render events and annotations
@@ -459,25 +744,51 @@ export function ProChart({
         dimensions.height
       )
     }
-  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations])
+
+    // Draw selection dots on the selected line
+    if (selectedLine && rendererRef.current) {
+      if (selectedLine === symbol) {
+        // Main symbol selected - draw dots on main data
+        rendererRef.current.drawSelectionDots(transformedData.main, mainSymbolStyle?.color || '#3b82f6')
+      } else {
+        // Comparison symbol selected - find its data and color
+        const compareSymbol = compareSymbols.find(cs => cs.symbol === selectedLine)
+        const compareData = transformedData.compare.get(selectedLine)
+        if (compareData && compareData.length > 0) {
+          rendererRef.current.drawSelectionDots(compareData, compareSymbol?.color || '#666666')
+        }
+      }
+    }
+  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle])
 
   // Auto-scale price when view changes
   useEffect(() => {
     if (!view.autoScalePrice || data.length === 0) return
 
-    const visibleData = data.filter(
+    // Use transformed data for auto-scaling in indexed/relative modes
+    const scaleData = transformedData.main
+    const visibleData = scaleData.filter(
       d => d.time >= view.startTime && d.time <= view.endTime
     )
 
-    if (visibleData.length > 0) {
-      const priceRange = ChartTransform.calculatePriceRange(visibleData)
+    // Also include comparison data in the price range
+    let allVisibleData = [...visibleData]
+    transformedData.compare.forEach((compData) => {
+      const visibleCompData = compData.filter(
+        d => d.time >= view.startTime && d.time <= view.endTime
+      )
+      allVisibleData = allVisibleData.concat(visibleCompData)
+    })
+
+    if (allVisibleData.length > 0) {
+      const priceRange = ChartTransform.calculatePriceRange(allVisibleData)
       setView(v => ({
         ...v,
         minPrice: priceRange.min,
         maxPrice: priceRange.max
       }))
     }
-  }, [view.startTime, view.endTime, data, view.autoScalePrice])
+  }, [view.startTime, view.endTime, data, view.autoScalePrice, transformedData])
 
   // Load more historical data when panning past available data
   useEffect(() => {
@@ -726,9 +1037,31 @@ export function ProChart({
     }
   }, [onCrosshairMove])
 
+  // Click handler for line selection (left-click)
+  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!transformRef.current || !onLineClick) return
+
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const area = transformRef.current.chartArea
+
+    // Only handle clicks within the chart area
+    if (x >= area.x && x <= area.x + area.width &&
+        y >= area.y && y <= area.y + area.height) {
+      const lineSymbol = detectLineAtPoint(x, y)
+      if (lineSymbol) {
+        const isMainSymbol = lineSymbol === symbol
+        onLineClick(lineSymbol, isMainSymbol)
+      }
+    }
+  }, [onLineClick, detectLineAtPoint, symbol])
+
   // Context menu handler for right-click annotations
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onContextMenu || !transformRef.current) return
+    if (!transformRef.current) return
 
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -741,11 +1074,23 @@ export function ProChart({
     if (x >= area.x && x <= area.x + area.width &&
         y >= area.y && y <= area.y + area.height) {
       e.preventDefault()
-      const chartTime = transformRef.current.xToTime(x)
-      const chartPrice = transformRef.current.yToPrice(y)
-      onContextMenu(e, chartTime, chartPrice)
+
+      // Check if clicking on a line
+      const lineSymbol = detectLineAtPoint(x, y)
+      if (lineSymbol && onLineContextMenu) {
+        const isMainSymbol = lineSymbol === symbol
+        onLineContextMenu(e, lineSymbol, isMainSymbol)
+        return
+      }
+
+      // Otherwise show annotation context menu
+      if (onContextMenu) {
+        const chartTime = transformRef.current.xToTime(x)
+        const chartPrice = transformRef.current.yToPrice(y)
+        onContextMenu(e, chartTime, chartPrice)
+      }
     }
-  }, [onContextMenu])
+  }, [onContextMenu, onLineContextMenu, detectLineAtPoint, symbol])
 
   // Handle window-level mouse events for dragging outside canvas
   useEffect(() => {
@@ -981,6 +1326,53 @@ export function ProChart({
         </div>
       )}
 
+      {/* Legend showing comparison symbols and display mode */}
+      {(compareSymbols.length > 0 || displayMode !== 'absolute') && !isLoading && data.length > 0 && (
+        <div className="absolute top-2 left-2 z-10 bg-white/95 border border-gray-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+          {displayMode !== 'absolute' && (
+            <div className="text-gray-500 mb-1 font-medium">
+              {displayMode === 'indexed' ? `Indexed to ${indexBase}` : '% Change'}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <span
+              className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                selectedLine === symbol
+                  ? 'bg-blue-100 ring-1 ring-blue-400'
+                  : 'hover:bg-gray-100'
+              }`}
+              onClick={() => onLineClick?.(symbol, true)}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: mainSymbolStyle?.color || '#3b82f6' }}
+              />
+              <span className="text-gray-700 font-medium">{symbol}</span>
+            </span>
+            {compareSymbols.map((cs) => (
+              <span
+                key={cs.symbol}
+                className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                  selectedLine === cs.symbol
+                    ? 'bg-blue-100 ring-1 ring-blue-400'
+                    : 'hover:bg-gray-100'
+                }`}
+                onClick={() => onLineClick?.(cs.symbol, false)}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: cs.color || '#666666' }}
+                />
+                <span className="text-gray-700">{cs.symbol}</span>
+                {!compareData.has(cs.symbol) && (
+                  <span className="text-gray-400 ml-1">(loading...)</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Error overlay */}
       {error && !isLoading && (
         <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-20">
@@ -998,6 +1390,7 @@ export function ProChart({
         ref={canvasRef}
         className="block"
         style={{ cursor: cursorStyle }}
+        onClick={handleClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

@@ -8,6 +8,9 @@ import {
   IndicatorConfig
 } from './indicators'
 
+// Line style type
+export type LineStyle = 'solid' | 'dashed' | 'dotted'
+
 // Indicator rendering configuration
 export interface IndicatorRenderConfig {
   type: 'line' | 'macd' | 'bollinger' | 'stochastic'
@@ -15,6 +18,7 @@ export interface IndicatorRenderConfig {
   color?: string
   secondaryColor?: string
   lineWidth?: number
+  lineStyle?: LineStyle
   label?: string
 }
 
@@ -293,17 +297,24 @@ export class ChartRenderer {
   }
 
   // Draw line chart
-  drawLine(data: OHLC[]) {
+  drawLine(data: OHLC[], color?: string, lineWidth?: number, lineStyle?: LineStyle) {
     if (data.length < 2) return
 
     const ctx = this.ctx
     const dpr = this.devicePixelRatio
 
     ctx.save()
-    ctx.strokeStyle = this.theme.lineColor
-    ctx.lineWidth = 2 * dpr
+    ctx.strokeStyle = color || this.theme.lineColor
+    ctx.lineWidth = (lineWidth || 2) * dpr
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
+
+    // Apply line style
+    if (lineStyle === 'dashed') {
+      ctx.setLineDash([6 * dpr, 4 * dpr])
+    } else if (lineStyle === 'dotted') {
+      ctx.setLineDash([2 * dpr, 3 * dpr])
+    }
 
     ctx.beginPath()
     const first = data[0]
@@ -319,12 +330,13 @@ export class ChartRenderer {
   }
 
   // Draw area chart
-  drawArea(data: OHLC[]) {
+  drawArea(data: OHLC[], color?: string, lineWidth?: number, lineStyle?: LineStyle) {
     if (data.length < 2) return
 
     const ctx = this.ctx
     const area = this.transform.chartArea
     const dpr = this.devicePixelRatio
+    const strokeColor = color || this.theme.areaBorder
 
     ctx.save()
 
@@ -343,14 +355,22 @@ export class ChartRenderer {
     ctx.lineTo(this.transform.timeToX(last.time) * dpr, (area.y + area.height) * dpr)
     ctx.closePath()
 
-    ctx.fillStyle = this.theme.areaFill
+    // Use a semi-transparent version of the stroke color for fill
+    ctx.fillStyle = color ? `${color}20` : this.theme.areaFill
     ctx.fill()
 
     // Draw line on top
-    ctx.strokeStyle = this.theme.areaBorder
-    ctx.lineWidth = 2 * dpr
+    ctx.strokeStyle = strokeColor
+    ctx.lineWidth = (lineWidth || 2) * dpr
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
+
+    // Apply line style
+    if (lineStyle === 'dashed') {
+      ctx.setLineDash([6 * dpr, 4 * dpr])
+    } else if (lineStyle === 'dotted') {
+      ctx.setLineDash([2 * dpr, 3 * dpr])
+    }
 
     ctx.beginPath()
     ctx.moveTo(this.transform.timeToX(first.time) * dpr, this.transform.priceToY(first.close) * dpr)
@@ -522,7 +542,7 @@ export class ChartRenderer {
     data: IndicatorValue[],
     color: string = '#2563eb',
     lineWidth: number = 1.5,
-    dashed: boolean = false
+    lineStyle: LineStyle = 'solid'
   ) {
     const ctx = this.ctx
     const dpr = this.devicePixelRatio
@@ -536,8 +556,11 @@ export class ChartRenderer {
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
 
-    if (dashed) {
-      ctx.setLineDash([4 * dpr, 4 * dpr])
+    // Apply line style
+    if (lineStyle === 'dashed') {
+      ctx.setLineDash([6 * dpr, 4 * dpr])
+    } else if (lineStyle === 'dotted') {
+      ctx.setLineDash([2 * dpr, 3 * dpr])
     }
 
     ctx.beginPath()
@@ -653,7 +676,8 @@ export class ChartRenderer {
           this.drawIndicatorLine(
             indicator.data as IndicatorValue[],
             indicator.color || '#2563eb',
-            indicator.lineWidth || 1.5
+            indicator.lineWidth || 1.5,
+            indicator.lineStyle || 'solid'
           )
           break
         case 'bollinger':
@@ -663,13 +687,66 @@ export class ChartRenderer {
     }
   }
 
+  // Draw selection dots along a line to indicate it's selected
+  drawSelectionDots(data: OHLC[], color: string = '#3b82f6') {
+    if (data.length === 0) return
+
+    const ctx = this.ctx
+    const dpr = this.devicePixelRatio
+    const view = this.transform.getView()
+
+    // Filter to visible data
+    const visibleData = data.filter(d => d.time >= view.startTime && d.time <= view.endTime)
+    if (visibleData.length === 0) return
+
+    // Determine dot spacing - show roughly 15-25 dots max
+    const targetDots = 20
+    const step = Math.max(1, Math.floor(visibleData.length / targetDots))
+
+    ctx.save()
+    ctx.fillStyle = color
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5 * dpr
+
+    for (let i = 0; i < visibleData.length; i += step) {
+      const d = visibleData[i]
+      const x = this.transform.timeToX(d.time) * dpr
+      const y = this.transform.priceToY(d.close) * dpr
+      const radius = 4 * dpr
+
+      // Draw dot with white outline for visibility
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    // Always draw dots at start and end
+    const first = visibleData[0]
+    const last = visibleData[visibleData.length - 1]
+
+    for (const d of [first, last]) {
+      const x = this.transform.timeToX(d.time) * dpr
+      const y = this.transform.priceToY(d.close) * dpr
+      const radius = 4 * dpr
+
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    ctx.restore()
+  }
+
   // Render with indicators
   renderWithIndicators(
     data: OHLC[],
     chartType: ChartType,
     showVolume: boolean = false,
     mainIndicators: IndicatorRenderConfig[] = [],
-    crosshair?: { x: number; y: number }
+    crosshair?: { x: number; y: number },
+    mainSymbolStyle?: { color?: string; lineWidth?: number; lineStyle?: LineStyle }
   ) {
     this.clear()
     this.drawGrid(data)
@@ -683,10 +760,10 @@ export class ChartRenderer {
         this.drawBars(data)
         break
       case 'line':
-        this.drawLine(data)
+        this.drawLine(data, mainSymbolStyle?.color, mainSymbolStyle?.lineWidth, mainSymbolStyle?.lineStyle)
         break
       case 'area':
-        this.drawArea(data)
+        this.drawArea(data, mainSymbolStyle?.color, mainSymbolStyle?.lineWidth, mainSymbolStyle?.lineStyle)
         break
     }
 

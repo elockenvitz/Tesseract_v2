@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { arrayMove } from '@dnd-kit/sortable'
 import { TrendingUp, Target, FileText, ArrowUpRight, ArrowDownRight, Activity, Users, Lightbulb, Briefcase, Tag, List, Workflow, Star, Clock, Orbit, FolderKanban, ListTodo, Beaker, PieChart, Calendar, AlertTriangle, CheckCircle2, Play, ChevronRight, ChevronLeft, ChevronDown, Plus, Zap, ArrowRight, MessageSquareText, FolderOpen } from 'lucide-react'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { financialDataService } from '../lib/financial-data/browser-client'
@@ -613,9 +614,10 @@ export function DashboardPage() {
   }
 
   const handleTabReorder = (fromIndex: number, toIndex: number) => {
-    const newTabs = [...tabs]
-    const [movedTab] = newTabs.splice(fromIndex, 1)
-    newTabs.splice(toIndex, 0, movedTab)
+    setTabs(arrayMove(tabs, fromIndex, toIndex))
+  }
+
+  const handleTabsReorder = (newTabs: Tab[]) => {
     setTabs(newTabs)
   }
 
@@ -1698,6 +1700,7 @@ export function DashboardPage() {
       tabs={tabs}
       activeTabId={activeTabId}
       onTabReorder={handleTabReorder}
+      onTabsReorder={handleTabsReorder}
       onTabChange={handleTabChange}
       onTabClose={handleTabClose}
       onNewTab={handleNewTab}

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
@@ -15,6 +15,30 @@ import { Annotation, AnnotationType } from '../components/charting/engine/annota
 
 // Metric types for charting
 type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
+
+// Display modes for comparison
+type DisplayMode = 'absolute' | 'indexed' | 'relative'
+
+// Default index base value
+const DEFAULT_INDEX_BASE = 100
+
+// Colors for comparison symbols (different from main chart's blue)
+const COMPARISON_COLORS = [
+  '#dc2626', // red
+  '#16a34a', // green
+  '#9333ea', // purple
+  '#ea580c', // orange
+  '#0891b2', // cyan
+  '#be185d', // pink
+  '#854d0e', // amber
+  '#6366f1', // indigo
+]
+
+const displayModeOptions: { value: DisplayMode; label: string; description: string }[] = [
+  { value: 'absolute', label: 'Absolute', description: 'Show actual stock prices' },
+  { value: 'indexed', label: 'Indexed', description: 'All stocks start at 100' },
+  { value: 'relative', label: '% Change', description: 'Show % change from start (0%)' },
+]
 
 const metricOptions: { value: MetricType; label: string; icon: any; description: string }[] = [
   { value: 'price', label: 'Price', icon: DollarSign, description: 'Stock price (OHLC)' },
@@ -95,6 +119,18 @@ interface ChartPanel {
     interval: string
     isIntraday: boolean
   }
+  // Main symbol styling
+  mainSymbolStyle?: {
+    color?: string
+    lineWidth?: number
+    lineStyle?: LineStyleOption
+  }
+  // Comparison symbols
+  compareSymbols?: { symbol: string; companyName?: string; color?: string; lineWidth?: number; lineStyle?: LineStyleOption }[]
+  // Display mode: absolute prices, indexed, or relative to first symbol
+  displayMode?: DisplayMode
+  // Base value for indexed mode (default 100)
+  indexBase?: number
 }
 
 // Context menu state
@@ -105,6 +141,36 @@ interface ContextMenuState {
   chartX: number  // Position in chart coordinates (time)
   chartY: number  // Position in chart coordinates (price)
 }
+
+// Line context menu state
+interface LineContextMenuState {
+  visible: boolean
+  x: number
+  y: number
+  symbol: string
+  isMainSymbol: boolean
+}
+
+// Line style type (matching renderer)
+type LineStyleOption = 'solid' | 'dashed' | 'dotted'
+
+const LINE_COLORS = [
+  { value: '#dc2626', label: 'Red' },
+  { value: '#16a34a', label: 'Green' },
+  { value: '#2563eb', label: 'Blue' },
+  { value: '#9333ea', label: 'Purple' },
+  { value: '#ea580c', label: 'Orange' },
+  { value: '#0891b2', label: 'Cyan' },
+  { value: '#be185d', label: 'Pink' },
+  { value: '#854d0e', label: 'Amber' },
+]
+
+const LINE_WIDTHS = [1, 2, 3, 4]
+const LINE_STYLES: { value: LineStyleOption; label: string }[] = [
+  { value: 'solid', label: 'Solid' },
+  { value: 'dashed', label: 'Dashed' },
+  { value: 'dotted', label: 'Dotted' },
+]
 
 // Frequency/Interval configuration
 type FrequencyType =
@@ -147,17 +213,35 @@ function parseIntervalToDays(interval: string): number {
   return 30 // Default
 }
 
+
+// Get fresh default state (no persistence)
+function getDefaultChartingState(): {
+  panels: ChartPanel[]
+  activePanel: string
+  viewMode: ViewMode
+} {
+  return {
+    panels: [{ id: '1', symbol: '', companyName: '', chartType: 'line' as ChartType, timeFrame: '1M' as TimeFrame, indicators: [] as string[], metric: 'price' as MetricType, annotations: [] as Annotation[], compareSymbols: [], displayMode: 'absolute' as DisplayMode, indexBase: DEFAULT_INDEX_BASE }],
+    activePanel: '1',
+    viewMode: 'single' as ViewMode
+  }
+}
+
 export function ChartingPage({ onItemSelect }: ChartingPageProps) {
+  // Always start with fresh default state
+  const [initialState] = useState(() => getDefaultChartingState())
+
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<ViewMode>('single')
-  const [panels, setPanels] = useState<ChartPanel[]>([
-    { id: '1', symbol: '', companyName: '', chartType: 'candlestick', timeFrame: '1M', indicators: [], metric: 'price', annotations: [] }
-  ])
-  const [activePanel, setActivePanel] = useState('1')
+  const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
+  const [panels, setPanels] = useState<ChartPanel[]>(initialState.panels)
+  const [activePanel, setActivePanel] = useState(initialState.activePanel)
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
   const [showFreqPicker, setShowFreqPicker] = useState(false)
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false)
   const [showMetricMenu, setShowMetricMenu] = useState(false)
+  const [showCompareMenu, setShowCompareMenu] = useState(false)
+  const [compareSearchQuery, setCompareSearchQuery] = useState('')
+  const [showDisplayModeMenu, setShowDisplayModeMenu] = useState(false)
 
   // Context menu state for right-click annotations
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -169,6 +253,18 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
   })
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
 
+  // Line context menu state for formatting lines
+  const [lineContextMenu, setLineContextMenu] = useState<LineContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    symbol: '',
+    isMainSymbol: false
+  })
+
+  // Selected line state for left-click selection
+  const [selectedLine, setSelectedLine] = useState<string | null>(null)
+
   // Custom date picker state
   const [customStartDate, setCustomStartDate] = useState(() => {
     const d = new Date()
@@ -177,6 +273,7 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
   })
   const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0])
   const [customInterval, setCustomInterval] = useState<CustomDateRange['interval']>('1d')
+
 
   // Search assets
   const { data: searchResults = [] } = useQuery({
@@ -194,11 +291,27 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
     enabled: searchQuery.length >= 1
   })
 
+  // Search assets for comparison
+  const { data: compareSearchResults = [] } = useQuery({
+    queryKey: ['asset-compare-search', compareSearchQuery],
+    queryFn: async () => {
+      if (!compareSearchQuery || compareSearchQuery.length < 1) return []
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name')
+        .or(`symbol.ilike.%${compareSearchQuery}%,company_name.ilike.%${compareSearchQuery}%`)
+        .limit(10)
+      if (error) throw error
+      return data || []
+    },
+    enabled: compareSearchQuery.length >= 1
+  })
+
   const timeFrames: TimeFrame[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'ALL']
 
   const chartTypes: { value: ChartType; label: string; icon: any }[] = [
-    { value: 'candlestick', label: 'Candlestick', icon: CandlestickChart },
     { value: 'line', label: 'Line', icon: LineChart },
+    { value: 'candlestick', label: 'Candlestick', icon: CandlestickChart },
     { value: 'bar', label: 'Bar', icon: BarChart3 },
     { value: 'area', label: 'Area', icon: Activity }
   ]
@@ -218,9 +331,9 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
     { id: 'ichimoku', name: 'Ichimoku Cloud', category: 'Trend' }
   ]
 
-  const updatePanel = (panelId: string, updates: Partial<ChartPanel>) => {
-    setPanels(panels.map(p => p.id === panelId ? { ...p, ...updates } : p))
-  }
+  const updatePanel = useCallback((panelId: string, updates: Partial<ChartPanel>) => {
+    setPanels(prev => prev.map(p => p.id === panelId ? { ...p, ...updates } : p))
+  }, [])
 
   const addPanel = () => {
     const newId = String(Date.now())
@@ -228,11 +341,14 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
       id: newId,
       symbol: '',
       companyName: '',
-      chartType: 'candlestick',
+      chartType: 'line',
       timeFrame: '1M',
       indicators: [],
       metric: 'price',
-      annotations: []
+      annotations: [],
+      compareSymbols: [],
+      displayMode: 'absolute',
+      indexBase: DEFAULT_INDEX_BASE
     }])
     setActivePanel(newId)
   }
@@ -280,6 +396,66 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
     closeContextMenu()
   }, [activePanel])
 
+  // Line context menu handlers
+  const handleLineContextMenu = useCallback((e: React.MouseEvent, symbol: string, isMainSymbol: boolean) => {
+    e.preventDefault()
+    setLineContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      symbol,
+      isMainSymbol
+    })
+  }, [])
+
+  const closeLineContextMenu = useCallback(() => {
+    setLineContextMenu(prev => ({ ...prev, visible: false }))
+  }, [])
+
+  // Close line context menu when clicking outside
+  useEffect(() => {
+    if (!lineContextMenu.visible) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Check if click is inside the context menu
+      if (target.closest('[data-line-context-menu]')) return
+      closeLineContextMenu()
+    }
+
+    // Use mousedown so it fires before contextmenu
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [lineContextMenu.visible, closeLineContextMenu])
+
+  // Handle left-click on line to select it
+  const handleLineClick = useCallback((symbol: string, isMainSymbol: boolean) => {
+    // Toggle selection - if already selected, deselect; otherwise select
+    setSelectedLine(prev => prev === symbol ? null : symbol)
+  }, [])
+
+  const updateCompareSymbolStyle = useCallback((symbolToUpdate: string, updates: { color?: string; lineWidth?: number; lineStyle?: LineStyleOption }) => {
+    setPanels(prev => prev.map(p => {
+      if (p.id !== activePanel || !p.compareSymbols) return p
+      return {
+        ...p,
+        compareSymbols: p.compareSymbols.map(cs =>
+          cs.symbol === symbolToUpdate ? { ...cs, ...updates } : cs
+        )
+      }
+    }))
+  }, [activePanel])
+
+  const updateMainSymbolStyle = useCallback((updates: { color?: string; lineWidth?: number; lineStyle?: LineStyleOption }) => {
+    setPanels(prev => prev.map(p => {
+      if (p.id !== activePanel) return p
+      return {
+        ...p,
+        mainSymbolStyle: { ...(p.mainSymbolStyle || {}), ...updates }
+      }
+    }))
+  }, [activePanel])
+
   const removePanel = (panelId: string) => {
     if (panels.length > 1) {
       const newPanels = panels.filter(p => p.id !== panelId)
@@ -293,6 +469,40 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     updatePanel(activePanel, { symbol: asset.symbol, companyName: asset.company_name })
     setSearchQuery('')
+  }
+
+  const addCompareSymbol = (asset: { id: string; symbol: string; company_name: string }) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+
+    // Don't add if it's the main symbol or already in comparison
+    if (asset.symbol === panel.symbol) return
+    if (panel.compareSymbols?.some(s => s.symbol === asset.symbol)) return
+
+    const usedColors = panel.compareSymbols?.map(s => s.color) || []
+    const nextColor = COMPARISON_COLORS.find(c => !usedColors.includes(c)) || COMPARISON_COLORS[0]
+
+    updatePanel(activePanel, {
+      compareSymbols: [
+        ...(panel.compareSymbols || []),
+        { symbol: asset.symbol, companyName: asset.company_name, color: nextColor }
+      ]
+    })
+    setCompareSearchQuery('')
+  }
+
+  const removeCompareSymbol = (symbol: string) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+
+    updatePanel(activePanel, {
+      compareSymbols: panel.compareSymbols?.filter(s => s.symbol !== symbol) || []
+    })
+  }
+
+  const setDisplayMode = (mode: DisplayMode) => {
+    updatePanel(activePanel, { displayMode: mode })
+    setShowDisplayModeMenu(false)
   }
 
   const toggleIndicator = (indicatorId: string) => {
@@ -746,6 +956,124 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
               )}
             </div>
 
+            {/* Compare Symbols */}
+            <div className="relative">
+              <button
+                onClick={() => setShowCompareMenu(!showCompareMenu)}
+                className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                  showCompareMenu || (currentPanel.compareSymbols?.length || 0) > 0
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4" />
+                <span>Compare</span>
+                {(currentPanel.compareSymbols?.length || 0) > 0 && (
+                  <span className="bg-white/20 text-white text-xs px-1.5 rounded-full">
+                    {currentPanel.compareSymbols?.length}
+                  </span>
+                )}
+              </button>
+
+              {showCompareMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowCompareMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
+                    <div className="p-3 border-b border-gray-100">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Add symbol to compare..."
+                          value={compareSearchQuery}
+                          onChange={(e) => setCompareSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          autoFocus
+                        />
+                      </div>
+                      {compareSearchQuery && compareSearchResults.length > 0 && (
+                        <div className="mt-2 max-h-40 overflow-auto border border-gray-200 rounded-lg">
+                          {compareSearchResults.map((asset: any) => (
+                            <button
+                              key={asset.id}
+                              onClick={() => addCompareSymbol(asset)}
+                              disabled={asset.symbol === currentPanel.symbol || currentPanel.compareSymbols?.some(s => s.symbol === asset.symbol)}
+                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="font-medium text-gray-900">{asset.symbol}</span>
+                              <span className="text-xs text-gray-500 truncate ml-2">{asset.company_name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Current comparisons */}
+                    {currentPanel.compareSymbols && currentPanel.compareSymbols.length > 0 && (
+                      <div className="p-2">
+                        <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1">Comparing</div>
+                        {currentPanel.compareSymbols.map((s) => (
+                          <div
+                            key={s.symbol}
+                            className="flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 rounded"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-medium text-gray-700">{s.symbol}</span>
+                              <span className="text-xs text-gray-400">{s.companyName}</span>
+                            </div>
+                            <button
+                              onClick={() => removeCompareSymbol(s.symbol)}
+                              className="text-gray-400 hover:text-red-500 p-1"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Display Mode */}
+                    <div className="p-2 border-t border-gray-100">
+                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1">Display Mode</div>
+                      <div className="flex gap-1 px-2">
+                        {displayModeOptions.map((mode) => (
+                          <button
+                            key={mode.value}
+                            onClick={() => setDisplayMode(mode.value)}
+                            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded transition-colors ${
+                              currentPanel.displayMode === mode.value
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                            title={mode.description}
+                          >
+                            {mode.label}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Index base input - shown when Indexed mode is selected */}
+                      {currentPanel.displayMode === 'indexed' && (
+                        <div className="mt-2 px-2">
+                          <label className="flex items-center gap-2 text-xs text-gray-600">
+                            <span>Index to:</span>
+                            <input
+                              type="number"
+                              value={currentPanel.indexBase || DEFAULT_INDEX_BASE}
+                              onChange={(e) => updatePanel(activePanel, { indexBase: Number(e.target.value) || DEFAULT_INDEX_BASE })}
+                              className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              min="1"
+                              step="1"
+                            />
+                            <span className="text-gray-400">at start</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             {/* View Mode Toggle */}
             <div className="flex items-center space-x-1 bg-gray-200 rounded-lg p-1">
               <button
@@ -815,7 +1143,7 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
       )}
 
       {/* Main Chart Area */}
-      <div className="flex-1 flex overflow-hidden" onClick={closeContextMenu}>
+      <div className="flex-1 flex overflow-hidden" onClick={() => { closeContextMenu(); closeLineContextMenu(); }}>
         {/* Chart Canvas */}
         <div className="flex-1 overflow-hidden">
           {viewMode === 'single' ? (
@@ -829,7 +1157,14 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
                   showVolume={currentPanel.indicators.includes('volume')}
                   indicators={currentPanel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
                   annotations={currentPanel.annotations}
+                  compareSymbols={currentPanel.compareSymbols}
+                  displayMode={currentPanel.displayMode}
+                  indexBase={currentPanel.indexBase}
+                  selectedLine={selectedLine}
+                  mainSymbolStyle={currentPanel.mainSymbolStyle}
                   onContextMenu={handleChartContextMenu}
+                  onLineContextMenu={handleLineContextMenu}
+                  onLineClick={handleLineClick}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center">
@@ -864,7 +1199,14 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
                       showVolume={panel.indicators.includes('volume')}
                       indicators={panel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
                       annotations={panel.annotations}
+                      compareSymbols={panel.compareSymbols}
+                      displayMode={panel.displayMode}
+                      indexBase={panel.indexBase}
+                      selectedLine={panel.id === activePanel ? selectedLine : null}
+                      mainSymbolStyle={panel.mainSymbolStyle}
                       onContextMenu={panel.id === activePanel ? handleChartContextMenu : undefined}
+                      onLineContextMenu={panel.id === activePanel ? handleLineContextMenu : undefined}
+                      onLineClick={panel.id === activePanel ? handleLineClick : undefined}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center">
@@ -930,6 +1272,130 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
             </div>
           </div>
         </>
+      )}
+
+      {/* Right-Click Context Menu for Line Formatting */}
+      {lineContextMenu.visible && (
+          <div
+            data-line-context-menu
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-2 min-w-[220px]"
+            style={{ left: lineContextMenu.x, top: lineContextMenu.y }}
+          >
+            {/* Header */}
+            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide border-b border-gray-100 mb-1">
+              Format: {lineContextMenu.symbol}
+            </div>
+
+            {/* Color Selection */}
+            <div className="px-3 py-2">
+              <div className="text-xs font-medium text-gray-600 mb-2">Color</div>
+              <div className="flex flex-wrap gap-1.5">
+                {LINE_COLORS.map((color) => {
+                  const currentStyle = lineContextMenu.isMainSymbol
+                    ? currentPanel.mainSymbolStyle
+                    : currentPanel.compareSymbols?.find(cs => cs.symbol === lineContextMenu.symbol)
+                  const defaultColor = lineContextMenu.isMainSymbol ? '#3b82f6' : '#666666'
+                  const isSelected = (currentStyle?.color || defaultColor) === color.value
+                  return (
+                    <button
+                      key={color.value}
+                      onClick={() => {
+                        if (lineContextMenu.isMainSymbol) {
+                          updateMainSymbolStyle({ color: color.value })
+                        } else {
+                          updateCompareSymbolStyle(lineContextMenu.symbol, { color: color.value })
+                        }
+                      }}
+                      className={`w-6 h-6 rounded-full border-2 transition-all ${
+                        isSelected ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-110'
+                      }`}
+                      style={{ backgroundColor: color.value }}
+                      title={color.label}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Line Width */}
+            <div className="px-3 py-2 border-t border-gray-100">
+              <div className="text-xs font-medium text-gray-600 mb-2">Line Width</div>
+              <div className="flex gap-1">
+                {LINE_WIDTHS.map((width) => {
+                  const currentStyle = lineContextMenu.isMainSymbol
+                    ? currentPanel.mainSymbolStyle
+                    : currentPanel.compareSymbols?.find(cs => cs.symbol === lineContextMenu.symbol)
+                  const isSelected = (currentStyle?.lineWidth || 2) === width
+                  return (
+                    <button
+                      key={width}
+                      onClick={() => {
+                        if (lineContextMenu.isMainSymbol) {
+                          updateMainSymbolStyle({ lineWidth: width })
+                        } else {
+                          updateCompareSymbolStyle(lineContextMenu.symbol, { lineWidth: width })
+                        }
+                      }}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded transition-colors ${
+                        isSelected
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {width}px
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Line Style */}
+            <div className="px-3 py-2 border-t border-gray-100">
+              <div className="text-xs font-medium text-gray-600 mb-2">Line Style</div>
+              <div className="flex gap-1">
+                {LINE_STYLES.map((style) => {
+                  const currentStyle = lineContextMenu.isMainSymbol
+                    ? currentPanel.mainSymbolStyle
+                    : currentPanel.compareSymbols?.find(cs => cs.symbol === lineContextMenu.symbol)
+                  const isSelected = (currentStyle?.lineStyle || 'solid') === style.value
+                  return (
+                    <button
+                      key={style.value}
+                      onClick={() => {
+                        if (lineContextMenu.isMainSymbol) {
+                          updateMainSymbolStyle({ lineStyle: style.value })
+                        } else {
+                          updateCompareSymbolStyle(lineContextMenu.symbol, { lineStyle: style.value })
+                        }
+                      }}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded transition-colors ${
+                        isSelected
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {style.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Remove Line - only for comparison symbols */}
+            {!lineContextMenu.isMainSymbol && (
+              <div className="px-3 py-2 border-t border-gray-100">
+                <button
+                  onClick={() => {
+                    removeCompareSymbol(lineContextMenu.symbol)
+                    closeLineContextMenu()
+                  }}
+                  className="w-full py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded transition-colors"
+                >
+                  Remove from Chart
+                </button>
+              </div>
+            )}
+          </div>
       )}
     </div>
   )
