@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, UserPlus, UserMinus, X, Search, Trash2, FolderKanban } from 'lucide-react'
+import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, UserPlus, UserMinus, X, Search, Trash2, FolderKanban, ChevronDown, Check, Tag } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
-import { BadgeSelect } from '../ui/BadgeSelect'
 import { EditableSection, type EditableSectionRef } from '../ui/EditableSection'
 import { ThemeNoteEditor } from '../notes/ThemeNoteEditorUnified'
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
+import { AssetTableView } from '../table/AssetTableView'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
@@ -89,6 +89,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     collaborationId: null,
     userEmail: ''
   })
+  const [showBulkRemoveConfirm, setShowBulkRemoveConfirm] = useState<{ isOpen: boolean; assetIds: string[] }>({ isOpen: false, assetIds: [] })
+  const [showThemeTypeDropdown, setShowThemeTypeDropdown] = useState(false)
+  const themeTypeDropdownRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
 
   // Handle component citation in focus mode
@@ -142,6 +145,46 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       return data || []
     },
   })
+
+  // Transform related assets for AssetTableView
+  const themeAssets = useMemo(() => {
+    if (!relatedAssets) return []
+    return relatedAssets.map((ta: any) => ta.assets).filter(Boolean)
+  }, [relatedAssets])
+
+  // Map asset ID to theme_asset ID for removal
+  const assetToThemeAssetMap = useMemo(() => {
+    const map = new Map<string, string>()
+    relatedAssets?.forEach((ta: any) => {
+      if (ta.assets?.id) {
+        map.set(ta.assets.id, ta.id)
+      }
+    })
+    return map
+  }, [relatedAssets])
+
+  // Bulk remove assets from theme mutation
+  const bulkRemoveFromThemeMutation = useMutation({
+    mutationFn: async (assetIds: string[]) => {
+      const themeAssetIds = assetIds
+        .map(assetId => assetToThemeAssetMap.get(assetId))
+        .filter(Boolean) as string[]
+      if (themeAssetIds.length === 0) throw new Error('No items to remove')
+      const { error } = await supabase
+        .from('theme_assets')
+        .delete()
+        .in('id', themeAssetIds)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['theme-related-assets', theme.id] })
+      setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })
+    }
+  })
+
+  const handleBulkRemoveFromTheme = useCallback((assetIds: string[]) => {
+    setShowBulkRemoveConfirm({ isOpen: true, assetIds })
+  }, [])
 
   // Fetch owner details
   const { data: ownerDetails } = useQuery({
@@ -319,17 +362,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   })
 
   // ---------- Helpers ----------
-  const getThemeTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'sector': return 'primary'
-      case 'geography': return 'success'
-      case 'strategy': return 'warning'
-      case 'macro': return 'error'
-      case 'general': return 'default'
-      default: return 'default'
-    }
-  }
-
   const handleInviteUser = (userId: string) => {
     inviteUserMutation.mutate({ userId, permission: invitePermission })
   }
@@ -443,12 +475,26 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   }
 
   const themeTypeOptions = [
-    { value: 'general', label: 'General' },
-    { value: 'sector', label: 'Sector' },
-    { value: 'geography', label: 'Geography' },
-    { value: 'strategy', label: 'Strategy' },
-    { value: 'macro', label: 'Macro' },
+    { value: 'general', label: 'General', color: 'bg-gray-100 text-gray-700', dotColor: 'bg-gray-400' },
+    { value: 'sector', label: 'Sector', color: 'bg-blue-100 text-blue-700', dotColor: 'bg-blue-500' },
+    { value: 'geography', label: 'Geography', color: 'bg-green-100 text-green-700', dotColor: 'bg-green-500' },
+    { value: 'strategy', label: 'Strategy', color: 'bg-amber-100 text-amber-700', dotColor: 'bg-amber-500' },
+    { value: 'macro', label: 'Macro', color: 'bg-red-100 text-red-700', dotColor: 'bg-red-500' },
   ]
+
+  const currentThemeType = themeTypeOptions.find(opt => opt.value === themeType) || themeTypeOptions[0]
+
+  // Close theme type dropdown on click outside
+  useEffect(() => {
+    if (!showThemeTypeDropdown) return
+    const handleClick = (e: MouseEvent) => {
+      if (themeTypeDropdownRef.current && !themeTypeDropdownRef.current.contains(e.target as Node)) {
+        setShowThemeTypeDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showThemeTypeDropdown])
 
   return (
     <div className="space-y-6">
@@ -478,15 +524,50 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           </div>
         </div>
 
-        {/* Status Badge */}
-        <div>
-          <BadgeSelect
-            value={themeType}
-            onChange={handleThemeTypeChange}
-            options={themeTypeOptions}
-            variant={getThemeTypeColor(themeType)}
-            size="sm"
-          />
+        {/* Right side: Theme Category + Add Assets button */}
+        <div className="flex items-center gap-3">
+          {/* Professional Theme Type Selector */}
+          <div className="relative" ref={themeTypeDropdownRef}>
+            <button
+              onClick={() => setShowThemeTypeDropdown(!showThemeTypeDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-all shadow-sm"
+            >
+              <div className={clsx('w-2 h-2 rounded-full', currentThemeType.dotColor)} />
+              <span className="text-sm font-medium text-gray-700">{currentThemeType.label}</span>
+              <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showThemeTypeDropdown && 'rotate-180')} />
+            </button>
+
+            {showThemeTypeDropdown && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                {themeTypeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => {
+                      handleThemeTypeChange(option.value)
+                      setShowThemeTypeDropdown(false)
+                    }}
+                    className={clsx(
+                      'w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
+                      option.value === themeType ? 'bg-gray-50' : 'hover:bg-gray-50'
+                    )}
+                  >
+                    <div className={clsx('w-2.5 h-2.5 rounded-full', option.dotColor)} />
+                    <span className={clsx('flex-1', option.value === themeType ? 'font-medium text-gray-900' : 'text-gray-600')}>
+                      {option.label}
+                    </span>
+                    {option.value === themeType && <Check className="w-4 h-4 text-blue-600" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {activeTab === 'related-assets' && (
+            <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Assets
+            </Button>
+          )}
         </div>
       </div>
 
@@ -665,64 +746,31 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           )}
 
           {activeTab === 'related-assets' && (
-            <div className="space-y-6">
-              {relatedAssets && relatedAssets.length > 0 ? (
-                <>
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-medium text-gray-900">
-                      {relatedAssets.length} Related Asset{relatedAssets.length !== 1 ? 's' : ''}
-                    </h4>
-                    <Button size="sm" variant="outline" onClick={() => setShowAddAssetModal(true)}>
+            <div className="space-y-4">
+              {/* Asset Table View with all views */}
+              <AssetTableView
+                assets={themeAssets}
+                isLoading={!relatedAssets}
+                onAssetSelect={(asset) => {
+                  // Handle asset click - could navigate to asset detail
+                  console.log('Asset clicked:', asset.symbol)
+                }}
+                storageKey={`themeAssets_${theme.id}`}
+                onBulkAction={handleBulkRemoveFromTheme}
+                bulkActionLabel="Remove from Theme"
+                bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
+                emptyState={
+                  <div className="text-center py-12">
+                    <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900">No related assets</h3>
+                    <p className="text-gray-500 mb-4">Assets related to this theme will appear here.</p>
+                    <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
                       <Plus className="h-4 w-4 mr-2" />
-                      Add Assets
+                      Add Related Asset
                     </Button>
                   </div>
-                  <div className="space-y-4">
-                    {relatedAssets.map((themeAsset: any) => (
-                      <Card
-                        key={themeAsset.id}
-                        padding="sm"
-                        className="cursor-pointer hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
-                              <span className="text-white font-bold text-sm">
-                                {themeAsset.assets?.symbol?.substring(0, 2) || 'AS'}
-                              </span>
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-gray-900">{themeAsset.assets?.symbol}</h4>
-                              <p className="text-sm text-gray-600">{themeAsset.assets?.company_name}</p>
-                              {themeAsset.notes && (
-                                <p className="text-xs text-gray-500 italic mt-1">"{themeAsset.notes}"</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            {themeAsset.assets?.current_price && (
-                              <p className="text-lg font-semibold text-gray-900">${themeAsset.assets.current_price}</p>
-                            )}
-                            <p className="text-xs text-gray-500">
-                              Added {formatDistanceToNow(new Date(themeAsset.added_at || ''), { addSuffix: true })}
-                            </p>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-12">
-                  <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900">No related assets</h3>
-                  <p className="text-gray-500 mb-4">Assets related to this theme will appear here.</p>
-                  <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Related Asset
-                  </Button>
-                </div>
-              )}
+                }
+              />
             </div>
           )}
 
@@ -1090,6 +1138,38 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   onClick={confirmRemoveCollaboration}
                   className="flex-1"
                   loading={removeCollaborationMutation.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Remove from Theme Confirmation */}
+      {showBulkRemoveConfirm.isOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Assets from Theme</h3>
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to remove {showBulkRemoveConfirm.assetIds.length} asset{showBulkRemoveConfirm.assetIds.length !== 1 ? 's' : ''} from this theme?
+              </p>
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => bulkRemoveFromThemeMutation.mutate(showBulkRemoveConfirm.assetIds)}
+                  className="flex-1"
+                  loading={bulkRemoveFromThemeMutation.isPending}
                 >
                   Remove
                 </Button>
