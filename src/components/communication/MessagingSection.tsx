@@ -8,6 +8,8 @@ import { Badge } from '../ui/Badge'
 import { Card } from '../ui/Card'
 import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { clsx } from 'clsx'
+import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
+import type { UniversalSmartInputRef } from '../smart-input'
 
 interface MessagingSectionProps {
   contextType?: string
@@ -54,15 +56,14 @@ export function MessagingSection({
 }: MessagingSectionProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [messageContent, setMessageContent] = useState('')
+  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
   const [searchQuery, setSearchQuery] = useState('')
   const [filterBy, setFilterBy] = useState<'all' | 'pinned' | 'replies'>('all')
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
-  const [mentionQuery, setMentionQuery] = useState<{ type: 'asset' | 'user' | null, query: string, position: number }>({ type: null, query: '', position: 0 })
-  const [showMentionDropdown, setShowMentionDropdown] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
 
   // Fetch recent conversations (when no context is selected)
@@ -232,89 +233,6 @@ export function MessagingSection({
       console.log('🎉 Final conversations with names:', conversationsWithNames.length, conversationsWithNames)
       return conversationsWithNames
     }
-  })
-
-  // Fetch mention suggestions for assets/themes/notes
-  const { data: mentionSuggestions = [] } = useQuery({
-    queryKey: ['mention-suggestions', mentionQuery.type, mentionQuery.query],
-    queryFn: async () => {
-      if (!mentionQuery.type || !mentionQuery.query) return []
-
-      const query = mentionQuery.query.toLowerCase()
-
-      if (mentionQuery.type === 'asset') {
-        // Search assets, themes, and notes
-        const results: any[] = []
-
-        // Search assets
-        const { data: assets } = await supabase
-          .from('assets')
-          .select('id, symbol, company_name')
-          .or(`symbol.ilike.%${query}%,company_name.ilike.%${query}%`)
-          .limit(5)
-
-        if (assets) {
-          results.push(...assets.map(a => ({
-            id: a.id,
-            type: 'asset',
-            label: `${a.symbol} - ${a.company_name}`,
-            symbol: a.symbol
-          })))
-        }
-
-        // Search themes
-        const { data: themes } = await supabase
-          .from('themes')
-          .select('id, name')
-          .ilike('name', `%${query}%`)
-          .limit(5)
-
-        if (themes) {
-          results.push(...themes.map(t => ({
-            id: t.id,
-            type: 'theme',
-            label: t.name
-          })))
-        }
-
-        // Search notes (from all note tables)
-        const { data: assetNotes } = await supabase
-          .from('asset_notes')
-          .select('id, title')
-          .ilike('title', `%${query}%`)
-          .limit(3)
-
-        if (assetNotes) {
-          results.push(...assetNotes.map(n => ({
-            id: n.id,
-            type: 'note',
-            label: n.title
-          })))
-        }
-
-        return results
-      } else if (mentionQuery.type === 'user') {
-        // Search users
-        const { data: users } = await supabase
-          .from('users')
-          .select('id, email, first_name, last_name')
-          .or(`email.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
-          .limit(5)
-
-        if (users) {
-          return users.map(u => ({
-            id: u.id,
-            type: 'user',
-            label: u.first_name && u.last_name
-              ? `${u.first_name} ${u.last_name}`
-              : u.email
-          }))
-        }
-      }
-
-      return []
-    },
-    enabled: showMentionDropdown && !!mentionQuery.type && mentionQuery.query.length > 0
   })
 
   // Fetch messages
@@ -534,90 +452,7 @@ export function MessagingSection({
     })
   }
 
-  const handleMessageContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value
-    const cursorPosition = e.target.selectionStart
-
-    setMessageContent(value)
-
-    // Check if user is typing a mention
-    const textBeforeCursor = value.substring(0, cursorPosition)
-    const lastHashPos = textBeforeCursor.lastIndexOf('#')
-    const lastAtPos = textBeforeCursor.lastIndexOf('@')
-    const lastSpacePos = Math.max(textBeforeCursor.lastIndexOf(' '), textBeforeCursor.lastIndexOf('\n'))
-
-    // Check for # mentions (assets/themes/notes)
-    if (lastHashPos > lastSpacePos && lastHashPos !== -1) {
-      const query = textBeforeCursor.substring(lastHashPos + 1)
-      // Only show dropdown if query doesn't contain spaces (still typing the mention)
-      if (!query.includes(' ') && !query.includes('\n')) {
-        setMentionQuery({ type: 'asset', query, position: lastHashPos })
-        setShowMentionDropdown(true)
-        return
-      }
-    }
-
-    // Check for @ mentions (users)
-    if (lastAtPos > lastSpacePos && lastAtPos !== -1) {
-      const query = textBeforeCursor.substring(lastAtPos + 1)
-      if (!query.includes(' ') && !query.includes('\n')) {
-        setMentionQuery({ type: 'user', query, position: lastAtPos })
-        setShowMentionDropdown(true)
-        return
-      }
-    }
-
-    // Hide dropdown if no active mention
-    setShowMentionDropdown(false)
-    setMentionQuery({ type: null, query: '', position: 0 })
-  }
-
-  const handleSelectMention = (suggestion: any) => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-
-    const beforeMention = messageContent.substring(0, mentionQuery.position)
-    const afterMention = messageContent.substring(textarea.selectionStart)
-
-    // Create the mention text
-    let mentionText = ''
-    if (mentionQuery.type === 'asset') {
-      mentionText = suggestion.type === 'asset'
-        ? `#${suggestion.symbol}`
-        : `#${suggestion.label.replace(/\s+/g, '-')}`
-    } else if (mentionQuery.type === 'user') {
-      mentionText = `@${suggestion.label.replace(/\s+/g, '-')}`
-    }
-
-    const newContent = beforeMention + mentionText + ' ' + afterMention
-    setMessageContent(newContent)
-    setShowMentionDropdown(false)
-    setMentionQuery({ type: null, query: '', position: 0 })
-
-    // Focus back on textarea
-    setTimeout(() => {
-      textarea.focus()
-      const newCursorPos = beforeMention.length + mentionText.length + 1
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-    }, 0)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Handle mention dropdown navigation
-    if (showMentionDropdown && mentionSuggestions.length > 0) {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setShowMentionDropdown(false)
-        setMentionQuery({ type: null, query: '', position: 0 })
-        return
-      }
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        handleSelectMention(mentionSuggestions[0])
-        return
-      }
-    }
-
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -626,7 +461,7 @@ export function MessagingSection({
 
   const handleReply = (messageId: string) => {
     setReplyToMessage(messageId)
-    textareaRef.current?.focus()
+    smartInputRef.current?.focus()
   }
 
   const handleTogglePin = (messageId: string, isPinned: boolean) => {
@@ -669,10 +504,10 @@ export function MessagingSection({
     scrollToBottom()
   }, [messages])
 
-  // Auto-focus textarea when cited content is added
+  // Auto-focus input when cited content is added
   useEffect(() => {
     if (citedContent) {
-      textareaRef.current?.focus()
+      smartInputRef.current?.focus()
     }
   }, [citedContent])
 
@@ -926,7 +761,7 @@ export function MessagingSection({
                           )}
 
                           <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {message.content}
+                            <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {/* Message Actions */}
@@ -983,7 +818,7 @@ export function MessagingSection({
                           )}
 
                           <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {message.content}
+                            <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {/* Message Actions */}
@@ -1056,39 +891,32 @@ export function MessagingSection({
           </div>
         )}
 
-        {/* Mention Dropdown */}
-        {showMentionDropdown && mentionSuggestions.length > 0 && (
-          <div className="absolute bottom-full left-4 right-4 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
-            {mentionSuggestions.map((suggestion, index) => (
-              <button
-                key={`${suggestion.type}-${suggestion.id}`}
-                onClick={() => handleSelectMention(suggestion)}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2 border-b border-gray-100 last:border-b-0"
-              >
-                <span className="text-xs font-medium text-gray-500 uppercase w-12">
-                  {suggestion.type}
-                </span>
-                <span className="text-gray-900">{suggestion.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className="flex space-x-2">
-          <textarea
-            ref={textareaRef}
-            value={messageContent}
-            onChange={handleMessageContentChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              contextType && contextId
-                ? `Message about ${contextTitle}... (Use # for assets/themes/notes, @ for users)`
-                : "Select a context to start messaging..."
-            }
-            className="flex-1 p-3 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            rows={3}
-            disabled={!contextType || !contextId}
-          />
+          <div className="flex-1">
+            <UniversalSmartInput
+              ref={smartInputRef}
+              value={messageContent}
+              onChange={(value, metadata) => {
+                setMessageContent(value)
+                setInputMetadata(metadata)
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                contextType && contextId
+                  ? `Message about ${contextTitle}... Use @mention, #reference, .template, .AI`
+                  : "Select a context to start messaging..."
+              }
+              textareaClassName="text-sm"
+              rows={3}
+              minHeight="80px"
+              disabled={!contextType || !contextId}
+              enableMentions={true}
+              enableHashtags={true}
+              enableTemplates={true}
+              enableDataFunctions={false}
+              enableAI={true}
+            />
+          </div>
           <Button
             onClick={handleSendMessage}
             disabled={!messageContent.trim() || !contextType || !contextId || sendMessageMutation.isPending}
@@ -1099,13 +927,9 @@ export function MessagingSection({
           </Button>
         </div>
 
-        {!contextType || !contextId ? (
+        {!contextType || !contextId && (
           <p className="text-xs text-gray-500 mt-2">
             Open an asset, portfolio, or theme tab to start a discussion
-          </p>
-        ) : (
-          <p className="text-xs text-gray-500 mt-2">
-            Press Enter to send, Shift+Enter for new line • Use # for mentions, @ for users
           </p>
         )}
       </div>

@@ -7,6 +7,8 @@ import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { clsx } from 'clsx'
+import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
+import type { UniversalSmartInputRef } from '../smart-input'
 
 interface DirectMessagingProps {
   isOpen: boolean
@@ -81,8 +83,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const { user } = useAuth()
   const hasInvalidatedOnceRef = useRef(false)
 
@@ -533,14 +536,14 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   const handleReply = (message: Message) => {
     setReplyingTo(message)
-    textareaRef.current?.focus()
+    smartInputRef.current?.focus()
   }
 
   const handleTogglePin = (messageId: string, isPinned: boolean) => {
     togglePinMutation.mutate({ messageId, isPinned })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -1040,7 +1043,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                           )}
 
                           <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {message.content}
+                            <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {isSelected && (
@@ -1093,7 +1096,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                           )}
 
                           <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {message.content}
+                            <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {isSelected && (
@@ -1166,15 +1169,26 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
         )}
 
         <div className="flex space-x-2">
-          <textarea
-            ref={textareaRef}
-            value={messageContent}
-            onChange={(e) => setMessageContent(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            className="flex-1 p-3 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            rows={2}
-          />
+          <div className="flex-1">
+            <UniversalSmartInput
+              ref={smartInputRef}
+              value={messageContent}
+              onChange={(value, metadata) => {
+                setMessageContent(value)
+                setInputMetadata(metadata)
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message... Use @mention, #reference, .template, .AI"
+              textareaClassName="text-sm"
+              rows={2}
+              minHeight="60px"
+              enableMentions={true}
+              enableHashtags={true}
+              enableTemplates={true}
+              enableDataFunctions={false}
+              enableAI={true}
+            />
+          </div>
           <Button
             onClick={handleSendMessage}
             disabled={!messageContent.trim() || sendMessageMutation.isPending}
@@ -1184,9 +1198,6 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
-          Press Enter to send, Shift+Enter for new line
-        </p>
       </div>
     </div>
   )

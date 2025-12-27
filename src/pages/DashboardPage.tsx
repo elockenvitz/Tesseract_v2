@@ -1404,6 +1404,16 @@ export function DashboardPage() {
                     <Activity className="h-4 w-4 text-cyan-500" />
                     <span className="text-sm font-medium text-gray-700">Charting</span>
                   </button>
+                  <button
+                    onClick={() => {
+                      handleSearchResult({ id: 'asset-allocation', title: 'Asset Allocation', type: 'asset-allocation', data: null })
+                      setShowResearchMenu(false)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <PieChart className="h-4 w-4 text-teal-500" />
+                    <span className="text-sm font-medium text-gray-700">Asset Allocation</span>
+                  </button>
                 </div>
               </>
             )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink } from 'lucide-react'
+import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
@@ -29,6 +29,7 @@ import { AdvancedChart } from '../charts/AdvancedChart'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { NoteEditor } from '../notes/NoteEditorUnified'
 import { RelatedProjects } from '../projects/RelatedProjects'
+import { ThesisContainer } from '../contributions'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
@@ -2025,67 +2026,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* Tab Content */}
         <div className="p-6">
           {activeTab === 'thesis' && (
-            <div className="space-y-6">
-              <div
-                className={clsx(
-                  "bg-white border border-gray-200 rounded-lg p-6",
-                  isFocusMode && "citable-component"
-                )}
-                onClick={() => handleComponentClick(asset.thesis || '', 'Investment Thesis')}
-              >
-                <EditableSectionWithHistory
-                  ref={thesisRef}
-                  title="Investment Thesis"
-                  content={asset.thesis || ''}
-                  onSave={handleSectionSave('thesis')}
-                  placeholder="Describe your investment thesis for this asset..."
-                  onEditStart={() => handleEditStart('thesis')}
-                  onEditEnd={handleEditEnd}
-                  assetId={asset.id}
-                  fieldName="thesis"
-                />
-              </div>
-
-              <div
-                className={clsx(
-                  "bg-blue-50 border border-blue-200 rounded-lg p-6",
-                  isFocusMode && "citable-component"
-                )}
-                onClick={() => handleComponentClick(asset.where_different || '', 'Where We are Different')}
-              >
-                <EditableSectionWithHistory
-                  ref={whereDifferentRef}
-                  title="Where We are Different"
-                  content={asset.where_different || ''}
-                  onSave={handleSectionSave('where_different')}
-                  placeholder="Explain how your view differs from consensus..."
-                  onEditStart={() => handleEditStart('where_different')}
-                  onEditEnd={handleEditEnd}
-                  assetId={asset.id}
-                  fieldName="where_different"
-                />
-              </div>
-
-              <div
-                className={clsx(
-                  "bg-amber-50 border border-amber-200 rounded-lg p-6",
-                  isFocusMode && "citable-component"
-                )}
-                onClick={() => handleComponentClick(asset.risks_to_thesis || '', 'Risks to Thesis')}
-              >
-                <EditableSectionWithHistory
-                  ref={risksRef}
-                  title="Risks to Thesis"
-                  content={asset.risks_to_thesis || ''}
-                  onSave={handleSectionSave('risks_to_thesis')}
-                  placeholder="Identify key risks that could invalidate your thesis..."
-                  onEditStart={() => handleEditStart('risks_to_thesis')}
-                  onEditEnd={handleEditEnd}
-                  assetId={asset.id}
-                  fieldName="risks_to_thesis"
-                />
-              </div>
-            </div>
+            <ThesisContainer assetId={asset.id} />
           )}
 
           {activeTab === 'outcomes' && (

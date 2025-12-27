@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2 } from 'lucide-react'
+import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
+import { TemplateManager } from '../templates/TemplateManager'
 import { TesseractLogo } from '../ui/TesseractLogo'
 
 interface HeaderProps {
@@ -43,6 +44,7 @@ export function Header({
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
@@ -372,78 +374,70 @@ export function Header({
 
               {/* User Menu Dropdown */}
               {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
-                  {/* User Info */}
-                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center">
-                        <span className="text-white font-semibold">
-                          {getUserInitials()}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {getDisplayName()}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-300 truncate">
-                          {userDetails?.email || user?.email}
-                        </p>
-                      </div>
-                    </div>
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                   {/* Menu Items */}
-                  <div className="py-2">
-                    <button
-                      onClick={() => {
-                        setShowUserMenu(false)
-                        setShowProfile(true)
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
-                    >
-                      <User className="h-4 w-4 mr-3 text-gray-400" />
-                      View Profile
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        setShowUserMenu(false)
-                        onShowCoverageManager?.()
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
-                    >
-                      <Users className="h-4 w-4 mr-3 text-gray-400" />
-                      Coverage Management
-                    </button>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
+                      setShowProfile(true)
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                  >
+                    <User className="h-4 w-4 mr-3 text-gray-400" />
+                    Profile
+                  </button>
 
-                    <button
-                      onClick={() => {
-                        setShowUserMenu(false)
-                        onSearchResult({
-                          id: 'organization',
-                          title: 'Organization',
-                          type: 'organization',
-                          data: null
-                        })
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
-                    >
-                      <Building2 className="h-4 w-4 mr-3 text-gray-400" />
-                      Organization
-                    </button>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
+                      setShowTemplates(true)
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                  >
+                    <FileText className="h-4 w-4 mr-3 text-gray-400" />
+                    Templates
+                  </button>
 
-                    <button
-                      onClick={() => {
-                        setShowUserMenu(false)
-                        setShowSettings(true)
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
-                    >
-                      <Settings className="h-4 w-4 mr-3 text-gray-400" />
-                      Account Settings
-                    </button>
-                  </div>
-                  </div>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
+                      onShowCoverageManager?.()
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                  >
+                    <Users className="h-4 w-4 mr-3 text-gray-400" />
+                    Coverage
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
+                      onSearchResult({
+                        id: 'organization',
+                        title: 'Organization',
+                        type: 'organization',
+                        data: null
+                      })
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                  >
+                    <Building2 className="h-4 w-4 mr-3 text-gray-400" />
+                    Organization
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
+                      setShowSettings(true)
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                  >
+                    <Settings className="h-4 w-4 mr-3 text-gray-400" />
+                    Settings
+                  </button>
+
                   {/* Sign Out */}
-                  <div className="border-t border-gray-200 dark:border-gray-700 py-2">
+                  <div className="border-t border-gray-200 dark:border-gray-700 mt-1 pt-1">
                     <button
                       onClick={handleSignOut}
                       className="w-full px-4 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center transition-colors"
@@ -484,6 +478,33 @@ export function Header({
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto transform transition-all p-8">
               <SettingsPage onClose={() => setShowSettings(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Templates Modal */}
+      {showTemplates && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={() => setShowTemplates(false)}
+          />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-auto transform transition-all p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Text Templates</h2>
+                <button
+                  onClick={() => setShowTemplates(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <span className="sr-only">Close</span>
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <TemplateManager />
             </div>
           </div>
         </div>
