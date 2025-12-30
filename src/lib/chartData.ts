@@ -51,7 +51,9 @@ export const timeframeToParams: Record<string, { interval: string; range: string
   '3M': { interval: '1d', range: '3mo' },
   '6M': { interval: '1d', range: '6mo' },
   '1Y': { interval: '1d', range: '1y' },
+  '2Y': { interval: '1d', range: '2y' },
   '5Y': { interval: '1wk', range: '5y' },
+  '10Y': { interval: '1wk', range: 'max' },
   'ALL': { interval: '1mo', range: 'max' }
 }
 

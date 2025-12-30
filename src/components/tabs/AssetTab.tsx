@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
@@ -25,11 +25,11 @@ import { StockQuote } from '../financial/StockQuote'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { AdvancedChart } from '../charts/AdvancedChart'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { NoteEditor } from '../notes/NoteEditorUnified'
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { ThesisContainer } from '../contributions'
+import { OutcomesContainer } from '../outcomes'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
@@ -170,7 +170,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     return savedState?.viewingStageId || null
   })
   const [pendingWorkflowSwitch, setPendingWorkflowSwitch] = useState<{workflowId: string, stageId: string | null} | null>(null)
-  const [showHoldingsHistory, setShowHoldingsHistory] = useState(false)
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [showTemplatesView, setShowTemplatesView] = useState(false)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
@@ -356,6 +355,42 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
   })
 
+  // Fetch thesis contributions to check analyst thesis status
+  const { data: thesisContributions } = useQuery({
+    queryKey: ['thesis-contributions', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('asset_contributions')
+        .select('created_by, updated_at')
+        .eq('asset_id', asset.id)
+        .eq('section', 'thesis')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Build thesis status for each covering analyst
+  const thesisStatuses = React.useMemo(() => {
+    if (!coverage || !thesisContributions) return []
+    const now = new Date()
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+
+    return coverage
+      .filter(c => c.user_id)
+      .map(c => {
+        const contribution = thesisContributions.find(t => t.created_by === c.user_id)
+        const lastUpdated = contribution?.updated_at
+        const isStale = lastUpdated ? new Date(lastUpdated) < ninetyDaysAgo : false
+
+        return {
+          userId: c.user_id!,
+          hasThesis: !!contribution,
+          lastUpdated,
+          isStale
+        }
+      })
+  }, [coverage, thesisContributions])
+
   const { data: priceTargets } = useQuery({
     queryKey: ['price-targets', asset.id],
     queryFn: async () => {
@@ -459,27 +494,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return totals
     },
     enabled: !!portfolioHoldings && portfolioHoldings.length > 0,
-  })
-
-  // Portfolio trade history
-  const { data: portfolioTradeHistory } = useQuery({
-    queryKey: ['portfolio-trade-history', asset.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('portfolio_trades')
-        .select(`
-          *,
-          portfolios (
-            id,
-            name
-          )
-        `)
-        .eq('asset_id', asset.id)
-        .order('trade_date', { ascending: false })
-      if (error) throw error
-      return data || []
-    },
-    enabled: showHoldingsHistory,
   })
 
   // Current stock price for P&L calculations
@@ -1804,7 +1818,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             </button>
                           )}
                         </div>
-                        <CoverageDisplay assetId={asset.id} coverage={coverage || []} showHeader={false} />
+                        <CoverageDisplay
+                          assetId={asset.id}
+                          coverage={coverage || []}
+                          showHeader={false}
+                          thesisStatuses={thesisStatuses}
+                          showThesisStatus={true}
+                        />
                       </div>
 
                       {/* Sector */}
@@ -1966,20 +1986,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </button>
 
             <button
-              onClick={() => setActiveTab('chart')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'chart'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <BarChart3 className="h-4 w-4" />
-                <span>Chart</span>
-              </div>
-            </button>
-
-            <button
               onClick={() => setActiveTab('notes')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'notes'
@@ -2030,215 +2036,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           )}
 
           {activeTab === 'outcomes' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <CaseCard caseType="bull" priceTarget={getPriceTarget('bull')} onPriceTargetSave={handlePriceTargetSave} />
-                <CaseCard caseType="base" priceTarget={getPriceTarget('base')} onPriceTargetSave={handlePriceTargetSave} />
-                <CaseCard caseType="bear" priceTarget={getPriceTarget('bear')} onPriceTargetSave={handlePriceTargetSave} />
-              </div>
-
-              {/* Portfolio Holdings Section */}
-              <div className="bg-white border border-gray-200 rounded-lg relative overflow-hidden">
-                {/* Front side - Current Holdings */}
-                <div className={`transition-transform duration-500 ease-in-out ${showHoldingsHistory ? 'transform -translate-x-full' : 'transform translate-x-0'}`}>
-                  <div className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900">Portfolio Holdings</h3>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowHoldingsHistory(true)}
-                        className="flex items-center gap-2"
-                      >
-                        <Clock className="h-4 w-4" />
-                        History
-                      </Button>
-                    </div>
-                    {portfolioHoldings && portfolioHoldings.length > 0 ? (
-                      <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Cost</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized P&L</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized %</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {portfolioHoldings.map((holding: any) => {
-                          const currentPrice = currentQuote?.price || 0
-                          const shares = parseFloat(holding.shares)
-                          const costPerShare = parseFloat(holding.cost)
-                          const totalCost = shares * costPerShare
-                          const currentValue = shares * currentPrice
-                          const unrealizedPnL = currentValue - totalCost
-                          const unrealizedPercentage = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0
-                          const isPositive = unrealizedPnL >= 0
-
-                          // Calculate weight as percentage of total portfolio
-                          const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                          const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
-
-                          return (
-                            <tr key={holding.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {holding.portfolios?.name || 'Unknown Portfolio'}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '--'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {shares.toLocaleString()}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                ${costPerShare.toFixed(2)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {currentPrice > 0 ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                {currentPrice > 0 ? (
-                                  <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                                    {isPositive ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400">--</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                {currentPrice > 0 ? (
-                                  <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                                    {isPositive ? '+' : ''}{unrealizedPercentage.toFixed(2)}%
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400">--</span>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <p className="text-gray-500">Not held in any portfolio</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Back side - Trade History */}
-                  <div className={`absolute inset-0 transition-transform duration-500 ease-in-out ${showHoldingsHistory ? 'transform translate-x-0' : 'transform translate-x-full'}`}>
-                    <div className="h-full flex flex-col">
-                      <div className="flex items-center justify-between p-6 pb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Trade History</h3>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowHoldingsHistory(false)}
-                          className="flex items-center gap-2"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </Button>
-                      </div>
-                      <div className="flex-1 overflow-x-auto px-6 pb-6">
-                        {portfolioTradeHistory && portfolioTradeHistory.length > 0 ? (
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Value</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight Change</th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {portfolioTradeHistory.map((trade: any) => {
-                                const isBuy = trade.trade_type === 'buy'
-                                const weightChange = trade.weight_change || 0
-
-                                return (
-                                  <tr key={trade.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                      {new Date(trade.trade_date).toLocaleDateString()}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                      <div className="text-sm font-medium text-gray-900">
-                                        {trade.portfolios?.name || 'Unknown Portfolio'}
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                      <Badge variant={isBuy ? 'success' : 'error'}>
-                                        {trade.trade_type.toUpperCase()}
-                                      </Badge>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                      {isBuy ? '+' : '-'}{Math.abs(trade.shares).toLocaleString()}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                      ${parseFloat(trade.price).toFixed(2)}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                      ${parseFloat(trade.total_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                      <div className="flex flex-col">
-                                        <span className={`font-medium ${weightChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                          {weightChange >= 0 ? '+' : ''}{(weightChange * 100).toFixed(2)}%
-                                        </span>
-                                        <span className="text-xs text-gray-500">
-                                          {trade.weight_before ? `${(trade.weight_before * 100).toFixed(2)}% → ${(trade.weight_after * 100).toFixed(2)}%` : ''}
-                                        </span>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <div className="text-center py-8 text-gray-500">
-                            No trade history available
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'chart' && (
-            <div className="space-y-6">
-              {asset.symbol ? (
-                <AdvancedChart
-                  symbol={asset.symbol}
-                  height={500}
-                  className="w-full"
-                />
-              ) : (
-                <div className="bg-gray-50 rounded-lg p-12 text-center">
-                  <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Chart Available</h3>
-                  <p className="text-gray-500">This asset does not have a stock symbol associated with it.</p>
-                </div>
-              )}
-            </div>
+            <OutcomesContainer
+              assetId={asset.id}
+              symbol={asset.symbol}
+              currentPrice={currentQuote?.price}
+            />
           )}
 
           {activeTab === 'notes' && (showNoteEditor ? (

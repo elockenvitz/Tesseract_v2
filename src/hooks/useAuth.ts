@@ -1,11 +1,37 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
+const USER_CACHE_KEY = 'auth-user-cache'
+
+// Read cached user synchronously (outside hook to avoid re-reads)
+function getCachedUser(): User | null {
+  try {
+    const cached = localStorage.getItem(USER_CACHE_KEY)
+    return cached ? JSON.parse(cached) : null
+  } catch {
+    return null
+  }
+}
+
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null)
+  // Initialize from cache for instant display
+  const [user, setUser] = useState<User | null>(() => getCachedUser())
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Cache user to localStorage
+  const cacheUser = useCallback((userData: User | null) => {
+    try {
+      if (userData) {
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(userData))
+      } else {
+        localStorage.removeItem(USER_CACHE_KEY)
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [])
 
   const handleAuthSession = async (session: Session | null) => {
     setSession(session)
@@ -43,13 +69,19 @@ export function useAuth() {
 
           if (newFetchError) {
             console.warn('Failed to fetch new user profile:', newFetchError)
-            setUser(session.user)
+            const userData = session.user
+            setUser(userData)
+            cacheUser(userData)
           } else {
-            setUser({ ...session.user, ...newProfile } as any)
+            const userData = { ...session.user, ...newProfile } as any
+            setUser(userData)
+            cacheUser(userData)
           }
         } else if (fetchError) {
           console.warn('Failed to fetch user profile:', fetchError)
-          setUser(session.user)
+          const userData = session.user
+          setUser(userData)
+          cacheUser(userData)
         } else {
           // User exists - just update email if it changed (don't overwrite names)
           if (existingProfile.email !== session.user.email) {
@@ -59,15 +91,20 @@ export function useAuth() {
               .eq('id', session.user.id)
           }
           // Merge auth user with profile data
-          setUser({ ...session.user, ...existingProfile } as any)
+          const userData = { ...session.user, ...existingProfile } as any
+          setUser(userData)
+          cacheUser(userData)
         }
       } catch (err) {
         console.warn('Network error handling user session (non-blocking):', err)
         // Fall back to auth user only
-        setUser(session.user)
+        const userData = session.user
+        setUser(userData)
+        cacheUser(userData)
       }
     } else {
       setUser(null)
+      cacheUser(null)
     }
 
     setLoading(false)
@@ -134,6 +171,7 @@ export function useAuth() {
   }
 
   const signOut = async () => {
+    cacheUser(null) // Clear cache on sign out
     const { error } = await supabase.auth.signOut()
     return { error }
   }

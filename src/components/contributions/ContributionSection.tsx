@@ -22,7 +22,8 @@ import {
   Link,
   Heading2,
   Undo2,
-  Redo2
+  Redo2,
+  Star
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { formatDistanceToNow } from 'date-fns'
@@ -51,6 +52,7 @@ interface ContributionSectionProps {
   defaultVisibility?: ContributionVisibility
   activeTab?: TabType
   onTabChange?: (tab: TabType) => void
+  coveringAnalystIds?: Set<string>
 }
 
 const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
@@ -78,7 +80,8 @@ export function ContributionSection({
   className,
   defaultVisibility = 'firm',
   activeTab = 'aggregated',
-  onTabChange
+  onTabChange,
+  coveringAnalystIds = new Set()
 }: ContributionSectionProps) {
   const { user } = useAuth()
   const [viewMode, setViewMode] = useState<'combined' | 'ai'>('combined')
@@ -782,14 +785,20 @@ export function ContributionSection({
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {contributions.map((c) => (
-                        <div key={c.id} className="text-gray-700 leading-relaxed">
-                          <span className="font-medium text-gray-900">{c.user?.full_name}:</span>{' '}
-                          <div className="inline prose prose-sm max-w-none prose-p:inline prose-p:m-0">
-                            <SmartInputRenderer content={c.content} inline />
+                      {contributions.map((c) => {
+                        const isCovering = coveringAnalystIds.has(c.created_by)
+                        return (
+                          <div key={c.id} className="text-gray-700 leading-relaxed">
+                            <span className="font-medium text-gray-900 inline-flex items-center gap-1">
+                              {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" title="Covering Analyst" />}
+                              {c.user?.full_name}:
+                            </span>{' '}
+                            <div className="inline prose prose-sm max-w-none prose-p:inline prose-p:m-0">
+                              <SmartInputRenderer content={c.content} inline />
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )
                 ) : (
@@ -803,15 +812,21 @@ export function ContributionSection({
                       <div className="space-y-3">
                         {[...contributions]
                           .sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime())
-                          .map((c) => (
-                          <div key={c.id} className="text-gray-700 leading-relaxed">
-                            <span className="text-gray-500">{formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}</span>
-                            {' '}<span className="font-medium">{c.user?.full_name}</span> said{' '}
-                            "<span className="prose prose-sm max-w-none inline prose-p:inline prose-p:m-0">
-                              <SmartInputRenderer content={c.content} inline />
-                            </span>"
-                          </div>
-                        ))}
+                          .map((c) => {
+                            const isCovering = coveringAnalystIds.has(c.created_by)
+                            return (
+                              <div key={c.id} className="text-gray-700 leading-relaxed">
+                                <span className="text-gray-500">{formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}</span>
+                                {' '}<span className="font-medium inline-flex items-center gap-1">
+                                  {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" title="Covering Analyst" />}
+                                  {c.user?.full_name}
+                                </span> said{' '}
+                                "<span className="prose prose-sm max-w-none inline prose-p:inline prose-p:m-0">
+                                  <SmartInputRenderer content={c.content} inline />
+                                </span>"
+                              </div>
+                            )
+                          })}
                       </div>
                     )}
                   </div>

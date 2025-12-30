@@ -118,7 +118,9 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         visibility_targets: c.visibility_targets || []
       })) as Contribution[]
     },
-    enabled: !!assetId
+    enabled: !!assetId,
+    staleTime: Infinity, // Never refetch automatically
+    gcTime: 30 * 60 * 1000
   })
 
   // Get the current user's contribution for this section

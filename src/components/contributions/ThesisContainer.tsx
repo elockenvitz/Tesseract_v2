@@ -1,14 +1,17 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
 import {
   Target,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  Star
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { useContributions } from '../../hooks/useContributions'
 import { ContributionSection } from './ContributionSection'
+import { supabase } from '../../lib/supabase'
 
 interface ThesisContainerProps {
   assetId: string
@@ -17,9 +20,46 @@ interface ThesisContainerProps {
 
 type TabType = 'aggregated' | string // 'aggregated' or a user ID
 
+interface CoverageAnalyst {
+  user_id: string | null
+  analyst_name: string
+  role: string | null
+}
+
 export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabType>('aggregated')
+
+  // Get current user's name from auth (for tab label even if they haven't contributed)
+  const currentUserName = useMemo(() => {
+    const authUser = user as any
+    const firstName = authUser?.first_name || ''
+    const lastName = authUser?.last_name || ''
+    if (firstName && lastName) {
+      return `${firstName[0]}. ${lastName}`
+    }
+    return firstName || 'My View'
+  }, [user])
+
+  // Fetch coverage data for this asset
+  const { data: coverageData = [] } = useQuery({
+    queryKey: ['asset-coverage', assetId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('coverage')
+        .select('user_id, analyst_name, role')
+        .eq('asset_id', assetId)
+        .eq('is_active', true)
+      if (error) throw error
+      return (data || []) as CoverageAnalyst[]
+    },
+    enabled: !!assetId,
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000
+  })
+
+  // Create a set of covering analyst user IDs for quick lookup
+  const coveringAnalystIds = new Set(coverageData.map(c => c.user_id).filter(Boolean))
 
   // Fetch all contributions across all sections to build the user tabs
   const { contributions: thesisContributions } = useContributions({ assetId, section: 'thesis' })
@@ -29,16 +69,28 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
   // Combine all contributions to find unique contributors
   const allContributions = [...thesisContributions, ...whereDiffContributions, ...risksContributions]
 
-  // Get unique contributors with their most recent update time
-  const contributorMap = new Map<string, { userId: string; firstName: string; lastName: string; updatedAt: string }>()
+  // Get unique contributors with their most recent update time and covering status
+  const contributorMap = new Map<string, {
+    userId: string
+    firstName: string
+    lastName: string
+    updatedAt: string
+    isCovering: boolean
+    coverageRole: string | null
+  }>()
   allContributions.forEach(c => {
     const existing = contributorMap.get(c.created_by)
+    const isCovering = coveringAnalystIds.has(c.created_by)
+    const coverageRole = coverageData.find(cov => cov.user_id === c.created_by)?.role || null
+
     if (!existing || new Date(c.updated_at) > new Date(existing.updatedAt)) {
       contributorMap.set(c.created_by, {
         userId: c.created_by,
         firstName: c.user?.first_name || '',
         lastName: c.user?.last_name || '',
-        updatedAt: c.updated_at
+        updatedAt: c.updated_at,
+        isCovering,
+        coverageRole
       })
     }
   })
@@ -86,31 +138,40 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
             <button
               key={contributor.userId}
               onClick={() => setActiveTab(contributor.userId)}
-              title={`Updated ${formatDistanceToNow(new Date(contributor.updatedAt), { addSuffix: true })}`}
+              title={`${contributor.isCovering ? `Covering Analyst${contributor.coverageRole ? ` (${contributor.coverageRole})` : ''} · ` : ''}Updated ${formatDistanceToNow(new Date(contributor.updatedAt), { addSuffix: true })}`}
               className={clsx(
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
                 activeTab === contributor.userId
                   ? 'border-primary-600 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               )}
             >
+              {contributor.isCovering && (
+                <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+              )}
               {getContributorLabel(contributor)}
             </button>
           ))}
 
-          {/* Current user's tab - only render when we know who they are */}
-          {currentUserContributor && (
+          {/* Current user's tab - show immediately when user exists */}
+          {user && (
             <button
-              onClick={() => setActiveTab(currentUserContributor.userId)}
-              title={`Your view · Updated ${formatDistanceToNow(new Date(currentUserContributor.updatedAt), { addSuffix: true })}`}
+              onClick={() => setActiveTab(user.id)}
+              title={currentUserContributor
+                ? `Your view${currentUserContributor.isCovering ? ` · Covering Analyst${currentUserContributor.coverageRole ? ` (${currentUserContributor.coverageRole})` : ''}` : ''} · Updated ${formatDistanceToNow(new Date(currentUserContributor.updatedAt), { addSuffix: true })}`
+                : 'Your view'
+              }
               className={clsx(
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap rounded-t-md',
-                activeTab === currentUserContributor.userId
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap rounded-t-md flex items-center gap-1.5',
+                activeTab === user.id
                   ? 'border-primary-600 text-primary-600 bg-primary-100'
-                  : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-100'
+                  : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-50'
               )}
             >
-              {getContributorLabel(currentUserContributor)}
+              {currentUserContributor?.isCovering && (
+                <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+              )}
+              {currentUserName}
             </button>
           )}
         </div>
@@ -126,6 +187,7 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         defaultVisibility="firm"
+        coveringAnalystIds={coveringAnalystIds}
       />
 
       <ContributionSection
@@ -137,6 +199,7 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         defaultVisibility="firm"
+        coveringAnalystIds={coveringAnalystIds}
       />
 
       <ContributionSection
@@ -148,6 +211,7 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         defaultVisibility="firm"
+        coveringAnalystIds={coveringAnalystIds}
       />
     </div>
   )
