@@ -237,7 +237,17 @@ export function InvestmentTimeline({
         }
 
         console.log('📋 InvestmentTimeline: Loaded stages from template version:', templateVersion.stages)
-        return templateVersion.stages || []
+        // Normalize template version stage format to match workflow_stages table format
+        const normalizedStages = (templateVersion.stages || []).map((stage: any) => ({
+          stage_key: stage.key || stage.stage_key,
+          stage_label: stage.name || stage.stage_label,
+          stage_description: stage.description || stage.stage_description,
+          stage_color: stage.color || stage.stage_color,
+          stage_icon: stage.icon || stage.stage_icon,
+          sort_order: stage.order_index || stage.sort_order,
+          checklist: stage.checklist || []
+        }))
+        return normalizedStages
       }
 
       // Otherwise, it's a template - get stages from workflow_stages table
@@ -273,38 +283,22 @@ export function InvestmentTimeline({
         return []
       }
 
-      // If it's a branch (has parent_workflow_id), get checklists from template version
-      if (workflow?.parent_workflow_id && workflow?.template_version_id) {
-        const { data: templateVersion, error } = await supabase
-          .from('workflow_template_versions')
-          .select('stages')
-          .eq('id', workflow.template_version_id)
-          .single()
+      // If it's a branch (has parent_workflow_id), get checklists from parent workflow's templates
+      if (workflow?.parent_workflow_id) {
+        // Get checklist templates from parent workflow
+        const { data: parentChecklists, error } = await supabase
+          .from('workflow_checklist_templates')
+          .select('*')
+          .eq('workflow_id', workflow.parent_workflow_id)
+          .order('stage_id, sort_order')
 
         if (error) {
-          console.error('Error fetching template version checklists:', error)
+          console.error('Error fetching parent workflow checklists:', error)
           throw error
         }
 
-        // Flatten checklist templates from all stages
-        const checklistTemplates: any[] = []
-        const stages = templateVersion.stages || []
-
-        stages.forEach((stage: any) => {
-          if (stage.checklist && Array.isArray(stage.checklist)) {
-            stage.checklist.forEach((item: any, index: number) => {
-              checklistTemplates.push({
-                stage_id: stage.stage_key,
-                item_id: item.id,
-                item_text: item.text,
-                sort_order: item.sortOrder || index
-              })
-            })
-          }
-        })
-
-        console.log('📋 InvestmentTimeline: Loaded checklist templates from template version:', checklistTemplates)
-        return checklistTemplates
+        console.log('📋 InvestmentTimeline: Loaded checklist templates from parent workflow:', parentChecklists)
+        return parentChecklists || []
       }
 
       // Otherwise, it's a template - get checklists from workflow_checklist_templates table
@@ -2062,25 +2056,26 @@ export function InvestmentTimeline({
                       <div className="relative z-10 space-y-2.5 min-h-[85px] flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
 
 
+                        {/* Status Indicator - Positioned at top right */}
+                        <div className="absolute flex-shrink-0 z-20" style={{ right: '12px', top: '-2px' }}>
+                          {status === 'completed' && (
+                            <Check className="w-5 h-5" strokeWidth={2.5} />
+                          )}
+                          {status === 'current' && (
+                            <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
+                          )}
+                        </div>
+
                         {/* Header */}
-                        <div className="flex items-center min-w-0 relative">
+                        <div className="flex items-center min-w-0">
                           {/* Stage Number - Fixed width container */}
                           <div className="flex items-center justify-center w-7 h-7 rounded-md bg-black/15 text-sm font-bold flex-shrink-0 mr-2">
                             {index + 1}
                           </div>
                           {/* Stage Name - Left aligned */}
-                          <h4 className="text-base font-semibold leading-tight truncate min-w-0">
+                          <h4 className="text-base font-semibold leading-tight truncate min-w-0 pr-6">
                             {stage.label}
                           </h4>
-                          {/* Status Indicator */}
-                          <div className="absolute flex-shrink-0" style={{ right: '20px' }}>
-                            {status === 'completed' && (
-                              <Check className="w-5 h-5" strokeWidth={2.5} />
-                            )}
-                            {status === 'current' && (
-                              <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
-                            )}
-                          </div>
                         </div>
 
                         {/* Progress */}

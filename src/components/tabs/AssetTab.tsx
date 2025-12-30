@@ -563,13 +563,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         // Get stage information for this workflow
         const { data: stageData } = await supabase
           .from('workflow_stages')
-          .select('id, sort_order')
+          .select('id, stage_key, sort_order')
           .eq('workflow_id', workflow.workflow_id)
           .order('sort_order', { ascending: true })
 
         const total_stages = stageData?.length || 0
         const current_stage_index = workflow.current_stage_key
-          ? (stageData?.findIndex(s => s.id === workflow.current_stage_key) ?? 0)
+          ? (stageData?.findIndex(s => s.stage_key === workflow.current_stage_key) ?? 0)
           : 0
 
         return {
