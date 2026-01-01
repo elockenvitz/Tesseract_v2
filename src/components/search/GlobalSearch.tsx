@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Search, TrendingUp, Briefcase, Tag, FileText, List, Target, PieChart, Clock } from 'lucide-react'
+import { Search, TrendingUp, Briefcase, Tag, FileText, List, Target, PieChart, Clock, User } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
+import { getContentPreview } from '../../utils/stripHtml'
 
 interface SearchResult {
   id: string
   title: string
-  type: 'asset' | 'portfolio' | 'theme' | 'note' | 'list' | 'tdf' | 'allocation-period'
+  type: 'asset' | 'portfolio' | 'theme' | 'note' | 'list' | 'tdf' | 'allocation-period' | 'user'
   subtitle?: string
   data: any
 }
@@ -78,45 +79,70 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search assets, por
           .limit(2)
       ])
       
-      // Add asset notes
+      // Add asset notes - use stable tab ID based on entity
       if (assetNotes.data) {
         results.push(...assetNotes.data.map(note => ({
-          id: note.id,
-          title: note.title,
-          subtitle: `${note.assets.symbol} - ${note.content.substring(0, 50)}...`,
+          id: `note-asset-${note.asset_id}`,
+          title: `Note - ${note.assets.symbol}`,
+          subtitle: `${note.title} - ${getContentPreview(note.content || '', 50)}`,
           type: 'note' as const,
-          data: note
+          data: {
+            id: note.id,
+            entityType: 'asset',
+            entityId: note.asset_id,
+            assetId: note.asset_id,
+            assetSymbol: note.assets.symbol,
+            assets: note.assets
+          }
         })))
       }
-      
+
       // Add other note types
       if (portfolioNotes.data) {
         results.push(...portfolioNotes.data.map(note => ({
-          id: note.id,
-          title: note.title,
-          subtitle: `${note.portfolios.name} - ${note.content.substring(0, 50)}...`,
+          id: `note-portfolio-${note.portfolio_id}`,
+          title: `Note - ${note.portfolios.name}`,
+          subtitle: `${note.title} - ${getContentPreview(note.content || '', 50)}`,
           type: 'note' as const,
-          data: note
+          data: {
+            id: note.id,
+            entityType: 'portfolio',
+            entityId: note.portfolio_id,
+            portfolioId: note.portfolio_id,
+            portfolioName: note.portfolios.name,
+            portfolios: note.portfolios
+          }
         })))
       }
-      
+
       if (themeNotes.data) {
         results.push(...themeNotes.data.map(note => ({
-          id: note.id,
-          title: note.title,
-          subtitle: `${note.themes.name} - ${note.content.substring(0, 50)}...`,
+          id: `note-theme-${note.theme_id}`,
+          title: `Note - ${note.themes.name}`,
+          subtitle: `${note.title} - ${getContentPreview(note.content || '', 50)}`,
           type: 'note' as const,
-          data: note
+          data: {
+            id: note.id,
+            entityType: 'theme',
+            entityId: note.theme_id,
+            themeId: note.theme_id,
+            themeName: note.themes.name,
+            themes: note.themes
+          }
         })))
       }
-      
+
       if (customNotes.data) {
         results.push(...customNotes.data.map(note => ({
-          id: note.id,
-          title: note.title,
-          subtitle: `${note.custom_notebooks.name} - ${note.content.substring(0, 50)}...`,
+          id: `note-custom-${note.custom_notebook_id}`,
+          title: `Note - ${note.custom_notebooks.name}`,
+          subtitle: `${note.title} - ${getContentPreview(note.content || '', 50)}`,
           type: 'note' as const,
-          data: note
+          data: {
+            id: note.id,
+            entityType: 'custom',
+            entityId: note.custom_notebook_id
+          }
         })))
       }
       
@@ -210,6 +236,28 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search assets, por
         })))
       }
 
+      // Search Users
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,email.ilike.%${query}%`)
+        .limit(5)
+
+      if (users) {
+        results.push(...users.map(user => {
+          const fullName = user.first_name && user.last_name
+            ? `${user.first_name} ${user.last_name}`
+            : user.email?.split('@')[0] || 'Unknown'
+          return {
+            id: user.id,
+            title: fullName,
+            subtitle: user.email || '',
+            type: 'user' as const,
+            data: { id: user.id, full_name: fullName, email: user.email }
+          }
+        }))
+      }
+
       return results
     },
     enabled: query.length > 1
@@ -290,6 +338,7 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search assets, por
       case 'list': return <List className="h-4 w-4 text-purple-600" />
       case 'tdf': return <Clock className="h-4 w-4 text-cyan-600" />
       case 'allocation-period': return <PieChart className="h-4 w-4 text-rose-600" />
+      case 'user': return <User className="h-4 w-4 text-gray-600" />
       default: return <Search className="h-4 w-4 text-gray-400" />
     }
   }

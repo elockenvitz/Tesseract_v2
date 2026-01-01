@@ -10,6 +10,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
+import { getContentPreview } from '../../utils/stripHtml'
 
 type ContentFilter = 'all' | 'thoughts' | 'trade-ideas' | 'notes'
 
@@ -386,7 +387,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
 
         {note.content && (
           <p className="text-sm text-gray-600 line-clamp-2 mb-2">
-            {note.content.replace(/<[^>]*>/g, '').slice(0, 150)}
+            {getContentPreview(note.content, 150)}
           </p>
         )}
 

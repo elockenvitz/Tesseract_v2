@@ -9,7 +9,6 @@ import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
-import { TemplateManager } from '../templates/TemplateManager'
 import { TesseractLogo } from '../ui/TesseractLogo'
 
 interface HeaderProps {
@@ -44,7 +43,6 @@ export function Header({
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
@@ -390,7 +388,11 @@ export function Header({
                   <button
                     onClick={() => {
                       setShowUserMenu(false)
-                      setShowTemplates(true)
+                      onSearchResult({
+                        id: 'templates',
+                        title: 'Templates',
+                        type: 'templates'
+                      })
                     }}
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
                   >
@@ -478,33 +480,6 @@ export function Header({
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto transform transition-all p-8">
               <SettingsPage onClose={() => setShowSettings(false)} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Templates Modal */}
-      {showTemplates && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-            onClick={() => setShowTemplates(false)}
-          />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-auto transform transition-all p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Text Templates</h2>
-                <button
-                  onClick={() => setShowTemplates(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <span className="sr-only">Close</span>
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <TemplateManager />
             </div>
           </div>
         </div>

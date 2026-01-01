@@ -1,12 +1,27 @@
 import { EntityType } from '../../hooks/useEntitySearch'
 
-export type TriggerType = 'mention' | 'hashtag' | 'cashtag' | 'template' | 'data' | 'ai'
+export type TriggerType = 'mention' | 'hashtag' | 'cashtag' | 'template' | 'data' | 'ai' | 'ai-model' | 'capture' | 'screenshot' | 'embed'
 
 export interface TriggerInfo {
   type: TriggerType
   query: string
   position: number
+  model?: string  // For AI triggers, the selected model (e.g., 'claude', 'gpt')
 }
+
+// AI Model definitions
+export interface AIModel {
+  id: string
+  name: string
+  provider: string
+  description: string
+}
+
+export const AI_MODELS: AIModel[] = [
+  { id: 'claude', name: 'Claude', provider: 'Anthropic', description: 'Claude 3.5 Sonnet - Best for analysis' },
+  { id: 'gpt', name: 'GPT-4', provider: 'OpenAI', description: 'GPT-4o - Great for general tasks' },
+  { id: 'gemini', name: 'Gemini', provider: 'Google', description: 'Gemini Pro - Fast responses' },
+]
 
 export interface MentionData {
   userId: string

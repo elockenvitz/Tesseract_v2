@@ -1,2 +1,6 @@
 export { ContributionSection } from './ContributionSection'
 export { ThesisContainer } from './ThesisContainer'
+export { ThesisSummaryView } from './ThesisSummaryView'
+export { ThesisUnifiedSummary } from './ThesisUnifiedSummary'
+export { ThesisHistoryView } from './ThesisHistoryView'
+export type { ThesisAnalysis, Sentiment, AggregationMethod } from './ThesisSummaryView'

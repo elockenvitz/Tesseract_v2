@@ -94,6 +94,18 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
     return 'Unknown user'
   }
 
+  // Safe date formatting helper
+  const formatDate = (dateStr: string | undefined | null) => {
+    if (!dateStr) return 'Unknown'
+    try {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return 'Unknown'
+      return formatDistanceToNow(date, { addSuffix: true })
+    } catch {
+      return 'Unknown'
+    }
+  }
+
   const getNoteTypeColor = (type: string | null) => {
     switch (type) {
       case 'meeting':
@@ -135,20 +147,12 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500">
             <div className="flex items-center whitespace-nowrap">
               <Calendar className="h-4 w-4 mr-1" />
-              Created{' '}
-              {formatDistanceToNow(new Date(notebook.created_at), {
-                addSuffix: true,
-              })}{' '}
-              by {getUserDisplayName(createdByUser)}
+              Created {formatDate(notebook.created_at)} by {getUserDisplayName(createdByUser)}
             </div>
 
             <div className="flex items-center whitespace-nowrap">
               <UserIcon className="h-4 w-4 mr-1" />
-              Last edited{' '}
-              {formatDistanceToNow(new Date(notebook.updated_at), {
-                addSuffix: true,
-              })}{' '}
-              by {getUserDisplayName(updatedByUser)}
+              Last edited {formatDate(notebook.updated_at)} by {getUserDisplayName(updatedByUser)}
             </div>
           </div>
         </div>
@@ -187,7 +191,7 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
             <div className="ml-3">
               <p className="text-xs font-medium text-gray-600">Last Updated</p>
               <p className="text-sm font-semibold text-gray-900">
-                {formatDistanceToNow(new Date(notebook.updated_at), { addSuffix: true })}
+                {formatDate(notebook.updated_at)}
               </p>
               <p className="text-xs text-gray-500">
                 by {getUserDisplayName(updatedByUser)}

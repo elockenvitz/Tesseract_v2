@@ -23,6 +23,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { stripHtml } from '../../utils/stripHtml'
 import { Select } from '../ui/Select'
 import { ListSkeleton } from '../common/LoadingSkeleton'
 import { format, subDays, subWeeks, subMonths, subQuarters, subYears } from 'date-fns'
@@ -903,7 +904,7 @@ function NotesSection({
                 {format(new Date(note.created_at), 'MMM d, yyyy')}
               </span>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{note.content}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{stripHtml(note.content || '')}</p>
             {note.users && (
               <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 — {note.users.first_name || note.users.email.split('@')[0]}

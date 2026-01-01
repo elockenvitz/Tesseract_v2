@@ -6,7 +6,7 @@ interface ThemeNoteEditorProps {
   themeName: string
   selectedNoteId?: string
   onNoteSelect: (noteId: string) => void
-  onClose: () => void
+  onClose?: () => void
 }
 
 export function ThemeNoteEditor({

@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
 import { TabStateManager } from '../../lib/tabStateManager'
+import { getContentPreview } from '../../utils/stripHtml'
 
 interface ThemeTabProps {
   theme: any
@@ -832,7 +833,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                               )}
                             </div>
                             <p className="text-sm text-gray-600 line-clamp-2 mb-2">
-                              {note.content.substring(0, 150)}...
+                              {getContentPreview(note.content || '', 150)}
                             </p>
                             <div className="flex items-center space-x-4 text-xs text-gray-500">
                               <div className="flex items-center">

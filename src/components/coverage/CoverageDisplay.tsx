@@ -29,6 +29,7 @@ interface CoverageDisplayProps {
   showHeader?: boolean
   thesisStatuses?: ThesisStatus[]
   showThesisStatus?: boolean
+  onUserClick?: (user: { id: string; full_name: string }) => void
 }
 
 // Default role configurations for system roles
@@ -59,7 +60,8 @@ export function CoverageDisplay({
   showPortfolio = false,
   showHeader = true,
   thesisStatuses = [],
-  showThesisStatus = false
+  showThesisStatus = false,
+  onUserClick
 }: CoverageDisplayProps) {
   // Sort by role: primary first, then secondary, then tertiary, then custom roles, then no role
   const sortedCoverage = [...(coverage || [])].sort((a, b) => {
@@ -95,7 +97,17 @@ export function CoverageDisplay({
             return (
               <div key={analyst.id} className="flex items-center space-x-2">
                 <RoleIcon className={clsx('h-3 w-3 flex-shrink-0', config?.color || 'text-gray-400')} />
-                <span className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                <span
+                  className={clsx(
+                    'text-sm text-gray-700 dark:text-gray-300 truncate',
+                    onUserClick && analyst.user_id && 'hover:text-primary-600 cursor-pointer hover:underline'
+                  )}
+                  onClick={() => {
+                    if (onUserClick && analyst.user_id) {
+                      onUserClick({ id: analyst.user_id, full_name: analyst.analyst_name })
+                    }
+                  }}
+                >
                   {analyst.analyst_name}
                 </span>
                 {role && (

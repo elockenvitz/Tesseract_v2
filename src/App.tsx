@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
 import { useAuth } from './hooks/useAuth'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { CaptureProvider } from './contexts/CaptureContext'
 import { ErrorBoundary, ToastProvider } from './components/common'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { DashboardPage } from './pages/DashboardPage'
@@ -11,6 +12,8 @@ import { SignupPage } from './pages/auth/SignupPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { SetupWizardPage } from './pages/SetupWizardPage'
 import { TesseractLoader } from './components/ui/TesseractLoader'
+import { CaptureOverlay } from './components/capture/CaptureOverlay'
+import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,9 +83,14 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ToastProvider>
-            <Router>
-              <AppRoutes />
-            </Router>
+            <CaptureProvider>
+              <Router>
+                <AppRoutes />
+                {/* Global capture mode components */}
+                <CaptureOverlay />
+                <CaptureConfigModal />
+              </Router>
+            </CaptureProvider>
           </ToastProvider>
         </ThemeProvider>
       </QueryClientProvider>

@@ -13,7 +13,8 @@ import {
   formatDataSnapshot,
   formatDataLive,
   formatAIContent,
-  DataFunctionType
+  DataFunctionType,
+  AI_MODELS
 } from '../components/smart-input/types'
 
 interface UseSmartInputOptions {
@@ -96,6 +97,7 @@ export function useSmartInput({
   // AI Prompt Mode state
   const [isAIPromptMode, setIsAIPromptMode] = useState(false)
   const [aiPromptStartPos, setAIPromptStartPos] = useState(0)
+  const [selectedAIModel, setSelectedAIModel] = useState<string>('claude') // Default model
   const [isAILoading, setIsAILoading] = useState(false)
   const [aiError, setAIError] = useState<string | null>(null)
 
@@ -147,20 +149,25 @@ export function useSmartInput({
   const detectTrigger = useCallback((text: string, cursorPos: number): TriggerInfo | null => {
     const beforeCursor = text.substring(0, cursorPos)
 
-    // Check for .AI prompt mode FIRST (special case - space is part of the trigger)
-    // Look for ".ai " or ".ai" followed by text anywhere in beforeCursor
+    // Check for .AI prompt mode FIRST (special case)
+    // Supports: .AI, .AI., .AI.claude, .AI.claude prompt text, .AI prompt text
     if (enableAI) {
-      const aiMatch = beforeCursor.match(/\.ai(\s+.*)?$/i)
+      // Match .ai optionally followed by .modelname and optionally followed by space+prompt
+      const aiMatch = beforeCursor.match(/\.ai(\.([a-z0-9]+))?(\s+.*)?$/i)
       if (aiMatch) {
         const dotPos = beforeCursor.length - aiMatch[0].length
-        const afterDotAI = aiMatch[1] || '' // The space and text after .ai, or empty
+        const modelName = aiMatch[2] || '' // e.g., "claude", "gpt"
+        const afterModel = aiMatch[3] || '' // The space and text after model, or empty
 
-        if (afterDotAI.length > 0) {
-          // Has space - this is AI prompt mode with potential prompt text
-          const promptText = afterDotAI.trimStart() // Remove the leading space
-          return { type: 'ai', query: promptText, position: dotPos }
+        if (afterModel.length > 0) {
+          // Has space after model - this is AI prompt mode with potential prompt text
+          const promptText = afterModel.trimStart()
+          return { type: 'ai', query: promptText, position: dotPos, model: modelName || undefined }
+        } else if (aiMatch[1]) {
+          // Has dot after .AI (typing model name) - show model dropdown
+          return { type: 'ai-model', query: modelName, position: dotPos }
         } else {
-          // Just ".ai" without space - show hint dropdown
+          // Just ".ai" without anything - show hint dropdown
           return { type: 'ai', query: '', position: dotPos }
         }
       }
@@ -221,6 +228,26 @@ export function useSmartInput({
         if (cmd.length > 0 && dataCommands.some(d => d.startsWith(cmd) || cmd.startsWith(d))) {
           return { type: 'data', query: cmd, position: lastDot }
         }
+      }
+
+      // .capture, .screenshot, .embed commands
+      const captureCommands = ['capture', 'screenshot', 'embed']
+      if (cmd.length > 0 && captureCommands.some(c => c.startsWith(cmd) || cmd.startsWith(c))) {
+        // Handle .embed with URL argument
+        if (cmd.startsWith('embed')) {
+          const embedMatch = beforeCursor.match(/\.embed\s+(https?:\/\/[^\s]*)?$/i)
+          if (embedMatch) {
+            return { type: 'embed', query: embedMatch[1] || '', position: lastDot }
+          }
+          // Just .embed without space yet
+          return { type: 'embed', query: '', position: lastDot }
+        }
+        // .screenshot
+        if (cmd.startsWith('screen')) {
+          return { type: 'screenshot', query: cmd, position: lastDot }
+        }
+        // .capture
+        return { type: 'capture', query: cmd, position: lastDot }
       }
     }
 
@@ -326,26 +353,38 @@ export function useSmartInput({
     const trigger = detectTrigger(newValue, newCursorPos)
 
     if (trigger) {
-      // Special handling for AI prompt mode
+      // Special handling for AI prompt mode and model selection
       if (trigger.type === 'ai') {
-        // Check if user has typed ".ai " (with space) - enter AI prompt mode
+        // Check if we have actual prompt text (space was typed after .AI or .AI.model)
         const textFromTrigger = newValue.substring(trigger.position, newCursorPos).toLowerCase()
-        const hasSpace = textFromTrigger.match(/^\.ai\s/)
+        const hasSpaceAfterTrigger = textFromTrigger.match(/^\.ai(\.[a-z0-9]+)?\s/)
 
-        if (hasSpace) {
-          console.log('[SmartInput] Entering AI prompt mode, startPos:', trigger.position)
+        if (hasSpaceAfterTrigger) {
+          // Space was typed - enter AI prompt mode
           setIsAIPromptMode(true)
           setAIPromptStartPos(trigger.position)
+          if (trigger.model) {
+            setSelectedAIModel(trigger.model)
+          }
           setActiveDropdown(null) // No dropdown for AI - typing inline
           setDropdownQuery(trigger.query)
         } else {
-          // Just typed ".ai" without space - show hint
+          // Just ".AI" without space - show hint dropdown
           setActiveDropdown('ai')
           setDropdownQuery('')
           setTriggerPosition(trigger.position)
           if (textareaRef.current) {
             setDropdownPosition(calculateDropdownPosition(textareaRef.current, trigger.position))
           }
+        }
+      } else if (trigger.type === 'ai-model') {
+        // Typing model name after .AI. - show model dropdown
+        setActiveDropdown('ai-model')
+        setDropdownQuery(trigger.query)
+        setTriggerPosition(trigger.position)
+        setSelectedIndex(0)
+        if (textareaRef.current) {
+          setDropdownPosition(calculateDropdownPosition(textareaRef.current, trigger.position))
         }
       } else {
         // Exit AI prompt mode if user is now triggering something else
@@ -365,8 +404,8 @@ export function useSmartInput({
       // Check if we're still in AI prompt mode (no new trigger but still typing after .AI)
       if (isAIPromptMode) {
         const textFromAIStart = newValue.substring(aiPromptStartPos)
-        // Check if the .AI prefix is still there
-        if (!textFromAIStart.toLowerCase().startsWith('.ai ')) {
+        // Check if the .AI prefix is still there (with optional model)
+        if (!textFromAIStart.toLowerCase().match(/^\.ai(\.[a-z0-9]+)?\s/)) {
           setIsAIPromptMode(false)
         }
       }
@@ -556,26 +595,21 @@ export function useSmartInput({
 
     // Get text from AI start to cursor position
     const textToCursor = value.substring(aiPromptStartPos, cursorPosition)
-    console.log('[SmartInput] aiPromptText calc - textToCursor:', textToCursor)
 
     // Remove the ".ai " prefix to get just the prompt
     const afterDotAI = textToCursor.replace(/^\.ai\s+/i, '')
-    console.log('[SmartInput] aiPromptText result:', afterDotAI)
 
     return afterDotAI
   }, [isAIPromptMode, value, aiPromptStartPos, cursorPosition])
 
   // Submit AI prompt
   const submitAIPrompt = useCallback(async () => {
-    console.log('[SmartInput] submitAIPrompt called, isAIPromptMode:', isAIPromptMode, 'aiPromptText:', aiPromptText)
     if (!isAIPromptMode || !aiPromptText.trim()) {
-      console.log('[SmartInput] submitAIPrompt early return - mode:', isAIPromptMode, 'text:', aiPromptText)
       return
     }
 
     setIsAILoading(true)
     setAIError(null)
-    console.log('[SmartInput] Starting AI request...')
 
     try {
       // Import supabase and call AI
@@ -637,6 +671,31 @@ export function useSmartInput({
     setIsAIPromptMode(false)
     // Optionally remove the ".AI " text
   }, [])
+
+  // Select AI model from dropdown - inserts .AI.modelname and enters prompt mode
+  const selectAIModel = useCallback((modelId: string) => {
+    const insertText = `.AI.${modelId} `
+    const before = value.substring(0, triggerPosition)
+    const after = value.substring(cursorPosition)
+    const newValue = before + insertText + after
+    const newCursorPos = before.length + insertText.length
+
+    setValue(newValue)
+    setCursorPosition(newCursorPos)
+    setSelectedAIModel(modelId)
+    setIsAIPromptMode(true)
+    setAIPromptStartPos(triggerPosition)
+    setActiveDropdown(null)
+    setDropdownQuery('')
+
+    // Refocus textarea and set cursor
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 0)
+  }, [value, triggerPosition, cursorPosition])
 
   // Navigate to next placeholder in template fill mode
   const goToNextPlaceholder = useCallback(() => {
@@ -721,15 +780,10 @@ export function useSmartInput({
 
     // Handle AI prompt mode
     if (isAIPromptMode) {
-      console.log('[SmartInput] AI Mode - Key pressed:', e.key, 'aiPromptText:', aiPromptText)
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        console.log('[SmartInput] Enter pressed, prompt:', aiPromptText)
         if (aiPromptText.trim()) {
-          console.log('[SmartInput] Calling submitAIPrompt')
           submitAIPrompt()
-        } else {
-          console.log('[SmartInput] aiPromptText is empty, not submitting')
         }
         return
       }
@@ -744,10 +798,16 @@ export function useSmartInput({
 
     if (!activeDropdown) return
 
+    // Get filtered AI models for ai-model dropdown
+    const filteredAIModels = AI_MODELS.filter(m =>
+      m.id.toLowerCase().includes(dropdownQuery.toLowerCase())
+    )
+
     const suggestions = activeDropdown === 'mention' ? userResults :
                        activeDropdown === 'cashtag' ? assetResults :
                        activeDropdown === 'hashtag' ? entityResults :
-                       activeDropdown === 'template' ? templateSuggestions : []
+                       activeDropdown === 'template' ? templateSuggestions :
+                       activeDropdown === 'ai-model' ? filteredAIModels : []
 
     switch (e.key) {
       case 'ArrowDown':
@@ -773,6 +833,8 @@ export function useSmartInput({
             selectReference(selected as EntitySearchResult)
           } else if (activeDropdown === 'template') {
             selectTemplate(selected as Template)
+          } else if (activeDropdown === 'ai-model') {
+            selectAIModel((selected as typeof AI_MODELS[0]).id)
           }
         }
         break
@@ -784,6 +846,7 @@ export function useSmartInput({
     }
   }, [
     activeDropdown,
+    dropdownQuery,
     userResults,
     assetResults,
     entityResults,
@@ -793,6 +856,7 @@ export function useSmartInput({
     selectCashtag,
     selectReference,
     selectTemplate,
+    selectAIModel,
     closeDropdown,
     isAIPromptMode,
     aiPromptText,
@@ -816,6 +880,7 @@ export function useSmartInput({
     // AI Prompt Mode
     isAIPromptMode,
     aiPromptText,
+    selectedAIModel,
     isAILoading,
     aiError,
 
@@ -843,6 +908,7 @@ export function useSmartInput({
     insertAIContent,
     submitAIPrompt,
     cancelAIPrompt,
+    selectAIModel,
     closeDropdown,
     setSelectedIndex,
 

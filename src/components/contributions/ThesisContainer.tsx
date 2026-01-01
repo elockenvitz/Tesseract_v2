@@ -11,11 +11,17 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { useContributions } from '../../hooks/useContributions'
 import { ContributionSection } from './ContributionSection'
+import { ThesisUnifiedSummary } from './ThesisUnifiedSummary'
+import { ThesisHistoryView } from './ThesisHistoryView'
 import { supabase } from '../../lib/supabase'
 
 interface ThesisContainerProps {
   assetId: string
   className?: string
+  /** Optional external view filter - when provided, hides internal tabs and uses this filter */
+  viewFilter?: 'aggregated' | string
+  /** View mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline */
+  viewMode?: 'all' | 'summary' | 'history'
 }
 
 type TabType = 'aggregated' | string // 'aggregated' or a user ID
@@ -26,9 +32,14 @@ interface CoverageAnalyst {
   role: string | null
 }
 
-export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
+export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'all' }: ThesisContainerProps) {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<TabType>('aggregated')
+  const [internalTab, setInternalTab] = useState<TabType>('aggregated')
+
+  // Use external viewFilter if provided, otherwise use internal tab state
+  const activeTab = viewFilter ?? internalTab
+  const setActiveTab = viewFilter ? () => {} : setInternalTab // No-op if externally controlled
+  const isExternallyControlled = viewFilter !== undefined
 
   // Get current user's name from auth (for tab label even if they haven't contributed)
   const currentUserName = useMemo(() => {
@@ -115,69 +126,100 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
     return first && last ? `${first}. ${contributor.lastName}` : contributor.firstName || 'Unknown'
   }
 
+  // Render Summary view
+  if (viewMode === 'summary') {
+    return (
+      <div className={clsx('space-y-6', className)}>
+        <ThesisUnifiedSummary
+          assetId={assetId}
+          viewFilter={activeTab}
+          thesisContributions={thesisContributions}
+          whereDiffContributions={whereDiffContributions}
+          risksContributions={risksContributions}
+          coveringAnalystIds={coveringAnalystIds}
+        />
+      </div>
+    )
+  }
+
+  // Render History view
+  if (viewMode === 'history') {
+    return (
+      <div className={clsx('space-y-6', className)}>
+        <ThesisHistoryView
+          assetId={assetId}
+          viewFilter={activeTab}
+        />
+      </div>
+    )
+  }
+
+  // Default: Render All (3 sections) view
   return (
     <div className={clsx('space-y-6', className)}>
-      {/* Universal tabs */}
-      <div className="border-b border-gray-200">
-        <div className="flex items-center space-x-1 overflow-x-auto">
-          {/* Aggregated tab */}
-          <button
-            onClick={() => setActiveTab('aggregated')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
-              activeTab === 'aggregated'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            )}
-          >
-            Aggregated
-          </button>
-
-          {/* Other contributor tabs */}
-          {otherContributors.map((contributor) => (
+      {/* Universal tabs - hidden when externally controlled */}
+      {!isExternallyControlled && (
+        <div className="border-b border-gray-200">
+          <div className="flex items-center space-x-1 overflow-x-auto">
+            {/* Our View tab */}
             <button
-              key={contributor.userId}
-              onClick={() => setActiveTab(contributor.userId)}
-              title={`${contributor.isCovering ? `Covering Analyst${contributor.coverageRole ? ` (${contributor.coverageRole})` : ''} · ` : ''}Updated ${formatDistanceToNow(new Date(contributor.updatedAt), { addSuffix: true })}`}
+              onClick={() => setActiveTab('aggregated')}
               className={clsx(
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
-                activeTab === contributor.userId
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                activeTab === 'aggregated'
                   ? 'border-primary-600 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               )}
             >
-              {contributor.isCovering && (
-                <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-              )}
-              {getContributorLabel(contributor)}
+              Our View
             </button>
-          ))}
 
-          {/* Current user's tab - show immediately when user exists */}
-          {user && (
-            <button
-              onClick={() => setActiveTab(user.id)}
-              title={currentUserContributor
-                ? `Your view${currentUserContributor.isCovering ? ` · Covering Analyst${currentUserContributor.coverageRole ? ` (${currentUserContributor.coverageRole})` : ''}` : ''} · Updated ${formatDistanceToNow(new Date(currentUserContributor.updatedAt), { addSuffix: true })}`
-                : 'Your view'
-              }
-              className={clsx(
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap rounded-t-md flex items-center gap-1.5',
-                activeTab === user.id
-                  ? 'border-primary-600 text-primary-600 bg-primary-100'
-                  : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-50'
-              )}
-            >
-              {currentUserContributor?.isCovering && (
-                <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-              )}
-              {currentUserName}
-            </button>
-          )}
+            {/* Other contributor tabs */}
+            {otherContributors.map((contributor) => (
+              <button
+                key={contributor.userId}
+                onClick={() => setActiveTab(contributor.userId)}
+                title={`${contributor.isCovering ? `Covering Analyst${contributor.coverageRole ? ` (${contributor.coverageRole})` : ''} · ` : ''}Updated ${formatDistanceToNow(new Date(contributor.updatedAt), { addSuffix: true })}`}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
+                  activeTab === contributor.userId
+                    ? 'border-primary-600 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                )}
+              >
+                {contributor.isCovering && (
+                  <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                )}
+                {getContributorLabel(contributor)}
+              </button>
+            ))}
+
+            {/* Current user's tab - show immediately when user exists */}
+            {user && (
+              <button
+                onClick={() => setActiveTab(user.id)}
+                title={currentUserContributor
+                  ? `Your view${currentUserContributor.isCovering ? ` · Covering Analyst${currentUserContributor.coverageRole ? ` (${currentUserContributor.coverageRole})` : ''}` : ''} · Updated ${formatDistanceToNow(new Date(currentUserContributor.updatedAt), { addSuffix: true })}`
+                  : 'Your view'
+                }
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap rounded-t-md flex items-center gap-1.5',
+                  activeTab === user.id
+                    ? 'border-primary-600 text-primary-600 bg-primary-100'
+                    : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-50'
+                )}
+              >
+                {currentUserContributor?.isCovering && (
+                  <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                )}
+                {currentUserName}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Contribution sections */}
+      {/* Contribution sections - hide per-section view mode buttons when top-level controls active */}
       <ContributionSection
         assetId={assetId}
         section="thesis"
@@ -188,6 +230,7 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
         onTabChange={setActiveTab}
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
+        hideViewModeButtons={true}
       />
 
       <ContributionSection
@@ -200,6 +243,7 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
         onTabChange={setActiveTab}
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
+        hideViewModeButtons={true}
       />
 
       <ContributionSection
@@ -212,6 +256,7 @@ export function ThesisContainer({ assetId, className }: ThesisContainerProps) {
         onTabChange={setActiveTab}
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
+        hideViewModeButtons={true}
       />
     </div>
   )

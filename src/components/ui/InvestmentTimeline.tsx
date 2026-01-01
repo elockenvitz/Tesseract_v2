@@ -2056,24 +2056,24 @@ export function InvestmentTimeline({
                       <div className="relative z-10 space-y-2.5 min-h-[85px] flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
 
 
-                        {/* Status Indicator - Positioned at top right */}
-                        <div className="absolute flex-shrink-0 z-20" style={{ right: '12px', top: '-2px' }}>
-                          {status === 'completed' && (
-                            <Check className="w-5 h-5" strokeWidth={2.5} />
-                          )}
-                          {status === 'current' && (
-                            <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
-                          )}
-                        </div>
-
                         {/* Header */}
                         <div className="flex items-center min-w-0">
-                          {/* Stage Number - Fixed width container */}
-                          <div className="flex items-center justify-center w-7 h-7 rounded-md bg-black/15 text-sm font-bold flex-shrink-0 mr-2">
+                          {/* Stage Number - Fixed width container with checkmark for completed */}
+                          <div className="relative flex items-center justify-center w-7 h-7 rounded-md bg-black/15 text-sm font-bold flex-shrink-0 mr-2">
                             {index + 1}
+                            {/* Completed checkmark - upper right of stage number */}
+                            {status === 'completed' && (
+                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm">
+                                <Check className="w-3 h-3 text-green-600" strokeWidth={3} />
+                              </div>
+                            )}
+                            {/* Current stage indicator */}
+                            {status === 'current' && (
+                              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-sm" />
+                            )}
                           </div>
                           {/* Stage Name - Left aligned */}
-                          <h4 className="text-base font-semibold leading-tight truncate min-w-0 pr-6">
+                          <h4 className="text-base font-semibold leading-tight truncate min-w-0">
                             {stage.label}
                           </h4>
                         </div>

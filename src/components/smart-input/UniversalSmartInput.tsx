@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } from 'react'
+import React, { forwardRef, useImperativeHandle, useRef } from 'react'
 import { clsx } from 'clsx'
 import { Loader2, Sparkles, AlertCircle, FileText } from 'lucide-react'
 import { useSmartInput } from '../../hooks/useSmartInput'
@@ -7,7 +7,7 @@ import { MentionSuggestions } from './MentionSuggestions'
 import { HashtagSuggestions } from './HashtagSuggestions'
 import { TemplateSuggestions } from './TemplateSuggestions'
 import { DataFunctionPicker } from './DataFunctionPicker'
-import { SmartInputMetadata, DataFunctionType } from './types'
+import { SmartInputMetadata, DataFunctionType, AI_MODELS } from './types'
 
 export interface UniversalSmartInputProps {
   value: string
@@ -81,8 +81,10 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       // AI Prompt Mode
       isAIPromptMode,
       aiPromptText,
+      selectedAIModel,
       isAILoading,
       aiError,
+      selectAIModel,
       // Template Fill Mode
       isTemplateFillMode,
       currentPlaceholderName,
@@ -146,11 +148,23 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
         const start = textarea.selectionStart
         const end = textarea.selectionEnd
         const newValue = value.substring(0, start) + text + value.substring(end)
-        setValue(newValue)
-        // Set cursor position after inserted text
+        const newCursorPos = start + text.length
+
+        // Call handleChange with the new value to trigger dropdown detection
+        handleChange({
+          target: {
+            value: newValue,
+            selectionStart: newCursorPos,
+            selectionEnd: newCursorPos
+          }
+        } as React.ChangeEvent<HTMLTextAreaElement>)
+
+        // Focus textarea after state updates
         setTimeout(() => {
-          textarea.focus()
-          textarea.setSelectionRange(start + text.length, start + text.length)
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+            textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+          }
         }, 0)
       },
       insertAISummary: (prompt: string, summary: string) => {
@@ -172,6 +186,8 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
 
     // Render styled content with colored mentions, cashtags, hashtags
     // This overlay matches the textarea text exactly, just with colors applied
+    // Note: We only style simple tokens that don't change text length (@, $, #)
+    // Markdown formatting (==, **, etc.) is not styled here to avoid alignment issues
     const renderStyledContent = (text: string) => {
       // Pattern to match:
       // - $SYMBOL (cashtags - green) - uppercase letters/numbers
@@ -193,7 +209,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
           )
         }
 
-        // Style the matched tag
+        // Style the matched element
         if (match[1]) {
           // Cashtag: $SYMBOL in green
           parts.push(
@@ -352,16 +368,18 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
             disabled={disabled || isAILoading}
             rows={rows}
             className={clsx(
-              'w-full p-3 border rounded-lg resize-none',
-              'focus:outline-none focus:ring-2 focus:border-transparent',
+              'w-full resize-none',
               'disabled:bg-gray-100 disabled:cursor-not-allowed',
-              isAIPromptMode
-                ? 'border-purple-300 focus:ring-purple-500 pt-12 caret-purple-600'
+              // Only apply default border/focus styles if no custom textareaClassName is provided
+              !textareaClassName && 'p-3 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent',
+              !textareaClassName && (isAIPromptMode
+                ? 'border-purple-300 focus:ring-purple-500 caret-purple-600'
                 : isTemplateFillMode
-                  ? 'border-blue-300 focus:ring-blue-500 pt-12'
-                  : 'border-gray-300 focus:ring-primary-500',
+                  ? 'border-blue-300 focus:ring-blue-500'
+                  : 'border-gray-300 focus:ring-primary-500'),
+              // Special padding for header modes
+              (isAIPromptMode || isTemplateFillMode || aiError) && 'pt-12',
               isAILoading && 'opacity-75',
-              aiError && 'pt-12',
               textareaClassName
             )}
             style={{
@@ -458,7 +476,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
           </SmartInputDropdown>
         )}
 
-        {/* AI Hint Dropdown - shows when user types .ai but hasn't added space */}
+        {/* AI Hint Dropdown - shows when user types .ai but hasn't added space or model */}
         {activeDropdown === 'ai' && !isAIPromptMode && (
           <SmartInputDropdown
             isOpen={true}
@@ -471,30 +489,53 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                 <Sparkles className="w-4 h-4" />
                 <span className="font-medium">AI Prompt</span>
               </div>
+              <p className="text-gray-600 text-xs mb-2">
+                Press <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">Space</span> to start with default model
+              </p>
               <p className="text-gray-600 text-xs">
-                Press <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">Space</span> to start typing your prompt
+                Or type <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">.</span> to select a model (e.g., .AI.claude)
               </p>
             </div>
           </SmartInputDropdown>
         )}
 
-        {/* Helper text */}
-        <div className="mt-1 text-xs text-gray-400">
-          {isAIPromptMode ? (
-            <span className="text-purple-500">
-              Type your prompt and press Enter to generate AI summary
-            </span>
-          ) : (
-            <>
-              <span className="mr-3">@mention</span>
-              <span className="mr-3">$asset</span>
-              <span className="mr-3">#reference</span>
-              {enableTemplates && <span className="mr-3">.template</span>}
-              {enableDataFunctions && assetContext && <span className="mr-3">.price</span>}
-              {enableAI && <span>.AI</span>}
-            </>
-          )}
-        </div>
+        {/* AI Model Selection Dropdown - shows when user types .AI. */}
+        {activeDropdown === 'ai-model' && (
+          <SmartInputDropdown
+            isOpen={true}
+            type="data"
+            position={dropdownPosition}
+            onClose={closeDropdown}
+          >
+            <div className="py-1">
+              <div className="px-3 py-1.5 text-xs text-gray-500 font-medium">Select AI Model</div>
+              {AI_MODELS
+                .filter(model => model.id.toLowerCase().includes(dropdownQuery.toLowerCase()))
+                .map((model, index) => (
+                  <button
+                    key={model.id}
+                    onClick={() => selectAIModel(model.id)}
+                    className={clsx(
+                      'w-full px-3 py-2 text-left hover:bg-purple-50 flex items-center gap-3 transition-colors',
+                      index === selectedIndex && 'bg-purple-50'
+                    )}
+                  >
+                    <div className="w-6 h-6 bg-gradient-to-r from-violet-500 to-purple-500 rounded flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-[10px] font-bold">{model.id.slice(0, 2).toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900">{model.name}</div>
+                      <div className="text-xs text-gray-500 truncate">{model.description}</div>
+                    </div>
+                  </button>
+                ))}
+              {AI_MODELS.filter(model => model.id.toLowerCase().includes(dropdownQuery.toLowerCase())).length === 0 && (
+                <div className="px-3 py-2 text-sm text-gray-500">No matching models</div>
+              )}
+            </div>
+          </SmartInputDropdown>
+        )}
+
       </div>
     )
   }

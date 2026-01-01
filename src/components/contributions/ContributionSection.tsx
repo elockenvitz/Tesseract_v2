@@ -32,8 +32,10 @@ import {
   useContributions,
   useContributionHistory,
   useAggregateHistory,
+  useThesisAnalysis,
   type ContributionVisibility
 } from '../../hooks/useContributions'
+import { ThesisSummaryView } from './ThesisSummaryView'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
 import { DiffView } from './DiffView'
@@ -53,6 +55,8 @@ interface ContributionSectionProps {
   activeTab?: TabType
   onTabChange?: (tab: TabType) => void
   coveringAnalystIds?: Set<string>
+  /** Hide the All/Summary/History buttons (when controlled from parent level) */
+  hideViewModeButtons?: boolean
 }
 
 const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
@@ -81,7 +85,8 @@ export function ContributionSection({
   defaultVisibility = 'firm',
   activeTab = 'aggregated',
   onTabChange,
-  coveringAnalystIds = new Set()
+  coveringAnalystIds = new Set(),
+  hideViewModeButtons = false
 }: ContributionSectionProps) {
   const { user } = useAuth()
   const [viewMode, setViewMode] = useState<'combined' | 'ai'>('combined')
@@ -98,6 +103,7 @@ export function ContributionSection({
   const [showVisibilityChange, setShowVisibilityChange] = useState(false)
   const [visibilityChangeStep, setVisibilityChangeStep] = useState<'level' | 'targets'>('level')
   const [pendingVisibility, setPendingVisibility] = useState<ContributionVisibility | null>(null)
+  const [isHovered, setIsHovered] = useState(false)
   const [pendingTargetIds, setPendingTargetIds] = useState<string[]>([])
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
@@ -132,6 +138,23 @@ export function ContributionSection({
     : null
 
   const { history: individualHistory } = useContributionHistory(selectedContribution?.id)
+
+  // Thesis analysis for AI summary view
+  const {
+    analysis: thesisAnalysis,
+    isLoading: analysisLoading,
+    isGenerating: analysisGenerating,
+    isStale: analysisStale,
+    isConfigured: aiConfigured,
+    error: analysisError,
+    generateAnalysis,
+    regenerateAnalysis
+  } = useThesisAnalysis({
+    assetId,
+    section,
+    contributions,
+    coveringAnalystIds
+  })
 
   // Get asset info for smart input context
   const { data: assetInfo } = useQuery({
@@ -635,10 +658,17 @@ export function ContributionSection({
       ).updated_at
     : null
 
+  // Show toolbar when hovering, editing, or history is open
+  const showToolbar = isHovered || isEditing || showHistory
+
   return (
-    <div className={clsx('bg-white border border-gray-200 rounded-lg', className)}>
+    <div
+      className={clsx('bg-white border border-gray-200 rounded-lg', className)}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100 min-h-[44px]">
         <div className="flex items-center space-x-3">
           {Icon && <Icon className="w-5 h-5 text-gray-400" />}
           <div className="flex items-center gap-3">
@@ -662,74 +692,78 @@ export function ContributionSection({
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
-          {/* View toggles */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-            {activeTab === 'aggregated' ? (
-              <>
+        {showToolbar && (
+          <div className="flex items-center space-x-2 animate-in fade-in duration-150">
+            {/* View toggles - hidden when controlled from parent */}
+            {!hideViewModeButtons && (
+              <div className="flex items-center bg-gray-100 rounded p-0.5">
+                {activeTab === 'aggregated' ? (
+                  <>
+                    <button
+                      onClick={() => { setViewMode('combined'); setShowHistory(false) }}
+                      className={clsx(
+                        'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
+                        viewMode === 'combined' && !showHistory
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      )}
+                    >
+                      <List className="w-3 h-3 mr-1" />
+                      All
+                    </button>
+                    <button
+                      onClick={() => { setViewMode('ai'); setShowHistory(false) }}
+                      className={clsx(
+                        'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
+                        viewMode === 'ai' && !showHistory
+                          ? 'bg-purple-100 text-purple-700 shadow-sm'
+                          : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50'
+                      )}
+                    >
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      Summary
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setShowHistory(false)}
+                    className={clsx(
+                      'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
+                      !showHistory
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    )}
+                  >
+                    <List className="w-3 h-3 mr-1" />
+                    Content
+                  </button>
+                )}
                 <button
-                  onClick={() => { setViewMode('combined'); setShowHistory(false) }}
+                  onClick={() => setShowHistory(true)}
                   className={clsx(
-                    'flex items-center px-3 py-1.5 text-sm rounded-md transition-colors',
-                    viewMode === 'combined' && !showHistory
+                    'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
+                    showHistory
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   )}
                 >
-                  <List className="w-4 h-4 mr-1.5" />
-                  All Views
+                  <History className="w-3 h-3 mr-1" />
+                  History
                 </button>
-                <button
-                  onClick={() => { setViewMode('ai'); setShowHistory(false) }}
-                  className={clsx(
-                    'flex items-center px-3 py-1.5 text-sm rounded-md transition-colors',
-                    viewMode === 'ai' && !showHistory
-                      ? 'bg-purple-100 text-purple-700 shadow-sm'
-                      : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50'
-                  )}
-                >
-                  <Sparkles className="w-4 h-4 mr-1.5" />
-                  Summary
-                </button>
-              </>
-            ) : (
+              </div>
+            )}
+
+            {!isEditing && activeTab === user?.id && (
               <button
-                onClick={() => setShowHistory(false)}
-                className={clsx(
-                  'flex items-center px-3 py-1.5 text-sm rounded-md transition-colors',
-                  !showHistory
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                )}
+                onClick={handleStartEdit}
+                title={myContribution ? 'Edit your view' : 'Add your view'}
+                className="flex items-center justify-center p-1 text-white bg-primary-600 hover:bg-primary-700 rounded transition-colors"
               >
-                <List className="w-4 h-4 mr-1.5" />
-                Content
+                <Edit3 className="w-3.5 h-3.5" />
               </button>
             )}
-            <button
-              onClick={() => setShowHistory(true)}
-              className={clsx(
-                'flex items-center px-3 py-1.5 text-sm rounded-md transition-colors',
-                showHistory
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              )}
-            >
-              <History className="w-4 h-4 mr-1.5" />
-              History
-            </button>
           </div>
-
-          {!isEditing && (
-            <button
-              onClick={handleStartEdit}
-              title={myContribution ? 'Edit your view' : 'Add your view'}
-              className="flex items-center justify-center p-2 text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
-            >
-              <Edit3 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Content */}
@@ -784,52 +818,37 @@ export function ContributionSection({
                       <p className="text-gray-400 text-sm">No views shared yet</p>
                     </div>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {contributions.map((c) => {
                         const isCovering = coveringAnalystIds.has(c.created_by)
                         return (
-                          <div key={c.id} className="text-gray-700 leading-relaxed">
-                            <span className="font-medium text-gray-900 inline-flex items-center gap-1">
+                          <div key={c.id} className="text-sm text-gray-700 leading-relaxed">
+                            <span className="font-medium text-gray-900 inline-flex items-center gap-1 align-top">
                               {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" title="Covering Analyst" />}
                               {c.user?.full_name}:
                             </span>{' '}
-                            <div className="inline prose prose-sm max-w-none prose-p:inline prose-p:m-0">
+                            <span className="prose prose-sm max-w-none inline [&>p]:inline [&>p]:m-0">
                               <SmartInputRenderer content={c.content} inline />
-                            </div>
+                            </span>
                           </div>
                         )
                       })}
                     </div>
                   )
                 ) : (
-                  <div>
-                    {/* Combined Summary View - Native concatenation */}
-                    {contributions.length === 0 ? (
-                      <div className="text-center py-6">
-                        <p className="text-gray-400 text-sm">No views to summarize</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {[...contributions]
-                          .sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime())
-                          .map((c) => {
-                            const isCovering = coveringAnalystIds.has(c.created_by)
-                            return (
-                              <div key={c.id} className="text-gray-700 leading-relaxed">
-                                <span className="text-gray-500">{formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}</span>
-                                {' '}<span className="font-medium inline-flex items-center gap-1">
-                                  {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" title="Covering Analyst" />}
-                                  {c.user?.full_name}
-                                </span> said{' '}
-                                "<span className="prose prose-sm max-w-none inline prose-p:inline prose-p:m-0">
-                                  <SmartInputRenderer content={c.content} inline />
-                                </span>"
-                              </div>
-                            )
-                          })}
-                      </div>
-                    )}
-                  </div>
+                  <ThesisSummaryView
+                    contributions={contributions}
+                    analysis={thesisAnalysis}
+                    isLoading={analysisLoading}
+                    isGenerating={analysisGenerating}
+                    isStale={analysisStale}
+                    isConfigured={aiConfigured}
+                    error={analysisError}
+                    onRegenerate={(method) => regenerateAnalysis(method)}
+                    coveringAnalystIds={coveringAnalystIds}
+                    assetId={assetId}
+                    section={section}
+                  />
                 )}
               </>
             )}

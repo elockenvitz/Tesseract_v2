@@ -1,16 +1,15 @@
-import { useState, useMemo } from 'react'
-import type { ChangeEvent } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Search, Filter, Plus, Calendar, Share2, ArrowUpDown, ChevronDown, TrendingUp, Briefcase, Tag, Book } from 'lucide-react'
+import { FileText, Search, X, Calendar, Share2, ArrowUp, ArrowDown, TrendingUp, Briefcase, Tag, Book, SlidersHorizontal, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
-import { Select } from '../components/ui/Select'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
+import { getContentPreview } from '../utils/stripHtml'
 
 interface NotesListPageProps {
   onNoteSelect?: (note: any) => void
@@ -43,72 +42,56 @@ interface Note {
   updated_by_user?: UserLite
 }
 
+// Note type options with labels
+const NOTE_TYPE_OPTIONS = [
+  { value: 'general', label: 'General' },
+  { value: 'research', label: 'Research' },
+  { value: 'analysis', label: 'Analysis' },
+  { value: 'idea', label: 'Idea' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'call', label: 'Call' }
+]
+
+// Source type options
+const SOURCE_TYPE_OPTIONS = [
+  { value: 'asset', label: 'Asset', icon: TrendingUp },
+  { value: 'portfolio', label: 'Portfolio', icon: Briefcase },
+  { value: 'theme', label: 'Theme', icon: Tag },
+  { value: 'custom', label: 'Custom', icon: Book }
+]
+
 export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
+  // Filter state
   const [searchQuery, setSearchQuery] = useState('')
-  const [sourceFilter, setSourceFilter] = useState<'all' | SourceType>('all')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [sharedFilter, setSharedFilter] = useState('all')
+  const [selectedSourceTypes, setSelectedSourceTypes] = useState<string[]>([])
+  const [selectedNoteTypes, setSelectedNoteTypes] = useState<string[]>([])
+  const [sharedFilter, setSharedFilter] = useState<'all' | 'shared' | 'private'>('all')
+
+  // Sort state
   const [sortBy, setSortBy] = useState('updated_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [showFilters, setShowFilters] = useState(false)
 
-  // Fetch all notes, then batch-fetch the related users and enrich results
+  // UI state
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
+
+  // Fetch all notes
   const { data: notes, isLoading } = useQuery({
     queryKey: ['all-notes-with-users'],
     queryFn: async (): Promise<Note[]> => {
       const [assetNotesRes, portfolioNotesRes, themeNotesRes, customNotesRes] = await Promise.all([
         supabase
           .from('asset_notes')
-          .select(`
-            *,
-            assets (
-              id,
-              symbol,
-              company_name,
-              sector,
-              thesis,
-              where_different,
-              risks_to_thesis,
-              priority,
-              process_stage,
-              created_at,
-              updated_at
-            )
-          `)
+          .select(`*, assets (id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, priority, process_stage, created_at, updated_at)`)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase
           .from('portfolio_notes')
-          .select(`
-            *,
-            portfolios (
-              id,
-              name,
-              description,
-              portfolio_type,
-              created_at,
-              updated_at
-            )
-          `)
+          .select(`*, portfolios (id, name, description, portfolio_type, created_at, updated_at)`)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase
           .from('theme_notes')
-          .select(`
-            *,
-            themes (
-              id,
-              name,
-              description,
-              theme_type,
-              color,
-              thesis,
-              where_different,
-              risks_to_thesis,
-              created_at,
-              updated_at
-            )
-          `)
+          .select(`*, themes (id, name, description, theme_type, color, thesis, where_different, risks_to_thesis, created_at, updated_at)`)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase
@@ -167,11 +150,11 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         ),
       )
 
-      // Batch fetch users (change 'users' to your actual table name if different)
+      // Batch fetch users
       const usersMap = new Map<string, UserLite>()
       if (userIds.length > 0) {
         const { data: usersData, error: usersErr } = await supabase
-          .from('users') // <-- If your table is 'profiles', change this to 'profiles'
+          .from('users')
           .select('id, email, first_name, last_name')
           .in('id', userIds)
 
@@ -187,7 +170,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         }
       }
 
-      // Build final typed notes, preserving entity data
+      // Build final typed notes
       const allNotes: Note[] = allRaw.map((n: any) => ({
         id: n.id,
         title: n.title ?? '',
@@ -204,7 +187,6 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         source_id: n.__source_id,
         created_by_user: n.created_by ? usersMap.get(n.created_by) : undefined,
         updated_by_user: n.updated_by ? usersMap.get(n.updated_by) : undefined,
-        // Preserve entity data for navigation
         assets: n.assets,
         portfolios: n.portfolios,
         themes: n.themes,
@@ -214,7 +196,23 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
     },
   })
 
-  // ---------- helpers ----------
+  // Helper functions
+  const formatDate = (dateStr: string | undefined | null) => {
+    if (!dateStr) return 'Unknown'
+    try {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return 'Unknown'
+      return formatDistanceToNow(date, { addSuffix: true })
+    } catch {
+      return 'Unknown'
+    }
+  }
+
+  const capitalizeFirst = (str: string | null) => {
+    if (!str) return ''
+    return str.charAt(0).toUpperCase() + str.slice(1)
+  }
+
   const getNoteTypeColor = (type: string | null) => {
     switch (type) {
       case 'meeting': return 'success'
@@ -222,29 +220,35 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       case 'research': return 'warning'
       case 'idea': return 'error'
       case 'analysis': return 'primary'
-      case 'general': return 'default'
       default: return 'default'
     }
   }
 
   const getSourceIcon = (sourceType: string) => {
     switch (sourceType) {
-      case 'asset': return <TrendingUp className="h-3 w-3" />
-      case 'portfolio': return <Briefcase className="h-3 w-3" />
-      case 'theme': return <Tag className="h-3 w-3" />
-      case 'custom': return <Book className="h-3 w-3" />
-      default: return <FileText className="h-3 w-3" />
+      case 'asset': return <TrendingUp className="h-4 w-4" />
+      case 'portfolio': return <Briefcase className="h-4 w-4" />
+      case 'theme': return <Tag className="h-4 w-4" />
+      case 'custom': return <Book className="h-4 w-4" />
+      default: return <FileText className="h-4 w-4" />
     }
   }
 
   const getSourceColor = (sourceType: string) => {
     switch (sourceType) {
-      case 'asset': return 'primary'
-      case 'portfolio': return 'success'
-      case 'theme': return 'warning'
-      case 'custom': return 'default'
-      default: return 'default'
+      case 'asset': return 'text-blue-600 bg-blue-50'
+      case 'portfolio': return 'text-green-600 bg-green-50'
+      case 'theme': return 'text-amber-600 bg-amber-50'
+      case 'custom': return 'text-gray-600 bg-gray-100'
+      default: return 'text-gray-600 bg-gray-100'
     }
+  }
+
+  const getUserLabel = (user: UserLite | undefined, id: string | null | undefined) => {
+    if (user?.first_name && user?.last_name) return `${user.first_name} ${user.last_name}`
+    if (user?.email) return user.email.split('@')[0]
+    if (id) return `User ${id.slice(0, 8)}`
+    return 'Unknown'
   }
 
   const handleSort = (field: string) => {
@@ -257,17 +261,12 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   }
 
   const handleNoteClick = (note: Note) => {
-    // Skip custom notebooks - they don't have a dedicated tab type
-    if (note.source_type === 'custom') {
-      return
-    }
+    if (note.source_type === 'custom') return
 
-    // Navigate to the entity page with the note selected
     const entityId = note.source_id
-    const entityTitle = note.source_name
+    const entityName = note.source_name
     const entityType = note.source_type as 'asset' | 'portfolio' | 'theme'
 
-    // Get the full entity data from the note (we preserved it during mapping)
     let entityData = null
     if (note.source_type === 'asset' && (note as any).assets) {
       entityData = (note as any).assets
@@ -278,39 +277,89 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
     }
 
     if (entityId && entityData) {
+      // Use entity-based tab ID so all notes for the same entity share a tab
+      const tabId = `note-${entityType}-${entityId}`
+
       onNoteSelect?.({
-        id: entityId,
-        title: entityTitle,
-        type: entityType,
-        data: { ...entityData, noteId: note.id }
+        id: tabId,
+        title: `Note - ${entityName}`,
+        type: 'note',
+        data: {
+          id: note.id,  // The specific note to open
+          entityType,
+          entityId,
+          entityName,
+          ...(entityType === 'asset' && { assetId: entityId, assetSymbol: entityName, assets: entityData }),
+          ...(entityType === 'portfolio' && { portfolioId: entityId, portfolioName: entityName, portfolios: entityData }),
+          ...(entityType === 'theme' && { themeId: entityId, themeName: entityName, themes: entityData })
+        }
       })
     }
   }
 
-  const clearFilters = () => {
+  // Filter toggle helpers
+  const toggleSourceType = useCallback((type: string) => {
+    setSelectedSourceTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    )
+  }, [])
+
+  const toggleNoteType = useCallback((type: string) => {
+    setSelectedNoteTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    )
+  }, [])
+
+  // Build active filters array
+  const activeFilters = useMemo(() => {
+    const filters: { type: string; value: string; label: string }[] = []
+
+    if (searchQuery) {
+      filters.push({ type: 'search', value: searchQuery, label: `"${searchQuery}"` })
+    }
+
+    selectedSourceTypes.forEach(s => {
+      const option = SOURCE_TYPE_OPTIONS.find(o => o.value === s)
+      filters.push({ type: 'source', value: s, label: capitalizeFirst(option?.label || s) })
+    })
+
+    selectedNoteTypes.forEach(t => {
+      const option = NOTE_TYPE_OPTIONS.find(o => o.value === t)
+      filters.push({ type: 'noteType', value: t, label: capitalizeFirst(option?.label || t) })
+    })
+
+    if (sharedFilter !== 'all') {
+      filters.push({ type: 'shared', value: sharedFilter, label: capitalizeFirst(sharedFilter) })
+    }
+
+    return filters
+  }, [searchQuery, selectedSourceTypes, selectedNoteTypes, sharedFilter])
+
+  const removeFilter = (type: string, value: string) => {
+    switch (type) {
+      case 'search':
+        setSearchQuery('')
+        break
+      case 'source':
+        setSelectedSourceTypes(prev => prev.filter(s => s !== value))
+        break
+      case 'noteType':
+        setSelectedNoteTypes(prev => prev.filter(t => t !== value))
+        break
+      case 'shared':
+        setSharedFilter('all')
+        break
+    }
+  }
+
+  const clearAllFilters = () => {
     setSearchQuery('')
-    setSourceFilter('all')
-    setTypeFilter('all')
+    setSelectedSourceTypes([])
+    setSelectedNoteTypes([])
     setSharedFilter('all')
-    setSortBy('updated_at')
-    setSortOrder('desc')
   }
 
-  const activeFiltersCount = [
-    searchQuery,
-    sourceFilter !== 'all' ? sourceFilter : null,
-    typeFilter !== 'all' ? typeFilter : null,
-    sharedFilter !== 'all' ? sharedFilter : null,
-  ].filter(Boolean).length
-
-  const getUserLabel = (user: UserLite | undefined, id: string | null | undefined) => {
-    if (user?.first_name && user?.last_name) return `${user.first_name} ${user.last_name}`
-    if (user?.email) return user.email.split('@')[0]
-    if (id) return `User ${id.slice(0, 8)}`
-    return 'Unknown'
-  }
-
-  // ---------- filter & sort ----------
+  // Filter and sort notes
   const filteredNotes = useMemo(() => {
     if (!notes) return []
 
@@ -319,16 +368,14 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       const title = (note.title ?? '').toLowerCase()
       const sourceName = (note.source_name ?? '').toLowerCase()
 
-      const matchesSearch =
-        !searchQuery ||
+      const matchesSearch = !searchQuery ||
         title.includes(searchQuery.toLowerCase()) ||
         content.includes(searchQuery.toLowerCase()) ||
         sourceName.includes(searchQuery.toLowerCase())
 
-      const matchesSource = sourceFilter === 'all' || note.source_type === sourceFilter
-      const matchesType = typeFilter === 'all' || note.note_type === typeFilter
-      const matchesShared =
-        sharedFilter === 'all' ||
+      const matchesSource = selectedSourceTypes.length === 0 || selectedSourceTypes.includes(note.source_type)
+      const matchesType = selectedNoteTypes.length === 0 || (note.note_type && selectedNoteTypes.includes(note.note_type))
+      const matchesShared = sharedFilter === 'all' ||
         (sharedFilter === 'shared' && note.is_shared) ||
         (sharedFilter === 'private' && !note.is_shared)
 
@@ -355,10 +402,6 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           aValue = a.note_type || 'general'
           bValue = b.note_type || 'general'
           break
-        case 'created_at':
-          aValue = new Date(a.created_at || 0).getTime()
-          bValue = new Date(b.created_at || 0).getTime()
-          break
         case 'updated_at':
         default:
           aValue = new Date(a.updated_at || 0).getTime()
@@ -373,256 +416,311 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
     })
 
     return filtered
-  }, [notes, searchQuery, sourceFilter, typeFilter, sharedFilter, sortBy, sortOrder])
+  }, [notes, searchQuery, selectedSourceTypes, selectedNoteTypes, sharedFilter, sortBy, sortOrder])
 
-  // ---------- render ----------
+  // Sort column header component
+  const SortHeader = ({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) => (
+    <button
+      onClick={() => handleSort(field)}
+      className={clsx('flex items-center gap-1 hover:text-gray-700 transition-colors', className)}
+    >
+      {children}
+      {sortBy === field ? (
+        sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+      ) : (
+        <ArrowUp className="h-3.5 w-3.5 opacity-0 group-hover:opacity-30" />
+      )}
+    </button>
+  )
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">All Notes</h1>
-          <p className="text-gray-600">
-            {filteredNotes.length} of {notes?.length || 0} notes
+          <p className="text-sm text-gray-500 mt-0.5">
+            {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
+            {activeFilters.length > 0 && ` (filtered)`}
           </p>
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <Card>
-        <div className="space-y-4">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by title, content, or source..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          {/* Filter Toggle */}
-          <div className="flex items-center justify-between">
+      {/* Search and Filter Bar */}
+      <div className="flex items-center gap-3">
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search notes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          />
+          {searchQuery && (
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
-              <Filter className="h-4 w-4" />
-              <span>Filters</span>
-              {activeFiltersCount > 0 && (
-                <Badge variant="primary" size="sm">
-                  {activeFiltersCount}
-                </Badge>
-              )}
-              <ChevronDown className={clsx('h-4 w-4 transition-transform', showFilters && 'rotate-180')} />
+              <X className="h-4 w-4" />
             </button>
+          )}
+        </div>
 
-            {activeFiltersCount > 0 && (
-              <button onClick={clearFilters} className="text-sm text-primary-600 hover:text-primary-700 transition-colors">
-                Clear all filters
-              </button>
+        {/* Source Type Filter */}
+        <div className="relative">
+          <button
+            onClick={() => setActiveFilter(activeFilter === 'source' ? null : 'source')}
+            className={clsx(
+              'flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors',
+              selectedSourceTypes.length > 0
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-gray-300 hover:bg-gray-50'
             )}
-          </div>
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Source
+            {selectedSourceTypes.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary-100 rounded-full">
+                {selectedSourceTypes.length}
+              </span>
+            )}
+          </button>
 
-          {/* Filter Controls */}
-          {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
-              <Select
-                label="Source"
-                value={sourceFilter}
-                onChange={(e: any) => setSourceFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Sources' },
-                  { value: 'asset', label: 'Assets' },
-                  { value: 'portfolio', label: 'Portfolios' },
-                  { value: 'theme', label: 'Themes' },
-                  { value: 'custom', label: 'Custom Notebooks' },
-                ]}
-              />
-
-              <Select
-                label="Note Type"
-                value={typeFilter}
-                onChange={(e: any) => setTypeFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Types' },
-                  { value: 'general', label: 'General' },
-                  { value: 'research', label: 'Research' },
-                  { value: 'analysis', label: 'Analysis' },
-                  { value: 'idea', label: 'Idea' },
-                  { value: 'meeting', label: 'Meeting' },
-                  { value: 'call', label: 'Call' },
-                ]}
-              />
-
-              <Select
-                label="Sharing"
-                value={sharedFilter}
-                onChange={(e: any) => setSharedFilter(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Notes' },
-                  { value: 'private', label: 'Private' },
-                  { value: 'shared', label: 'Shared' },
-                ]}
-              />
-
-              <Select
-                label="Sort by"
-                value={sortBy}
-                onChange={(e: ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value)}
-                options={[
-                  { value: 'updated_at', label: 'Last Updated' },
-                  { value: 'created_at', label: 'Date Created' },
-                  { value: 'title', label: 'Title' },
-                  { value: 'source_name', label: 'Source Name' },
-                  { value: 'source_type', label: 'Source Type' },
-                  { value: 'note_type', label: 'Note Type' },
-                ]}
-              />
+          {activeFilter === 'source' && (
+            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+              {SOURCE_TYPE_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => toggleSourceType(option.value)}
+                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                >
+                  <span className="flex items-center gap-2">
+                    <option.icon className="h-4 w-4 text-gray-500" />
+                    {option.label}
+                  </span>
+                  {selectedSourceTypes.includes(option.value) && (
+                    <Check className="h-4 w-4 text-primary-600" />
+                  )}
+                </button>
+              ))}
             </div>
           )}
         </div>
-      </Card>
 
-      {/* Notes List */}
+        {/* Note Type Filter */}
+        <div className="relative">
+          <button
+            onClick={() => setActiveFilter(activeFilter === 'type' ? null : 'type')}
+            className={clsx(
+              'flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors',
+              selectedNoteTypes.length > 0
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-gray-300 hover:bg-gray-50'
+            )}
+          >
+            <FileText className="h-4 w-4" />
+            Type
+            {selectedNoteTypes.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary-100 rounded-full">
+                {selectedNoteTypes.length}
+              </span>
+            )}
+          </button>
+
+          {activeFilter === 'type' && (
+            <div className="absolute top-full left-0 mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+              {NOTE_TYPE_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => toggleNoteType(option.value)}
+                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                >
+                  {option.label}
+                  {selectedNoteTypes.includes(option.value) && (
+                    <Check className="h-4 w-4 text-primary-600" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sharing Filter */}
+        <div className="relative">
+          <button
+            onClick={() => setActiveFilter(activeFilter === 'shared' ? null : 'shared')}
+            className={clsx(
+              'flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors',
+              sharedFilter !== 'all'
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-gray-300 hover:bg-gray-50'
+            )}
+          >
+            <Share2 className="h-4 w-4" />
+            Sharing
+          </button>
+
+          {activeFilter === 'shared' && (
+            <div className="absolute top-full left-0 mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+              {['all', 'shared', 'private'].map(option => (
+                <button
+                  key={option}
+                  onClick={() => { setSharedFilter(option as any); setActiveFilter(null) }}
+                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                >
+                  {capitalizeFirst(option)}
+                  {sharedFilter === option && (
+                    <Check className="h-4 w-4 text-primary-600" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Active Filters */}
+      {activeFilters.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-gray-500">Active filters:</span>
+          {activeFilters.map((filter, idx) => (
+            <span
+              key={`${filter.type}-${filter.value}-${idx}`}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary-50 text-primary-700 text-sm rounded-full"
+            >
+              {filter.label}
+              <button
+                onClick={() => removeFilter(filter.type, filter.value)}
+                className="hover:text-primary-900"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          <button
+            onClick={clearAllFilters}
+            className="text-sm text-gray-500 hover:text-gray-700 ml-2"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Notes Table */}
       <Card padding="none">
         {isLoading ? (
           <div className="p-6">
-            <ListSkeleton count={5} />
+            <ListSkeleton count={8} />
           </div>
         ) : filteredNotes.length > 0 ? (
-          <div className="divide-y divide-gray-200">
-            {/* Table Header */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="col-span-4">
-                  <button onClick={() => handleSort('title')} className="flex items-center space-x-1 hover:text-gray-700 transition-colors">
-                    <span>Note</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="col-span-2">
-                  <button onClick={() => handleSort('source_name')} className="flex items-center space-x-1 hover:text-gray-700 transition-colors">
-                    <span>Source</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="col-span-2">
-                  <button onClick={() => handleSort('note_type')} className="flex items-center space-x-1 hover:text-gray-700 transition-colors">
-                    <span>Type</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="col-span-2">
-                  <span>Status</span>
-                </div>
-                <div className="col-span-2">
-                  <button onClick={() => handleSort('updated_at')} className="flex items-center space-x-1 hover:text-gray-700 transition-colors">
-                    <span>Last Updated</span>
-                    <ArrowUpDown className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Rows */}
-            {filteredNotes.map((note) => (
-              <div
-                key={`${note.source_type}-${note.id}`}
-                onClick={() => handleNoteClick(note)}
-                className="px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors"
-              >
-                <div className="grid grid-cols-12 gap-4 items-center">
-                  {/* Note Info */}
-                  <div className="col-span-4">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center mt-0.5">
-                        <FileText className="h-4 w-4 text-gray-600" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{note.title}</p>
-                          {note.note_type && (
-                            <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
-                              {note.note_type}
-                            </Badge>
-                          )}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%]">
+                    <SortHeader field="title">Note</SortHeader>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                    <SortHeader field="source_type">Source</SortHeader>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">
+                    <SortHeader field="source_name">Name</SortHeader>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]">
+                    <SortHeader field="note_type">Type</SortHeader>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%]">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[20%]">
+                    <SortHeader field="updated_at">Updated</SortHeader>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredNotes.map((note) => (
+                  <tr
+                    key={`${note.source_type}-${note.id}`}
+                    onClick={() => handleNoteClick(note)}
+                    className="group hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    {/* Note Title & Preview */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-primary-100 transition-colors">
+                          <FileText className="h-4 w-4 text-gray-500 group-hover:text-primary-600" />
                         </div>
-                        <p className="text-sm text-gray-600 line-clamp-2 mb-1">
-                          {(note.content ?? '').substring(0, 100)}...
-                        </p>
-                        <div className="flex items-center space-x-2 text-xs text-gray-500">
-                          <span>{(note.content ?? '').split(/\s+/).filter(Boolean).length} words</span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate group-hover:text-primary-700">
+                            {note.title || 'Untitled'}
+                          </p>
+                          <p className="text-sm text-gray-500 line-clamp-1 mt-0.5">
+                            {getContentPreview(note.content || '', 80)}
+                          </p>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </td>
 
-                  {/* Source */}
-                  <div className="col-span-2">
-                    <div className="flex items-center space-x-2">
-                      <Badge variant={getSourceColor(note.source_type)} size="sm">
-                        <span className="flex items-center space-x-1">
-                          {getSourceIcon(note.source_type)}
-                          <span className="capitalize">{note.source_type}</span>
-                        </span>
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 truncate mt-1">{note.source_name}</p>
-                  </div>
+                    {/* Source Type */}
+                    <td className="px-4 py-3">
+                      <span className={clsx(
+                        'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium',
+                        getSourceColor(note.source_type)
+                      )}>
+                        {getSourceIcon(note.source_type)}
+                        {capitalizeFirst(note.source_type)}
+                      </span>
+                    </td>
 
-                  {/* Note Type */}
-                  <div className="col-span-2">
-                    {note.note_type && (
-                      <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
-                        {note.note_type}
-                      </Badge>
-                    )}
-                  </div>
+                    {/* Source Name */}
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-gray-700 font-medium">
+                        {note.source_name}
+                      </span>
+                    </td>
 
-                  {/* Status */}
-                  <div className="col-span-2">
-                    <div className="flex items-center space-x-2">
-                      {note.is_shared ? (
-                        <Badge variant="primary" size="sm">
-                          <Share2 className="h-3 w-3 mr-1" />
-                          Shared
+                    {/* Note Type */}
+                    <td className="px-4 py-3">
+                      {note.note_type && (
+                        <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
+                          {capitalizeFirst(note.note_type)}
                         </Badge>
-                      ) : (
-                        <span className="text-xs text-gray-500">Private</span>
                       )}
-                    </div>
-                  </div>
+                    </td>
 
-                  {/* Last Updated + People */}
-                  <div className="col-span-2">
-                    <div className="flex items-center text-sm text-gray-500">
-                      <Calendar className="h-3 w-3 mr-1" />
-                      {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Last edited by {note.updated_by ? getUserLabel(note.updated_by_user, note.updated_by) : 'Never edited'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Created by {getUserLabel(note.created_by_user, note.created_by)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      {note.is_shared ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-primary-600">
+                          <Share2 className="h-3 w-3" />
+                          Shared
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Private</span>
+                      )}
+                    </td>
+
+                    {/* Updated */}
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-gray-500">
+                        {formatDate(note.updated_at)}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        by {getUserLabel(note.updated_by_user, note.updated_by)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : notes?.length === 0 ? (
           <EmptyState
             icon={FileText}
             title="No notes yet"
             description="Start by creating your first note in an asset, portfolio, or theme."
-            action={{
-              label: 'Create First Note',
-              icon: Plus,
-              onClick: () => {}
-            }}
           />
         ) : (
           <EmptyState
@@ -631,11 +729,19 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
             description="Try adjusting your search criteria or clearing filters."
             action={{
               label: 'Clear Filters',
-              onClick: clearFilters
+              onClick: clearAllFilters
             }}
           />
         )}
       </Card>
+
+      {/* Close filter dropdown when clicking outside */}
+      {activeFilter && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setActiveFilter(null)}
+        />
+      )}
     </div>
   )
 }

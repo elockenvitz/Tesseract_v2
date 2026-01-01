@@ -184,9 +184,14 @@ function SegmentRenderer({
   switch (segment.type) {
     case 'text':
       if (renderMarkdown) {
+        // When inline, render paragraphs as spans to keep content on same line
+        const components = inline ? {
+          p: ({ children }: { children?: React.ReactNode }) => <span>{children} </span>
+        } : undefined
+
         return (
-          <span className={clsx('prose prose-sm max-w-none', inline && 'inline prose-p:inline prose-p:m-0')}>
-            <ReactMarkdown>{segment.content}</ReactMarkdown>
+          <span className={clsx('prose prose-sm max-w-none', inline && 'inline')}>
+            <ReactMarkdown components={components}>{segment.content}</ReactMarkdown>
           </span>
         )
       }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, ArrowLeft, Activity, Clock, ChevronDown, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { TabStateManager } from '../../lib/tabStateManager'
@@ -26,7 +26,7 @@ import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
-import { NoteEditor } from '../notes/NoteEditorUnified'
+import { NotesModelsSection } from '../notes/NotesModelsSection'
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { ThesisContainer } from '../contributions'
 import { OutcomesContainer } from '../outcomes'
@@ -150,19 +150,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   const [stage, setStage] = useState(mapToTimelineStage(asset.process_stage))
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'notes' | 'stage' | 'lists'>(() => {
+
+  // Collapsible section states
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.activeTab || 'thesis'
+    return savedState?.collapsedSections || {}
+  })
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
+  }
+
+  // Active sub-page selector (Research, Workflow, Lists)
+  const [activeSubPage, setActiveSubPage] = useState<'research' | 'workflow' | 'lists'>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.activeSubPage || 'research'
+  })
+  // Research view filter: 'aggregated' or a specific user_id
+  const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.researchViewFilter || 'aggregated'
+  })
+  // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
+  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history'>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.thesisViewMode || 'all'
   })
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
-  const [showNoteEditor, setShowNoteEditor] = useState(() => {
-    const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.showNoteEditor || false
-  })
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => {
-    const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.selectedNoteId || null
-  })
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showCoverageManager, setShowCoverageManager] = useState(false)
   const [viewingStageId, setViewingStageId] = useState<string | null>(() => {
@@ -258,13 +272,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       })
       setStage(mapToTimelineStage(asset.process_stage))
 
-      // Restore saved tab state if available, otherwise start on thesis tab
-      const savedState = TabStateManager.loadTabState(asset.id)
-      if (savedState?.activeTab) {
-        setActiveTab(savedState.activeTab)
-      } else {
-        setActiveTab('thesis')
-      }
+      // Tab state is already initialized in useState() from TabStateManager
+      // No need to set it again here - the useState initializers handle this
 
       setHasLocalChanges(false) // Reset local changes flag when loading new asset
     }
@@ -276,16 +285,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }, [asset.id])
 
   // Handle noteId from navigation (e.g., from dashboard note click)
-  // Only auto-switch to notes tab when noteId is present AND it's different from current selection
-  // This prevents the tab from switching back to notes when user manually navigates to other tabs
+  // Open note in its own tab when navigating from notification
   useEffect(() => {
-    if (asset.noteId && asset.id && asset.noteId !== selectedNoteId) {
-      console.log('📝 AssetTab: Opening note from navigation:', asset.noteId)
-      setActiveTab('notes')
-      setShowNoteEditor(true)
-      setSelectedNoteId(asset.noteId)
+    if (asset.noteId && asset.id) {
+      console.log('📝 AssetTab: Opening note in new tab from navigation:', asset.noteId)
+      // Find the note to get its title
+      const note = notes?.find((n: any) => n.id === asset.noteId)
+      onNavigate?.({
+        id: asset.noteId,
+        title: note?.title || 'Note',
+        type: 'note',
+        data: { id: asset.noteId, assetId: asset.id, assetSymbol: asset.symbol }
+      })
     }
-  }, [asset.id, asset.noteId, selectedNoteId])
+  }, [asset.id, asset.noteId])
 
   // Handle task assignment navigation from notifications
   useEffect(() => {
@@ -306,7 +319,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
 
     if (effectiveWorkflowId || navigationTaskId) {
-      console.log('📋 AssetTab: Opening task from notification - switching to stages tab')
+      console.log('📋 AssetTab: Opening task from notification - switching to workflow sub-page')
+
+      // Switch to Workflow sub-page
+      setActiveSubPage('workflow')
 
       // If the notification has a workflow ID and it's different from current asset workflow,
       // mark it for switching
@@ -320,9 +336,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           setViewingStageId(effectiveStageId)
         }
       }
-
-      // Switch to stages tab
-      setActiveTab('stage')
     }
   }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
 
@@ -330,15 +343,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   useEffect(() => {
     if (isTabStateInitialized) {
       const stateToSave = {
-        activeTab,
-        viewingStageId,
-        showNoteEditor,
-        selectedNoteId
+        activeSubPage,
+        researchViewFilter,
+        thesisViewMode,
+        collapsedSections,
+        viewingStageId
       }
       console.log(`AssetTab ${asset.id}: Saving state:`, stateToSave)
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeTab, viewingStageId, showNoteEditor, selectedNoteId, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, isTabStateInitialized])
 
   // ---------- Queries ----------
   const { data: coverage } = useQuery({
@@ -369,6 +383,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
   })
 
+  // Fetch profile info for thesis contributors
+  const contributorIds = React.useMemo(() => {
+    if (!thesisContributions) return []
+    return [...new Set(thesisContributions.map(t => t.created_by).filter(Boolean))]
+  }, [thesisContributions])
+
+  const { data: contributorProfiles } = useQuery({
+    queryKey: ['contributor-profiles', contributorIds],
+    queryFn: async () => {
+      if (contributorIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', contributorIds)
+      if (error) throw error
+      // Transform to include full_name for consistency
+      return (data || []).map(u => ({
+        id: u.id,
+        full_name: u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : null,
+        email: u.email
+      }))
+    },
+    enabled: contributorIds.length > 0
+  })
+
   // Build thesis status for each covering analyst
   const thesisStatuses = React.useMemo(() => {
     if (!coverage || !thesisContributions) return []
@@ -391,6 +430,84 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       })
   }, [coverage, thesisContributions])
 
+  // Helper to format name as "F. LastName"
+  const formatShortName = (fullName: string | null | undefined): string => {
+    if (!fullName) return 'Unknown'
+    const parts = fullName.trim().split(/\s+/)
+    if (parts.length === 1) return parts[0]
+    const firstName = parts[0]
+    const lastName = parts[parts.length - 1]
+    return `${firstName.charAt(0)}. ${lastName}`
+  }
+
+  // Build unique analyst list for the research view filter
+  // Includes both covering analysts AND contributors (thesis, price targets, etc.)
+  const researchAnalysts = React.useMemo(() => {
+    const uniqueAnalysts = new Map<string, { id: string; name: string; shortName: string; role: string | null; isCovering: boolean }>()
+
+    // Add covering analysts first (they get role priority)
+    coverage?.forEach(c => {
+      if (c.user_id && !uniqueAnalysts.has(c.user_id)) {
+        uniqueAnalysts.set(c.user_id, {
+          id: c.user_id,
+          name: c.analyst_name || 'Unknown',
+          shortName: formatShortName(c.analyst_name),
+          role: c.role,
+          isCovering: true
+        })
+      }
+    })
+
+    // Add thesis contributors who aren't already in the list
+    thesisContributions?.forEach((t: any) => {
+      if (t.created_by && !uniqueAnalysts.has(t.created_by)) {
+        const profile = contributorProfiles?.find(p => p.id === t.created_by)
+
+        // Try multiple sources for the name: profile, current user (if same ID), or email fallback
+        let fullName = profile?.full_name
+        if (!fullName && t.created_by === user?.id) {
+          // Use current user's metadata if this is the logged-in user
+          const firstName = (user as any)?.user_metadata?.first_name || (user as any)?.raw_user_meta_data?.first_name
+          const lastName = (user as any)?.user_metadata?.last_name || (user as any)?.raw_user_meta_data?.last_name
+          if (firstName && lastName) {
+            fullName = `${firstName} ${lastName}`
+          } else {
+            fullName = user?.email?.split('@')[0]
+          }
+        }
+        if (!fullName) {
+          fullName = profile?.email?.split('@')[0] || 'Unknown'
+        }
+
+        uniqueAnalysts.set(t.created_by, {
+          id: t.created_by,
+          name: fullName,
+          shortName: formatShortName(fullName),
+          role: null, // Contributors without coverage don't have a role
+          isCovering: false
+        })
+      }
+    })
+
+    // Sort: covering analysts by role first, then contributors
+    return Array.from(uniqueAnalysts.values()).sort((a, b) => {
+      // Covering analysts come before non-covering
+      if (a.isCovering && !b.isCovering) return -1
+      if (!a.isCovering && b.isCovering) return 1
+
+      // Among covering analysts, sort by role
+      if (a.isCovering && b.isCovering) {
+        const roleOrder: Record<string, number> = { primary: 0, secondary: 1, tertiary: 2 }
+        const aOrder = a.role ? (roleOrder[a.role] ?? 3) : 4
+        const bOrder = b.role ? (roleOrder[b.role] ?? 3) : 4
+        return aOrder - bOrder
+      }
+
+      // Among contributors, sort alphabetically
+      return a.name.localeCompare(b.name)
+    })
+  }, [coverage, thesisContributions, contributorProfiles, user])
+
   const { data: priceTargets } = useQuery({
     queryKey: ['price-targets', asset.id],
     queryFn: async () => {
@@ -409,8 +526,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     queryFn: async () => {
       const { data, error } = await supabase
         .from('asset_notes')
-        .select('*')
+        .select(`
+          *,
+          user:users!asset_notes_created_by_fkey(id, first_name, last_name, email)
+        `)
         .eq('asset_id', asset.id)
+        .eq('is_deleted', false)
         .order('updated_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -419,32 +540,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     refetchOnWindowFocus: true,
   })
 
-  // User lookup for notes
-  const { data: usersById } = useQuery({
-    queryKey: ['users-by-id', (notes ?? []).map(n => n.created_by), (notes ?? []).map(n => n.updated_by)],
-    enabled: !!notes && notes.length > 0,
-    queryFn: async () => {
-      const ids = Array.from(
-        new Set(
-          (notes ?? [])
-            .flatMap(n => [n.created_by, n.updated_by])
-            .filter(Boolean) as string[]
-        )
+  // Filter notes based on research view filter and sharing status
+  const filteredNotes = React.useMemo(() => {
+    if (!notes || !user) return []
+
+    if (researchViewFilter === 'aggregated') {
+      // "Our View": Show user's own notes + shared notes from others
+      return notes.filter(note =>
+        note.created_by === user.id || // User's own notes
+        (note.created_by !== user.id && note.is_shared === true) // Others' shared notes
       )
-      if (ids.length === 0) return {} as Record<string, any>
-
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email')
-        .in('id', ids)
-
-      if (error) throw error
-
-      const map: Record<string, any> = {}
-      for (const u of data || []) map[u.id] = u
-      return map
     }
-  })
+
+    if (researchViewFilter === user.id) {
+      // Viewing own notes: show all (shared and unshared)
+      return notes.filter(note => note.created_by === user.id)
+    }
+
+    // Viewing another user's notes: only show their shared notes
+    return notes.filter(note =>
+      note.created_by === researchViewFilter && note.is_shared === true
+    )
+  }, [notes, researchViewFilter, user])
+
+  // Pagination state for notes
+  const [notesDisplayCount, setNotesDisplayCount] = useState(5)
+  const paginatedNotes = filteredNotes.slice(0, notesDisplayCount)
+  const hasMoreNotes = filteredNotes.length > notesDisplayCount
 
   // Portfolio holdings query
   const { data: portfolioHoldings } = useQuery({
@@ -725,7 +847,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         hasExplicitWorkflowId: !!asset.workflow_id
       })
 
-      // If asset has explicit workflow_id, verify it's active before using it
+      // If asset has explicit workflow_id, use it (allow viewing completed workflows)
+      // Only reject if the workflow is archived or deleted
       if (asset.workflow_id) {
         const { data: workflowCheck, error: checkError } = await supabase
           .from('workflows')
@@ -733,10 +856,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           .eq('id', asset.workflow_id)
           .single()
 
-        if (checkError || !workflowCheck || workflowCheck.archived || workflowCheck.status !== 'active' || workflowCheck.deleted) {
-          console.log(`⚠️ AssetTab: Explicit workflow_id ${asset.workflow_id} is not active (status: ${workflowCheck?.status}), auto-selecting next workflow`)
+        // Only reject archived or deleted workflows - allow viewing completed (inactive) workflows
+        if (checkError || !workflowCheck || workflowCheck.archived || workflowCheck.deleted) {
+          console.log(`⚠️ AssetTab: Explicit workflow_id ${asset.workflow_id} is archived/deleted, auto-selecting next workflow`)
 
-          // The selected workflow has ended, find the next active workflow
+          // The selected workflow is archived/deleted, find the next available workflow
           const { data: nextWorkflow } = await supabase
             .from('asset_workflow_progress')
             .select(`
@@ -752,7 +876,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             `)
             .eq('asset_id', asset.id)
             .eq('is_started', true)
-            .eq('workflows.status', 'active')
             .eq('workflows.archived', false)
             .is('workflows.deleted', null)
             .not('workflows.parent_workflow_id', 'is', null)
@@ -762,7 +885,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
           const nextWorkflowId = nextWorkflow?.workflow_id || null
 
-          // Update the asset's workflow_id to the next active workflow or null
+          // Update the asset's workflow_id to the next available workflow or null
           const { error: updateError } = await supabase
             .from('assets')
             .update({ workflow_id: nextWorkflowId })
@@ -776,11 +899,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             console.log(`✅ AssetTab: Auto-selected next workflow: ${nextWorkflowId}`)
             return nextWorkflowId
           } else {
-            console.log(`❌ AssetTab: No other active workflows available`)
+            console.log(`❌ AssetTab: No other workflows available`)
             return null
           }
         } else {
-          console.log(`✅ AssetTab: Using explicit workflow_id: ${asset.workflow_id}`)
+          // Allow viewing completed/inactive workflows that user explicitly selected
+          console.log(`✅ AssetTab: Using explicit workflow_id: ${asset.workflow_id} (status: ${workflowCheck.status})`)
           return asset.workflow_id
         }
       }
@@ -1689,9 +1813,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   const handleStageView = (stageId: string) => {
-    // Switch to stage tab to view the selected stage
-    setActiveTab('stage')
-    // Set the stage to view
+    // Expand workflow section and set the stage to view
+    setCollapsedSections(prev => ({ ...prev, workflow: false }))
     setViewingStageId(stageId)
   }
 
@@ -1743,20 +1866,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const getPriceTarget = (type: 'bull' | 'base' | 'bear') => priceTargets?.find((pt) => pt.type === type)
 
   const handleNoteClick = (noteId: string) => {
-    setSelectedNoteId(noteId)
-    setShowNoteEditor(true)
+    // Use stable tab ID based on entity, not note ID
+    const tabId = `note-asset-${asset.id}`
+    onNavigate?.({
+      id: tabId,
+      title: `Note - ${asset.symbol}`,
+      type: 'note',
+      data: { id: noteId, entityType: 'asset', entityId: asset.id, assetId: asset.id, assetSymbol: asset.symbol }
+    })
   }
 
   const handleCreateNote = () => {
-    setSelectedNoteId(null)
-    setShowNoteEditor(true)
-  }
-
-  const handleCloseNoteEditor = () => {
-    setShowNoteEditor(false)
-    setSelectedNoteId(null)
-    queryClient.invalidateQueries({ queryKey: ['asset-notes', asset.id] })
-    queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
+    // Use stable tab ID - same tab for all notes of this asset
+    const tabId = `note-asset-${asset.id}`
+    onNavigate?.({
+      id: tabId,
+      title: `Note - ${asset.symbol}`,
+      type: 'note',
+      data: { entityType: 'asset', entityId: asset.id, assetId: asset.id, assetSymbol: asset.symbol, isNew: true }
+    })
   }
 
   const priorityOptions = [
@@ -1767,9 +1895,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
+      {/* Sticky Header Section */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-6 space-y-3 shadow-sm">
       {/* Asset Header */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {/* Single Row - All Summary Info and Controls */}
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-start gap-6">
@@ -1824,6 +1954,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           showHeader={false}
                           thesisStatuses={thesisStatuses}
                           showThesisStatus={true}
+                          onUserClick={(user) => {
+                            if (onNavigate) {
+                              onNavigate({
+                                id: user.id,
+                                title: user.full_name,
+                                type: 'user',
+                                data: user
+                              })
+                            }
+                          }}
                         />
                       </div>
 
@@ -1953,183 +2093,238 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         </div>
       </div>
 
-      {/* Tabs */}
-      <Card padding="none">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
-            <button
-              onClick={() => setActiveTab('thesis')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'thesis'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
-                <span>Thesis</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('outcomes')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'outcomes'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Target className="h-4 w-4" />
-                <span>Outcomes</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('notes')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'notes'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
-                <span>Notes</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('stage')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'stage'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Activity className="h-4 w-4" />
-                <span>Stage</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('lists')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'lists'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <List className="h-4 w-4" />
-                <span>Lists</span>
-              </div>
-            </button>
-          </nav>
-        </div>
-
-        {/* Tab Content */}
-        <div className="p-6">
-          {activeTab === 'thesis' && (
-            <ThesisContainer assetId={asset.id} />
-          )}
-
-          {activeTab === 'outcomes' && (
-            <OutcomesContainer
-              assetId={asset.id}
-              symbol={asset.symbol}
-              currentPrice={currentQuote?.price}
-            />
-          )}
-
-          {activeTab === 'notes' && (showNoteEditor ? (
-            <div className="space-y-4">
-              <div className="flex items-center space-x-3">
-                <Button variant="ghost" size="sm" onClick={handleCloseNoteEditor} className="flex items-center">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Notes
-                </Button>
-              </div>
-              <NoteEditor
-                assetId={asset.id}
-                assetSymbol={asset.symbol}
-                selectedNoteId={selectedNoteId ?? undefined}
-                onNoteSelect={setSelectedNoteId}
-              />
+      {/* Sub-page Tab Selector */}
+      <div className="border-b border-gray-200">
+        <nav className="flex space-x-1" aria-label="Tabs">
+          <button
+            onClick={() => setActiveSubPage('research')}
+            className={clsx(
+              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+              activeSubPage === 'research'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <FileText className="h-4 w-4" />
+              <span>Research</span>
             </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <Button size="sm" onClick={handleCreateNote}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Note
-                </Button>
-              </div>
+          </button>
+          <button
+            onClick={() => setActiveSubPage('workflow')}
+            className={clsx(
+              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+              activeSubPage === 'workflow'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <Activity className="h-4 w-4" />
+              <span>Workflow</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveSubPage('lists')}
+            className={clsx(
+              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+              activeSubPage === 'lists'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <List className="h-4 w-4" />
+              <span>Lists</span>
+            </div>
+          </button>
+        </nav>
+      </div>
+      </div>
 
-              {notes && notes.length > 0 ? (
-                <div className="space-y-4">
-                  {notes.map((note) => (
-                    <Card
-                      key={note.id}
-                      padding="sm"
-                      className="cursor-pointer hover:shadow-md transition-shadow"
+      {/* Sub-page Content */}
+      <div className="flex-1 overflow-auto px-8 py-4">
+
+        {/* ========== RESEARCH SUB-PAGE ========== */}
+        {activeSubPage === 'research' && (
+          <div className="space-y-3 min-h-full">
+            {/* Research View Filter */}
+            {researchAnalysts.length > 0 && (
+              <div className="flex items-center gap-3 px-2">
+                <span className="text-sm text-gray-500 font-medium">View:</span>
+                {researchAnalysts.length <= 5 ? (
+                  // Pills mode for 5 or fewer analysts
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => setResearchViewFilter('aggregated')}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
+                        researchViewFilter === 'aggregated'
+                          ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                      )}
                     >
-                      <div
-                        className="flex items-start justify-between"
-                        onClick={() => handleNoteClick(note.id)}
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <h4 className="font-semibold text-gray-900">{note.title}</h4>
-                            {note.note_type && (
-                              <Badge variant="default" size="sm">
-                                {note.note_type}
-                              </Badge>
-                            )}
-                            {note.is_shared && (
-                              <Badge variant="primary" size="sm">
-                                Shared
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 line-clamp-2 mb-2">
-                            {note.content.substring(0, 150)}...
-                          </p>
-                          <div className="flex items-center space-x-4 text-xs text-gray-500">
-                            <div className="flex items-center">
-                              <Calendar className="h-3 w-3 mr-1" />
-                              {formatDistanceToNow(new Date(note.updated_at), { addSuffix: true })}
-                            </div>
-                            {note.updated_by && (
-                              <div className="flex items-center">
-                                <User className="h-3 w-3 mr-1" />
-                                Edited by {nameFor(note.updated_by)}
-                              </div>
-                            )}
-                            {note.created_by && (
-                              <div className="flex items-center">
-                                <User className="h-3 w-3 mr-1" />
-                                Created by {nameFor(note.created_by)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                      <Users className="w-3.5 h-3.5" />
+                      Our View
+                    </button>
+                    {researchAnalysts.map(analyst => {
+                      const isCurrentUser = analyst.id === user?.id
+                      return (
+                        <button
+                          key={analyst.id}
+                          onClick={() => setResearchViewFilter(analyst.id)}
+                          className={clsx(
+                            'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
+                            researchViewFilter === analyst.id
+                              ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                              : isCurrentUser
+                                ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-300 hover:bg-cyan-100 dark:bg-cyan-900/20 dark:text-cyan-400 dark:ring-cyan-700 dark:hover:bg-cyan-900/30'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                          )}
+                        >
+                          {analyst.isCovering && (
+                            <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                          )}
+                          {!analyst.isCovering && <User className="w-3.5 h-3.5" />}
+                          {analyst.shortName}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  // Dropdown mode for more than 5 analysts
+                  <select
+                    value={researchViewFilter}
+                    onChange={(e) => setResearchViewFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
+                  >
+                    <option value="aggregated">Our View (All Analysts)</option>
+                    {researchAnalysts.map(analyst => {
+                      const prefix = analyst.isCovering ? '★ ' : ''
+                      return (
+                        <option key={analyst.id} value={analyst.id}>
+                          {prefix}{analyst.name}
+                        </option>
+                      )
+                    })}
+                  </select>
+                )}
+              </div>
+            )}
+
+            {/* Thesis Section */}
+            <Card padding="none">
+              <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <button
+                  onClick={() => toggleSection('thesis')}
+                  className="flex items-center gap-2 flex-1"
+                >
+                  <span className="font-medium text-gray-900">Thesis</span>
+                  {collapsedSections.thesis ? (
+                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                  ) : (
+                    <ChevronUp className="h-5 w-5 text-gray-400" />
+                  )}
+                </button>
+                {/* View mode toggle */}
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('all') }}
+                    className={clsx(
+                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1',
+                      thesisViewMode === 'all'
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                    )}
+                    title="Show all sections separately"
+                  >
+                    <Layers className="w-3 h-3" />
+                    All
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('summary') }}
+                    className={clsx(
+                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1',
+                      thesisViewMode === 'summary'
+                        ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shadow-sm'
+                        : 'text-purple-500 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                    )}
+                    title="AI-powered unified summary"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Summary
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('history') }}
+                    className={clsx(
+                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1',
+                      thesisViewMode === 'history'
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                    )}
+                    title="Show thesis and price target history timeline"
+                  >
+                    <History className="w-3 h-3" />
+                    History
+                  </button>
                 </div>
-              ) : (
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No related notes</h3>
-                  <p className="text-gray-500">Create notes to document your research and thoughts about {asset.symbol}.</p>
+              </div>
+              {!collapsedSections.thesis && (
+                <div className="border-t border-gray-100 px-6 py-6">
+                  <ThesisContainer assetId={asset.id} viewFilter={researchViewFilter} viewMode={thesisViewMode} />
                 </div>
               )}
-            </div>
-          ))}
+            </Card>
 
-          {activeTab === 'stage' && (() => {
+            {/* Outcomes Section */}
+            <Card padding="none">
+              <button
+                onClick={() => toggleSection('outcomes')}
+                className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+              >
+                <span className="font-medium text-gray-900">Outcomes</span>
+                {collapsedSections.outcomes ? (
+                  <ChevronDown className="h-5 w-5 text-gray-400" />
+                ) : (
+                  <ChevronUp className="h-5 w-5 text-gray-400" />
+                )}
+              </button>
+              {!collapsedSections.outcomes && (
+                <div className="border-t border-gray-100 px-6 py-6">
+                  <OutcomesContainer
+                    assetId={asset.id}
+                    symbol={asset.symbol}
+                    currentPrice={currentQuote?.price}
+                    onNavigate={onNavigate}
+                    viewFilter={researchViewFilter}
+                  />
+                </div>
+              )}
+            </Card>
+
+            {/* Notes & Models Section */}
+            <NotesModelsSection
+              assetId={asset.id}
+              notes={notes || []}
+              researchViewFilter={researchViewFilter}
+              isExpanded={!collapsedSections.notes}
+              onToggleExpanded={() => toggleSection('notes')}
+              onNoteClick={handleNoteClick}
+              onCreateNote={handleCreateNote}
+              onViewAllNotes={() => onNavigate?.({
+                id: 'notes-list',
+                title: 'Notes',
+                type: 'notes-list',
+                data: { initialAssetFilter: asset.id }
+              })}
+            />
+          </div>
+        )}
+
+        {/* ========== WORKFLOW SUB-PAGE ========== */}
+        {activeSubPage === 'workflow' && (
+          <div>
+            {(() => {
             console.log('🔍 AssetTab Stage - asset.id:', asset.id, 'effectiveAsset.id:', effectiveAsset.id, 'typeof effectiveAsset.id:', typeof effectiveAsset.id)
             return (
               <div className="space-y-6">
@@ -2353,259 +2548,314 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
             )
           })()}
+          </div>
+        )}
 
-          {activeTab === 'lists' && (
-            <div className="space-y-6">
-              <>
-                  {(() => {
-                    const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
-                      const type = list.type || 'list'
-                      if (!acc[type]) acc[type] = []
-                      acc[type].push(list)
-                      return acc
-                    }, {} as Record<string, any[]>)
+        {/* ========== LISTS SUB-PAGE ========== */}
+        {activeSubPage === 'lists' && (
+          <div className="space-y-8">
+            {(() => {
+              const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
+                const type = list.type || 'list'
+                if (!acc[type]) acc[type] = []
+                acc[type].push(list)
+                return acc
+              }, {} as Record<string, any[]>)
 
-                    return (
-                      <div className="space-y-8">
-                        {/* Lists Section */}
-                        <div className="pb-8 border-b border-gray-200">
-                          <div className="flex justify-between items-center mb-3">
-                            <h4
-                              onClick={() => {
-                                if (onNavigate) {
-                                  onNavigate({
-                                    id: 'lists',
-                                    title: 'Lists',
-                                    type: 'lists',
-                                    data: null
-                                  })
-                                }
-                              }}
-                              className="text-sm font-semibold text-gray-700 uppercase tracking-wide hover:text-primary-600 cursor-pointer transition-colors"
-                            >
-                              Lists
-                            </h4>
-                            <AddToListButton assetId={asset.id} />
-                          </div>
-                          {listsByType.list && listsByType.list.length > 0 ? (
-                            <div className="grid gap-3">
-                              {listsByType.list.map((list: any) => (
-                                <Card key={list.id} className="hover:shadow-md transition-shadow cursor-pointer">
-                                  <div className="p-4">
-                                    <div className="flex items-start justify-between">
-                                      <div>
-                                        <h5 className="font-semibold text-gray-900">{list.name}</h5>
-                                        {list.description && (
-                                          <p className="text-sm text-gray-600 mt-1">{list.description}</p>
-                                        )}
-                                        {list.created_at && (
-                                          <p className="text-xs text-gray-500 mt-2">
-                                            Created {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <Badge variant="default">list</Badge>
-                                    </div>
-                                  </div>
-                                </Card>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                              <p className="text-sm text-gray-500">Not in any lists</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Themes Section */}
-                        <div className="pb-8 border-b border-gray-200">
-                          <div className="flex justify-between items-center mb-3">
-                            <h4
-                              onClick={() => {
-                                if (onNavigate) {
-                                  onNavigate({
-                                    id: 'themes-list',
-                                    title: 'All Themes',
-                                    type: 'themes-list',
-                                    data: null
-                                  })
-                                }
-                              }}
-                              className="text-sm font-semibold text-gray-700 uppercase tracking-wide hover:text-primary-600 cursor-pointer transition-colors"
-                            >
-                              Themes
-                            </h4>
-                            <AddToThemeButton assetId={asset.id} />
-                          </div>
-                          {assetThemes && assetThemes.length > 0 ? (
-                            <div className="grid gap-2">
-                              {assetThemes.map((theme: any) => (
-                                <div
-                                  key={theme.id}
-                                  className="px-2 py-1 flex items-center gap-2"
-                                >
-                                  <span
-                                    onClick={() => {
-                                      if (onNavigate) {
-                                        onNavigate({
-                                          id: theme.id,
-                                          title: theme.name,
-                                          type: 'theme',
-                                          data: theme
-                                        })
-                                      }
-                                    }}
-                                    className="text-sm font-medium text-gray-900 hover:bg-gray-50 cursor-pointer transition-colors px-1 py-0.5 rounded"
-                                  >
-                                    {theme.name}
-                                  </span>
-                                  <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
-                                    {theme.theme_type || 'general'}
-                                  </Badge>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                              <p className="text-sm text-gray-500">Not in any themes</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Portfolios Section */}
-                        <div>
-                          <div className="flex justify-between items-center mb-3">
-                            <h4
-                              onClick={() => {
-                                if (onNavigate) {
-                                  onNavigate({
-                                    id: 'portfolios-list',
-                                    title: 'All Portfolios',
-                                    type: 'portfolios-list',
-                                    data: null
-                                  })
-                                }
-                              }}
-                              className="text-sm font-semibold text-gray-700 uppercase tracking-wide hover:text-primary-600 cursor-pointer transition-colors"
-                            >
-                              Portfolios
-                            </h4>
-                            <AddToQueueButton assetId={asset.id} />
-                          </div>
-                          {portfolioHoldings && portfolioHoldings.length > 0 ? (
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                  <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Cost</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized P&L</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized %</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                  {portfolioHoldings.map((holding: any) => {
-                                    const currentPrice = currentQuote?.price || 0
-                                    const shares = parseFloat(holding.shares)
-                                    const costPerShare = parseFloat(holding.cost)
-                                    const totalCost = shares * costPerShare
-                                    const currentValue = shares * currentPrice
-                                    const unrealizedPnL = currentValue - totalCost
-                                    const unrealizedPercentage = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0
-                                    const isPositive = unrealizedPnL >= 0
-
-                                    // Calculate weight as percentage of total portfolio
-                                    const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                                    const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
-
-                                    return (
-                                      <tr key={holding.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                          <div className="text-sm font-medium text-gray-900">
-                                            {holding.portfolios?.name || 'Unknown Portfolio'}
-                                          </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '--'}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          {shares.toLocaleString()}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          ${costPerShare.toFixed(2)}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          {currentPrice > 0 ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                          {currentPrice > 0 ? (
-                                            <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                                              {isPositive ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                          ) : (
-                                            <span className="text-gray-400">--</span>
-                                          )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                          {currentPrice > 0 ? (
-                                            <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                                              {isPositive ? '+' : ''}{unrealizedPercentage.toFixed(2)}%
-                                            </span>
-                                          ) : (
-                                            <span className="text-gray-400">--</span>
-                                          )}
-                                        </td>
-                                      </tr>
-                                    )
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                              <p className="text-sm text-gray-500">Not in any portfolios</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Projects Section */}
-                        <div className="pt-8 border-t border-gray-200">
-                          <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                              Projects
-                            </h4>
-                          </div>
-                          <RelatedProjects
-                            contextType="asset"
-                            contextId={asset.id}
-                            contextTitle={`${asset.symbol} - ${asset.company_name}`}
-                            onProjectClick={(projectId) => {
-                              if (onNavigate) {
-                                onNavigate({
-                                  id: projectId,
-                                  title: 'Project',
-                                  type: 'project',
-                                  data: { id: projectId }
-                                })
-                              }
-                            }}
-                          />
-                        </div>
+              return (
+                <>
+                  {/* Lists Section */}
+                  <Card padding="none">
+                    <button
+                      onClick={() => toggleSection('listsContent')}
+                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex justify-between items-center flex-1">
+                        <h4
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (onNavigate) {
+                              onNavigate({
+                                id: 'lists',
+                                title: 'Lists',
+                                type: 'lists',
+                                data: null
+                              })
+                            }
+                          }}
+                          className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                        >
+                          Lists
+                        </h4>
+                        <AddToListButton assetId={asset.id} />
                       </div>
-                    )
-                  })()}
-              </>
-            </div>
-          )}
-        </div>
-      </Card>
+                      {collapsedSections.listsContent ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                    {!collapsedSections.listsContent && (
+                      <div className="border-t border-gray-100 px-6 py-6">
+                        {listsByType.list && listsByType.list.length > 0 ? (
+                          <div className="grid gap-3">
+                            {listsByType.list.map((list: any) => (
+                              <Card key={list.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                                <div className="p-4">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <h5 className="font-semibold text-gray-900">{list.name}</h5>
+                                      {list.description && (
+                                        <p className="text-sm text-gray-600 mt-1">{list.description}</p>
+                                      )}
+                                      {list.created_at && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                          Created {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <Badge variant="default">list</Badge>
+                                  </div>
+                                </div>
+                              </Card>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                            <p className="text-sm text-gray-500">Not in any lists</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Themes Section */}
+                  <Card padding="none">
+                    <button
+                      onClick={() => toggleSection('themesContent')}
+                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex justify-between items-center flex-1">
+                        <h4
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (onNavigate) {
+                              onNavigate({
+                                id: 'themes-list',
+                                title: 'All Themes',
+                                type: 'themes-list',
+                                data: null
+                              })
+                            }
+                          }}
+                          className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                        >
+                          Themes
+                        </h4>
+                        <AddToThemeButton assetId={asset.id} />
+                      </div>
+                      {collapsedSections.themesContent ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                    {!collapsedSections.themesContent && (
+                      <div className="border-t border-gray-100 px-6 py-6">
+                        {assetThemes && assetThemes.length > 0 ? (
+                          <div className="grid gap-2">
+                            {assetThemes.map((theme: any) => (
+                              <div
+                                key={theme.id}
+                                className="px-2 py-1 flex items-center gap-2"
+                              >
+                                <span
+                                  onClick={() => {
+                                    if (onNavigate) {
+                                      onNavigate({
+                                        id: theme.id,
+                                        title: theme.name,
+                                        type: 'theme',
+                                        data: theme
+                                      })
+                                    }
+                                  }}
+                                  className="text-sm font-medium text-gray-900 hover:bg-gray-50 cursor-pointer transition-colors px-1 py-0.5 rounded"
+                                >
+                                  {theme.name}
+                                </span>
+                                <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
+                                  {theme.theme_type || 'general'}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                            <p className="text-sm text-gray-500">Not in any themes</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Portfolios Section */}
+                  <Card padding="none">
+                    <button
+                      onClick={() => toggleSection('portfoliosContent')}
+                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex justify-between items-center flex-1">
+                        <h4
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (onNavigate) {
+                              onNavigate({
+                                id: 'portfolios-list',
+                                title: 'All Portfolios',
+                                type: 'portfolios-list',
+                                data: null
+                              })
+                            }
+                          }}
+                          className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                        >
+                          Portfolios
+                        </h4>
+                        <AddToQueueButton assetId={asset.id} />
+                      </div>
+                      {collapsedSections.portfoliosContent ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                    {!collapsedSections.portfoliosContent && (
+                      <div className="border-t border-gray-100 px-6 py-6">
+                        {portfolioHoldings && portfolioHoldings.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Cost</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized P&L</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized %</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {portfolioHoldings.map((holding: any) => {
+                                  const currentPrice = currentQuote?.price || 0
+                                  const shares = parseFloat(holding.shares)
+                                  const costPerShare = parseFloat(holding.cost)
+                                  const totalCost = shares * costPerShare
+                                  const currentValue = shares * currentPrice
+                                  const unrealizedPnL = currentValue - totalCost
+                                  const unrealizedPercentage = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0
+                                  const isPositive = unrealizedPnL >= 0
+
+                                  // Calculate weight as percentage of total portfolio
+                                  const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
+                                  const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
+
+                                  return (
+                                    <tr key={holding.id} className="hover:bg-gray-50">
+                                      <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {holding.portfolios?.name || 'Unknown Portfolio'}
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '--'}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        {shares.toLocaleString()}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        ${costPerShare.toFixed(2)}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        {currentPrice > 0 ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        {currentPrice > 0 ? (
+                                          <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                            {isPositive ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">--</span>
+                                        )}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        {currentPrice > 0 ? (
+                                          <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                            {isPositive ? '+' : ''}{unrealizedPercentage.toFixed(2)}%
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">--</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                            <p className="text-sm text-gray-500">Not in any portfolios</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Projects Section */}
+                  <Card padding="none">
+                    <button
+                      onClick={() => toggleSection('projectsContent')}
+                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    >
+                      <span className="font-medium text-gray-900">Projects</span>
+                      {collapsedSections.projectsContent ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                    {!collapsedSections.projectsContent && (
+                      <div className="border-t border-gray-100 px-6 py-6">
+                        <RelatedProjects
+                          contextType="asset"
+                          contextId={asset.id}
+                          contextTitle={`${asset.symbol} - ${asset.company_name}`}
+                          onProjectClick={(projectId) => {
+                            if (onNavigate) {
+                              onNavigate({
+                                id: projectId,
+                                title: 'Project',
+                                type: 'project',
+                                data: { id: projectId }
+                              })
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                  </Card>
+                </>
+              )
+            })()}
+          </div>
+        )}
+      </div>
 
       {/* Workflow Manager Modal */}
       <WorkflowManager

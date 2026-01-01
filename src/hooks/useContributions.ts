@@ -551,3 +551,593 @@ Provide a 2-3 paragraph summary that captures the essence of the team's collecti
     regenerateSummary: generateSummary.mutate
   }
 }
+
+// Types for structured thesis analysis
+export type Sentiment = 'bullish' | 'neutral' | 'bearish'
+
+export interface ThesisAnalysis {
+  executiveSummary: string
+  overallSentiment: Sentiment
+  sentimentBreakdown: {
+    bullish: number
+    neutral: number
+    bearish: number
+  }
+  consensusPoints: string[]
+  divergentViews: {
+    topic: string
+    views: { analyst: string; position: string }[]
+  }[]
+  keyCatalysts: { theme: string; count: number; analysts: string[] }[]
+  analystSentiments: {
+    analystId: string
+    name: string
+    isCovering: boolean
+    sentiment: Sentiment
+    keyPoint: string
+    updatedAt: string
+  }[]
+  generatedAt: string
+  contributionCount: number
+}
+
+export type AggregationMethod = 'equal' | 'covering_only' | 'role_weighted' | 'recency'
+
+// Hook for structured AI-powered thesis analysis
+export function useThesisAnalysis({
+  assetId,
+  section,
+  contributions,
+  coveringAnalystIds = new Set()
+}: {
+  assetId: string
+  section: string
+  contributions: Contribution[]
+  coveringAnalystIds?: Set<string>
+}) {
+  const { user } = useAuth()
+  const { effectiveConfig } = useAIConfig()
+  const queryClient = useQueryClient()
+
+  // Check if we have a cached analysis
+  const { data: cachedAnalysis, isLoading: cacheLoading } = useQuery({
+    queryKey: ['thesis-analysis', assetId, section],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contribution_summaries')
+        .select('*')
+        .eq('asset_id', assetId)
+        .eq('section', section)
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error
+
+      // Parse the structured analysis from the summary field (stored as JSON)
+      if (data?.summary) {
+        try {
+          const parsed = JSON.parse(data.summary)
+          if (parsed.executiveSummary) {
+            return {
+              ...parsed,
+              generatedAt: data.generated_at,
+              contributionCount: data.contribution_count
+            } as ThesisAnalysis
+          }
+        } catch {
+          // Not structured data, return null
+        }
+      }
+      return null
+    },
+    enabled: !!assetId && !!section
+  })
+
+  // Generate structured analysis mutation
+  const generateAnalysis = useMutation({
+    mutationFn: async (method: AggregationMethod = 'equal'): Promise<ThesisAnalysis> => {
+      if (!user) throw new Error('Not authenticated')
+      if (!effectiveConfig.isConfigured) {
+        throw new Error('AI not configured. Please set up AI in Settings.')
+      }
+      if (contributions.length === 0) {
+        throw new Error('No contributions to analyze')
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('No session')
+
+      // Filter/sort contributions based on method
+      let filteredContributions = [...contributions]
+      if (method === 'covering_only') {
+        filteredContributions = contributions.filter(c => coveringAnalystIds.has(c.created_by))
+        if (filteredContributions.length === 0) {
+          throw new Error('No covering analyst contributions to analyze')
+        }
+      } else if (method === 'recency') {
+        filteredContributions.sort((a, b) =>
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        )
+      }
+
+      // Build the prompt with contributions
+      const contributionTexts = filteredContributions.map(c => {
+        const isCovering = coveringAnalystIds.has(c.created_by)
+        return `${c.user?.full_name || 'Unknown'}${isCovering ? ' (Covering Analyst)' : ''}: ${c.content}`
+      }).join('\n\n---\n\n')
+
+      const sectionLabels: Record<string, string> = {
+        thesis: 'Investment Thesis',
+        where_different: 'Where We Are Different (vs Consensus)',
+        risks_to_thesis: 'Risks to Thesis'
+      }
+
+      // Build weighting instructions based on method
+      const weightingInstructions = {
+        equal: 'Treat all analyst views with equal weight.',
+        covering_only: 'Only covering analyst views are included. These are the primary analysts responsible for this asset.',
+        role_weighted: 'Weight covering analysts more heavily than other contributors. Primary covering analysts should have the most influence on consensus.',
+        recency: 'Weight more recent views more heavily than older ones. The list is sorted by recency (most recent first).'
+      }
+
+      const prompt = `Analyze the following ${sectionLabels[section] || section} views from multiple analysts and provide a structured analysis.
+
+WEIGHTING: ${weightingInstructions[method]}
+
+ANALYST VIEWS:
+${contributionTexts}
+
+Provide your analysis as a JSON object with EXACTLY this structure (no markdown, just raw JSON):
+{
+  "executiveSummary": "A 2-3 sentence synthesis of the collective view",
+  "overallSentiment": "bullish" | "neutral" | "bearish",
+  "sentimentBreakdown": {
+    "bullish": <number 0-100>,
+    "neutral": <number 0-100>,
+    "bearish": <number 0-100>
+  },
+  "consensusPoints": ["point 1", "point 2", ...],
+  "divergentViews": [
+    {
+      "topic": "area of disagreement",
+      "views": [
+        { "analyst": "name", "position": "their view" }
+      ]
+    }
+  ],
+  "keyCatalysts": [
+    { "theme": "catalyst name", "count": <number>, "analysts": ["name1", "name2"] }
+  ],
+  "analystSentiments": [
+    {
+      "analystId": "id or empty string",
+      "name": "analyst name",
+      "isCovering": true/false,
+      "sentiment": "bullish" | "neutral" | "bearish",
+      "keyPoint": "their main point in 1 sentence"
+    }
+  ]
+}
+
+IMPORTANT:
+- Return ONLY valid JSON, no explanation text
+- sentimentBreakdown percentages should sum to 100
+- Extract 3-5 consensus points if possible
+- Identify 1-3 areas of divergence if any exist
+- Extract 3-8 key themes/catalysts mentioned
+- Covering analysts are marked in the input - preserve this in analystSentiments`
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            message: prompt,
+            conversationHistory: [],
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to generate analysis')
+      }
+
+      const data = await response.json()
+      let analysisText = data.response as string
+
+      // Clean up the response - remove markdown code blocks if present
+      analysisText = analysisText.trim()
+      if (analysisText.startsWith('```json')) {
+        analysisText = analysisText.slice(7)
+      } else if (analysisText.startsWith('```')) {
+        analysisText = analysisText.slice(3)
+      }
+      if (analysisText.endsWith('```')) {
+        analysisText = analysisText.slice(0, -3)
+      }
+      analysisText = analysisText.trim()
+
+      // Parse the JSON response
+      let analysis: Partial<ThesisAnalysis>
+      try {
+        analysis = JSON.parse(analysisText)
+      } catch (e) {
+        console.error('Failed to parse AI response:', analysisText)
+        throw new Error('Failed to parse AI analysis response')
+      }
+
+      // Add contribution metadata
+      const fullAnalysis: ThesisAnalysis = {
+        executiveSummary: analysis.executiveSummary || 'Analysis could not be generated',
+        overallSentiment: analysis.overallSentiment || 'neutral',
+        sentimentBreakdown: analysis.sentimentBreakdown || { bullish: 33, neutral: 34, bearish: 33 },
+        consensusPoints: analysis.consensusPoints || [],
+        divergentViews: analysis.divergentViews || [],
+        keyCatalysts: analysis.keyCatalysts || [],
+        analystSentiments: (analysis.analystSentiments || []).map((a, idx) => ({
+          ...a,
+          analystId: a.analystId || contributions[idx]?.created_by || '',
+          isCovering: a.isCovering ?? coveringAnalystIds.has(contributions[idx]?.created_by || ''),
+          updatedAt: contributions.find(c => c.user?.full_name === a.name)?.updated_at || new Date().toISOString()
+        })),
+        generatedAt: new Date().toISOString(),
+        contributionCount: contributions.length
+      }
+
+      // Cache the analysis (store as JSON string)
+      const { error: upsertError } = await supabase
+        .from('contribution_summaries')
+        .upsert({
+          asset_id: assetId,
+          section,
+          summary: JSON.stringify(fullAnalysis),
+          contribution_count: contributions.length,
+          last_contribution_at: contributions[0]?.updated_at,
+          generated_at: new Date().toISOString(),
+          generated_by: user.id
+        }, {
+          onConflict: 'asset_id,section'
+        })
+
+      if (upsertError) {
+        console.error('Failed to cache analysis:', upsertError)
+      }
+
+      return fullAnalysis
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['thesis-analysis', assetId, section] })
+    }
+  })
+
+  // Check if analysis is stale (contributions changed since last analysis)
+  const isStale = cachedAnalysis && contributions.length > 0 && (
+    cachedAnalysis.contributionCount !== contributions.length ||
+    (contributions[0]?.updated_at && cachedAnalysis.generatedAt &&
+     new Date(contributions[0].updated_at) > new Date(cachedAnalysis.generatedAt))
+  )
+
+  return {
+    analysis: cachedAnalysis || null,
+    isLoading: cacheLoading,
+    isGenerating: generateAnalysis.isPending,
+    isStale: !!isStale,
+    isConfigured: effectiveConfig.isConfigured,
+    error: generateAnalysis.error as Error | null,
+    generateAnalysis: generateAnalysis.mutate,
+    regenerateAnalysis: generateAnalysis.mutate
+  }
+}
+
+// Interface for unified thesis analysis (combining all 3 sections)
+export interface UnifiedThesisAnalysis {
+  executiveSummary: string
+  overallSentiment: Sentiment
+  sentimentBreakdown: {
+    bullish: number
+    neutral: number
+    bearish: number
+  }
+  thesisSummary: string
+  differentiatorsSummary: string
+  risksSummary: string
+  consensusPoints: string[]
+  divergentViews: {
+    topic: string
+    views: { analyst: string; position: string }[]
+  }[]
+  keyCatalysts: { theme: string; count: number; analysts: string[] }[]
+  analystSentiments: {
+    analystId: string
+    name: string
+    isCovering: boolean
+    sentiment: Sentiment
+    keyPoint: string
+    updatedAt: string
+  }[]
+  generatedAt: string
+  contributionCount: number
+}
+
+// Hook for unified AI-powered thesis analysis (combines all 3 sections)
+export function useUnifiedThesisAnalysis({
+  assetId,
+  thesisContributions,
+  whereDiffContributions,
+  risksContributions,
+  coveringAnalystIds = new Set()
+}: {
+  assetId: string
+  thesisContributions: Contribution[]
+  whereDiffContributions: Contribution[]
+  risksContributions: Contribution[]
+  coveringAnalystIds?: Set<string>
+}) {
+  const { user } = useAuth()
+  const { effectiveConfig } = useAIConfig()
+  const queryClient = useQueryClient()
+
+  // Combine all contributions for counting
+  const allContributions = [...thesisContributions, ...whereDiffContributions, ...risksContributions]
+  const uniqueContributors = new Set(allContributions.map(c => c.created_by))
+  const totalContributorCount = uniqueContributors.size
+
+  // Check if we have a cached analysis (using a special 'unified' section key)
+  const { data: cachedAnalysis, isLoading: cacheLoading } = useQuery({
+    queryKey: ['thesis-analysis', assetId, 'unified'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contribution_summaries')
+        .select('*')
+        .eq('asset_id', assetId)
+        .eq('section', 'unified')
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error
+
+      if (data?.summary) {
+        try {
+          const parsed = JSON.parse(data.summary)
+          if (parsed.executiveSummary && parsed.thesisSummary) {
+            return {
+              ...parsed,
+              generatedAt: data.generated_at,
+              contributionCount: data.contribution_count
+            } as UnifiedThesisAnalysis
+          }
+        } catch {
+          // Not structured data
+        }
+      }
+      return null
+    },
+    enabled: !!assetId
+  })
+
+  // Generate unified analysis mutation
+  const generateAnalysisMutation = useMutation({
+    mutationFn: async (method: AggregationMethod = 'equal'): Promise<UnifiedThesisAnalysis> => {
+      if (!user) throw new Error('Not authenticated')
+      if (!effectiveConfig.isConfigured) {
+        throw new Error('AI not configured. Please set up AI in Settings.')
+      }
+      if (totalContributorCount === 0) {
+        throw new Error('No contributions to analyze')
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('No session')
+
+      // Helper to format contributions for a section
+      const formatContributions = (contributions: Contribution[], sectionName: string) => {
+        if (contributions.length === 0) return ''
+
+        let filtered = [...contributions]
+        if (method === 'covering_only') {
+          filtered = contributions.filter(c => coveringAnalystIds.has(c.created_by))
+        } else if (method === 'recency') {
+          filtered.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+        }
+
+        if (filtered.length === 0) return ''
+
+        const texts = filtered.map(c => {
+          const isCovering = coveringAnalystIds.has(c.created_by)
+          return `- ${c.user?.full_name || 'Unknown'}${isCovering ? ' (Covering)' : ''}: ${c.content}`
+        }).join('\n')
+
+        return `### ${sectionName}\n${texts}`
+      }
+
+      const thesisText = formatContributions(thesisContributions, 'Investment Thesis')
+      const diffText = formatContributions(whereDiffContributions, 'Where We Are Different')
+      const risksText = formatContributions(risksContributions, 'Risks to Thesis')
+
+      const allSectionsText = [thesisText, diffText, risksText].filter(Boolean).join('\n\n')
+
+      if (!allSectionsText) {
+        throw new Error('No contributions to analyze after filtering')
+      }
+
+      // Build weighting instructions
+      const weightingInstructions = {
+        equal: 'Treat all analyst views with equal weight.',
+        covering_only: 'Only covering analyst views are included.',
+        role_weighted: 'Weight covering analysts more heavily than other contributors.',
+        recency: 'Weight more recent views more heavily (lists are sorted by recency).'
+      }
+
+      const prompt = `Analyze these analyst views across three thesis sections and provide a UNIFIED structured analysis.
+
+WEIGHTING: ${weightingInstructions[method]}
+
+ANALYST VIEWS:
+${allSectionsText}
+
+Provide your analysis as a JSON object with EXACTLY this structure (no markdown, just raw JSON):
+{
+  "executiveSummary": "A 2-3 sentence overall synthesis combining thesis, differentiators, and risks",
+  "overallSentiment": "bullish" | "neutral" | "bearish",
+  "sentimentBreakdown": {
+    "bullish": <number 0-100>,
+    "neutral": <number 0-100>,
+    "bearish": <number 0-100>
+  },
+  "thesisSummary": "1-2 sentence summary of the investment thesis section",
+  "differentiatorsSummary": "1-2 sentence summary of where the team differs from consensus",
+  "risksSummary": "1-2 sentence summary of the key risks identified",
+  "consensusPoints": ["point 1", "point 2", ...],
+  "divergentViews": [
+    {
+      "topic": "area of disagreement",
+      "views": [
+        { "analyst": "name", "position": "their view" }
+      ]
+    }
+  ],
+  "keyCatalysts": [
+    { "theme": "catalyst name", "count": <number>, "analysts": ["name1", "name2"] }
+  ],
+  "analystSentiments": [
+    {
+      "analystId": "",
+      "name": "analyst name",
+      "isCovering": true/false,
+      "sentiment": "bullish" | "neutral" | "bearish",
+      "keyPoint": "their main thesis point in 1 sentence"
+    }
+  ]
+}
+
+IMPORTANT:
+- Return ONLY valid JSON, no explanation text
+- sentimentBreakdown percentages should sum to 100
+- Extract 3-5 consensus points across ALL sections
+- Identify 1-3 areas of divergence if any exist
+- Extract 3-8 key themes/catalysts mentioned across all sections
+- Covering analysts are marked - preserve this in analystSentiments
+- The executive summary should weave together thesis + differentiators + risks coherently`
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            message: prompt,
+            conversationHistory: [],
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to generate analysis')
+      }
+
+      const data = await response.json()
+      let analysisText = data.response as string
+
+      // Clean up markdown code blocks
+      analysisText = analysisText.trim()
+      if (analysisText.startsWith('```json')) {
+        analysisText = analysisText.slice(7)
+      } else if (analysisText.startsWith('```')) {
+        analysisText = analysisText.slice(3)
+      }
+      if (analysisText.endsWith('```')) {
+        analysisText = analysisText.slice(0, -3)
+      }
+      analysisText = analysisText.trim()
+
+      // Parse JSON
+      let analysis: Partial<UnifiedThesisAnalysis>
+      try {
+        analysis = JSON.parse(analysisText)
+      } catch (e) {
+        console.error('Failed to parse AI response:', analysisText)
+        throw new Error('Failed to parse AI analysis response')
+      }
+
+      // Build full analysis with defaults
+      const fullAnalysis: UnifiedThesisAnalysis = {
+        executiveSummary: analysis.executiveSummary || 'Analysis could not be generated',
+        overallSentiment: analysis.overallSentiment || 'neutral',
+        sentimentBreakdown: analysis.sentimentBreakdown || { bullish: 33, neutral: 34, bearish: 33 },
+        thesisSummary: analysis.thesisSummary || 'No thesis summary available',
+        differentiatorsSummary: analysis.differentiatorsSummary || 'No differentiators summary available',
+        risksSummary: analysis.risksSummary || 'No risks summary available',
+        consensusPoints: analysis.consensusPoints || [],
+        divergentViews: analysis.divergentViews || [],
+        keyCatalysts: analysis.keyCatalysts || [],
+        analystSentiments: (analysis.analystSentiments || []).map((a) => ({
+          ...a,
+          analystId: a.analystId || '',
+          isCovering: a.isCovering ?? false,
+          updatedAt: allContributions.find(c => c.user?.full_name === a.name)?.updated_at || new Date().toISOString()
+        })),
+        generatedAt: new Date().toISOString(),
+        contributionCount: totalContributorCount
+      }
+
+      // Cache with 'unified' section key
+      const latestUpdate = allContributions.length > 0
+        ? allContributions.reduce((latest, c) =>
+            new Date(c.updated_at) > new Date(latest.updated_at) ? c : latest
+          ).updated_at
+        : new Date().toISOString()
+
+      const { error: upsertError } = await supabase
+        .from('contribution_summaries')
+        .upsert({
+          asset_id: assetId,
+          section: 'unified',
+          summary: JSON.stringify(fullAnalysis),
+          contribution_count: totalContributorCount,
+          last_contribution_at: latestUpdate,
+          generated_at: new Date().toISOString(),
+          generated_by: user.id
+        }, {
+          onConflict: 'asset_id,section'
+        })
+
+      if (upsertError) {
+        console.error('Failed to cache unified analysis:', upsertError)
+      }
+
+      return fullAnalysis
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['thesis-analysis', assetId, 'unified'] })
+    }
+  })
+
+  // Check if analysis is stale
+  const latestUpdate = allContributions.length > 0
+    ? allContributions.reduce((latest, c) =>
+        new Date(c.updated_at) > new Date(latest.updated_at) ? c : latest
+      ).updated_at
+    : null
+
+  const isStale = cachedAnalysis && latestUpdate && (
+    cachedAnalysis.contributionCount !== totalContributorCount ||
+    new Date(latestUpdate) > new Date(cachedAnalysis.generatedAt)
+  )
+
+  return {
+    analysis: cachedAnalysis || null,
+    isLoading: cacheLoading,
+    isGenerating: generateAnalysisMutation.isPending,
+    isStale: !!isStale,
+    isConfigured: effectiveConfig.isConfigured,
+    error: generateAnalysisMutation.error as Error | null,
+    generateAnalysis: generateAnalysisMutation.mutate
+  }
+}

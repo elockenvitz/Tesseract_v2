@@ -14,6 +14,7 @@ export interface Template {
   content: string
   variables: TemplateVariable[]
   category: string
+  shortcut: string | null
   is_shared: boolean
   usage_count: number
   created_at: string
@@ -25,6 +26,7 @@ interface CreateTemplateData {
   content: string
   variables?: TemplateVariable[]
   category?: string
+  shortcut?: string | null
   is_shared?: boolean
 }
 
@@ -33,6 +35,7 @@ interface UpdateTemplateData {
   content?: string
   variables?: TemplateVariable[]
   category?: string
+  shortcut?: string | null
   is_shared?: boolean
 }
 
@@ -72,6 +75,7 @@ export function useTemplates() {
           content: data.content,
           variables: data.variables || [],
           category: data.category || 'general',
+          shortcut: data.shortcut || null,
           is_shared: data.is_shared || false
         })
         .select()
@@ -161,6 +165,14 @@ export function useTemplates() {
     return templates.filter(t => t.category === category)
   }
 
+  // Get template by shortcut
+  const getByShortcut = (shortcut: string): Template | undefined => {
+    return templates.find(t => t.shortcut?.toLowerCase() === shortcut.toLowerCase())
+  }
+
+  // Get all templates with shortcuts
+  const templatesWithShortcuts = templates.filter(t => t.shortcut)
+
   // Get user's own templates
   const myTemplates = templates.filter(t => t.user_id === user?.id)
 
@@ -174,6 +186,7 @@ export function useTemplates() {
     templates,
     myTemplates,
     sharedTemplates,
+    templatesWithShortcuts,
     categories,
     isLoading,
     error,
@@ -183,6 +196,7 @@ export function useTemplates() {
     recordUsage: recordUsage.mutate,
     searchTemplates,
     getByCategory,
+    getByShortcut,
     isCreating: createTemplate.isPending,
     isUpdating: updateTemplate.isPending,
     isDeleting: deleteTemplate.isPending

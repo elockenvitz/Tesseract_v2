@@ -7,14 +7,26 @@ interface ExpiredTargetsAlertProps {
   className?: string
   onNavigateToAsset?: (assetId: string) => void
   compact?: boolean
+  /** If provided, only show expired targets for this specific asset */
+  assetId?: string
 }
 
 export function ExpiredTargetsAlert({
   className,
   onNavigateToAsset,
-  compact = false
+  compact = false,
+  assetId
 }: ExpiredTargetsAlertProps) {
-  const { groupedByAsset, hasExpiredTargets, expiredCount, isLoading } = useExpiredTargetsByAsset()
+  const { groupedByAsset: allGroupedByAsset, hasExpiredTargets: hasAnyExpiredTargets, expiredCount: totalExpiredCount, isLoading } = useExpiredTargetsByAsset()
+
+  // Filter to specific asset if assetId is provided
+  const groupedByAsset = assetId
+    ? allGroupedByAsset.filter(asset => asset.assetId === assetId)
+    : allGroupedByAsset
+  const expiredCount = assetId
+    ? groupedByAsset.reduce((sum, asset) => sum + asset.scenarios.length, 0)
+    : totalExpiredCount
+  const hasExpiredTargets = expiredCount > 0
   const { checkExpiredTargets, isChecking } = useCheckExpiredTargets()
   const [dismissed, setDismissed] = React.useState(false)
 

@@ -9,6 +9,7 @@ interface TemplateFormData {
   name: string
   content: string
   category: string
+  shortcut: string
   is_shared: boolean
 }
 
@@ -40,12 +41,13 @@ export function TemplateManager() {
     name: '',
     content: '',
     category: 'general',
+    shortcut: '',
     is_shared: false
   })
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   const resetForm = () => {
-    setFormData({ name: '', content: '', category: 'general', is_shared: false })
+    setFormData({ name: '', content: '', category: 'general', shortcut: '', is_shared: false })
     setShowForm(false)
     setEditingId(null)
   }
@@ -55,6 +57,7 @@ export function TemplateManager() {
       name: template.name,
       content: template.content,
       category: template.category,
+      shortcut: template.shortcut || '',
       is_shared: template.is_shared
     })
     setEditingId(template.id)
@@ -74,11 +77,12 @@ export function TemplateManager() {
 
     try {
       const variables = extractVariables(formData.content)
+      const shortcut = formData.shortcut.trim() || null
 
       if (editingId) {
-        await updateTemplate(editingId, { ...formData, variables })
+        await updateTemplate(editingId, { ...formData, shortcut, variables })
       } else {
-        await createTemplate({ ...formData, variables })
+        await createTemplate({ ...formData, shortcut, variables })
       }
       resetForm()
     } catch (err) {
@@ -140,7 +144,7 @@ export function TemplateManager() {
             </div>
           )}
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Template Name
@@ -167,6 +171,22 @@ export function TemplateManager() {
                     <option key={cat.id} value={cat.id}>{cat.label}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Shortcut
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">.template.</span>
+                  <input
+                    type="text"
+                    value={formData.shortcut}
+                    onChange={(e) => setFormData({ ...formData, shortcut: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '') })}
+                    placeholder="meeting"
+                    className="w-full pl-20 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Optional quick command</p>
               </div>
             </div>
 
@@ -298,6 +318,11 @@ function TemplateCard({
             <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
               {categoryLabel}
             </span>
+            {template.shortcut && (
+              <span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded font-mono">
+                .template.{template.shortcut}
+              </span>
+            )}
             {template.is_shared && (
               <Share2 className="w-3 h-3 text-blue-500" title="Shared" />
             )}

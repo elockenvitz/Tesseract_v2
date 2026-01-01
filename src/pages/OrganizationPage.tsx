@@ -260,8 +260,13 @@ function LoadingScreen() {
   )
 }
 
+interface OrganizationContentProps {
+  isOrgAdmin: boolean
+  onUserClick?: (user: { id: string; full_name: string }) => void
+}
+
 // Main content component - only rendered after loading is complete
-function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
+function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -2574,6 +2579,18 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                                       >
                                         {member.user?.full_name}
                                       </button>
+                                      {onUserClick && member.user_id && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
+                                          }}
+                                          className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
+                                          title="Open user profile"
+                                        >
+                                          <ExternalLink className="w-3 h-3" />
+                                        </button>
+                                      )}
                                       {profileInfo?.user_type && (
                                         <span className={`px-1.5 py-0.5 text-[10px] rounded ${userTypeColors[profileInfo.user_type] || 'bg-gray-100 text-gray-600'}`}>
                                           {formatProfileValue(profileInfo.user_type)}
@@ -2816,6 +2833,18 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                                       >
                                         {member.user?.full_name}
                                       </button>
+                                      {onUserClick && member.user_id && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
+                                          }}
+                                          className="p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
+                                          title="Open user profile"
+                                        >
+                                          <ExternalLink className="w-3 h-3" />
+                                        </button>
+                                      )}
                                       {profileInfo?.user_type && (
                                         <span className={`px-1.5 py-0.5 text-[10px] rounded ${userTypeColors[profileInfo.user_type] || 'bg-gray-100 text-gray-600'}`}>
                                           {formatProfileValue(profileInfo.user_type)}
@@ -3017,6 +3046,18 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                               <div>
                                 <div className="flex items-center space-x-2">
                                   <span className="font-medium text-gray-700 text-sm">{member.user?.full_name}</span>
+                                  {onUserClick && member.user_id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
+                                      }}
+                                      className="p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
+                                      title="Open user profile"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                  )}
                                   <span className="px-1.5 py-0.5 text-[10px] bg-amber-200 text-amber-800 rounded">
                                     Suspended
                                   </span>
@@ -3379,7 +3420,21 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
                           <Crown className="w-4 h-4 text-indigo-600" />
                         </div>
                         <div>
-                          <span className="text-sm font-medium text-gray-900">{admin.user?.full_name}</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-medium text-gray-900">{admin.user?.full_name}</span>
+                            {onUserClick && admin.user_id && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onUserClick({ id: admin.user_id, full_name: admin.user?.full_name || 'Unknown' })
+                                }}
+                                className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
+                                title="Open user profile"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                           <p className="text-xs text-gray-500">{admin.user?.email}</p>
                         </div>
                       </div>
@@ -4145,8 +4200,12 @@ function OrganizationContent({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   )
 }
 
+interface OrganizationPageProps {
+  onUserClick?: (user: { id: string; full_name: string }) => void
+}
+
 // Main exported component - handles loading state
-export function OrganizationPage() {
+export function OrganizationPage({ onUserClick }: OrganizationPageProps = {}) {
   const { user } = useAuth()
 
   // Single query to determine admin status - this controls the loading state
@@ -4179,7 +4238,7 @@ export function OrganizationPage() {
   }
 
   // Once loaded, render the content with the correct admin status
-  return <OrganizationContent isOrgAdmin={adminStatus.isAdmin} />
+  return <OrganizationContent isOrgAdmin={adminStatus.isAdmin} onUserClick={onUserClick} />
 }
 
 // Sub-components

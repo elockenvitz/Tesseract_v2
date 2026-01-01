@@ -14,7 +14,9 @@ import { ThemesListPage } from './ThemesListPage'
 import { PortfoliosListPage } from './PortfoliosListPage'
 import { NotesListPage } from './NotesListPage'
 import { ListsPage } from './ListsPage'
-import { NotebookTab } from '../components/tabs/NotebookTab'
+import { NoteEditor } from '../components/notes/NoteEditorUnified'
+import { PortfolioNoteEditor } from '../components/notes/PortfolioNoteEditorUnified'
+import { ThemeNoteEditor } from '../components/notes/ThemeNoteEditorUnified'
 import { ThemeTab } from '../components/tabs/ThemeTab'
 import { PortfolioTab } from '../components/tabs/PortfolioTab'
 import { ListTab } from '../components/tabs/ListTab'
@@ -39,6 +41,8 @@ import { SimulationPage } from './SimulationPage'
 import { AssetAllocationPage } from './AssetAllocationPage'
 import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
+import { UserTab } from '../components/tabs/UserTab'
+import { TemplatesTab } from '../components/tabs/TemplatesTab'
 import { CalendarPage } from './CalendarPage'
 import { PrioritizerPage } from './PrioritizerPage'
 import { CoveragePage } from './CoveragePage'
@@ -578,22 +582,24 @@ export function DashboardPage() {
   const handleTabClose = (tabId: string) => {
     if (tabId === 'dashboard') return // Can't close dashboard tab
 
-    const tabIndex = tabs.findIndex(tab => tab.id === tabId)
-    const newTabs = tabs.filter(tab => tab.id !== tabId)
-
     // Remove the tab's stored state
     TabStateManager.removeTabState(tabId)
 
-    // If closing active tab, switch to dashboard or previous tab
-    if (activeTabId === tabId) {
-      const newActiveTab = newTabs.length > 0 ? newTabs[Math.max(0, tabIndex - 1)] : newTabs[0]
-      if (newActiveTab) {
-        setActiveTabId(newActiveTab.id)
-        setTabs(newTabs.map(tab => ({ ...tab, isActive: tab.id === newActiveTab.id })))
+    // Use functional update to handle multiple closes in succession
+    setTabs(currentTabs => {
+      const tabIndex = currentTabs.findIndex(tab => tab.id === tabId)
+      const newTabs = currentTabs.filter(tab => tab.id !== tabId)
+
+      // If closing active tab, switch to dashboard or previous tab
+      if (activeTabId === tabId) {
+        const newActiveTab = newTabs.length > 0 ? newTabs[Math.max(0, tabIndex - 1)] : newTabs[0]
+        if (newActiveTab) {
+          setActiveTabId(newActiveTab.id)
+          return newTabs.map(tab => ({ ...tab, isActive: tab.id === newActiveTab.id }))
+        }
       }
-    } else {
-      setTabs(newTabs)
-    }
+      return newTabs
+    })
   }
 
   const handleNewTab = () => {
@@ -684,8 +690,62 @@ export function DashboardPage() {
         return activeTab.data ? <TDFTab tdf={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading TDF...</div>
       case 'allocation-period':
         return <AssetAllocationPage initialPeriodId={activeTab.data?.id} />
-      case 'note':
-        return <NotebookTab notebook={activeTab.data} />
+      case 'note': {
+        // Handle notes from different sources: asset, portfolio, theme
+        const entityType = activeTab.data?.entityType || 'asset' // Default to asset for backwards compatibility
+        const noteId = activeTab.data?.isNew ? undefined : (activeTab.data?.id || activeTab.id)
+
+        const handleNoteSelect = (newNoteId: string) => {
+          // Update the tab's data.id to the new note (but keep the stable tab ID)
+          if (newNoteId && newNoteId !== activeTab.data?.id) {
+            setTabs(prev => prev.map(tab =>
+              tab.id === activeTab.id
+                ? { ...tab, data: { ...tab.data, id: newNoteId, isNew: false } }
+                : tab
+            ))
+          }
+        }
+
+        // Render the appropriate editor based on entity type
+        if (entityType === 'portfolio') {
+          const portfolioId = activeTab.data?.portfolioId || activeTab.data?.entityId
+          const portfolioName = activeTab.data?.portfolioName || activeTab.data?.entityName || 'Portfolio'
+          return portfolioId ? (
+            <PortfolioNoteEditor
+              portfolioId={portfolioId}
+              portfolioName={portfolioName}
+              selectedNoteId={noteId}
+              onNoteSelect={handleNoteSelect}
+            />
+          ) : <div className="p-4 text-gray-500">Portfolio note data not available</div>
+        }
+
+        if (entityType === 'theme') {
+          const themeId = activeTab.data?.themeId || activeTab.data?.entityId
+          const themeName = activeTab.data?.themeName || activeTab.data?.entityName || 'Theme'
+          return themeId ? (
+            <ThemeNoteEditor
+              themeId={themeId}
+              themeName={themeName}
+              selectedNoteId={noteId}
+              onNoteSelect={handleNoteSelect}
+            />
+          ) : <div className="p-4 text-gray-500">Theme note data not available</div>
+        }
+
+        // Default: asset notes (handle both formats from AssetTab and search)
+        const noteAssetId = activeTab.data?.assetId || activeTab.data?.asset_id || activeTab.data?.entityId
+        const noteAssetSymbol = activeTab.data?.assetSymbol || activeTab.data?.assets?.symbol || activeTab.data?.entityName || 'Note'
+
+        return noteAssetId ? (
+          <NoteEditor
+            assetId={noteAssetId}
+            assetSymbol={noteAssetSymbol}
+            selectedNoteId={noteId}
+            onNoteSelect={handleNoteSelect}
+          />
+        ) : <div className="p-4 text-gray-500">Note data not available</div>
+      }
       case 'theme':
         return <ThemeTab theme={activeTab.data} />
       case 'portfolio':
@@ -697,13 +757,22 @@ export function DashboardPage() {
       case 'coverage':
         return <CoveragePage initialView={activeTab.data?.initialView} />
       case 'organization':
-        return <OrganizationPage />
+        return <OrganizationPage onUserClick={(user) => handleSearchResult({
+          id: user.id,
+          title: user.full_name,
+          type: 'user',
+          data: user
+        })} />
       case 'reasons':
         return <ReasonsPage onItemSelect={handleSearchResult} />
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':
         return <ChartingPage onItemSelect={handleSearchResult} />
+      case 'user':
+        return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
+      case 'templates':
+        return <TemplatesTab />
       default:
         return renderDashboardContent()
     }

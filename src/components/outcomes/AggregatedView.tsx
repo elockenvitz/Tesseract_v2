@@ -1,6 +1,6 @@
 import React from 'react'
 import { clsx } from 'clsx'
-import { TrendingUp, TrendingDown, Minus, Users } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Users, ExternalLink } from 'lucide-react'
 import type { AggregatedResult } from '../../hooks/useOutcomeAggregation'
 
 interface AggregatedViewProps {
@@ -134,12 +134,14 @@ interface AnalystComparisonTableProps {
   results: AggregatedResult[]
   currentPrice?: number
   className?: string
+  onUserClick?: (user: { id: string; full_name: string }) => void
 }
 
 export function AnalystComparisonTable({
   results,
   currentPrice,
-  className
+  className,
+  onUserClick
 }: AnalystComparisonTableProps) {
   // Get all unique analysts from all scenarios
   const allAnalysts = new Map<string, { id: string; name: string; isCovering: boolean }>()
@@ -209,6 +211,15 @@ export function AnalystComparisonTable({
                   <span className="text-sm font-medium text-gray-900 dark:text-white">
                     {analyst.name}
                   </span>
+                  {onUserClick && (
+                    <button
+                      onClick={() => onUserClick({ id: analyst.id, full_name: analyst.name })}
+                      className="p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
+                      title="Open user profile"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </td>
               {sortedScenarios.map(scenario => {

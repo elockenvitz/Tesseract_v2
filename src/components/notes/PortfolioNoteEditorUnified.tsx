@@ -6,7 +6,7 @@ interface PortfolioNoteEditorProps {
   portfolioName: string
   selectedNoteId?: string
   onNoteSelect: (noteId: string) => void
-  onClose: () => void
+  onClose?: () => void
 }
 
 export function PortfolioNoteEditor({
