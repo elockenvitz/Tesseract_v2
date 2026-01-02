@@ -1,401 +1,269 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Copy, Share2, FileText, X, Check, Loader2 } from 'lucide-react'
-import { clsx } from 'clsx'
+import { Plus, Download, Loader2, X } from 'lucide-react'
 import { useTemplates, Template, extractVariables } from '../../hooks/useTemplates'
+import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../common/Toast'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
-
-interface TemplateFormData {
-  name: string
-  content: string
-  category: string
-  shortcut: string
-  is_shared: boolean
-}
-
-const CATEGORIES = [
-  { id: 'general', label: 'General' },
-  { id: 'analysis', label: 'Analysis' },
-  { id: 'meeting', label: 'Meeting Notes' },
-  { id: 'report', label: 'Reports' },
-  { id: 'email', label: 'Email' },
-]
+import { TemplateEditor, TemplateFormData } from './TemplateEditor'
+import { TemplateList } from './TemplateList'
+import { TemplateSharingModal } from './TemplateSharingModal'
+import { TemplateImportExport, ImportedTemplate } from './TemplateImportExport'
 
 export function TemplateManager() {
+  const { user } = useAuth()
+  const { success } = useToast()
   const {
     templates,
     myTemplates,
     sharedTemplates,
+    favoriteTemplates,
+    recentlyUsedTemplates,
     isLoading,
     createTemplate,
     updateTemplate,
     deleteTemplate,
+    recordUsage,
+    toggleFavorite,
     isCreating,
     isUpdating,
     isDeleting
   } = useTemplates()
 
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [formData, setFormData] = useState<TemplateFormData>({
-    name: '',
-    content: '',
-    category: 'general',
-    shortcut: '',
-    is_shared: false
-  })
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [showEditor, setShowEditor] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
+  const [sharingTemplate, setSharingTemplate] = useState<Template | null>(null)
+  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null)
+  const [showImportExport, setShowImportExport] = useState(false)
 
-  const resetForm = () => {
-    setFormData({ name: '', content: '', category: 'general', shortcut: '', is_shared: false })
-    setShowForm(false)
-    setEditingId(null)
+  const handleCreateNew = () => {
+    setEditingTemplate(null)
+    setShowEditor(true)
   }
 
-  const startEdit = (template: Template) => {
-    setFormData({
-      name: template.name,
-      content: template.content,
-      category: template.category,
-      shortcut: template.shortcut || '',
-      is_shared: template.is_shared
-    })
-    setEditingId(template.id)
-    setShowForm(true)
+  const handleEdit = (template: Template) => {
+    setEditingTemplate(template)
+    setShowEditor(true)
   }
 
-  const [error, setError] = useState<string | null>(null)
+  const handleSave = async (data: TemplateFormData) => {
+    const variables = extractVariables(data.content_html || data.content)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    if (!formData.name.trim() || !formData.content.trim()) {
-      setError('Name and content are required')
-      return
+    if (editingTemplate) {
+      await updateTemplate(editingTemplate.id, {
+        name: data.name,
+        content: data.content,
+        content_html: data.content_html,
+        description: data.description || undefined,
+        category: data.category,
+        shortcut: data.shortcut || null,
+        variables,
+        tag_ids: data.tag_ids
+      })
+    } else {
+      await createTemplate({
+        name: data.name,
+        content: data.content,
+        content_html: data.content_html,
+        description: data.description || undefined,
+        category: data.category,
+        shortcut: data.shortcut || null,
+        variables,
+        tag_ids: data.tag_ids
+      })
     }
 
-    try {
-      const variables = extractVariables(formData.content)
-      const shortcut = formData.shortcut.trim() || null
-
-      if (editingId) {
-        await updateTemplate(editingId, { ...formData, shortcut, variables })
-      } else {
-        await createTemplate({ ...formData, shortcut, variables })
-      }
-      resetForm()
-    } catch (err) {
-      console.error('Error saving template:', err)
-      const message = err instanceof Error ? err.message : 'Failed to save template'
-      setError(message)
-    }
+    setShowEditor(false)
+    setEditingTemplate(null)
   }
 
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteTemplate(id)
-      setDeleteConfirm(null)
-    } catch (error) {
-      console.error('Error deleting template:', error)
-    }
+  const handleDelete = async (template: Template) => {
+    await deleteTemplate(template.id)
   }
 
-  const copyToClipboard = (content: string) => {
+  const handleShare = (template: Template) => {
+    setSharingTemplate(template)
+  }
+
+  const handleCopy = (template: Template) => {
+    const content = template.content_html || template.content
     navigator.clipboard.writeText(content)
+    success('Copied to clipboard')
+  }
+
+  const handleToggleFavorite = (template: Template) => {
+    toggleFavorite(template.id)
+  }
+
+  const handleUse = (template: Template) => {
+    recordUsage(template.id)
+    const content = template.content_html || template.content
+    navigator.clipboard.writeText(content)
+    success('Template copied', `"${template.name}" copied to clipboard`)
+  }
+
+  const handlePreview = (template: Template) => {
+    setPreviewTemplate(template)
+  }
+
+  const handleImport = async (imported: ImportedTemplate[]) => {
+    for (const template of imported) {
+      await createTemplate({
+        name: template.name,
+        content: template.content,
+        content_html: template.content_html,
+        description: template.description,
+        category: template.category,
+        shortcut: template.shortcut || null,
+        variables: template.variables
+      })
+    }
   }
 
   if (isLoading) {
     return (
       <Card>
-        <div className="flex items-center justify-center py-8">
+        <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
         </div>
       </Card>
     )
   }
 
+  // Show editor in full-screen mode
+  if (showEditor) {
+    return (
+      <Card className="h-full p-0 overflow-hidden">
+        <TemplateEditor
+          template={editingTemplate || undefined}
+          onSave={handleSave}
+          onCancel={() => {
+            setShowEditor(false)
+            setEditingTemplate(null)
+          }}
+          onShare={editingTemplate ? () => {
+            setSharingTemplate(editingTemplate)
+          } : undefined}
+          isSaving={isCreating || isUpdating}
+        />
+      </Card>
+    )
+  }
+
   return (
     <Card>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Text Templates</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.t</code> in any text input to insert them.
+            Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.t</code> in any text input.
           </p>
         </div>
-        {!showForm && (
+        <div className="flex items-center gap-2">
           <Button
-            onClick={() => setShowForm(true)}
+            variant="outline"
+            size="sm"
+            onClick={() => setShowImportExport(true)}
+          >
+            <Download className="w-4 h-4 mr-1" />
+            Import/Export
+          </Button>
+          <Button
+            onClick={handleCreateNew}
             size="sm"
           >
             <Plus className="w-4 h-4 mr-1" />
             New Template
           </Button>
-        )}
+        </div>
       </div>
 
-      {/* Create/Edit Form */}
-      {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {error}
-            </div>
-          )}
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Template Name
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Bull Case Summary"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category
-                </label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                >
-                  {CATEGORIES.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Shortcut
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">.template.</span>
-                  <input
-                    type="text"
-                    value={formData.shortcut}
-                    onChange={(e) => setFormData({ ...formData, shortcut: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '') })}
-                    placeholder="meeting"
-                    className="w-full pl-20 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Optional quick command</p>
-              </div>
-            </div>
+      {/* Template List */}
+      <TemplateList
+        templates={templates}
+        recentlyUsed={recentlyUsedTemplates}
+        favorites={favoriteTemplates}
+        isLoading={isLoading}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onShare={handleShare}
+        onCopy={handleCopy}
+        onToggleFavorite={handleToggleFavorite}
+        onUse={handleUse}
+        onPreview={handlePreview}
+        currentUserId={user?.id}
+      />
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Content
-              </label>
-              <textarea
-                value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                placeholder="Template content... Use {{variableName}} for variables"
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Tip: Use <code className="px-1 py-0.5 bg-gray-100 rounded">{'{{variableName}}'}</code> to create fill-in-the-blank variables
-              </p>
-            </div>
-
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="is_shared"
-                checked={formData.is_shared}
-                onChange={(e) => setFormData({ ...formData, is_shared: e.target.checked })}
-                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-              />
-              <label htmlFor="is_shared" className="ml-2 text-sm text-gray-700">
-                Share with team members
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={resetForm}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isCreating || isUpdating}>
-                {(isCreating || isUpdating) && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                {editingId ? 'Update' : 'Create'} Template
-              </Button>
-            </div>
-          </div>
-        </form>
+      {/* Sharing Modal */}
+      {sharingTemplate && (
+        <TemplateSharingModal
+          template={sharingTemplate}
+          onClose={() => setSharingTemplate(null)}
+        />
       )}
 
-      {/* My Templates */}
-      <div className="space-y-3">
-        <h4 className="text-sm font-medium text-gray-700">My Templates ({myTemplates.length})</h4>
+      {/* Import/Export Modal */}
+      {showImportExport && (
+        <TemplateImportExport
+          templates={myTemplates}
+          onImport={handleImport}
+          onClose={() => setShowImportExport(false)}
+        />
+      )}
 
-        {myTemplates.length === 0 ? (
-          <p className="text-sm text-gray-500 py-4 text-center">
-            No templates yet. Create one to get started!
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {myTemplates.map(template => (
-              <TemplateCard
-                key={template.id}
-                template={template}
-                onEdit={() => startEdit(template)}
-                onDelete={() => setDeleteConfirm(template.id)}
-                onCopy={() => copyToClipboard(template.content)}
-                isDeleting={deleteConfirm === template.id}
-                onConfirmDelete={() => handleDelete(template.id)}
-                onCancelDelete={() => setDeleteConfirm(null)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Preview Modal */}
+      {previewTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60">
+          <div className="bg-gray-100 rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            {/* Minimal Header */}
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-200/80">
+              <span className="text-sm text-gray-600">Preview: {previewTemplate.name}</span>
+              <button
+                onClick={() => setPreviewTemplate(null)}
+                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-300 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-      {/* Shared Templates */}
-      {sharedTemplates.length > 0 && (
-        <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
-          <h4 className="text-sm font-medium text-gray-700">
-            Shared Templates ({sharedTemplates.length})
-          </h4>
-          <div className="space-y-2">
-            {sharedTemplates.map(template => (
-              <TemplateCard
-                key={template.id}
-                template={template}
-                onCopy={() => copyToClipboard(template.content)}
-                isShared
-              />
-            ))}
+            {/* Note-like Content Area */}
+            <div className="flex-1 overflow-auto p-6 bg-gray-100">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 min-h-[300px]">
+                <div className="p-6">
+                  <div
+                    className="prose prose-sm sm:prose max-w-none
+                      prose-headings:text-gray-900 prose-headings:font-semibold
+                      prose-p:text-gray-700 prose-p:leading-relaxed
+                      prose-strong:text-gray-900
+                      prose-ul:text-gray-700 prose-ol:text-gray-700
+                      prose-li:marker:text-gray-400
+                      prose-a:text-primary-600 prose-a:no-underline hover:prose-a:underline
+                      prose-blockquote:border-l-primary-500 prose-blockquote:text-gray-600
+                      prose-code:text-primary-700 prose-code:bg-primary-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none"
+                    dangerouslySetInnerHTML={{
+                      __html: previewTemplate.content_html || previewTemplate.content.replace(/\n/g, '<br>')
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end px-4 py-3 bg-gray-200/80">
+              <Button
+                size="sm"
+                onClick={() => {
+                  handleUse(previewTemplate)
+                  setPreviewTemplate(null)
+                }}
+              >
+                Use Template
+              </Button>
+            </div>
           </div>
         </div>
       )}
     </Card>
-  )
-}
-
-interface TemplateCardProps {
-  template: Template
-  onEdit?: () => void
-  onDelete?: () => void
-  onCopy: () => void
-  isDeleting?: boolean
-  onConfirmDelete?: () => void
-  onCancelDelete?: () => void
-  isShared?: boolean
-}
-
-function TemplateCard({
-  template,
-  onEdit,
-  onDelete,
-  onCopy,
-  isDeleting,
-  onConfirmDelete,
-  onCancelDelete,
-  isShared
-}: TemplateCardProps) {
-  const variables = extractVariables(template.content)
-  const categoryLabel = CATEGORIES.find(c => c.id === template.category)?.label || template.category
-
-  return (
-    <div className={clsx(
-      'p-3 border rounded-lg',
-      isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
-    )}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="font-medium text-gray-900 truncate">{template.name}</span>
-            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-              {categoryLabel}
-            </span>
-            {template.shortcut && (
-              <span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded font-mono">
-                .template.{template.shortcut}
-              </span>
-            )}
-            {template.is_shared && (
-              <Share2 className="w-3 h-3 text-blue-500" title="Shared" />
-            )}
-          </div>
-          <p className="text-sm text-gray-500 mt-1 line-clamp-2">
-            {template.content}
-          </p>
-          {variables.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {variables.map(v => (
-                <span key={v.name} className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
-                  {`{{${v.name}}}`}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1 ml-2">
-          {isDeleting ? (
-            <>
-              <button
-                onClick={onConfirmDelete}
-                className="p-1.5 text-red-600 hover:bg-red-100 rounded"
-                title="Confirm delete"
-              >
-                <Check className="w-4 h-4" />
-              </button>
-              <button
-                onClick={onCancelDelete}
-                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded"
-                title="Cancel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={onCopy}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                title="Copy content"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
-              {!isShared && onEdit && (
-                <button
-                  onClick={onEdit}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                  title="Edit"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-              )}
-              {!isShared && onDelete && (
-                <button
-                  onClick={onDelete}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                  title="Delete"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {template.usage_count > 0 && (
-        <p className="text-xs text-gray-400 mt-2">
-          Used {template.usage_count} time{template.usage_count !== 1 ? 's' : ''}
-        </p>
-      )}
-    </div>
   )
 }

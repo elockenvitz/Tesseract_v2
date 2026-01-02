@@ -6,7 +6,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import {
   Sparkles, Camera, Image as ImageIcon, Link, FileText, BarChart3,
-  Table2, ListChecks, Calendar, Hash, HelpCircle, Minus, LucideIcon
+  Table2, ListChecks, Calendar, Hash, HelpCircle, Minus, LucideIcon,
+  TrendingUp, Activity, LineChart
 } from 'lucide-react'
 
 const DotCommandPluginKey = new PluginKey('dotCommand')
@@ -17,7 +18,7 @@ export interface DotCommandItem {
   description: string
   icon: LucideIcon
   color: string
-  category: 'ai' | 'capture' | 'data' | 'content' | 'template' | 'other'
+  category: 'ai' | 'capture' | 'data' | 'chart' | 'content' | 'template' | 'other'
 }
 
 const DOT_COMMANDS: DotCommandItem[] = [
@@ -40,8 +41,15 @@ const DOT_COMMANDS: DotCommandItem[] = [
   { id: 'dividend', name: '.dividend', description: 'Dividend yield', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
   { id: 'data', name: '.data', description: 'Insert live data', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
   { id: 'table', name: '.table', description: 'Insert a data table', icon: Table2, color: 'text-emerald-600', category: 'data' },
-  { id: 'chart', name: '.chart', description: 'Insert a chart', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
   { id: 'metric', name: '.metric', description: 'Insert a metric', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+
+  // Chart commands
+  { id: 'chart', name: '.chart', description: 'Insert an embedded chart', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.price', name: '.chart.price', description: 'Price chart', icon: TrendingUp, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.volume', name: '.chart.volume', description: 'Volume chart', icon: BarChart3, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.performance', name: '.chart.performance', description: 'Performance chart (%)', icon: Activity, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.comparison', name: '.chart.comparison', description: 'Multi-asset comparison', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.technicals', name: '.chart.technicals', description: 'Chart with indicators', icon: Activity, color: 'text-cyan-600', category: 'chart' },
 
   // Content commands
   { id: 'task', name: '.task', description: 'Add a task', icon: ListChecks, color: 'text-cyan-600', category: 'content' },
@@ -70,6 +78,7 @@ export interface DotCommandSuggestionOptions {
   onScreenshotCommand?: () => void
   onEmbedCommand?: () => void
   onDataCommand?: (type: string, symbol?: string) => void
+  onChartCommand?: (chartType: string, symbol?: string) => void
   onTemplateCommand?: (templateShortcut: string, templateId: string) => void
   onTaskCommand?: () => void
   onEventCommand?: () => void
@@ -89,6 +98,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       onScreenshotCommand: undefined,
       onEmbedCommand: undefined,
       onDataCommand: undefined,
+      onChartCommand: undefined,
       onTemplateCommand: undefined,
       onTaskCommand: undefined,
       onEventCommand: undefined,
@@ -164,9 +174,18 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
         case 'dividend':
         case 'data':
         case 'table':
-        case 'chart':
         case 'metric':
           options.onDataCommand?.(commandId, symbol)
+          break
+        case 'chart':
+        case 'chart.price':
+        case 'chart.volume':
+        case 'chart.performance':
+        case 'chart.comparison':
+        case 'chart.technicals':
+          // For plain 'chart' command, default to 'price'; otherwise extract the type
+          const chartType = commandId === 'chart' ? 'price' : commandId.replace('chart.', '')
+          options.onChartCommand?.(chartType, symbol)
           break
         case 'task':
           options.onTaskCommand?.()
@@ -310,6 +329,24 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       if (/\.ai\.claude$/i.test(text)) return { commandId: 'ai.claude' }
       if (/\.ai\.gpt$/i.test(text)) return { commandId: 'ai.gpt' }
       if (/\.ai$/i.test(text)) return { commandId: 'ai' }
+
+      // Chart commands with optional symbol (e.g., .chart.price.AAPL)
+      const chartTypes = ['price', 'volume', 'performance', 'comparison', 'technicals']
+      for (const ctype of chartTypes) {
+        const chartSymbolMatch = text.match(new RegExp(`\\.chart\\.${ctype}\\.([A-Z0-9]+)$`, 'i'))
+        if (chartSymbolMatch) {
+          return { commandId: `chart.${ctype}`, symbol: chartSymbolMatch[1].toUpperCase() }
+        }
+        if (new RegExp(`\\.chart\\.${ctype}$`, 'i').test(text)) {
+          return { commandId: `chart.${ctype}` }
+        }
+      }
+      // Plain .chart command
+      const chartPlainMatch = text.match(/\.chart\.([A-Z0-9]+)$/i)
+      if (chartPlainMatch) {
+        return { commandId: 'chart', symbol: chartPlainMatch[1].toUpperCase() }
+      }
+      if (/\.chart$/i.test(text)) return { commandId: 'chart' }
 
       // Dynamic template commands from provided templates
       const templateShortcuts = (options.templates || []).map(t => t.shortcut)
@@ -476,9 +513,9 @@ function DotCommandList({ items, selectedIndex, onSelect }: DotCommandListProps)
     }, 'No commands found')
   }
 
-  const categories = ['ai', 'capture', 'data', 'content', 'template', 'other'] as const
+  const categories = ['ai', 'capture', 'data', 'chart', 'content', 'template', 'other'] as const
   const categoryLabels: Record<string, string> = {
-    ai: 'AI', capture: 'Capture', data: 'Data', content: 'Content', template: 'Templates', other: 'Other'
+    ai: 'AI', capture: 'Capture', data: 'Data', chart: 'Charts', content: 'Content', template: 'Templates', other: 'Other'
   }
 
   let globalIndex = 0

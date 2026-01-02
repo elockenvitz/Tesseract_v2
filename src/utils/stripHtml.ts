@@ -17,6 +17,13 @@ export function stripHtml(html: string): string {
       )
       elementsToRemove.forEach(el => el.remove())
 
+      // Add spaces after block elements so text doesn't concatenate
+      const blockElements = doc.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li, tr, blockquote, br, hr')
+      blockElements.forEach(el => {
+        // Insert a space text node after each block element
+        el.insertAdjacentText('afterend', ' ')
+      })
+
       // Get text content
       const text = doc.body.textContent || ''
 
@@ -66,6 +73,13 @@ export function getContentPreview(html: string, maxLength: number = 80): string 
   if (typeof DOMParser !== 'undefined') {
     try {
       const doc = new DOMParser().parseFromString(html, 'text/html')
+
+      // Add spaces after block elements so text doesn't concatenate
+      const blockElements = doc.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li, tr, blockquote, br, hr')
+      blockElements.forEach(el => {
+        el.insertAdjacentText('afterend', ' ')
+      })
+
       // Get the first block element or just the first text content
       const firstBlock = doc.body.querySelector('p, div, h1, h2, h3, h4, h5, h6, li')
       const text = (firstBlock?.textContent || doc.body.textContent || '')

@@ -3,7 +3,8 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   Plus, Search, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users, History,
   Save, Check, AlertCircle, ArrowUpDown, X, FileText, HelpCircle, AtSign, DollarSign, Hash, FileCode, BarChart3, Sparkles,
-  WifiOff, CloudOff, RefreshCw, Download, FileDown, Loader2, Paperclip, Link2, ExternalLink, FileSpreadsheet, Image, FileVideo, File
+  WifiOff, CloudOff, RefreshCw, Download, FileDown, Loader2, Paperclip, Link2, ExternalLink, FileSpreadsheet, Image, FileVideo, File,
+  PanelLeftClose, PanelLeft, CornerDownRight
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -11,7 +12,7 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CollaborationManager } from '../ui/CollaborationManager'
-import { RichTextEditor, type RichTextEditorRef, type MentionItem, type AssetItem, type HashtagItem } from '../rich-text-editor'
+import { RichTextEditor, type RichTextEditorRef, type MentionItem, type AssetItem, type HashtagItem, type NoteLinkItem } from '../rich-text-editor'
 import { NoteVersionHistory } from './NoteVersionHistory'
 import { useNoteVersions } from '../../hooks/useNoteVersions'
 import { useOfflineNotes } from '../../hooks/useOfflineNotes'
@@ -106,7 +107,6 @@ export function UniversalNoteEditor({
   onClose,
   features: customFeatures
 }: UniversalNoteEditorProps) {
-  console.log('🎨 UniversalNoteEditor mounted/updated:', { entityType, entityId, selectedNoteId })
 
   const config = ENTITY_CONFIGS[entityType]
   const features = { ...config.defaultFeatures, ...customFeatures }
@@ -140,6 +140,7 @@ export function UniversalNoteEditor({
   const [showExportDropdown, setShowExportDropdown] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [showFilesLinksDropdown, setShowFilesLinksDropdown] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const richTextEditorRef = useRef<RichTextEditorRef>(null)
@@ -334,12 +335,20 @@ export function UniversalNoteEditor({
       if (sortDropdownRef.current && !sortDropdownRef.current.contains(target)) setShowSortDropdown(false)
       if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) setShowExportDropdown(false)
       if (filesLinksDropdownRef.current && !filesLinksDropdownRef.current.contains(target)) setShowFilesLinksDropdown(false)
+      // Close note menu if clicking outside of it
+      if (showNoteMenu) {
+        const noteMenuButton = (target as HTMLElement).closest('button')
+        const noteMenuDropdown = (target as HTMLElement).closest('.note-menu-dropdown')
+        if (!noteMenuButton && !noteMenuDropdown) {
+          setShowNoteMenu(null)
+        }
+      }
     }
-    if (showNoteTypeDropdown || showSortDropdown || showExportDropdown || showFilesLinksDropdown) {
+    if (showNoteTypeDropdown || showSortDropdown || showExportDropdown || showFilesLinksDropdown || showNoteMenu) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showNoteTypeDropdown, showSortDropdown, showExportDropdown, showFilesLinksDropdown])
+  }, [showNoteTypeDropdown, showSortDropdown, showExportDropdown, showFilesLinksDropdown, showNoteMenu])
 
   // Close help modal on Escape key
   useEffect(() => {
@@ -390,36 +399,21 @@ export function UniversalNoteEditor({
   // Track if we've already auto-created a note
   const [hasAutoCreated, setHasAutoCreated] = useState(false)
 
-  // Auto-create a note when editor is opened without a selected note
-  useEffect(() => {
-    console.log('🔍 Auto-create check:', {
-      selectedNoteId,
-      notesLength: notes?.length,
-      isLoading,
-      isPending: createNoteMutation.isPending,
-      hasAutoCreated,
-      hasUser: !!user
-    })
-
-    if (!selectedNoteId && notes?.length === 0 && !createNoteMutation.isPending && !isLoading && !hasAutoCreated && user) {
-      console.log('✅ Auto-creating note...')
-      setHasAutoCreated(true)
-      createNoteMutation.mutate()
-    }
-  }, [selectedNoteId, notes?.length, isLoading, hasAutoCreated, user])
-
-  // Reset auto-created flag when a note is selected
-  useEffect(() => {
-    if (selectedNoteId) {
-      setHasAutoCreated(false)
-    }
-  }, [selectedNoteId])
-
   // Helper to compute content preview (first 150 chars of plain text)
   const computeContentPreview = (html: string): string => {
     if (!html) return ''
     const plainText = stripHtml(html)
     return plainText.length > 150 ? plainText.substring(0, 150) : plainText
+  }
+
+  // Fix concatenated words in preview (e.g., "wordWord" -> "word Word")
+  const fixPreviewSpacing = (text: string): string => {
+    if (!text) return ''
+    // Add space before uppercase letters that follow lowercase letters
+    return text
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim()
   }
 
   // ---------- Mutations ----------
@@ -558,6 +552,29 @@ export function UniversalNoteEditor({
       console.error('❌ createNoteMutation onError:', error)
     }
   })
+
+  // Auto-select the first note when notes are available but none selected
+  useEffect(() => {
+    if (!selectedNoteId && !isLoading && notes && notes.length > 0 && !createNoteMutation.isPending) {
+      // Auto-select the first (most recently updated) note
+      onNoteSelect(notes[0].id)
+    }
+  }, [selectedNoteId, isLoading, notes, createNoteMutation.isPending, onNoteSelect])
+
+  // Auto-create a note when editor is opened without a selected note AND no notes exist
+  useEffect(() => {
+    if (!selectedNoteId && notes?.length === 0 && !createNoteMutation.isPending && !isLoading && !hasAutoCreated && user) {
+      setHasAutoCreated(true)
+      createNoteMutation.mutate()
+    }
+  }, [selectedNoteId, notes?.length, isLoading, hasAutoCreated, user, createNoteMutation])
+
+  // Reset auto-created flag when a note is selected
+  useEffect(() => {
+    if (selectedNoteId) {
+      setHasAutoCreated(false)
+    }
+  }, [selectedNoteId])
 
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
@@ -704,8 +721,49 @@ export function UniversalNoteEditor({
   }, [triggerAutosave])
 
   // Search functions for rich text editor
+  // Get recently used mentions from localStorage
+  const getRecentMentions = useCallback((): MentionItem[] => {
+    try {
+      const stored = localStorage.getItem('recentMentions')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  }, [])
+
+  // Get recently used assets from localStorage
+  const getRecentAssets = useCallback((): AssetItem[] => {
+    try {
+      const stored = localStorage.getItem('recentAssets')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  }, [])
+
   const searchMentions = useCallback(async (query: string): Promise<MentionItem[]> => {
-    if (!query || query.length < 1) return []
+    // If no query, show recently used or fetch defaults
+    if (!query || query.length < 1) {
+      const recent = getRecentMentions()
+      if (recent.length > 0) return recent
+
+      // Fetch some default users
+      const { data } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .limit(5)
+
+      if (data) {
+        return data.map(user => ({
+          id: user.id,
+          name: user.first_name && user.last_name
+            ? `${user.first_name} ${user.last_name}`
+            : user.email?.split('@')[0] || 'Unknown',
+          email: user.email
+        }))
+      }
+      return []
+    }
 
     const { data, error } = await supabase
       .from('users')
@@ -715,17 +773,46 @@ export function UniversalNoteEditor({
 
     if (error || !data) return []
 
-    return data.map(user => ({
+    const results = data.map(user => ({
       id: user.id,
       name: user.first_name && user.last_name
         ? `${user.first_name} ${user.last_name}`
         : user.email?.split('@')[0] || 'Unknown',
       email: user.email
     }))
-  }, [])
+
+    // Add matching recent mentions at the top
+    const recent = getRecentMentions()
+    const matchingRecent = recent.filter(m =>
+      m.name.toLowerCase().includes(query.toLowerCase()) &&
+      !results.some(r => r.id === m.id)
+    )
+
+    return [...matchingRecent, ...results]
+  }, [getRecentMentions])
 
   const searchAssets = useCallback(async (query: string): Promise<AssetItem[]> => {
-    if (!query || query.length < 1) return []
+    // If no query, show recently used or fetch defaults
+    if (!query || query.length < 1) {
+      const recent = getRecentAssets()
+      if (recent.length > 0) return recent
+
+      // Fetch some default assets (most recently updated or by priority)
+      const { data } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name')
+        .order('updated_at', { ascending: false })
+        .limit(5)
+
+      if (data) {
+        return data.map(asset => ({
+          id: asset.id,
+          symbol: asset.symbol,
+          companyName: asset.company_name
+        }))
+      }
+      return []
+    }
 
     const { data, error } = await supabase
       .from('assets')
@@ -735,17 +822,96 @@ export function UniversalNoteEditor({
 
     if (error || !data) return []
 
-    return data.map(asset => ({
+    const results = data.map(asset => ({
       id: asset.id,
       symbol: asset.symbol,
       companyName: asset.company_name
     }))
+
+    // Add matching recent assets at the top
+    const recent = getRecentAssets()
+    const matchingRecent = recent.filter(a =>
+      (a.symbol.toLowerCase().includes(query.toLowerCase()) ||
+       a.companyName?.toLowerCase().includes(query.toLowerCase())) &&
+      !results.some(r => r.id === a.id)
+    )
+
+    return [...matchingRecent, ...results]
+  }, [getRecentAssets])
+
+  // Save a mention as recently used
+  const saveRecentMention = useCallback((mention: MentionItem) => {
+    try {
+      const recent = getRecentMentions()
+      const filtered = recent.filter(m => m.id !== mention.id)
+      const updated = [mention, ...filtered].slice(0, 10)
+      localStorage.setItem('recentMentions', JSON.stringify(updated))
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [getRecentMentions])
+
+  // Save an asset as recently used
+  const saveRecentAsset = useCallback((asset: AssetItem) => {
+    try {
+      const recent = getRecentAssets()
+      const filtered = recent.filter(a => a.id !== asset.id)
+      const updated = [asset, ...filtered].slice(0, 10)
+      localStorage.setItem('recentAssets', JSON.stringify(updated))
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [getRecentAssets])
+
+  // Get recently used hashtags from localStorage
+  const getRecentHashtags = useCallback((): HashtagItem[] => {
+    try {
+      const stored = localStorage.getItem('recentHashtags')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
   }, [])
 
-  const searchHashtags = useCallback(async (query: string): Promise<HashtagItem[]> => {
-    if (!query || query.length < 1) return []
+  // Save a hashtag as recently used
+  const saveRecentHashtag = useCallback((hashtag: HashtagItem) => {
+    try {
+      const recent = getRecentHashtags()
+      // Remove if already exists, then add to front
+      const filtered = recent.filter(h => h.id !== hashtag.id)
+      const updated = [hashtag, ...filtered].slice(0, 10) // Keep max 10
+      localStorage.setItem('recentHashtags', JSON.stringify(updated))
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [getRecentHashtags])
 
+  const searchHashtags = useCallback(async (query: string): Promise<HashtagItem[]> => {
     const results: HashtagItem[] = []
+
+    // If no query, show recently used hashtags
+    if (!query || query.length < 1) {
+      const recent = getRecentHashtags()
+      if (recent.length > 0) {
+        return recent
+      }
+      // If no recent, fetch some defaults
+      const { data: defaultThemes } = await supabase
+        .from('themes')
+        .select('id, name, description')
+        .order('updated_at', { ascending: false })
+        .limit(5)
+
+      if (defaultThemes) {
+        return defaultThemes.map(t => ({
+          id: t.id,
+          name: t.name,
+          type: 'theme' as const,
+          description: t.description
+        }))
+      }
+      return []
+    }
 
     // Search themes
     const { data: themes } = await supabase
@@ -779,8 +945,121 @@ export function UniversalNoteEditor({
       })))
     }
 
-    return results
+    // Also filter recent hashtags that match the query
+    const recent = getRecentHashtags()
+    const matchingRecent = recent.filter(h =>
+      h.name.toLowerCase().includes(query.toLowerCase()) &&
+      !results.some(r => r.id === h.id) // Don't duplicate
+    )
+
+    // Put matching recent at the top
+    return [...matchingRecent, ...results]
+  }, [getRecentHashtags])
+
+  // Search notes for wiki-style linking [[
+  const searchNoteLinks = useCallback(async (query: string): Promise<NoteLinkItem[]> => {
+    const results: NoteLinkItem[] = []
+
+    // Build the query filter - if empty query, show recent notes
+    const titleFilter = query && query.length > 0 ? `%${query}%` : '%'
+
+    // Search asset notes
+    const { data: assetNotes, error: assetError } = await supabase
+      .from('asset_notes')
+      .select('id, title, note_type, updated_at, asset_id, assets(symbol, company_name)')
+      .eq('is_deleted', false)
+      .ilike('title', titleFilter)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    if (assetError) {
+      console.error('Error fetching asset notes:', assetError)
+    }
+
+    if (assetNotes) {
+      results.push(...assetNotes.map((n: any) => ({
+        id: n.id,
+        title: n.title || 'Untitled',
+        entityType: 'asset' as const,
+        entityId: n.asset_id,
+        entityName: n.assets?.symbol || n.assets?.company_name || 'Asset',
+        noteType: n.note_type,
+        updatedAt: n.updated_at
+      })))
+    }
+
+    // Search portfolio notes
+    const { data: portfolioNotes, error: portfolioError } = await supabase
+      .from('portfolio_notes')
+      .select('id, title, note_type, updated_at, portfolio_id, portfolios(name)')
+      .eq('is_deleted', false)
+      .ilike('title', titleFilter)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    if (portfolioError) {
+      console.error('Error fetching portfolio notes:', portfolioError)
+    }
+
+    if (portfolioNotes) {
+      results.push(...portfolioNotes.map((n: any) => ({
+        id: n.id,
+        title: n.title || 'Untitled',
+        entityType: 'portfolio' as const,
+        entityId: n.portfolio_id,
+        entityName: n.portfolios?.name || 'Portfolio',
+        noteType: n.note_type,
+        updatedAt: n.updated_at
+      })))
+    }
+
+    // Search theme notes
+    const { data: themeNotes, error: themeError } = await supabase
+      .from('theme_notes')
+      .select('id, title, note_type, updated_at, theme_id, themes(name)')
+      .eq('is_deleted', false)
+      .ilike('title', titleFilter)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    if (themeError) {
+      console.error('Error fetching theme notes:', themeError)
+    }
+
+    if (themeNotes) {
+      results.push(...themeNotes.map((n: any) => ({
+        id: n.id,
+        title: n.title || 'Untitled',
+        entityType: 'theme' as const,
+        entityId: n.theme_id,
+        entityName: n.themes?.name || 'Theme',
+        noteType: n.note_type,
+        updatedAt: n.updated_at
+      })))
+    }
+
+    // Sort by most recently updated
+    return results.sort((a, b) => {
+      const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
+      const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
+      return dateB - dateA
+    }).slice(0, 10)
   }, [])
+
+  // Handle clicking on a note link to navigate
+  const handleNoteLinkNavigate = useCallback((noteLink: NoteLinkItem) => {
+    // For now, just log - in the future this could navigate to the note
+    console.log('Navigate to note:', noteLink)
+    // TODO: Implement cross-entity navigation
+    // If same entity type and same entity, just select the note
+    if (noteLink.entityType === entityType && noteLink.entityId === entityId) {
+      onNoteSelect(noteLink.id)
+    } else {
+      // For cross-entity navigation, would need router/navigation context
+      // Could emit an event or use a callback passed from parent
+      console.log('Cross-entity navigation not yet implemented')
+    }
+  }, [entityType, entityId, onNoteSelect])
 
   const handleTitleChange = (title: string) => {
     setEditingTitle(title)
@@ -883,6 +1162,35 @@ export function UniversalNoteEditor({
       updateNoteTypeMutation.mutate({ id: selectedNote.id, noteType })
     }
   }
+
+  // ---------- Follow-up Section ----------
+  const handleAddFollowUp = useCallback(() => {
+    if (!richTextEditorRef.current) return
+
+    const now = new Date()
+    const formattedDate = format(now, 'MMM d, yyyy')
+    const formattedTime = format(now, 'h:mm a')
+
+    // Create a styled follow-up divider with timestamp
+    const followUpHTML = `
+      <div style="margin: 1.5rem 0; padding: 0; border: none;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+          <div style="flex: 1; height: 1px; background: linear-gradient(to right, #e5e7eb, transparent);"></div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.75rem; background: #f3f4f6; border-radius: 9999px; font-size: 0.75rem; color: #6b7280; font-weight: 500;">
+            <span style="color: #3b82f6;">↳</span>
+            <span>Follow-up</span>
+            <span style="color: #9ca3af;">•</span>
+            <span>${formattedDate} at ${formattedTime}</span>
+          </div>
+          <div style="flex: 1; height: 1px; background: linear-gradient(to left, #e5e7eb, transparent);"></div>
+        </div>
+      </div>
+      <p></p>
+    `
+
+    richTextEditorRef.current.appendHTML(followUpHTML)
+    richTextEditorRef.current.focus()
+  }, [])
 
   // ---------- Export Functions ----------
   const exportToPdf = useCallback(async () => {
@@ -1206,13 +1514,46 @@ export function UniversalNoteEditor({
   return (
     <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
       {/* Left Sidebar - Notes List */}
-      <div className="w-72 bg-gray-50/50 border-r border-gray-200 flex flex-col">
+      <div className={clsx(
+        'bg-gray-50/50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out',
+        isSidebarCollapsed ? 'w-12' : 'w-72'
+      )}>
+        {/* Collapsed State */}
+        {isSidebarCollapsed ? (
+          <div className="flex flex-col items-center py-3 gap-2">
+            <button
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Expand sidebar"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleCreateNote}
+              disabled={createNoteMutation.isPending}
+              className="w-8 h-8 flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white rounded-lg shadow-sm transition-all hover:shadow-md disabled:opacity-50"
+              title="New note"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+        <>
         {/* Header */}
         <div className="p-4 border-b border-gray-200 bg-white">
           <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 tracking-tight">{entityName}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">{filteredNotes.length} notes</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsSidebarCollapsed(true)}
+                className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                title="Collapse sidebar"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 tracking-tight">{entityName}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{filteredNotes.length} notes</p>
+              </div>
             </div>
             <button
               onClick={handleCreateNote}
@@ -1243,61 +1584,55 @@ export function UniversalNoteEditor({
             )}
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-            <button
-              onClick={() => setNoteTypeFilter(null)}
-              className={clsx(
-                'px-2.5 py-1 text-xs font-medium rounded-md transition-all',
-                !noteTypeFilter
-                  ? 'bg-primary-100 text-primary-700 ring-1 ring-primary-200'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              )}
-            >
-              All
-            </button>
-            {availableNoteTypes.slice(0, 3).map(type => (
-              <button
-                key={type}
-                onClick={() => setNoteTypeFilter(noteTypeFilter === type ? null : type)}
-                className={clsx(
-                  'px-2.5 py-1 text-xs font-medium rounded-md transition-all capitalize',
-                  noteTypeFilter === type
-                    ? 'bg-primary-100 text-primary-700 ring-1 ring-primary-200'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                )}
+          {/* Filter & Sort Row */}
+          <div className="flex items-center justify-between mt-3 gap-2">
+            {/* Filter Dropdown */}
+            <div className="relative flex-1">
+              <select
+                value={noteTypeFilter || ''}
+                onChange={(e) => setNoteTypeFilter(e.target.value || null)}
+                className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-8 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 cursor-pointer"
               >
-                {type}
-              </button>
-            ))}
+                <option value="">All Types</option>
+                {noteTypeOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            </div>
 
-            {/* Sort */}
-            <div className="relative ml-auto" ref={sortDropdownRef}>
+            {/* Sort Dropdown */}
+            <div className="relative flex-1" ref={sortDropdownRef}>
               <button
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="flex items-center px-2 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                className="w-full flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors"
               >
-                <ArrowUpDown className="h-3 w-3 mr-1" />
-                {sortBy === 'updated' ? 'Recent' : sortBy === 'created' ? 'Created' : 'A-Z'}
+                <span className="flex items-center gap-1.5">
+                  <ArrowUpDown className="h-3 w-3 text-gray-400" />
+                  {sortBy === 'updated' ? 'Recent' : sortBy === 'created' ? 'Created' : 'A-Z'}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
               </button>
 
               {showSortDropdown && (
-                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 min-w-[140px]">
+                <div className="absolute right-0 left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50">
                   {[
-                    { key: 'updated', label: 'Recently Updated' },
-                    { key: 'created', label: 'Recently Created' },
-                    { key: 'title', label: 'Alphabetical' }
+                    { key: 'updated', label: 'Recently Updated', short: 'Recent' },
+                    { key: 'created', label: 'Recently Created', short: 'Created' },
+                    { key: 'title', label: 'Alphabetical', short: 'A-Z' }
                   ].map(option => (
                     <button
                       key={option.key}
                       onClick={() => { setSortBy(option.key as any); setShowSortDropdown(false) }}
                       className={clsx(
-                        'w-full px-3 py-2 text-left text-xs hover:bg-gray-50 flex items-center justify-between',
-                        sortBy === option.key && 'bg-gray-50 text-gray-900 font-medium'
+                        'w-full px-3 py-2 text-left text-xs hover:bg-gray-50 flex items-center justify-between transition-colors',
+                        sortBy === option.key ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700'
                       )}
                     >
                       {option.label}
-                      {sortBy === option.key && <Check className="h-3 w-3 text-gray-900" />}
+                      {sortBy === option.key && <Check className="h-3.5 w-3.5" />}
                     </button>
                   ))}
                 </div>
@@ -1333,27 +1668,12 @@ export function UniversalNoteEditor({
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className={clsx(
-                          'font-medium truncate text-sm',
-                          selectedNoteId === note.id ? 'text-primary-900' : 'text-gray-900'
-                        )}>
-                          {note.title}
-                        </h4>
-                        {note.note_type && (
-                          <span className={clsx(
-                            'px-1.5 py-0.5 text-[10px] font-medium rounded capitalize',
-                            note.note_type === 'research' && 'bg-amber-100 text-amber-700',
-                            note.note_type === 'analysis' && 'bg-blue-100 text-blue-700',
-                            note.note_type === 'meeting' && 'bg-emerald-100 text-emerald-700',
-                            note.note_type === 'call' && 'bg-purple-100 text-purple-700',
-                            note.note_type === 'idea' && 'bg-rose-100 text-rose-700',
-                            (!note.note_type || note.note_type === 'general') && 'bg-gray-100 text-gray-700'
-                          )}>
-                            {note.note_type}
-                          </span>
-                        )}
-                      </div>
+                      <h4 className={clsx(
+                        'font-medium truncate text-sm mb-1',
+                        selectedNoteId === note.id ? 'text-primary-900' : 'text-gray-900'
+                      )}>
+                        {note.title}
+                      </h4>
 
                       {/* Content preview */}
                       {note.content_preview && (
@@ -1361,12 +1681,12 @@ export function UniversalNoteEditor({
                           'text-xs truncate mt-1',
                           selectedNoteId === note.id ? 'text-primary-700/70' : 'text-gray-500'
                         )}>
-                          {note.content_preview}
+                          {fixPreviewSpacing(note.content_preview)}
                         </p>
                       )}
 
                       <div className={clsx(
-                        'flex items-center gap-2 text-[11px] mt-1',
+                        'flex items-center gap-1.5 text-[11px] mt-1',
                         selectedNoteId === note.id ? 'text-primary-600' : 'text-gray-400'
                       )}>
                         <span>{formatUpdatedAt(note.updated_at)}</span>
@@ -1374,6 +1694,22 @@ export function UniversalNoteEditor({
                           <>
                             <span>•</span>
                             <Share2 className="h-3 w-3" />
+                          </>
+                        )}
+                        {note.note_type && (
+                          <>
+                            <span>•</span>
+                            <span className={clsx(
+                              'px-1.5 py-0.5 text-[10px] font-medium rounded capitalize',
+                              note.note_type === 'research' && 'bg-amber-100 text-amber-700',
+                              note.note_type === 'analysis' && 'bg-blue-100 text-blue-700',
+                              note.note_type === 'meeting' && 'bg-emerald-100 text-emerald-700',
+                              note.note_type === 'call' && 'bg-purple-100 text-purple-700',
+                              note.note_type === 'idea' && 'bg-rose-100 text-rose-700',
+                              (!note.note_type || note.note_type === 'general') && 'bg-gray-100 text-gray-700'
+                            )}>
+                              {note.note_type}
+                            </span>
                           </>
                         )}
                       </div>
@@ -1397,7 +1733,24 @@ export function UniversalNoteEditor({
                       </button>
 
                       {showNoteMenu === note.id && (
-                        <div className="absolute right-0 top-8 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 min-w-[140px]">
+                        <div className="note-menu-dropdown absolute right-0 top-8 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 min-w-[160px]">
+                          {/* Add Follow-up - only for selected note */}
+                          {note.id === selectedNoteId && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleAddFollowUp()
+                                  setShowNoteMenu(null)
+                                }}
+                                className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <CornerDownRight className="h-3.5 w-3.5 text-blue-500" />
+                                Add Follow-up
+                              </button>
+                              <div className="h-px bg-gray-100 my-1" />
+                            </>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1438,11 +1791,25 @@ export function UniversalNoteEditor({
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
 
       {/* Right Side - Note Editor */}
       <div className="flex-1 flex flex-col bg-white">
-        {(isLoading || isLoadingContent) && selectedNoteId ? (
+        {!selectedNote && (isLoading || isLoadingContent || createNoteMutation.isPending || (notes && notes.length > 0) || (notes?.length === 0 && !hasAutoCreated)) ? (
+          /* Loading/Creating state - show spinner whenever we don't have a selected note ready */
+          <div className="flex-1 flex items-center justify-center bg-gray-50/50">
+            <div className="text-center">
+              <div className="w-14 h-14 bg-primary-50 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Loader2 className="h-7 w-7 text-primary-500 animate-spin" />
+              </div>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">
+                {createNoteMutation.isPending ? 'Creating note...' : 'Loading...'}
+              </h3>
+            </div>
+          </div>
+        ) : (isLoading || isLoadingContent) && selectedNoteId ? (
           /* Loading state when we have a selected note ID but still fetching */
           <div className="flex-1 flex flex-col">
             <div className="px-6 py-4 border-b border-gray-100 bg-white">
@@ -1473,8 +1840,8 @@ export function UniversalNoteEditor({
                         onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}
                         className="flex items-center"
                       >
-                        <Badge variant={getNoteTypeColor(selectedNote.note_type)} size="sm">
-                          {selectedNote.note_type || 'general'}
+                        <Badge variant={getNoteTypeColor(selectedNote.note_type)} size="sm" className="capitalize">
+                          {selectedNote.note_type || 'General'}
                           <ChevronDown className="ml-1 h-3 w-3" />
                         </Badge>
                       </button>
@@ -1492,8 +1859,8 @@ export function UniversalNoteEditor({
                               disabled={updateNoteTypeMutation.isPending}
                             >
                               <span className="font-medium text-gray-700">{option.label}</span>
-                              <Badge variant={option.color as any} size="sm">
-                                {option.value}
+                              <Badge variant={option.color as any} size="sm" className="capitalize">
+                                {option.label}
                               </Badge>
                             </button>
                           ))}
@@ -1681,44 +2048,53 @@ export function UniversalNoteEditor({
 
             {/* Editor Content */}
             <div className="flex-1 overflow-y-auto bg-white">
-              {/* Note Title as Editable Heading */}
-              <div className="px-8 pt-8 pb-0">
-                {isTitleEditing ? (
-                  <input
-                    ref={titleInputRef}
-                    type="text"
-                    value={editingTitle}
-                    onChange={(e) => handleTitleChange(e.target.value)}
-                    onKeyDown={handleTitleKeyDown}
-                    onBlur={handleTitleBlur}
-                    className="w-full text-2xl font-semibold text-gray-900 mb-6 pb-4 bg-transparent border-0 border-b-2 border-gray-900 focus:outline-none tracking-tight"
-                    placeholder="Untitled"
-                  />
-                ) : (
-                  <h1
-                    className="text-2xl font-semibold text-gray-900 mb-6 pb-4 border-b border-gray-100 cursor-text hover:border-gray-300 transition-colors tracking-tight"
-                    onClick={handleTitleClick}
-                  >
-                    {editingTitle || selectedNote.title || 'Untitled'}
-                  </h1>
-                )}
+              {/* Sticky Header: Title + Toolbar */}
+              <div className="sticky top-0 z-10 bg-white">
+                {/* Title */}
+                <div className="px-4 py-1.5 border-b border-gray-100">
+                  {isTitleEditing ? (
+                    <input
+                      ref={titleInputRef}
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => handleTitleChange(e.target.value)}
+                      onKeyDown={handleTitleKeyDown}
+                      onBlur={handleTitleBlur}
+                      className="w-full text-xl font-semibold text-gray-900 bg-transparent border-0 border-b-2 border-primary-500 focus:outline-none tracking-tight"
+                      placeholder="Untitled"
+                    />
+                  ) : (
+                    <h1
+                      className="text-xl font-semibold text-gray-900 cursor-text hover:text-gray-700 transition-colors tracking-tight"
+                      onClick={handleTitleClick}
+                    >
+                      {editingTitle || selectedNote.title || 'Untitled'}
+                    </h1>
+                  )}
+                </div>
               </div>
 
               {/* Note Content - Rich Text Editor */}
-              <div className="flex-1 overflow-hidden">
+              <div className="px-4">
                 <RichTextEditor
                   ref={richTextEditorRef}
                   value={editingContent}
                   onChange={handleContentChange}
                   placeholder="Start writing..."
                   className="h-full"
-                  minHeight="calc(100vh - 400px)"
+                  minHeight="calc(100vh - 300px)"
                   enableMentions={true}
                   enableAssets={true}
                   enableHashtags={true}
+                  enableNoteLinks={true}
                   onMentionSearch={searchMentions}
                   onAssetSearch={searchAssets}
                   onHashtagSearch={searchHashtags}
+                  onNoteLinkSearch={searchNoteLinks}
+                  onHashtagSelect={saveRecentHashtag}
+                  onMentionSelect={saveRecentMention}
+                  onAssetSelect={saveRecentAsset}
+                  onNoteLinkNavigate={handleNoteLinkNavigate}
                   assetContext={entityType === 'asset' ? { id: entityId, symbol: entityName } : null}
                   templates={templatesWithShortcuts.map(t => ({
                     id: t.id,
@@ -1787,9 +2163,7 @@ export function UniversalNoteEditor({
                     <span className="mx-1">·</span>
                     <span className="text-amber-500">#</span>tag
                     <span className="mx-1">·</span>
-                    <span className="text-cyan-500">.price</span>
-                    <span className="mx-1">·</span>
-                    <span className="text-violet-500">.template</span>
+                    <span className="text-violet-500">[[</span>notes
                     <span className="mx-1">·</span>
                     <span className="text-purple-500">.AI</span>
                   </button>
@@ -1957,9 +2331,23 @@ export function UniversalNoteEditor({
                 <div>
                   <div className="font-medium text-gray-900">#reference</div>
                   <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">#</code> to link to themes, portfolios, notes, or other entities.
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">#</code> to link to themes, portfolios, or other entities.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Example: #TechTheme, #GrowthPortfolio</p>
+                </div>
+              </div>
+
+              {/* [[notes */}
+              <div className="flex gap-4">
+                <div className="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Link2 className="w-5 h-5 text-violet-600" />
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900">[[note link</div>
+                  <p className="text-sm text-gray-600 mt-0.5">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">[[</code> to search and link to other notes. Click the link to navigate.
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">Example: [[Q4 Earnings Analysis]]</p>
                 </div>
               </div>
 

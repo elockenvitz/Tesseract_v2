@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Editor } from '@tiptap/react'
 import { clsx } from 'clsx'
 import {
@@ -8,7 +8,7 @@ import {
   AlignLeft, AlignCenter, AlignRight,
   IndentIncrease, IndentDecrease, Eraser, Plus,
   Image, Table, Calendar, Paperclip, CalendarPlus, X, Check,
-  ClipboardList, ListTree, FileUp
+  ClipboardList, ListTree, FileUp, Paintbrush
 } from 'lucide-react'
 
 interface EditorToolbarProps {
@@ -88,6 +88,17 @@ export function EditorToolbar({
   const [imageAlt, setImageAlt] = useState('')
   const [tableSize, setTableSize] = useState({ rows: 3, cols: 3 })
   const [tableHover, setTableHover] = useState({ rows: 0, cols: 0 })
+  const [isFormatPainterActive, setIsFormatPainterActive] = useState(false)
+  const [storedFormat, setStoredFormat] = useState<{
+    bold: boolean
+    italic: boolean
+    underline: boolean
+    strike: boolean
+    color: string | null
+    highlight: string | null
+    fontSize: string | null
+    fontFamily: string | null
+  } | null>(null)
 
   const headingRef = useRef<HTMLDivElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
@@ -172,6 +183,117 @@ export function EditorToolbar({
     }
     setShowFontMenu(false)
   }
+
+  // Format Painter - use ref to avoid stale closures
+  const storedFormatRef = useRef(storedFormat)
+  storedFormatRef.current = storedFormat
+
+  const formatPainterActiveRef = useRef(isFormatPainterActive)
+  formatPainterActiveRef.current = isFormatPainterActive
+
+  const captureFormat = useCallback(() => {
+    const textStyleAttrs = editor.getAttributes('textStyle')
+    const highlightAttrs = editor.getAttributes('highlight')
+
+    const format = {
+      bold: editor.isActive('bold'),
+      italic: editor.isActive('italic'),
+      underline: editor.isActive('underline'),
+      strike: editor.isActive('strike'),
+      color: textStyleAttrs.color || null,
+      highlight: highlightAttrs.color || null,
+      fontSize: textStyleAttrs.fontSize || null,
+      fontFamily: textStyleAttrs.fontFamily || null
+    }
+
+    setStoredFormat(format)
+    setIsFormatPainterActive(true)
+  }, [editor])
+
+  const applyStoredFormat = useCallback(() => {
+    const format = storedFormatRef.current
+    if (!format) return
+
+    const { from, to } = editor.state.selection
+    if (from === to) return // No selection
+
+    // Build the chain properly
+    let chain = editor.chain().focus()
+
+    // First unset all marks on the selection
+    chain = chain.unsetAllMarks()
+
+    // Apply each format individually
+    if (format.bold) chain = chain.setBold()
+    if (format.italic) chain = chain.setItalic()
+    if (format.underline) chain = chain.setUnderline()
+    if (format.strike) chain = chain.setStrike()
+
+    // Run the basic marks first
+    chain.run()
+
+    // Now apply text style attributes separately for better reliability
+    if (format.color) {
+      editor.chain().focus().setColor(format.color).run()
+    }
+    if (format.highlight) {
+      editor.chain().focus().setHighlight({ color: format.highlight }).run()
+    }
+    if (format.fontSize) {
+      (editor.chain().focus() as any).setFontSize(format.fontSize).run()
+    }
+    if (format.fontFamily) {
+      (editor.chain().focus() as any).setFontFamily(format.fontFamily).run()
+    }
+
+    // Deactivate format painter after applying
+    setIsFormatPainterActive(false)
+    setStoredFormat(null)
+  }, [editor])
+
+  // Listen for mouseup to apply format after user finishes selecting
+  useEffect(() => {
+    if (!isFormatPainterActive) return
+
+    const editorElement = editor.view.dom
+
+    // Change cursor to indicate paint mode
+    editorElement.style.cursor = 'crosshair'
+
+    const handleMouseUp = (e: MouseEvent) => {
+      // Small delay to ensure selection is complete
+      setTimeout(() => {
+        if (formatPainterActiveRef.current) {
+          const { from, to } = editor.state.selection
+          if (from !== to) {
+            applyStoredFormat()
+          }
+        }
+      }, 10)
+    }
+
+    editorElement.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      editorElement.removeEventListener('mouseup', handleMouseUp)
+      editorElement.style.cursor = ''
+    }
+  }, [isFormatPainterActive, editor, applyStoredFormat])
+
+  // Cancel format painter on Escape key
+  useEffect(() => {
+    if (!isFormatPainterActive) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFormatPainterActive(false)
+        setStoredFormat(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isFormatPainterActive])
 
   const ToolButton = ({
     onClick,
@@ -789,8 +911,22 @@ export function EditorToolbar({
           )}
         </div>
 
-        {/* Clear Formatting */}
-        <div className="ml-auto">
+        {/* Format Painter & Clear Formatting */}
+        <div className="ml-auto flex items-center gap-0.5">
+          <ToolButton
+            onClick={() => {
+              if (isFormatPainterActive) {
+                setIsFormatPainterActive(false)
+                setStoredFormat(null)
+              } else {
+                captureFormat()
+              }
+            }}
+            isActive={isFormatPainterActive}
+            title={isFormatPainterActive ? "Cancel Format Painter (Esc)" : "Format Painter - Copy formatting from selected text"}
+          >
+            <Paintbrush className={clsx("w-4 h-4", isFormatPainterActive && "text-primary-600")} />
+          </ToolButton>
           <ToolButton
             onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()}
             title="Clear Formatting"

@@ -320,7 +320,7 @@ export function Header({
                   ? "text-primary-600 bg-primary-100"
                   : "text-gray-400 hover:text-gray-600"
               )}
-              title="Toggle communication panel"
+              title="Context Discussions"
             >
               <MessageCircle className="h-5 w-5" />
               {hasUnreadContextMessages && (

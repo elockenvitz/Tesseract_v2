@@ -31,9 +31,19 @@ export const AssetExtension = Node.create({
   addOptions() {
     return {
       HTMLAttributes: {},
+      onSelect: undefined as ((asset: AssetItem) => void) | undefined,
       suggestion: {
         char: '$',
         command: ({ editor, range, props }: any) => {
+          // Call onSelect callback if provided
+          if (this.options.onSelect) {
+            this.options.onSelect({
+              id: props.id,
+              symbol: props.symbol,
+              companyName: ''
+            })
+          }
+
           editor
             .chain()
             .focus()

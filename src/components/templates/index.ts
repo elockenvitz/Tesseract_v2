@@ -1,1 +1,6 @@
 export { TemplateManager } from './TemplateManager'
+export { TemplateEditor, type TemplateFormData } from './TemplateEditor'
+export { TemplateList } from './TemplateList'
+export { TemplateTagPicker } from './TemplateTagPicker'
+export { TemplateSharingModal } from './TemplateSharingModal'
+export { TemplateImportExport, type ExportedTemplate, type ImportedTemplate } from './TemplateImportExport'

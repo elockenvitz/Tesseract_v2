@@ -39,9 +39,20 @@ export const HashtagExtension = Node.create({
   addOptions() {
     return {
       HTMLAttributes: {},
+      onSelect: undefined as ((hashtag: HashtagItem) => void) | undefined,
       suggestion: {
         char: '#',
         command: ({ editor, range, props }: any) => {
+          // Call onSelect callback if provided
+          if (this.options.onSelect) {
+            this.options.onSelect({
+              id: props.id,
+              name: props.label,
+              type: props.tagType,
+              description: undefined
+            })
+          }
+
           editor
             .chain()
             .focus()

@@ -30,9 +30,19 @@ export const MentionExtension = Node.create({
   addOptions() {
     return {
       HTMLAttributes: {},
+      onSelect: undefined as ((mention: MentionItem) => void) | undefined,
       suggestion: {
         char: '@',
         command: ({ editor, range, props }: any) => {
+          // Call onSelect callback if provided
+          if (this.options.onSelect) {
+            this.options.onSelect({
+              id: props.id,
+              name: props.label,
+              email: undefined
+            })
+          }
+
           editor
             .chain()
             .focus()

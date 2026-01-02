@@ -66,7 +66,7 @@ export function CommunicationPane({
       case 'direct-messages':
         return 'Direct Messages'
       case 'messages':
-        return contextTitle || 'Recent Discussions'
+        return contextTitle || 'Context Discussions'
       case 'notifications':
         return 'Notifications'
       case 'profile':

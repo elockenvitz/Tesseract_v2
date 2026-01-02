@@ -27,12 +27,15 @@ import { TableControls } from './TableControls'
 import { MentionExtension, MentionList, type MentionItem } from './extensions/MentionExtension'
 import { AssetExtension, AssetList, type AssetItem } from './extensions/AssetExtension'
 import { HashtagExtension, HashtagList, type HashtagItem } from './extensions/HashtagExtension'
+import { NoteLinkExtension, NoteLinkList, type NoteLinkItem } from './extensions/NoteLinkExtension'
 import { InlineTaskExtension } from './extensions/InlineTaskExtension'
 import { InlineEventExtension } from './extensions/InlineEventExtension'
 import { TableOfContentsExtension } from './extensions/TableOfContentsExtension'
 import { FileAttachmentExtension, setPendingFileUpload } from './extensions/FileAttachmentExtension'
 import { CaptureExtension } from './extensions/CaptureExtension'
 import { CaptureSuggestionExtension } from './extensions/CaptureSuggestionExtension'
+import { ChartExtension } from './extensions/ChartExtension'
+import { DataValueExtension } from './extensions/DataValueExtension'
 import { DotCommandSuggestionExtension, TemplateWithShortcut } from './extensions/DotCommandSuggestionExtension'
 import { DotCommandExtension } from './extensions/DotCommandExtension'
 import { AIPromptExtension } from './extensions/AIPromptExtension'
@@ -49,6 +52,8 @@ export interface RichTextEditorRef {
   setContent: (content: string) => void
   focus: () => void
   insertText: (text: string) => void
+  insertHTML: (html: string) => void
+  appendHTML: (html: string) => void
 }
 
 export interface RichTextEditorProps {
@@ -64,6 +69,9 @@ export interface RichTextEditorProps {
   onMentionSearch?: (query: string) => Promise<MentionItem[]>
   onAssetSearch?: (query: string) => Promise<AssetItem[]>
   onHashtagSearch?: (query: string) => Promise<HashtagItem[]>
+  onHashtagSelect?: (hashtag: HashtagItem) => void
+  onMentionSelect?: (mention: MentionItem) => void
+  onAssetSelect?: (asset: AssetItem) => void
   onInsertEvent?: () => void
   onInsertAttachment?: () => void
   readOnly?: boolean
@@ -71,6 +79,11 @@ export interface RichTextEditorProps {
   assetContext?: { id: string; symbol: string } | null
   // Templates with shortcuts for .template commands
   templates?: TemplateWithShortcut[]
+  // Note linking
+  enableNoteLinks?: boolean
+  onNoteLinkSearch?: (query: string) => Promise<NoteLinkItem[]>
+  onNoteLinkSelect?: (note: NoteLinkItem) => void
+  onNoteLinkNavigate?: (note: NoteLinkItem) => void
 }
 
 const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>(({
@@ -83,9 +96,16 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
   enableMentions = true,
   enableAssets = true,
   enableHashtags = true,
+  enableNoteLinks = false,
   onMentionSearch,
   onAssetSearch,
   onHashtagSearch,
+  onNoteLinkSearch,
+  onHashtagSelect,
+  onMentionSelect,
+  onAssetSelect,
+  onNoteLinkSelect,
+  onNoteLinkNavigate,
   onInsertEvent,
   onInsertAttachment,
   readOnly = false,
@@ -317,6 +337,8 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       FileAttachmentExtension,
       CaptureExtension,
       CaptureSuggestionExtension,
+      ChartExtension,
+      DataValueExtension,
       DotCommandExtension,
       DotCommandSuggestionExtension.configure({
         onAICommand: (model?: string) => {
@@ -409,13 +431,44 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           const symbol = overrideSymbol || assetContext?.symbol
 
           if (symbol) {
-            // Insert as plain text - DotCommandExtension will add decoration coloring
-            currentEditor.chain().focus().insertContent(`.${type}.${symbol} `).run()
+            // Insert a dataValue node that will fetch and display the actual data
+            currentEditor.chain().focus().insertContent({
+              type: 'dataValue',
+              attrs: {
+                dataType: type,
+                symbol: symbol.toUpperCase(),
+                isLive: false, // Static by default
+                showSymbol: true,
+                snapshotValue: null, // Will be fetched
+                snapshotAt: null
+              }
+            }).insertContent(' ').run()
           } else {
             // No symbol available - re-insert the command so user can add a symbol
             // e.g., .price. and they can type AAPL after
             currentEditor.chain().focus().insertContent(`.${type}.`).run()
           }
+        },
+        onChartCommand: (chartType: string, symbol?: string) => {
+          const currentEditor = editorRef.current
+          if (!currentEditor) return
+
+          // Use override symbol if provided, otherwise use asset context
+          const chartSymbol = symbol || assetContext?.symbol
+
+          // Always insert a chart node - it will show a placeholder if no symbol
+          currentEditor.chain().focus().insertContent({
+            type: 'chart',
+            attrs: {
+              chartType: chartType || 'price',
+              symbol: chartSymbol || '',
+              assetName: chartSymbol || '',
+              timeframe: '1M',
+              height: 300,
+              isLive: !!chartSymbol,
+              embeddedAt: new Date().toISOString()
+            }
+          }).run()
         }
       }),
       AIPromptExtension.configure({
@@ -423,6 +476,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
         onStateChange: setIsAIPromptMode
       }),
       ...(enableMentions ? [MentionExtension.configure({
+        onSelect: onMentionSelect,
         suggestion: {
           char: '@',
           items: async ({ query }: { query: string }) => {
@@ -452,6 +506,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
         }
       })] : []),
       ...(enableAssets ? [AssetExtension.configure({
+        onSelect: onAssetSelect,
         suggestion: {
           char: '$',
           items: async ({ query }: { query: string }) => {
@@ -481,6 +536,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
         }
       })] : []),
       ...(enableHashtags ? [HashtagExtension.configure({
+        onSelect: onHashtagSelect,
         suggestion: {
           char: '#',
           items: async ({ query }: { query: string }) => {
@@ -495,6 +551,66 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
             return {
               onStart: (props: any) => {
                 component = new HashtagList(props)
+              },
+              onUpdate: (props: any) => {
+                component?.updateProps(props)
+              },
+              onKeyDown: (props: any) => {
+                return component?.onKeyDown(props) ?? false
+              },
+              onExit: () => {
+                component?.destroy()
+              }
+            }
+          }
+        }
+      })] : []),
+      ...(enableNoteLinks ? [NoteLinkExtension.configure({
+        onSelect: onNoteLinkSelect,
+        onNavigate: onNoteLinkNavigate,
+        suggestion: {
+          char: '[[',
+          allowSpaces: true,
+          startOfLine: false,
+          items: async ({ query }: { query: string }) => {
+            if (onNoteLinkSearch) {
+              return await onNoteLinkSearch(query)
+            }
+            return []
+          },
+          command: ({ editor, range, props }: any) => {
+            // Call onSelect callback if provided
+            if (onNoteLinkSelect) {
+              onNoteLinkSelect({
+                id: props.id,
+                title: props.title,
+                entityType: props.entityType,
+                entityId: props.entityId,
+                entityName: props.entityName
+              })
+            }
+
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(range, [
+                {
+                  type: 'noteLink',
+                  attrs: props
+                },
+                {
+                  type: 'text',
+                  text: ' '
+                }
+              ])
+              .run()
+          },
+          render: () => {
+            let component: any
+
+            return {
+              onStart: (props: any) => {
+                component = new NoteLinkList(props)
               },
               onUpdate: (props: any) => {
                 component?.updateProps(props)
@@ -530,7 +646,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           'prose prose-sm max-w-none focus:outline-none',
           editorClassName
         ),
-        style: `min-height: ${minHeight}; padding: 1rem;`
+        style: `min-height: ${minHeight}; padding: 0.5rem 1rem;`
       },
       // Smart paste handling
       handlePaste: (view, event) => {
@@ -666,6 +782,13 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
   useEffect(() => {
     if (!editor) return
 
+    // Don't sync while editor has focus - user is actively typing
+    if (editor.isFocused) {
+      // Just update the ref so we don't trigger again
+      lastValueRef.current = value
+      return
+    }
+
     // Only update if the value actually changed from outside
     // and is different from what the editor currently has
     const currentHTML = editor.getHTML()
@@ -714,6 +837,16 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
     },
     insertText: (text: string) => {
       editor?.commands.insertContent(text)
+    },
+    insertHTML: (html: string) => {
+      editor?.commands.insertContent(html, { parseOptions: { preserveWhitespace: true } })
+    },
+    appendHTML: (html: string) => {
+      if (editor) {
+        // Move to end of document and insert
+        editor.commands.focus('end')
+        editor.commands.insertContent(html, { parseOptions: { preserveWhitespace: true } })
+      }
     }
   }), [editor])
 
@@ -725,17 +858,19 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
 
   return (
     <div className={clsx('rich-text-editor relative', className)}>
-      {/* Toolbar */}
+      {/* Toolbar - Sticky */}
       {!readOnly && (
-        <EditorToolbar
-          editor={editor}
-          onInsertEvent={onInsertEvent}
-          onInsertAttachment={onInsertAttachment}
-        />
+        <div className="sticky top-[41px] z-10 bg-white">
+          <EditorToolbar
+            editor={editor}
+            onInsertEvent={onInsertEvent}
+            onInsertAttachment={onInsertAttachment}
+          />
+        </div>
       )}
 
       {/* Editor Content */}
-      <div className="editor-container border border-gray-200 rounded-b-lg bg-white overflow-hidden relative">
+      <div className="editor-container border border-gray-200 border-t-0 rounded-b-lg bg-white overflow-hidden relative">
         <EditorContent editor={editor} className="editor-content" />
       </div>
 
@@ -801,22 +936,22 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-purple-600 mb-2">AI Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex"><span className="w-28 font-mono text-purple-600">.AI</span><span className="text-gray-600">Generate content with AI (type prompt, press Enter)</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-purple-600">.AI.claude</span><span className="text-gray-600">Generate with Claude model</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-purple-600">.AI.gpt</span><span className="text-gray-600">Generate with GPT model</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI</span><span className="text-gray-600">Generate content with AI (type prompt, press Enter)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI.claude</span><span className="text-gray-600">Generate with Claude model</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI.gpt</span><span className="text-gray-600">Generate with GPT model</span></div>
                   </div>
                 </div>
 
                 {/* Data Commands */}
                 <div>
-                  <h3 className="text-sm font-semibold text-emerald-600 mb-2">Data Commands {assetContext && <span className="font-normal text-gray-500">(using {assetContext.symbol})</span>}</h3>
+                  <h3 className="text-sm font-semibold text-emerald-600 mb-2">Data Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex"><span className="w-28 font-mono text-emerald-600">.price</span><span className="text-gray-600">Current stock price</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-emerald-600">.volume</span><span className="text-gray-600">Trading volume</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-emerald-600">.marketcap</span><span className="text-gray-600">Market capitalization</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-emerald-600">.change</span><span className="text-gray-600">Price change %</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-emerald-600">.pe</span><span className="text-gray-600">P/E ratio</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-emerald-600">.dividend</span><span className="text-gray-600">Dividend yield</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.price</span><span className="text-gray-600">Current stock price</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.volume</span><span className="text-gray-600">Trading volume</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.marketcap</span><span className="text-gray-600">Market capitalization</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.change</span><span className="text-gray-600">Price change %</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.pe</span><span className="text-gray-600">P/E ratio</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.dividend</span><span className="text-gray-600">Dividend yield</span></div>
                   </div>
                 </div>
 
@@ -824,9 +959,22 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-violet-600 mb-2">Capture Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex"><span className="w-28 font-mono text-violet-600">.capture</span><span className="text-gray-600">Capture a platform element (live or static)</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-amber-600">.screenshot</span><span className="text-gray-600">Take a screenshot of your screen</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-blue-600">.embed</span><span className="text-gray-600">Embed a URL with rich preview</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-violet-600">.capture</span><span className="text-gray-600">Capture a platform element (live or static)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-amber-600">.screenshot</span><span className="text-gray-600">Take a screenshot of your screen</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-blue-600">.embed</span><span className="text-gray-600">Embed a URL with rich preview</span></div>
+                  </div>
+                </div>
+
+                {/* Chart Commands */}
+                <div>
+                  <h3 className="text-sm font-semibold text-cyan-600 mb-2">Chart Commands</h3>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart</span><span className="text-gray-600">Insert an embedded chart</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.price</span><span className="text-gray-600">Price chart (line/area)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.volume</span><span className="text-gray-600">Volume chart</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.performance</span><span className="text-gray-600">Performance chart (%)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.comparison</span><span className="text-gray-600">Multi-asset comparison</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.technicals</span><span className="text-gray-600">Chart with indicators</span></div>
                   </div>
                 </div>
 
@@ -834,9 +982,9 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-cyan-600 mb-2">Content Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex"><span className="w-28 font-mono text-cyan-600">.task</span><span className="text-gray-600">Add an inline task</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-pink-600">.event</span><span className="text-gray-600">Add a calendar event</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-orange-600">.template</span><span className="text-gray-600">Insert a template</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.task</span><span className="text-gray-600">Add an inline task</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-pink-600">.event</span><span className="text-gray-600">Add a calendar event</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-orange-600">.template</span><span className="text-gray-600">Insert a template</span></div>
                   </div>
                 </div>
 
@@ -844,8 +992,8 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-gray-600 mb-2">Other Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex"><span className="w-28 font-mono text-indigo-600">.toc</span><span className="text-gray-600">Insert table of contents</span></div>
-                    <div className="flex"><span className="w-28 font-mono text-gray-500">.divider</span><span className="text-gray-600">Insert a horizontal divider</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-indigo-600">.toc</span><span className="text-gray-600">Insert table of contents</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-gray-500">.divider</span><span className="text-gray-600">Insert a horizontal divider</span></div>
                   </div>
                 </div>
 
@@ -854,7 +1002,8 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                   <p className="font-medium text-gray-700 mb-1">Tips:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li>Type <code className="px-1 bg-gray-200 rounded">.command</code> then <code className="px-1 bg-gray-200 rounded">Space</code> to activate</li>
-                    <li>Use <code className="px-1 bg-gray-200 rounded">@</code> to mention users, <code className="px-1 bg-gray-200 rounded">$</code> for assets, <code className="px-1 bg-gray-200 rounded">#</code> for references</li>
+                    <li>Use <code className="px-1 bg-gray-200 rounded">@</code> to mention users, <code className="px-1 bg-gray-200 rounded">$</code> for assets, <code className="px-1 bg-gray-200 rounded">#</code> for tags</li>
+                    <li>Use <code className="px-1 bg-gray-200 rounded">[[</code> to link to other notes</li>
                     <li>Arrow keys to navigate suggestions, Enter/Tab to select</li>
                   </ul>
                 </div>
@@ -1167,6 +1316,23 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           border-radius: 0.25rem;
           font-weight: 500;
           font-size: 0.875rem;
+        }
+
+        .ProseMirror .note-link {
+          background-color: #f3e8ff;
+          color: #7c3aed;
+          padding: 0.1rem 0.4rem;
+          border-radius: 0.25rem;
+          font-weight: 500;
+          font-size: 0.875rem;
+          cursor: pointer;
+          transition: background-color 0.15s, color 0.15s;
+          text-decoration: none;
+        }
+
+        .ProseMirror .note-link:hover {
+          background-color: #ede9fe;
+          color: #6d28d9;
         }
 
         /* Selection */
