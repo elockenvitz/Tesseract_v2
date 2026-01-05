@@ -1,10 +1,18 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Save, Loader2, Eye, Edit3, Share2, Tag, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { X, Save, Loader2, Eye, Edit3, Share2, Tag, ChevronDown, ChevronUp, AlertCircle, Zap, Type } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Template } from '../../hooks/useTemplates'
 import { RichTextEditor, RichTextEditorRef } from '../rich-text-editor/RichTextEditor'
 import { Button } from '../ui/Button'
 import { TemplateTagPicker } from './TemplateTagPicker'
+import {
+  extractVariables,
+  validateTemplate,
+  highlightVariables,
+  DYNAMIC_COMMANDS,
+  type TemplateVariable,
+  type DynamicVariable
+} from '../../utils/templateVariables'
 
 interface TemplateEditorProps {
   template?: Template
@@ -57,6 +65,20 @@ export function TemplateEditor({
   })
 
   const [previewHtml, setPreviewHtml] = useState('')
+  const [showVariables, setShowVariables] = useState(true)
+
+  // Extract variables and validate using the utility
+  const variables = useMemo(() => extractVariables(formData.content), [formData.content])
+  const validationIssues = useMemo(() => validateTemplate(formData.content), [formData.content])
+
+  const standardVars = useMemo(
+    () => variables.filter((v): v is TemplateVariable & { type: 'standard' } => v.type === 'standard'),
+    [variables]
+  )
+  const dynamicVars = useMemo(
+    () => variables.filter((v): v is DynamicVariable => v.type === 'dynamic'),
+    [variables]
+  )
 
   // Update preview when content changes
   const handleContentChange = useCallback((html: string, plainText: string) => {
@@ -110,24 +132,8 @@ export function TemplateEditor({
 
   // Get styled preview with highlighted variables
   const getStyledPreview = () => {
-    let html = previewHtml
-
-    // Highlight standard variables {{name}}
-    html = html.replace(
-      /\{\{\s*(\w+)\s*\}\}/g,
-      '<span class="px-1 py-0.5 bg-purple-100 text-purple-700 rounded text-sm font-mono">{{$1}}</span>'
-    )
-
-    // Highlight dynamic variables {{.command}} or {{.command:SYMBOL}}
-    html = html.replace(
-      /\{\{\.(\w+(?:\.\w+)?)(?::([A-Z0-9]+))?\}\}/g,
-      (match, command, symbol) => {
-        const displayText = symbol ? `.${command}:${symbol}` : `.${command}`
-        return `<span class="px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-sm font-mono">{{${displayText}}}</span>`
-      }
-    )
-
-    return html
+    // Use utility function for consistent highlighting
+    return highlightVariables(previewHtml)
   }
 
   const getCategoryLabel = (id: string) => CATEGORIES.find(c => c.id === id)?.label || id
@@ -287,18 +293,93 @@ export function TemplateEditor({
           {mode === 'edit' ? (
             /* Editor Mode */
             <div className="h-full flex flex-col">
-              {/* Hint bar */}
-              <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-500 flex items-center gap-4">
-                <span>
-                  <code className="px-1 py-0.5 bg-gray-200 rounded">{'{{var}}'}</code> fill-in values
-                </span>
-                <span>
-                  <code className="px-1 py-0.5 bg-gray-200 rounded">{'{{.price}}'}</code> live data
-                </span>
-                <span>
-                  <code className="px-1 py-0.5 bg-gray-200 rounded">{'{{.price:AAPL}}'}</code> specific symbol
-                </span>
+              {/* Hint bar with variable toggle */}
+              <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-500 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <span>
+                    <code className="px-1 py-0.5 bg-purple-100 text-purple-700 rounded">{'{{var}}'}</code> fill-in
+                  </span>
+                  <span>
+                    <code className="px-1 py-0.5 bg-blue-100 text-blue-700 rounded">{'{{.price}}'}</code> live data
+                  </span>
+                  <span>
+                    <code className="px-1 py-0.5 bg-blue-100 text-blue-700 rounded">{'{{.price:AAPL}}'}</code> explicit
+                  </span>
+                </div>
+                {variables.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowVariables(!showVariables)}
+                    className={clsx(
+                      'flex items-center gap-1 px-2 py-0.5 rounded transition-colors',
+                      showVariables ? 'bg-primary-100 text-primary-700' : 'hover:bg-gray-200'
+                    )}
+                  >
+                    <Zap className="w-3 h-3" />
+                    {variables.length} var{variables.length !== 1 ? 's' : ''}
+                  </button>
+                )}
               </div>
+
+              {/* Variables Panel */}
+              {showVariables && variables.length > 0 && (
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs">
+                  {/* Validation warnings */}
+                  {validationIssues.length > 0 && (
+                    <div className="mb-2 flex items-start gap-2 text-amber-700 bg-amber-50 px-2 py-1.5 rounded">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                      <div>
+                        {validationIssues.map((issue, i) => (
+                          <div key={i}>{issue}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-3">
+                    {/* Standard Variables */}
+                    {standardVars.length > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <Type className="w-3 h-3 text-purple-600" />
+                        <span className="text-gray-500">Fill-in:</span>
+                        {standardVars.map((v, i) => (
+                          <span
+                            key={i}
+                            className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-mono"
+                            title="User will provide this value"
+                          >
+                            {v.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Dynamic Variables */}
+                    {dynamicVars.length > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <Zap className="w-3 h-3 text-blue-600" />
+                        <span className="text-gray-500">Live:</span>
+                        {dynamicVars.map((v, i) => {
+                          const cmd = DYNAMIC_COMMANDS[v.command]
+                          return (
+                            <span
+                              key={i}
+                              className={clsx(
+                                'px-1.5 py-0.5 rounded font-mono',
+                                cmd ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                              )}
+                              title={cmd?.description || 'Unknown command'}
+                            >
+                              .{v.command}{v.symbol ? `:${v.symbol}` : ''}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Editor fills remaining space */}
               <div className="flex-1 overflow-auto template-editor-scroll">
                 <RichTextEditor
@@ -314,6 +395,25 @@ export function TemplateEditor({
               <style>{`
                 .template-editor-scroll .rich-text-editor > .sticky {
                   top: 0 !important;
+                }
+                /* Variable highlighting styles */
+                .template-var {
+                  padding: 0.125rem 0.25rem;
+                  border-radius: 0.25rem;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                  font-size: 0.875em;
+                }
+                .template-var-standard {
+                  background-color: rgb(243 232 255);
+                  color: rgb(126 34 206);
+                }
+                .template-var-dynamic {
+                  background-color: rgb(219 234 254);
+                  color: rgb(29 78 216);
+                }
+                .template-var-unresolved {
+                  background-color: rgb(254 226 226);
+                  color: rgb(185 28 28);
                 }
               `}</style>
             </div>

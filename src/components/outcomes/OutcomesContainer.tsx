@@ -11,6 +11,14 @@ import { AggregatedView, AnalystComparisonTable } from './AggregatedView'
 import { AggregationToolbar } from './AggregationToolbar'
 import { ScenarioManager } from './ScenarioManager'
 import { PriceTargetChart } from './PriceTargetChart'
+import { AnalystRatingsSection } from './AnalystRatingsSection'
+import { AnalystEstimatesSection } from './AnalystEstimatesSection'
+import { ModelFilesViewer } from './ModelFilesViewer'
+import { ExcelExporter } from './ExcelExporter'
+import { FirmConsensusPanel } from './FirmConsensusPanel'
+import { EstimateRevisionChart } from './EstimateRevisionChart'
+import { PriceTargetHistoryChart } from './PriceTargetHistoryChart'
+import { RatingHistoryChart } from './RatingHistoryChart'
 // AnalystPerformanceCard, PerformanceLeaderboard, OutcomesTimeline moved to UserTab
 import { ExpiredTargetsAlert } from './ExpiredTargetsAlert'
 import { supabase } from '../../lib/supabase'
@@ -419,6 +427,23 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                 </div>
               )}
 
+              {/* Firm Consensus Panel - Rating & Estimates */}
+              <FirmConsensusPanel assetId={assetId} className="mt-4" />
+
+              {/* Historical Charts Section */}
+              <div className="mt-6 space-y-4">
+                <h4 className="text-sm font-medium text-gray-700">Historical Analysis</h4>
+
+                {/* Rating History Chart */}
+                <RatingHistoryChart assetId={assetId} />
+
+                {/* Estimate Revision Chart */}
+                <EstimateRevisionChart assetId={assetId} />
+
+                {/* Price Target History Chart */}
+                <PriceTargetHistoryChart assetId={assetId} currentPrice={currentPrice} />
+              </div>
+
               {/* Price Target Chart - aggregated view is read-only */}
               {symbol && hasData && (
                 <div className="mt-6">
@@ -444,6 +469,12 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
       {/* Individual analyst view */}
       {activeTab !== 'aggregated' && activeTab !== 'comparison' && (
         <div className="space-y-6">
+          {/* Rating Section - First */}
+          <AnalystRatingsSection
+            assetId={assetId}
+            isEditable={isOwnTab}
+          />
+
           {/* Default scenarios (Bull/Base/Bear) */}
           <div>
             <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
@@ -529,6 +560,26 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
               />
             </div>
           )}
+
+          {/* Estimates Section - Own section for extensibility */}
+          <AnalystEstimatesSection
+            assetId={assetId}
+            isEditable={isOwnTab}
+          />
+
+          {/* Synced Model Files Section */}
+          <div className="mt-6 space-y-4">
+            {/* Section Header with Export */}
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Synced Models
+              </h4>
+              <ExcelExporter assetId={assetId} />
+            </div>
+
+            {/* Synced Model Files - shows extracted data, version comparison */}
+            <ModelFilesViewer assetId={assetId} />
+          </div>
         </div>
       )}
     </div>

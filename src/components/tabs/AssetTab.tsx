@@ -26,7 +26,7 @@ import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
-import { NotesModelsSection } from '../notes/NotesModelsSection'
+import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { ThesisContainer } from '../contributions'
 import { OutcomesContainer } from '../outcomes'
@@ -2302,8 +2302,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               )}
             </Card>
 
-            {/* Notes & Models Section */}
-            <NotesModelsSection
+            {/* Document Library Section */}
+            <DocumentLibrarySection
               assetId={asset.id}
               notes={notes || []}
               researchViewFilter={researchViewFilter}
@@ -2315,6 +2315,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 id: 'notes-list',
                 title: 'Notes',
                 type: 'notes-list',
+                data: { initialAssetFilter: asset.id }
+              })}
+              onViewAllFiles={() => onNavigate?.({
+                id: 'files-list',
+                title: 'Files',
+                type: 'files-list',
                 data: { initialAssetFilter: asset.id }
               })}
             />

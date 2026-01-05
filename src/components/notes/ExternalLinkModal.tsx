@@ -14,7 +14,7 @@ interface ExternalLinkModalProps {
     provider: string
     description?: string
   }) => void
-  type: 'note' | 'model'
+  type: 'note' | 'model' | 'document'
   isLoading?: boolean
 }
 
@@ -47,7 +47,8 @@ export function ExternalLinkModal({
   const [description, setDescription] = useState('')
   const [detectedProvider, setDetectedProvider] = useState<string>('other')
 
-  const providers = type === 'note' ? noteProviders : modelProviders
+  // 'document' uses combined providers for broader detection
+  const providers = type === 'model' ? modelProviders : [...noteProviders, ...modelProviders.filter(p => p.value !== 'other')]
 
   // Reset form when modal opens
   useEffect(() => {
@@ -94,7 +95,9 @@ export function ExternalLinkModal({
 
   if (!isOpen) return null
 
-  const Icon = type === 'note' ? FileText : FileSpreadsheet
+  const Icon = type === 'model' ? FileSpreadsheet : FileText
+  const typeLabel = type === 'model' ? 'Model' : type === 'document' ? 'Document' : 'Note'
+  const typeDescription = type === 'model' ? 'spreadsheet' : 'document'
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -124,10 +127,10 @@ export function ExternalLinkModal({
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Link External {type === 'note' ? 'Note' : 'Model'}
+                  Link External {typeLabel}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Add a link to an external {type === 'note' ? 'document' : 'spreadsheet'}
+                  Add a link to an external {typeDescription}
                 </p>
               </div>
             </div>

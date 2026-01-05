@@ -151,9 +151,9 @@ export function TemplateManager() {
   }
 
   return (
-    <Card>
+    <Card padding="sm">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Text Templates</h3>
           <p className="text-sm text-gray-500 mt-1">

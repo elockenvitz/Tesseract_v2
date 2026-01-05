@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { clsx } from 'clsx'
-import { FileText, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2 } from 'lucide-react'
+import { FileText, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { TemplateManager } from '../templates/TemplateManager'
+import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManager'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -232,8 +233,8 @@ function CaseTemplatesManager() {
   }
 
   return (
-    <Card>
-      <div className="flex items-center justify-between mb-6">
+    <Card padding="sm">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Investment Case Templates</h3>
           <p className="text-sm text-gray-500 mt-1">
@@ -526,7 +527,7 @@ function CaseTemplateCard({
 // MAIN COMPONENT
 // ============================================================================
 
-type TabSection = 'text' | 'cases'
+type TabSection = 'text' | 'cases' | 'excel'
 
 export function TemplatesTab() {
   const [activeSection, setActiveSection] = useState<TabSection>('text')
@@ -534,10 +535,10 @@ export function TemplatesTab() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 bg-white">
-        <h1 className="text-2xl font-bold text-gray-900">Templates</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Manage your text templates and investment case templates
+      <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white">
+        <h1 className="text-xl font-bold text-gray-900">Templates</h1>
+        <p className="text-sm text-gray-500">
+          Manage your text templates, investment case templates, and Excel model configurations
         </p>
       </div>
 
@@ -568,13 +569,26 @@ export function TemplatesTab() {
             <Target className="w-4 h-4" />
             Investment Case Templates
           </button>
+          <button
+            onClick={() => setActiveSection('excel')}
+            className={clsx(
+              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              activeSection === 'excel'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            )}
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Excel Model Templates
+          </button>
         </nav>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6 bg-gray-50">
+      <div className="flex-1 overflow-auto px-6 pt-2 pb-4 bg-gray-50">
         {activeSection === 'text' && <TemplateManager />}
         {activeSection === 'cases' && <CaseTemplatesManager />}
+        {activeSection === 'excel' && <ExcelModelTemplateManager />}
       </div>
     </div>
   )

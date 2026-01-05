@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Plus, Upload, Link2, ChevronDown, FileSpreadsheet } from 'lucide-react'
+import { Plus, Upload, Link2, ChevronDown, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/Button'
 import clsx from 'clsx'
 
 interface AddModelDropdownProps {
   onUploadModel: (file: File) => void
   onLinkExternal: () => void
+  onSyncExcel?: () => void  // New: opens Excel sync modal
   disabled?: boolean
   className?: string
 }
@@ -21,6 +22,7 @@ const acceptedFileTypes = [
 export function AddModelDropdown({
   onUploadModel,
   onLinkExternal,
+  onSyncExcel,
   disabled = false,
   className
 }: AddModelDropdownProps) {
@@ -59,6 +61,15 @@ export function AddModelDropdown({
         fileInputRef.current?.click()
       }
     },
+    ...(onSyncExcel ? [{
+      icon: RefreshCw,
+      label: 'Sync Excel Model',
+      description: 'Extract data to Outcomes',
+      onClick: () => {
+        onSyncExcel()
+        setIsOpen(false)
+      }
+    }] : []),
     {
       icon: Link2,
       label: 'Link External',
