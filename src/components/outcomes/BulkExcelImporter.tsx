@@ -15,11 +15,12 @@ import {
 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { useModelTemplates, useModelFiles, type ModelTemplate } from '../../hooks/useModelTemplates'
-import { readExcelFile, parseExcelFile, detectTemplate, prepareDataForSync } from '../../utils/excelParser'
+import { readExcelFile, parseExcelFile, detectTemplate, prepareDataForSync, type ThesisData } from '../../utils/excelParser'
 import { useScenarios } from '../../hooks/useScenarios'
 import { useAnalystPriceTargets } from '../../hooks/useAnalystPriceTargets'
 import { useAnalystEstimates } from '../../hooks/useAnalystEstimates'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
+import { useContributions } from '../../hooks/useContributions'
 
 interface BulkExcelImporterProps {
   assetId: string
@@ -52,6 +53,11 @@ export function BulkExcelImporter({
   const { savePriceTarget } = useAnalystPriceTargets({ assetId })
   const { saveEstimate } = useAnalystEstimates({ assetId })
   const { saveRating, defaultScale } = useAnalystRatings({ assetId })
+
+  // Thesis contribution hooks for each section
+  const thesisContrib = useContributions({ assetId, section: 'thesis' })
+  const whereDiffContrib = useContributions({ assetId, section: 'where_different' })
+  const risksContrib = useContributions({ assetId, section: 'risks_to_thesis' })
 
   const handleFilesSelected = useCallback(async (selectedFiles: FileList) => {
     const newFiles: FileToImport[] = []
@@ -174,6 +180,47 @@ export function BulkExcelImporter({
           })
         } catch (err) {
           syncErrors.push('Failed to sync rating')
+        }
+      }
+
+      // Sync thesis fields to contributions
+      if (syncData.thesis) {
+        const thesisSourceNote = `\n\n*Source: Extracted from ${fileItem.file.name}*`
+
+        if (syncData.thesis.thesis) {
+          try {
+            await thesisContrib.saveContribution.mutateAsync({
+              content: syncData.thesis.thesis + thesisSourceNote,
+              sectionKey: 'thesis',
+              visibility: 'firm'
+            })
+          } catch (err) {
+            syncErrors.push('Failed to sync thesis')
+          }
+        }
+
+        if (syncData.thesis.where_different) {
+          try {
+            await whereDiffContrib.saveContribution.mutateAsync({
+              content: syncData.thesis.where_different + thesisSourceNote,
+              sectionKey: 'where_different',
+              visibility: 'firm'
+            })
+          } catch (err) {
+            syncErrors.push('Failed to sync where different')
+          }
+        }
+
+        if (syncData.thesis.risks_to_thesis) {
+          try {
+            await risksContrib.saveContribution.mutateAsync({
+              content: syncData.thesis.risks_to_thesis + thesisSourceNote,
+              sectionKey: 'risks_to_thesis',
+              visibility: 'firm'
+            })
+          } catch (err) {
+            syncErrors.push('Failed to sync risks to thesis')
+          }
         }
       }
 

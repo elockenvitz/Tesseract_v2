@@ -1458,7 +1458,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                                             : 'border-gray-200 bg-white hover:border-gray-300'
                                         }`}
                                       >
-                                        <div className="font-semibold text-gray-700">Outcomes</div>
+                                        <div className="font-semibold text-gray-700">Forecasts</div>
                                       </button>
                                     </div>
 

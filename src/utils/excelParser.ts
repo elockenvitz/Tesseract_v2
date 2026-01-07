@@ -698,6 +698,14 @@ export interface PriceTargetData {
   price: number
 }
 
+export interface ThesisData {
+  thesis?: string
+  where_different?: string
+  risks_to_thesis?: string
+  key_catalysts?: string
+  investment_summary?: string
+}
+
 export interface SyncData {
   priceTargets: PriceTargetData[]
   rating?: string
@@ -708,6 +716,7 @@ export interface SyncData {
     fiscalQuarter?: number
     value: number
   }>
+  thesis?: ThesisData
 }
 
 /**
@@ -753,6 +762,32 @@ export function prepareDataForSync(values: ParsedValue[]): SyncData {
 
       case 'rating':
         result.rating = String(val.formattedValue)
+        break
+
+      // Thesis fields
+      case 'thesis':
+        if (!result.thesis) result.thesis = {}
+        result.thesis.thesis = String(val.formattedValue)
+        break
+
+      case 'where_different':
+        if (!result.thesis) result.thesis = {}
+        result.thesis.where_different = String(val.formattedValue)
+        break
+
+      case 'risks_to_thesis':
+        if (!result.thesis) result.thesis = {}
+        result.thesis.risks_to_thesis = String(val.formattedValue)
+        break
+
+      case 'key_catalysts':
+        if (!result.thesis) result.thesis = {}
+        result.thesis.key_catalysts = String(val.formattedValue)
+        break
+
+      case 'investment_summary':
+        if (!result.thesis) result.thesis = {}
+        result.thesis.investment_summary = String(val.formattedValue)
         break
 
       default:

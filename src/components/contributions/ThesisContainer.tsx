@@ -9,7 +9,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
-import { useContributions } from '../../hooks/useContributions'
+import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { ContributionSection } from './ContributionSection'
 import { ThesisUnifiedSummary } from './ThesisUnifiedSummary'
 import { ThesisHistoryView } from './ThesisHistoryView'
@@ -22,6 +22,10 @@ interface ThesisContainerProps {
   viewFilter?: 'aggregated' | string
   /** View mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline */
   viewMode?: 'all' | 'summary' | 'history'
+  /** Shared visibility for all thesis sections (controlled from parent) */
+  sharedVisibility?: ContributionVisibility
+  /** Shared target IDs for visibility (controlled from parent) */
+  sharedTargetIds?: string[]
 }
 
 type TabType = 'aggregated' | string // 'aggregated' or a user ID
@@ -32,7 +36,14 @@ interface CoverageAnalyst {
   role: string | null
 }
 
-export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'all' }: ThesisContainerProps) {
+export function ThesisContainer({
+  assetId,
+  className,
+  viewFilter,
+  viewMode = 'all',
+  sharedVisibility = 'firm',
+  sharedTargetIds = []
+}: ThesisContainerProps) {
   const { user } = useAuth()
   const [internalTab, setInternalTab] = useState<TabType>('aggregated')
 
@@ -40,6 +51,9 @@ export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'al
   const activeTab = viewFilter ?? internalTab
   const setActiveTab = viewFilter ? () => {} : setInternalTab // No-op if externally controlled
   const isExternallyControlled = viewFilter !== undefined
+
+  // Is the current user viewing their own tab?
+  const isViewingOwnTab = user && activeTab === user.id
 
   // Get current user's name from auth (for tab label even if they haven't contributed)
   const currentUserName = useMemo(() => {
@@ -218,7 +232,7 @@ export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'al
         </div>
       )}
 
-      {/* Contribution sections - hide per-section view mode buttons when top-level controls active */}
+      {/* Contribution sections - hide visibility controls when viewing own tab */}
       <ContributionSection
         assetId={assetId}
         section="thesis"
@@ -230,6 +244,9 @@ export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'al
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
         hideViewModeButtons={true}
+        hideVisibility={!!isViewingOwnTab}
+        sharedVisibility={sharedVisibility}
+        sharedTargetIds={sharedTargetIds}
       />
 
       <ContributionSection
@@ -243,6 +260,9 @@ export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'al
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
         hideViewModeButtons={true}
+        hideVisibility={!!isViewingOwnTab}
+        sharedVisibility={sharedVisibility}
+        sharedTargetIds={sharedTargetIds}
       />
 
       <ContributionSection
@@ -256,6 +276,9 @@ export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'al
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
         hideViewModeButtons={true}
+        hideVisibility={!!isViewingOwnTab}
+        sharedVisibility={sharedVisibility}
+        sharedTargetIds={sharedTargetIds}
       />
     </div>
   )

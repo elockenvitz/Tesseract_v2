@@ -46,6 +46,9 @@ export interface Contribution {
   sort_order: number
   created_at: string
   updated_at: string
+  // Draft support
+  draft_content: string | null
+  draft_updated_at: string | null
   user?: {
     id: string
     first_name: string | null
@@ -275,6 +278,185 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
     }
   })
 
+  // Save draft (without publishing)
+  const saveDraft = useMutation({
+    mutationFn: async ({
+      content,
+      sectionKey
+    }: {
+      content: string
+      sectionKey: string
+    }) => {
+      // Check if user already has a contribution for this section
+      const { data: existing } = await supabase
+        .from('asset_contributions')
+        .select('id')
+        .eq('asset_id', assetId)
+        .eq('section', sectionKey)
+        .eq('created_by', user?.id)
+        .maybeSingle()
+
+      if (existing) {
+        // Update existing contribution's draft
+        const { data, error } = await supabase
+          .from('asset_contributions')
+          .update({
+            draft_content: content,
+            draft_updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id)
+          .select()
+          .single()
+
+        if (error) throw error
+        return data as Contribution
+      } else {
+        // Create new contribution with draft only (no published content yet)
+        const { data, error } = await supabase
+          .from('asset_contributions')
+          .insert({
+            asset_id: assetId,
+            section: sectionKey,
+            content: '', // Empty published content
+            draft_content: content,
+            draft_updated_at: new Date().toISOString(),
+            created_by: user?.id,
+            visibility: 'firm'
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+        return data as Contribution
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+    }
+  })
+
+  // Publish draft (move draft_content to content)
+  const publishDraft = useMutation({
+    mutationFn: async ({
+      sectionKey,
+      visibility = 'firm' as ContributionVisibility,
+      targetIds = []
+    }: {
+      sectionKey: string
+      visibility?: ContributionVisibility
+      targetIds?: string[]
+    }) => {
+      // Get the contribution with draft
+      const { data: existing } = await supabase
+        .from('asset_contributions')
+        .select('id, draft_content')
+        .eq('asset_id', assetId)
+        .eq('section', sectionKey)
+        .eq('created_by', user?.id)
+        .maybeSingle()
+
+      if (!existing || !existing.draft_content) {
+        throw new Error('No draft to publish')
+      }
+
+      // Move draft to published content
+      const { data, error } = await supabase
+        .from('asset_contributions')
+        .update({
+          content: existing.draft_content,
+          draft_content: null,
+          draft_updated_at: null,
+          visibility,
+          team_id: targetIds.length === 1 ? targetIds[0] : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .select(`
+          *,
+          user:users!asset_contributions_created_by_fkey(id, first_name, last_name),
+          team:org_chart_nodes!asset_contributions_team_id_fkey(id, name, color)
+        `)
+        .single()
+
+      if (error) throw error
+
+      // Update visibility targets
+      await supabase
+        .from('contribution_visibility_targets')
+        .delete()
+        .eq('contribution_id', existing.id)
+
+      if (visibility !== 'firm' && targetIds.length > 0) {
+        await supabase
+          .from('contribution_visibility_targets')
+          .insert(targetIds.map(nodeId => ({
+            contribution_id: existing.id,
+            node_id: nodeId
+          })))
+      }
+
+      return {
+        ...data,
+        user: data.user ? { ...data.user, full_name: getFullName(data.user) } : undefined
+      } as Contribution
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['contribution-history'] })
+      queryClient.invalidateQueries({ queryKey: ['aggregate-history', assetId] })
+    }
+  })
+
+  // Discard draft (clear draft_content without affecting published content)
+  const discardDraft = useMutation({
+    mutationFn: async ({
+      sectionKey
+    }: {
+      sectionKey: string
+    }) => {
+      // Get the contribution
+      const { data: existing } = await supabase
+        .from('asset_contributions')
+        .select('id, content')
+        .eq('asset_id', assetId)
+        .eq('section', sectionKey)
+        .eq('created_by', user?.id)
+        .maybeSingle()
+
+      if (!existing) {
+        throw new Error('No contribution found')
+      }
+
+      // If there's no published content, delete the entire contribution
+      if (!existing.content) {
+        const { error } = await supabase
+          .from('asset_contributions')
+          .delete()
+          .eq('id', existing.id)
+
+        if (error) throw error
+        return null
+      }
+
+      // Otherwise just clear the draft
+      const { data, error } = await supabase
+        .from('asset_contributions')
+        .update({
+          draft_content: null,
+          draft_updated_at: null
+        })
+        .eq('id', existing.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data as Contribution
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+    }
+  })
+
   // Update visibility
   const updateVisibility = useMutation({
     mutationFn: async ({
@@ -358,7 +540,11 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
     refetch,
     saveContribution,
     deleteContribution,
-    updateVisibility
+    updateVisibility,
+    // Draft methods
+    saveDraft,
+    publishDraft,
+    discardDraft
   }
 }
 

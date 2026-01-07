@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useAssetModels } from '../../hooks/useAssetModels'
@@ -30,10 +30,28 @@ import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { ThesisContainer } from '../contributions'
+import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { OutcomesContainer } from '../outcomes'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
+
+// Visibility options for thesis sections
+const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
+  { value: 'firm', label: 'Firm-wide', icon: Globe, description: 'Everyone in the firm can see this' },
+  { value: 'division', label: 'Division', icon: Building2, description: 'Visible to your division' },
+  { value: 'department', label: 'Department', icon: FolderTree, description: 'Visible to your department' },
+  { value: 'team', label: 'Team', icon: Users, description: 'Visible to your team' },
+  { value: 'portfolio', label: 'Portfolio', icon: Briefcase, description: 'Only your portfolio can see this' }
+]
+
+const VISIBILITY_CONFIG: Record<ContributionVisibility, { icon: React.ElementType; label: string; color: string; bgColor: string }> = {
+  portfolio: { icon: Briefcase, label: 'Portfolio', color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
+  team: { icon: Users, label: 'Team', color: 'text-blue-600', bgColor: 'bg-blue-50' },
+  department: { icon: FolderTree, label: 'Dept', color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
+  division: { icon: Building2, label: 'Division', color: 'text-purple-600', bgColor: 'bg-purple-50' },
+  firm: { icon: Globe, label: 'Firm', color: 'text-green-600', bgColor: 'bg-green-50' }
+}
 
 /**
  * Helper function to get stages for a workflow
@@ -177,6 +195,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.thesisViewMode || 'all'
   })
+  // Shared visibility state for all thesis sections
+  const [sharedThesisVisibility, setSharedThesisVisibility] = useState<ContributionVisibility>('firm')
+  const [sharedThesisTargetIds, setSharedThesisTargetIds] = useState<string[]>([])
+  const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
+  const [visibilityStep, setVisibilityStep] = useState<'level' | 'targets'>('level')
+  const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
+  const visibilityRef = useRef<HTMLDivElement>(null)
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showCoverageManager, setShowCoverageManager] = useState(false)
@@ -414,6 +439,142 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
     enabled: contributorIds.length > 0
   })
+
+  // Get user's org chart context for visibility targets
+  const { data: userOrgContext } = useQuery({
+    queryKey: ['user-org-context', user?.id],
+    queryFn: async () => {
+      const { data: memberships } = await supabase
+        .from('org_chart_node_members')
+        .select('node_id, org_chart_nodes(id, name, color, node_type, parent_id)')
+        .eq('user_id', user?.id)
+
+      if (!memberships) return { portfolios: [], teams: [], departments: [], divisions: [] }
+
+      const directNodes = memberships
+        .map(m => m.org_chart_nodes as { id: string; name: string; color: string; node_type: string; parent_id: string | null })
+        .filter(Boolean)
+
+      const { data: allNodes } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, color, node_type, parent_id')
+
+      if (!allNodes) return { portfolios: [], teams: [], departments: [], divisions: [] }
+
+      const nodeMap = new Map(allNodes.map(n => [n.id, n]))
+      const teamsSet = new Map<string, typeof allNodes[0]>()
+      const departmentsSet = new Map<string, typeof allNodes[0]>()
+      const divisionsSet = new Map<string, typeof allNodes[0]>()
+
+      const traverseUp = (nodeId: string | null) => {
+        if (!nodeId) return
+        const node = nodeMap.get(nodeId)
+        if (!node) return
+        if (node.node_type === 'team') teamsSet.set(node.id, node)
+        else if (node.node_type === 'department') departmentsSet.set(node.id, node)
+        else if (node.node_type === 'division') divisionsSet.set(node.id, node)
+        traverseUp(node.parent_id)
+      }
+
+      directNodes.forEach(node => {
+        if (node.node_type === 'team') teamsSet.set(node.id, node)
+        traverseUp(node.parent_id)
+      })
+
+      const portfolios = directNodes.filter(n => n.node_type === 'portfolio').sort((a, b) => a.name.localeCompare(b.name))
+      const teams = Array.from(teamsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
+      const departments = Array.from(departmentsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
+      const divisions = Array.from(divisionsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
+
+      return { portfolios, teams, departments, divisions }
+    },
+    enabled: !!user?.id
+  })
+
+  // Fetch user's thesis contributions to initialize visibility
+  const { contributions: userThesisContributions } = useContributions({ assetId: asset.id, section: 'thesis' })
+  const { contributions: userWhereDiffContributions } = useContributions({ assetId: asset.id, section: 'where_different' })
+  const { contributions: userRisksContributions } = useContributions({ assetId: asset.id, section: 'risks_to_thesis' })
+
+  // Get target options for selected visibility level
+  const getTargetOptions = useCallback((visibility: ContributionVisibility) => {
+    if (!userOrgContext) return []
+    switch (visibility) {
+      case 'firm': return []
+      case 'division': return userOrgContext.divisions
+      case 'department': return userOrgContext.departments
+      case 'team': return userOrgContext.teams
+      case 'portfolio': return userOrgContext.portfolios
+      default: return []
+    }
+  }, [userOrgContext])
+
+  const targetOptions = getTargetOptions(sharedThesisVisibility)
+
+  // Initialize visibility from user's existing contributions
+  useEffect(() => {
+    if (!hasInitializedVisibility && user?.id) {
+      const userContribution = userThesisContributions.find(c => c.created_by === user.id)
+        || userWhereDiffContributions.find(c => c.created_by === user.id)
+        || userRisksContributions.find(c => c.created_by === user.id)
+
+      if (userContribution) {
+        setSharedThesisVisibility(userContribution.visibility as ContributionVisibility)
+        const targets = (userContribution as any).visibility_targets
+        if (targets && Array.isArray(targets)) {
+          setSharedThesisTargetIds(targets.map((t: any) => t.node_id).filter(Boolean))
+        }
+        setHasInitializedVisibility(true)
+      }
+    }
+  }, [user?.id, userThesisContributions, userWhereDiffContributions, userRisksContributions, hasInitializedVisibility])
+
+  // Reset initialization when asset changes
+  useEffect(() => {
+    setHasInitializedVisibility(false)
+    setSharedThesisVisibility('firm')
+    setSharedThesisTargetIds([])
+  }, [asset.id])
+
+  // Reset target IDs when visibility level changes
+  useEffect(() => {
+    setSharedThesisTargetIds([])
+  }, [sharedThesisVisibility])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (visibilityRef.current && !visibilityRef.current.contains(event.target as Node)) {
+        setShowVisibilityDropdown(false)
+        setVisibilityStep('level')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Handle visibility level selection
+  const handleVisibilitySelect = useCallback((newVisibility: ContributionVisibility) => {
+    const targets = getTargetOptions(newVisibility)
+    if (newVisibility === 'firm' || targets.length === 0) {
+      setSharedThesisVisibility(newVisibility)
+      setSharedThesisTargetIds([])
+      setShowVisibilityDropdown(false)
+      setVisibilityStep('level')
+    } else {
+      setSharedThesisVisibility(newVisibility)
+      setVisibilityStep('targets')
+    }
+  }, [getTargetOptions])
+
+  // Handle target selection confirmation
+  const handleTargetsConfirm = useCallback(() => {
+    setShowVisibilityDropdown(false)
+    setVisibilityStep('level')
+  }, [])
+
+  // Check if user is viewing their own tab
+  const isViewingOwnThesisTab = user && researchViewFilter === user.id
 
   // Build thesis status for each covering analyst
   const thesisStatuses = React.useMemo(() => {
@@ -2336,10 +2497,130 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       </span>
                     )}
                   </button>
+
+                  {/* Visibility control - shown when viewing own tab */}
+                  {isViewingOwnThesisTab && thesisViewMode === 'all' && (
+                    <>
+                      <div className="w-px h-4 bg-gray-300 mx-1.5" />
+                      <div className="relative" ref={visibilityRef}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShowVisibilityDropdown(!showVisibilityDropdown) }}
+                          className={clsx(
+                            'inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors',
+                            VISIBILITY_CONFIG[sharedThesisVisibility].bgColor,
+                            VISIBILITY_CONFIG[sharedThesisVisibility].color,
+                            'hover:ring-1 hover:ring-gray-300'
+                          )}
+                          title="Thesis visibility"
+                        >
+                          {React.createElement(VISIBILITY_CONFIG[sharedThesisVisibility].icon, { className: 'w-3.5 h-3.5 mr-1' })}
+                          {VISIBILITY_CONFIG[sharedThesisVisibility].label}
+                          {sharedThesisTargetIds.length > 0 && (
+                            <span className="ml-1 opacity-75">({sharedThesisTargetIds.length})</span>
+                          )}
+                          <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
+                        </button>
+
+                        {showVisibilityDropdown && (
+                          <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white border rounded-lg shadow-lg py-1">
+                            {visibilityStep === 'level' ? (
+                              <>
+                                <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b">
+                                  Thesis visibility
+                                </div>
+                                {VISIBILITY_OPTIONS.map((option) => {
+                                  const OptionIcon = option.icon
+                                  const isSelected = sharedThesisVisibility === option.value
+                                  const targets = getTargetOptions(option.value)
+                                  const needsTargets = option.value !== 'firm' && targets.length > 0
+                                  return (
+                                    <button
+                                      key={option.value}
+                                      onClick={(e) => { e.stopPropagation(); handleVisibilitySelect(option.value) }}
+                                      className={clsx(
+                                        'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50',
+                                        isSelected && 'bg-primary-50'
+                                      )}
+                                    >
+                                      <OptionIcon className="w-4 h-4 mr-2 text-gray-500" />
+                                      <div className="flex-1">
+                                        <span className="font-medium text-gray-900">{option.label}</span>
+                                        {needsTargets && (
+                                          <span className="text-xs text-gray-400 ml-1">→</span>
+                                        )}
+                                      </div>
+                                      {isSelected && <Check className="w-4 h-4 text-primary-600" />}
+                                    </button>
+                                  )
+                                })}
+                              </>
+                            ) : (
+                              <>
+                                <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b flex items-center">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setVisibilityStep('level') }}
+                                    className="mr-2 text-gray-400 hover:text-gray-600"
+                                  >
+                                    ←
+                                  </button>
+                                  Select {sharedThesisVisibility === 'portfolio' ? 'portfolios' :
+                                          sharedThesisVisibility === 'team' ? 'teams' :
+                                          sharedThesisVisibility === 'department' ? 'departments' : 'divisions'}
+                                </div>
+                                <div className="max-h-48 overflow-y-auto">
+                                  {targetOptions.map((target) => {
+                                    const isSelected = sharedThesisTargetIds.includes(target.id)
+                                    return (
+                                      <button
+                                        key={target.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setSharedThesisTargetIds(prev =>
+                                            prev.includes(target.id)
+                                              ? prev.filter(id => id !== target.id)
+                                              : [...prev, target.id]
+                                          )
+                                        }}
+                                        className={clsx(
+                                          'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50',
+                                          isSelected && 'bg-primary-50'
+                                        )}
+                                      >
+                                        <div className={clsx(
+                                          'w-4 h-4 rounded border mr-3 flex items-center justify-center',
+                                          isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                                        )}>
+                                          {isSelected && <Check className="w-3 h-3 text-white" />}
+                                        </div>
+                                        <span
+                                          className="w-3 h-3 rounded-full mr-2"
+                                          style={{ backgroundColor: target.color || '#6b7280' }}
+                                        />
+                                        <span className="flex-1 text-left">{target.name}</span>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <div className="border-t px-3 py-2 flex justify-end">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleTargetsConfirm() }}
+                                    disabled={sharedThesisTargetIds.length === 0}
+                                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Done
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
               {!collapsedSections.thesis && (
-                <div className="border-t border-gray-100 px-6 py-6">
+                <div className="border-t border-gray-100 px-6 py-4">
                   {thesisViewMode === 'references' ? (
                     <div className="space-y-3">
                       {/* Header with Add button */}
@@ -2630,19 +2911,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </div>
                   ) : (
-                    <ThesisContainer assetId={asset.id} viewFilter={researchViewFilter} viewMode={thesisViewMode} />
+                    <ThesisContainer
+                      assetId={asset.id}
+                      viewFilter={researchViewFilter}
+                      viewMode={thesisViewMode}
+                      sharedVisibility={sharedThesisVisibility}
+                      sharedTargetIds={sharedThesisTargetIds}
+                    />
                   )}
                 </div>
               )}
             </Card>
 
-            {/* Outcomes Section */}
+            {/* Forecasts Section */}
             <Card padding="none">
               <button
                 onClick={() => toggleSection('outcomes')}
                 className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
               >
-                <span className="font-medium text-gray-900">Outcomes</span>
+                <span className="font-medium text-gray-900">Forecasts</span>
                 {collapsedSections.outcomes ? (
                   <ChevronDown className="h-5 w-5 text-gray-400" />
                 ) : (

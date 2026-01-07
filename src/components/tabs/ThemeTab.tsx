@@ -600,7 +600,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             >
               <div className="flex items-center space-x-2">
                 <Target className="h-4 w-4" />
-                <span>Outcomes</span>
+                <span>Forecasts</span>
               </div>
             </button>
             <button

@@ -28,7 +28,10 @@ import {
   Star,
   FileText,
   Plus,
-  File
+  File,
+  FileEdit,
+  Upload,
+  RotateCcw
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { formatDistanceToNow } from 'date-fns'
@@ -42,6 +45,7 @@ import {
   type ContributionAttachment
 } from '../../hooks/useContributions'
 import { ThesisSummaryView } from './ThesisSummaryView'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
 import { DiffView } from './DiffView'
@@ -63,6 +67,12 @@ interface ContributionSectionProps {
   coveringAnalystIds?: Set<string>
   /** Hide the All/Summary/History buttons (when controlled from parent level) */
   hideViewModeButtons?: boolean
+  /** Hide visibility controls (when controlled from parent level) */
+  hideVisibility?: boolean
+  /** Shared visibility from parent (used when hideVisibility is true) */
+  sharedVisibility?: ContributionVisibility
+  /** Shared target IDs from parent */
+  sharedTargetIds?: string[]
 }
 
 const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
@@ -136,7 +146,10 @@ export function ContributionSection({
   activeTab = 'aggregated',
   onTabChange,
   coveringAnalystIds = new Set(),
-  hideViewModeButtons = false
+  hideViewModeButtons = false,
+  hideVisibility = false,
+  sharedVisibility,
+  sharedTargetIds = []
 }: ContributionSectionProps) {
   const { user } = useAuth()
   const [viewMode, setViewMode] = useState<'combined' | 'ai'>('combined')
@@ -159,6 +172,9 @@ export function ContributionSection({
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [stableButtonText, setStableButtonText] = useState<string | null>(null)
   const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [isDraftMode, setIsDraftMode] = useState(false) // When true, save goes to draft instead of publish
+  const [viewingDraft, setViewingDraft] = useState(false) // When true, show draft content instead of published
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false) // Show discard draft confirmation dialog
   const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const visibilityRef = useRef<HTMLDivElement>(null)
   const teamRef = useRef<HTMLDivElement>(null)
@@ -172,7 +188,10 @@ export function ContributionSection({
     error,
     saveContribution,
     deleteContribution,
-    updateVisibility
+    updateVisibility,
+    saveDraft,
+    publishDraft,
+    discardDraft
   } = useContributions({
     assetId,
     section
@@ -322,8 +341,18 @@ export function ContributionSection({
     }
   }, [isFetching, isLoading, myContribution])
 
+  // Check if there's an unpublished draft
+  const hasDraft = myContribution?.draft_content !== null && myContribution?.draft_content !== undefined
+
   const handleStartEdit = () => {
-    setEditContent(myContribution?.content || '')
+    // If there's a draft, load the draft content and enable draft mode
+    if (hasDraft) {
+      setEditContent(myContribution?.draft_content || '')
+      setIsDraftMode(true)
+    } else {
+      setEditContent(myContribution?.content || '')
+      setIsDraftMode(false)
+    }
     setSelectedVisibility(myContribution?.visibility || defaultVisibility)
     setUndoStack([])
     setRedoStack([])
@@ -336,11 +365,15 @@ export function ContributionSection({
   const handleSave = async () => {
     if (!editContent.trim()) return
 
+    // Use shared visibility if controlled from parent, otherwise use local state
+    const visibilityToUse = hideVisibility && sharedVisibility ? sharedVisibility : selectedVisibility
+    const targetIdsToUse = hideVisibility && sharedTargetIds ? sharedTargetIds : selectedTargetIds
+
     await saveContribution.mutateAsync({
       content: editContent.trim(),
       sectionKey: section,
-      visibility: selectedVisibility,
-      targetIds: selectedTargetIds
+      visibility: visibilityToUse,
+      targetIds: targetIdsToUse
     })
 
     setIsEditing(false)
@@ -350,6 +383,7 @@ export function ContributionSection({
   const handleCancel = () => {
     setIsEditing(false)
     setEditContent('')
+    setViewingDraft(false) // Go back to published view
   }
 
   const handleDelete = async () => {
@@ -359,6 +393,55 @@ export function ContributionSection({
         onTabChange('aggregated')
       }
     }
+  }
+
+  // Save as draft without publishing
+  const handleSaveDraft = async () => {
+    if (!editContent.trim()) return
+
+    await saveDraft.mutateAsync({
+      content: editContent.trim(),
+      sectionKey: section
+    })
+
+    setIsEditing(false)
+    setEditContent('')
+    setIsDraftMode(false)
+    setViewingDraft(false) // Go back to published view
+  }
+
+  // Publish draft content
+  const handlePublishDraft = async () => {
+    // Use shared visibility if controlled from parent, otherwise use local state
+    const visibilityToUse = hideVisibility && sharedVisibility ? sharedVisibility : selectedVisibility
+    const targetIdsToUse = hideVisibility && sharedTargetIds ? sharedTargetIds : selectedTargetIds
+
+    await publishDraft.mutateAsync({
+      sectionKey: section,
+      visibility: visibilityToUse,
+      targetIds: targetIdsToUse
+    })
+
+    setIsEditing(false)
+    setEditContent('')
+    setIsDraftMode(false)
+  }
+
+  // Discard draft and revert to published content
+  const handleDiscardDraft = async () => {
+    setShowDiscardConfirm(true)
+  }
+
+  const confirmDiscardDraft = async () => {
+    await discardDraft.mutateAsync({
+      sectionKey: section
+    })
+
+    setShowDiscardConfirm(false)
+    setIsEditing(false)
+    setEditContent('')
+    setIsDraftMode(false)
+    setViewingDraft(false) // Go back to published view
   }
 
   const handleVisibilityLevelSelect = (newVisibility: ContributionVisibility) => {
@@ -733,10 +816,29 @@ export function ContributionSection({
                 <span className="text-xs text-gray-400">
                   Updated {formatDistanceToNow(new Date(selectedContribution.updated_at), { addSuffix: true })}
                 </span>
-                <VisibilityBadge
-                  contribution={selectedContribution}
-                  isOwn={selectedContribution.created_by === user?.id}
-                />
+                {/* Draft toggle button - clickable icon to view/hide draft */}
+                {hasDraft && selectedContribution.created_by === user?.id && (
+                  <button
+                    onClick={() => setViewingDraft(!viewingDraft)}
+                    className={clsx(
+                      'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors',
+                      viewingDraft
+                        ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300'
+                        : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    )}
+                    title={viewingDraft ? 'Click to view published' : 'Click to view draft'}
+                  >
+                    <FileEdit className="w-3 h-3 mr-1" />
+                    Draft
+                  </button>
+                )}
+                {/* Hide visibility badge when controlled from parent (viewing own tab) */}
+                {!(hideVisibility && selectedContribution.created_by === user?.id) && (
+                  <VisibilityBadge
+                    contribution={selectedContribution}
+                    isOwn={selectedContribution.created_by === user?.id}
+                  />
+                )}
               </>
             )}
           </div>
@@ -1012,23 +1114,52 @@ export function ContributionSection({
 
                       {/* Action Buttons */}
                       <div className="flex items-center space-x-2">
+                        {/* Discard draft button - only show if editing a draft */}
+                        {hasDraft && (
+                          <button
+                            onClick={handleDiscardDraft}
+                            disabled={discardDraft.isPending}
+                            className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            {discardDraft.isPending ? (
+                              <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-4 h-4 mr-1.5" />
+                            )}
+                            Discard Draft
+                          </button>
+                        )}
                         <button
                           onClick={handleCancel}
                           className="flex items-center px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
                         >
                           Cancel
                         </button>
+                        {/* Save as Draft button */}
                         <button
-                          onClick={handleSave}
-                          disabled={!editContent.trim() || saveContribution.isPending}
-                          className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={handleSaveDraft}
+                          disabled={!editContent.trim() || saveDraft.isPending}
+                          className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {saveContribution.isPending ? (
+                          {saveDraft.isPending ? (
                             <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                           ) : (
-                            <Save className="w-4 h-4 mr-1.5" />
+                            <FileEdit className="w-4 h-4 mr-1.5" />
                           )}
-                          Save
+                          Save Draft
+                        </button>
+                        {/* Publish button */}
+                        <button
+                          onClick={hasDraft ? handlePublishDraft : handleSave}
+                          disabled={!editContent.trim() || saveContribution.isPending || publishDraft.isPending}
+                          className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {(saveContribution.isPending || publishDraft.isPending) ? (
+                            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4 mr-1.5" />
+                          )}
+                          Publish
                         </button>
                       </div>
                     </div>
@@ -1054,7 +1185,44 @@ export function ContributionSection({
                   </div>
                 ) : (
                   <>
-                    {selectedContribution ? (
+                    {/* Show draft content when viewing draft, otherwise show published */}
+                    {viewingDraft && hasDraft && selectedContribution?.created_by === user?.id ? (
+                      <div className="space-y-3">
+                        <div className="bg-amber-50/50 -mx-5 px-5 py-3 border-l-2 border-amber-400">
+                          <div className="text-xs text-amber-600 mb-2">
+                            Draft saved {myContribution?.draft_updated_at
+                              ? formatDistanceToNow(new Date(myContribution.draft_updated_at), { addSuffix: true })
+                              : 'recently'
+                            }
+                          </div>
+                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
+                            <SmartInputRenderer content={myContribution?.draft_content || ''} />
+                          </div>
+                        </div>
+                        {/* Draft action buttons */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                          <button
+                            onClick={handleStartEdit}
+                            className="flex items-center px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 mr-1.5" />
+                            Continue Editing
+                          </button>
+                          <button
+                            onClick={handleDiscardDraft}
+                            disabled={discardDraft.isPending}
+                            className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            {discardDraft.isPending ? (
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                            )}
+                            Discard Draft
+                          </button>
+                        </div>
+                      </div>
+                    ) : selectedContribution ? (
                       <div className="space-y-3">
                         <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
                           <SmartInputRenderer content={selectedContribution.content} />
@@ -1081,6 +1249,19 @@ export function ContributionSection({
           </>
         )}
       </div>
+
+      {/* Discard Draft Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDiscardConfirm}
+        onClose={() => setShowDiscardConfirm(false)}
+        onConfirm={confirmDiscardDraft}
+        title="Discard Draft"
+        message="Are you sure you want to discard your draft changes? This will permanently delete your unpublished work and cannot be undone."
+        confirmText="Discard Draft"
+        cancelText="Keep Editing"
+        variant="warning"
+        isLoading={discardDraft.isPending}
+      />
     </div>
   )
 }
