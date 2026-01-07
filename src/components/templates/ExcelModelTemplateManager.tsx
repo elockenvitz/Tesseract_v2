@@ -4702,114 +4702,116 @@ function ModelTemplateCard({
             <p className="text-sm text-gray-600">{template.description}</p>
           )}
 
-          {/* Fixed Fields */}
-          {fixedFieldCount > 0 && (
-            <div>
-              <h5 className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-2">
-                <span>Fixed Field Mappings</span>
-                {template.base_template_path && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (onExcelPreview) {
-                        onExcelPreview('field', undefined)
-                      }
-                    }}
-                    disabled={loadingExcelPreview}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition-colors disabled:opacity-50"
-                  >
-                    <Eye className="w-3 h-3" />
-                    Preview
-                  </button>
-                )}
-              </h5>
-              <div className="flex flex-wrap gap-1">
-                {template.field_mappings?.slice(0, 10).map((m, i) => (
-                  <span
-                    key={i}
-                    className="text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-600"
-                  >
-                    {m.label || m.field} → <code className="text-gray-500">{m.cell}</code>
-                  </span>
-                ))}
-                {fixedFieldCount > 10 && (
-                  <span className="text-[10px] text-gray-400">+{fixedFieldCount - 10} more</span>
-                )}
-              </div>
-            </div>
-          )}
+          {/* Field Mappings Summary */}
+          {(fixedFieldCount > 0 || dynamicFieldCount > 0 || snapshotCount > 0) && (
+            <div className="grid grid-cols-1 gap-2">
+              {/* Fixed Fields */}
+              {fixedFieldCount > 0 && (
+                <div className="flex items-start gap-2">
+                  <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                    <span className="text-[10px] font-medium text-gray-500">Fixed</span>
+                    {template.base_template_path && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (onExcelPreview) onExcelPreview('field', undefined)
+                        }}
+                        disabled={loadingExcelPreview}
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                        title="Preview in spreadsheet"
+                      >
+                        <Eye className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-wrap gap-1">
+                    {template.field_mappings?.slice(0, 8).map((m, i) => (
+                      <span
+                        key={i}
+                        className="text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-600"
+                      >
+                        {m.label || m.field} → <code className="text-gray-400">{m.cell}</code>
+                      </span>
+                    ))}
+                    {fixedFieldCount > 8 && (
+                      <span className="text-[10px] text-gray-400 py-0.5">+{fixedFieldCount - 8} more</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
-          {/* Dynamic Fields */}
-          {dynamicFieldCount > 0 && (
-            <div>
-              <h5 className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-2">
-                <span>Dynamic Field Mappings</span>
-                {template.base_template_path && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (onExcelPreview && template.dynamic_mappings?.[0]) {
-                        onExcelPreview('dynamic', template.dynamic_mappings[0])
-                      }
-                    }}
-                    disabled={loadingExcelPreview}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded transition-colors disabled:opacity-50"
-                  >
-                    <Eye className="w-3 h-3" />
-                    Preview
-                  </button>
-                )}
-              </h5>
-              <div className="flex flex-wrap gap-1">
-                {template.dynamic_mappings?.slice(0, 10).map((m, i) => (
-                  <span
-                    key={i}
-                    className="text-[10px] px-1.5 py-0.5 bg-purple-50 border border-purple-200 rounded text-purple-700"
-                  >
-                    {m.name}
-                  </span>
-                ))}
-                {dynamicFieldCount > 10 && (
-                  <span className="text-[10px] text-gray-400">+{dynamicFieldCount - 10} more</span>
-                )}
-              </div>
-            </div>
-          )}
+              {/* Dynamic Fields */}
+              {dynamicFieldCount > 0 && (
+                <div className="flex items-start gap-2">
+                  <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                    <span className="text-[10px] font-medium text-gray-500">Dynamic</span>
+                    {template.base_template_path && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (onExcelPreview && template.dynamic_mappings?.[0]) onExcelPreview('dynamic', template.dynamic_mappings[0])
+                        }}
+                        disabled={loadingExcelPreview}
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                        title="Preview in spreadsheet"
+                      >
+                        <Eye className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-wrap gap-1">
+                    {template.dynamic_mappings?.slice(0, 8).map((m, i) => (
+                      <span
+                        key={i}
+                        className="text-[10px] px-1.5 py-0.5 bg-purple-50 border border-purple-100 rounded text-purple-600"
+                      >
+                        {m.name}
+                      </span>
+                    ))}
+                    {dynamicFieldCount > 8 && (
+                      <span className="text-[10px] text-gray-400 py-0.5">+{dynamicFieldCount - 8} more</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
-          {/* Snapshots */}
-          {snapshotCount > 0 && (
-            <div>
-              <h5 className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-2">
-                <span>Snapshot Ranges</span>
-                {template.base_template_path && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (onExcelPreview && template.snapshot_ranges?.[0]) {
-                        onExcelPreview('snapshot', template.snapshot_ranges[0])
-                      }
-                    }}
-                    disabled={loadingExcelPreview}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition-colors disabled:opacity-50"
-                  >
-                    <Eye className="w-3 h-3" />
-                    Preview
-                  </button>
-                )}
-              </h5>
-              <div className="flex flex-wrap gap-1">
-                {template.snapshot_ranges?.map((s, i) => (
-                  <span
-                    key={i}
-                    className="text-[10px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700"
-                  >
-                    {s.name || 'Unnamed'}: <code>{s.range}</code>
-                  </span>
-                ))}
-              </div>
+              {/* Snapshots */}
+              {snapshotCount > 0 && (
+                <div className="flex items-start gap-2">
+                  <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                    <span className="text-[10px] font-medium text-gray-500">Snapshots</span>
+                    {template.base_template_path && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (onExcelPreview && template.snapshot_ranges?.[0]) onExcelPreview('snapshot', template.snapshot_ranges[0])
+                        }}
+                        disabled={loadingExcelPreview}
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                        title="Preview in spreadsheet"
+                      >
+                        <Eye className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-wrap gap-1">
+                    {template.snapshot_ranges?.slice(0, 6).map((s, i) => (
+                      <span
+                        key={i}
+                        className="text-[10px] px-1.5 py-0.5 bg-blue-50 border border-blue-100 rounded text-blue-600"
+                      >
+                        {s.name || 'Unnamed'}: <code className="text-blue-500">{s.range}</code>
+                      </span>
+                    ))}
+                    {snapshotCount > 6 && (
+                      <span className="text-[10px] text-gray-400 py-0.5">+{snapshotCount - 6} more</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4962,19 +4964,6 @@ function ModelTemplateCard({
             </div>
           )}
 
-          {/* Actions Row */}
-          {isOwner && onEdit && (
-            <div className="flex items-center gap-2 pt-2 mt-2 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={onEdit}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 rounded hover:bg-primary-100"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                Edit Template
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -5936,7 +5925,7 @@ export function ExcelModelTemplateManager() {
         ) : (
           <>
             <div>
-              <h3 className="text-lg font-medium text-gray-900">Excel Model Templates</h3>
+              <h3 className="text-lg font-medium text-gray-900">Excel Extraction Templates</h3>
               <p className="text-sm text-gray-500 mt-1">
                 Configure how Excel files map to Tesseract data. Define cell references for price targets, estimates, and more.
               </p>

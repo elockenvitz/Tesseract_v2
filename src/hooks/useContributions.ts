@@ -16,11 +16,24 @@ export interface VisibilityTarget {
   }
 }
 
+export interface ContributionAttachment {
+  type: 'link' | 'note' | 'file'
+  title: string
+  url?: string
+  noteId?: string
+  fileId?: string
+  filePath?: string
+  fileType?: string // e.g., 'pdf', 'xlsx', 'docx'
+  addedAt?: string
+}
+
 export interface Contribution {
   id: string
   asset_id: string
   section: string
   content: string
+  supporting_detail: string | null
+  attachments: ContributionAttachment[]
   created_by: string
   team_id: string | null
   visibility: ContributionVisibility
@@ -114,6 +127,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
       return (data || []).map(c => ({
         ...c,
+        supporting_detail: c.supporting_detail || null,
+        attachments: c.attachments || [],
         user: c.user ? { ...c.user, full_name: getFullName(c.user) } : undefined,
         visibility_targets: c.visibility_targets || []
       })) as Contribution[]
@@ -133,11 +148,15 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
   const saveContribution = useMutation({
     mutationFn: async ({
       content,
+      supportingDetail,
+      attachments,
       sectionKey,
       visibility = 'firm' as ContributionVisibility,
       targetIds = []
     }: {
       content: string
+      supportingDetail?: string
+      attachments?: ContributionAttachment[]
       sectionKey: string
       visibility?: ContributionVisibility
       targetIds?: string[]
@@ -157,6 +176,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
           .from('asset_contributions')
           .update({
             content,
+            supporting_detail: supportingDetail || null,
+            attachments: attachments || [],
             visibility,
             team_id: targetIds.length === 1 ? targetIds[0] : null,
             updated_at: new Date().toISOString()
@@ -198,6 +219,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             asset_id: assetId,
             section: sectionKey,
             content,
+            supporting_detail: supportingDetail || null,
+            attachments: attachments || [],
             created_by: user?.id,
             team_id: targetIds.length === 1 ? targetIds[0] : null,
             visibility

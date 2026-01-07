@@ -145,12 +145,11 @@ export function ThesisContainer({ assetId, className, viewFilter, viewMode = 'al
   // Render History view
   if (viewMode === 'history') {
     return (
-      <div className={clsx('space-y-6', className)}>
-        <ThesisHistoryView
-          assetId={assetId}
-          viewFilter={activeTab}
-        />
-      </div>
+      <ThesisHistoryView
+        assetId={assetId}
+        viewFilter={activeTab}
+        className={className}
+      />
     )
   }
 

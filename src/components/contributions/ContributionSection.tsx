@@ -12,6 +12,7 @@ import {
   Sparkles,
   List,
   ChevronDown,
+  ChevronUp,
   Trash2,
   Save,
   X,
@@ -20,10 +21,14 @@ import {
   Italic,
   ListOrdered,
   Link,
+  Link2,
   Heading2,
   Undo2,
   Redo2,
-  Star
+  Star,
+  FileText,
+  Plus,
+  File
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { formatDistanceToNow } from 'date-fns'
@@ -33,7 +38,8 @@ import {
   useContributionHistory,
   useAggregateHistory,
   useThesisAnalysis,
-  type ContributionVisibility
+  type ContributionVisibility,
+  type ContributionAttachment
 } from '../../hooks/useContributions'
 import { ThesisSummaryView } from './ThesisSummaryView'
 import { supabase } from '../../lib/supabase'
@@ -73,6 +79,50 @@ const VISIBILITY_CONFIG: Record<ContributionVisibility, { icon: React.ElementTyp
   department: { icon: FolderTree, label: 'Dept', color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
   division: { icon: Building2, label: 'Division', color: 'text-purple-600', bgColor: 'bg-purple-50' },
   firm: { icon: Globe, label: 'Firm', color: 'text-green-600', bgColor: 'bg-green-50' }
+}
+
+// Component to view references in read mode
+function ViewReferences({
+  attachments
+}: {
+  attachments: ContributionAttachment[]
+}) {
+  if (attachments.length === 0) return null
+
+  return (
+    <div className="pt-3 border-t border-gray-100">
+      <div className="text-xs font-medium text-gray-500 mb-2">References</div>
+      <div className="flex flex-wrap gap-2">
+        {attachments.map((attachment, index) => (
+          <div
+            key={index}
+            className={clsx(
+              'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs',
+              attachment.type === 'link' && 'bg-blue-50 text-blue-700',
+              attachment.type === 'note' && 'bg-amber-50 text-amber-700',
+              attachment.type === 'file' && 'bg-purple-50 text-purple-700'
+            )}
+          >
+            {attachment.type === 'link' && <Link2 className="w-3 h-3 shrink-0" />}
+            {attachment.type === 'note' && <FileText className="w-3 h-3 shrink-0" />}
+            {attachment.type === 'file' && <File className="w-3 h-3 shrink-0" />}
+            {attachment.type === 'link' && attachment.url ? (
+              <a
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline truncate max-w-[150px]"
+              >
+                {attachment.title}
+              </a>
+            ) : (
+              <span className="truncate max-w-[150px]">{attachment.title}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export function ContributionSection({
@@ -857,28 +907,37 @@ export function ContributionSection({
             {activeTab !== 'aggregated' && (
               <>
                 {isEditing && activeTab === user?.id ? (
-                  <div className="space-y-3">
-                    <UniversalSmartInput
-                      ref={smartInputRef}
-                      value={editContent}
-                      onChange={(value, metadata) => {
-                        handleContentChange(value)
-                        setInputMetadata(metadata)
-                      }}
-                      onKeyDown={handleKeyDown}
-                      placeholder={`Share your perspective on ${title.toLowerCase()}... Use @mention, #reference, .template, .price, .AI`}
-                      textareaClassName="text-base min-h-[200px]"
-                      rows={6}
-                      minHeight="200px"
-                      assetContext={assetContext}
-                      enableMentions={true}
-                      enableHashtags={true}
-                      enableTemplates={true}
-                      enableDataFunctions={true}
-                      enableAI={true}
-                    />
+                  <div className="space-y-4">
+                    {/* Conclusion Section */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Conclusion
+                        <span className="ml-1 font-normal text-gray-400">(visible to others)</span>
+                      </label>
+                      <UniversalSmartInput
+                        ref={smartInputRef}
+                        value={editContent}
+                        onChange={(value, metadata) => {
+                          handleContentChange(value)
+                          setInputMetadata(metadata)
+                        }}
+                        onKeyDown={handleKeyDown}
+                        placeholder={`Share your perspective on ${title.toLowerCase()}... Use @mention, #reference, .template, .price, .AI`}
+                        textareaClassName="text-base min-h-[120px]"
+                        rows={4}
+                        minHeight="120px"
+                        assetContext={assetContext}
+                        enableMentions={true}
+                        enableHashtags={true}
+                        enableTemplates={true}
+                        enableDataFunctions={true}
+                        enableAI={true}
+                      />
+                    </div>
 
-                    <div className="flex items-center justify-between">
+                    
+                    {/* Formatting Toolbar + Actions */}
+                    <div className="flex items-center justify-between pt-1">
                       {/* Formatting Toolbar */}
                       <div className="flex items-center space-x-0.5">
                         <button
@@ -953,15 +1012,6 @@ export function ContributionSection({
 
                       {/* Action Buttons */}
                       <div className="flex items-center space-x-2">
-                        {myContribution && (
-                          <button
-                            onClick={handleDelete}
-                            className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg"
-                          >
-                            <Trash2 className="w-4 h-4 mr-1.5" />
-                            Delete
-                          </button>
-                        )}
                         <button
                           onClick={handleCancel}
                           className="flex items-center px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
@@ -1005,8 +1055,17 @@ export function ContributionSection({
                 ) : (
                   <>
                     {selectedContribution ? (
-                      <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
-                        <SmartInputRenderer content={selectedContribution.content} />
+                      <div className="space-y-3">
+                        <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
+                          <SmartInputRenderer content={selectedContribution.content} />
+                        </div>
+
+                        {/* References (only shown if exists) */}
+                        {selectedContribution.attachments && selectedContribution.attachments.length > 0 && (
+                          <ViewReferences
+                            attachments={selectedContribution.attachments}
+                          />
+                        )}
                       </div>
                     ) : activeTab === user?.id ? (
                       <p className="text-gray-400 text-sm text-center py-6">You haven't shared your view yet</p>

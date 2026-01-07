@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { clsx } from 'clsx'
-import { FileText, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet } from 'lucide-react'
+import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -538,7 +538,7 @@ export function TemplatesTab() {
       <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white">
         <h1 className="text-xl font-bold text-gray-900">Templates</h1>
         <p className="text-sm text-gray-500">
-          Manage your text templates, investment case templates, and Excel model configurations
+          Manage quick text snippets, investment cases, and Excel extraction templates
         </p>
       </div>
 
@@ -554,8 +554,8 @@ export function TemplatesTab() {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             )}
           >
-            <FileText className="w-4 h-4" />
-            Text Templates
+            <Zap className="w-4 h-4" />
+            Quick Text
           </button>
           <button
             onClick={() => setActiveSection('cases')}
@@ -567,7 +567,7 @@ export function TemplatesTab() {
             )}
           >
             <Target className="w-4 h-4" />
-            Investment Case Templates
+            Investment Cases
           </button>
           <button
             onClick={() => setActiveSection('excel')}
@@ -579,7 +579,7 @@ export function TemplatesTab() {
             )}
           >
             <FileSpreadsheet className="w-4 h-4" />
-            Excel Model Templates
+            Excel Extraction
           </button>
         </nav>
       </div>

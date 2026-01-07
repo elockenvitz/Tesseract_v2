@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
+import { useAssetModels } from '../../hooks/useAssetModels'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -172,7 +173,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     return savedState?.researchViewFilter || 'aggregated'
   })
   // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
-  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history'>(() => {
+  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.thesisViewMode || 'all'
   })
@@ -191,7 +192,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showAssetPriorityDropdown, setShowAssetPriorityDropdown] = useState(false)
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
+  const [addRefType, setAddRefType] = useState<'none' | 'note' | 'file' | 'model' | 'url'>('none')
+  const [newRefUrl, setNewRefUrl] = useState('')
+  const [newRefTitle, setNewRefTitle] = useState('')
   const queryClient = useQueryClient()
+
+  // Fetch asset models (Excel files)
+  const { models: assetModels = [] } = useAssetModels(asset.id)
 
   // Refs for EditableSectionWithHistory components
   const thesisRef = useRef<EditableSectionWithHistoryRef>(null)
@@ -1021,6 +1028,54 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return themes
     }
   })
+
+  // Fetch thesis references (crucial supporting documents)
+  const { data: thesisReferences = [] } = useQuery({
+    queryKey: ['thesis-references', asset.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('thesis_references')
+        .eq('id', asset.id)
+        .single()
+      if (error) throw error
+      return (data?.thesis_references || []) as Array<{
+        type: 'note' | 'file' | 'link' | 'model'
+        id?: string
+        title: string
+        url?: string
+        addedAt: string
+      }>
+    }
+  })
+
+  // Mutation to update thesis references
+  const updateThesisRefsMutation = useMutation({
+    mutationFn: async (references: typeof thesisReferences) => {
+      const { error } = await supabase
+        .from('assets')
+        .update({ thesis_references: references })
+        .eq('id', asset.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['thesis-references', asset.id] })
+    }
+  })
+
+  const addThesisRef = (ref: Omit<typeof thesisReferences[0], 'addedAt'>) => {
+    const exists = thesisReferences.some(r =>
+      (r.type === 'note' && ref.type === 'note' && r.id === ref.id) ||
+      (r.type === 'file' && ref.type === 'file' && r.id === ref.id) ||
+      (r.type === 'link' && ref.type === 'link' && r.url === ref.url)
+    )
+    if (exists) return
+    updateThesisRefsMutation.mutate([...thesisReferences, { ...ref, addedAt: new Date().toISOString() }])
+  }
+
+  const removeThesisRef = (index: number) => {
+    updateThesisRefsMutation.mutate(thesisReferences.filter((_, i) => i !== index))
+  }
 
   const nameFor = (id?: string | null) => {
     if (!id) return 'Unknown'
@@ -2226,52 +2281,357 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     <ChevronUp className="h-5 w-5 text-gray-400" />
                   )}
                 </button>
-                {/* View mode toggle */}
-                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                {/* View mode icons */}
+                <div className="flex items-center gap-0.5">
                   <button
                     onClick={(e) => { e.stopPropagation(); setThesisViewMode('all') }}
                     className={clsx(
-                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1',
+                      'p-1.5 rounded-md transition-colors',
                       thesisViewMode === 'all'
-                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                     )}
-                    title="Show all sections separately"
+                    title="All sections"
                   >
-                    <Layers className="w-3 h-3" />
-                    All
+                    <Layers className="w-4 h-4" />
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setThesisViewMode('summary') }}
                     className={clsx(
-                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1',
+                      'p-1.5 rounded-md transition-colors',
                       thesisViewMode === 'summary'
-                        ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shadow-sm'
-                        : 'text-purple-500 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                        ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                     )}
-                    title="AI-powered unified summary"
+                    title="AI summary"
                   >
-                    <Sparkles className="w-3 h-3" />
-                    Summary
+                    <Sparkles className="w-4 h-4" />
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setThesisViewMode('history') }}
                     className={clsx(
-                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1',
+                      'p-1.5 rounded-md transition-colors',
                       thesisViewMode === 'history'
-                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                     )}
-                    title="Show thesis and price target history timeline"
+                    title="History timeline"
                   >
-                    <History className="w-3 h-3" />
-                    History
+                    <History className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('references') }}
+                    className={clsx(
+                      'p-1.5 rounded-md transition-colors relative',
+                      thesisViewMode === 'references'
+                        ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
+                    )}
+                    title="Key references"
+                  >
+                    <Link2 className="w-4 h-4" />
+                    {thesisReferences.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                        {thesisReferences.length}
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>
               {!collapsedSections.thesis && (
                 <div className="border-t border-gray-100 px-6 py-6">
-                  <ThesisContainer assetId={asset.id} viewFilter={researchViewFilter} viewMode={thesisViewMode} />
+                  {thesisViewMode === 'references' ? (
+                    <div className="space-y-3">
+                      {/* Header with Add button */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Supporting Documentation</h4>
+                          <p className="text-xs text-gray-500">Key documents, models, and links that support this thesis</p>
+                        </div>
+                        {addRefType === 'none' && (
+                          <button
+                            onClick={() => setAddRefType('note')}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Add Reference Panel - Shows in middle when active */}
+                      {addRefType !== 'none' && (
+                        <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-800/50">
+                          {/* Type selector */}
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => setAddRefType('note')}
+                                className={clsx(
+                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                                  addRefType === 'note'
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                )}
+                              >
+                                <FileText className="w-3 h-3" /> Note
+                              </button>
+                              <button
+                                onClick={() => setAddRefType('file')}
+                                className={clsx(
+                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                                  addRefType === 'file'
+                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400'
+                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                )}
+                              >
+                                <File className="w-3 h-3" /> File
+                              </button>
+                              <button
+                                onClick={() => setAddRefType('model')}
+                                className={clsx(
+                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                                  addRefType === 'model'
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                )}
+                              >
+                                <FileSpreadsheet className="w-3 h-3" /> Model
+                              </button>
+                              <button
+                                onClick={() => setAddRefType('url')}
+                                className={clsx(
+                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                                  addRefType === 'url'
+                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                )}
+                              >
+                                <ExternalLink className="w-3 h-3" /> URL
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => { setAddRefType('none'); setNewRefUrl(''); setNewRefTitle('') }}
+                              className="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Items to add based on type */}
+                          {addRefType === 'note' && (
+                            <div className="max-h-40 overflow-y-auto space-y-0.5">
+                              {notes && notes.filter((n: any) => n.source_type === 'platform' || n.source_type === 'written').length > 0 ? (
+                                notes.filter((n: any) => n.source_type === 'platform' || n.source_type === 'written').map((note: any) => {
+                                  const isLinked = thesisReferences.some(r => r.type === 'note' && r.id === note.id)
+                                  return (
+                                    <button
+                                      key={note.id}
+                                      onClick={() => {
+                                        if (!isLinked) {
+                                          addThesisRef({ type: 'note', id: note.id, title: note.title || 'Untitled' })
+                                        }
+                                      }}
+                                      disabled={isLinked}
+                                      className={clsx(
+                                        'w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors',
+                                        isLinked
+                                          ? 'bg-green-50 text-green-600 dark:bg-green-900/20'
+                                          : 'hover:bg-white dark:hover:bg-gray-700'
+                                      )}
+                                    >
+                                      {isLinked ? <Check className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                      <span className="truncate">{note.title || 'Untitled'}</span>
+                                      {isLinked && <span className="text-[10px] ml-auto">Added</span>}
+                                    </button>
+                                  )
+                                })
+                              ) : (
+                                <p className="text-xs text-gray-400 text-center py-3">No notes available</p>
+                              )}
+                            </div>
+                          )}
+
+                          {addRefType === 'file' && (
+                            <div className="max-h-40 overflow-y-auto space-y-0.5">
+                              {notes && notes.filter((n: any) => n.source_type === 'uploaded').length > 0 ? (
+                                notes.filter((n: any) => n.source_type === 'uploaded').map((file: any) => {
+                                  const isLinked = thesisReferences.some(r => r.type === 'file' && r.id === file.id)
+                                  return (
+                                    <button
+                                      key={file.id}
+                                      onClick={() => {
+                                        if (!isLinked) {
+                                          addThesisRef({ type: 'file', id: file.id, title: file.title || file.file_name || 'Untitled' })
+                                        }
+                                      }}
+                                      disabled={isLinked}
+                                      className={clsx(
+                                        'w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors',
+                                        isLinked
+                                          ? 'bg-green-50 text-green-600 dark:bg-green-900/20'
+                                          : 'hover:bg-white dark:hover:bg-gray-700'
+                                      )}
+                                    >
+                                      {isLinked ? <Check className="w-3.5 h-3.5 shrink-0" /> : <File className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                                      <span className="truncate">{file.title || file.file_name || 'Untitled'}</span>
+                                      {isLinked && <span className="text-[10px] ml-auto">Added</span>}
+                                    </button>
+                                  )
+                                })
+                              ) : (
+                                <p className="text-xs text-gray-400 text-center py-3">No files available</p>
+                              )}
+                            </div>
+                          )}
+
+                          {addRefType === 'model' && (
+                            <div className="max-h-40 overflow-y-auto space-y-0.5">
+                              {assetModels.length > 0 ? (
+                                assetModels.map((model) => {
+                                  const isLinked = thesisReferences.some(r => r.type === 'model' && r.id === model.id)
+                                  return (
+                                    <button
+                                      key={model.id}
+                                      onClick={() => {
+                                        if (!isLinked) {
+                                          addThesisRef({ type: 'model' as any, id: model.id, title: model.name })
+                                        }
+                                      }}
+                                      disabled={isLinked}
+                                      className={clsx(
+                                        'w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors',
+                                        isLinked
+                                          ? 'bg-green-50 text-green-600 dark:bg-green-900/20'
+                                          : 'hover:bg-white dark:hover:bg-gray-700'
+                                      )}
+                                    >
+                                      {isLinked ? <Check className="w-3.5 h-3.5 shrink-0" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+                                      <span className="truncate">{model.name}</span>
+                                      <span className="text-[10px] text-gray-400 ml-auto">v{model.version}</span>
+                                      {isLinked && <span className="text-[10px] text-green-600 ml-1">Added</span>}
+                                    </button>
+                                  )
+                                })
+                              ) : (
+                                <p className="text-xs text-gray-400 text-center py-3">No models available</p>
+                              )}
+                            </div>
+                          )}
+
+                          {addRefType === 'url' && (
+                            <div className="space-y-2">
+                              <input
+                                type="url"
+                                value={newRefUrl}
+                                onChange={(e) => setNewRefUrl(e.target.value)}
+                                placeholder="https://..."
+                                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                autoFocus
+                              />
+                              <input
+                                type="text"
+                                value={newRefTitle}
+                                onChange={(e) => setNewRefTitle(e.target.value)}
+                                placeholder="Title (optional)"
+                                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (newRefUrl.trim()) {
+                                    addThesisRef({
+                                      type: 'link',
+                                      url: newRefUrl.trim(),
+                                      title: newRefTitle.trim() || newRefUrl.trim()
+                                    })
+                                    setNewRefUrl('')
+                                    setNewRefTitle('')
+                                    setAddRefType('none')
+                                  }
+                                }}
+                                disabled={!newRefUrl.trim()}
+                                className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-40 transition-colors"
+                              >
+                                Add URL
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* References Grid - Latest Model + Linked References */}
+                      {(assetModels.length > 0 || thesisReferences.length > 0) ? (
+                        <div className="flex flex-wrap gap-2">
+                          {/* Latest Model - Auto-displayed first */}
+                          {assetModels.length > 0 && (
+                            <div
+                              onClick={() => console.log('Open model:', assetModels[0].id)}
+                              title={assetModels[0].name}
+                              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                            >
+                              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                              <div className="min-w-0">
+                                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
+                                  {assetModels[0].name}
+                                </span>
+                                <span className="text-[10px] text-gray-500">v{assetModels[0].version} · {new Date(assetModels[0].updated_at).toLocaleDateString()}</span>
+                              </div>
+                              <span className="text-[9px] px-1.5 py-0.5 bg-emerald-200 dark:bg-emerald-800 rounded text-emerald-700 dark:text-emerald-300 font-semibold shrink-0">
+                                LATEST
+                              </span>
+                            </div>
+                          )}
+                          {thesisReferences.map((ref, index) => (
+                            <div
+                              key={index}
+                              title={ref.title}
+                              className={clsx(
+                                'flex items-center gap-2 px-3 py-2 rounded-lg group cursor-pointer transition-colors',
+                                ref.type === 'note' && 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40',
+                                ref.type === 'file' && 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40',
+                                ref.type === 'model' && 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40',
+                                ref.type === 'link' && 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40'
+                              )}
+                              onClick={() => {
+                                if (ref.type === 'link' && ref.url) {
+                                  window.open(ref.url, '_blank', 'noopener,noreferrer')
+                                } else if (ref.type === 'note' && ref.id) {
+                                  onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
+                                } else if (ref.type === 'file' && ref.id) {
+                                  onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
+                                } else if (ref.type === 'model' && ref.id) {
+                                  console.log('Open model:', ref.id)
+                                }
+                              }}
+                            >
+                              {ref.type === 'note' && <FileText className="w-4 h-4 text-amber-500 shrink-0" />}
+                              {ref.type === 'file' && <File className="w-4 h-4 text-purple-500 shrink-0" />}
+                              {ref.type === 'model' && <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />}
+                              {ref.type === 'link' && <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />}
+                              <div className="min-w-0">
+                                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
+                                  {ref.title}
+                                </span>
+                                <span className="text-[10px] text-gray-500 capitalize">{ref.type} · {ref.addedAt ? new Date(ref.addedAt).toLocaleDateString() : ''}</span>
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); removeThesisRef(index) }}
+                                className="p-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 text-center py-4">
+                          No supporting documents yet. Click Add to link notes, files, or URLs.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <ThesisContainer assetId={asset.id} viewFilter={researchViewFilter} viewMode={thesisViewMode} />
+                  )}
                 </div>
               )}
             </Card>

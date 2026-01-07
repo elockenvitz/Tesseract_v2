@@ -155,7 +155,7 @@ export function TemplateManager() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-medium text-gray-900">Text Templates</h3>
+          <h3 className="text-lg font-medium text-gray-900">Quick Text Templates</h3>
           <p className="text-sm text-gray-500 mt-1">
             Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.t</code> in any text input.
           </p>
