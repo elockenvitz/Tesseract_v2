@@ -398,12 +398,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Parallel queries for better performance - remove dependencies
   const { data: workflowStages, refetch: refetchStages, isLoading: stagesLoading } = useQuery({
-    queryKey: ['workflow-stages'],
+    queryKey: ['workflow-stages', selectedWorkflow?.id],
+    enabled: !!selectedWorkflow?.id, // Only fetch when a workflow is selected
     queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
       const { data, error } = await supabase
         .from('workflow_stages')
         .select('*')
-        .order('workflow_id')
+        .eq('workflow_id', selectedWorkflow.id)
         .order('sort_order')
 
       if (error) {
@@ -417,14 +420,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 60 * 1000 // 1 minute
   })
 
-  // Run in parallel instead of waiting for stages
+  // Only load automation rules for selected workflow
   const { data: automationRules } = useQuery({
-    queryKey: ['workflow-automation-rules'],
+    queryKey: ['workflow-automation-rules', selectedWorkflow?.id],
+    enabled: !!selectedWorkflow?.id,
     queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
       const { data, error } = await supabase
         .from('workflow_automation_rules')
         .select('*')
-        .order('workflow_id')
+        .eq('workflow_id', selectedWorkflow.id)
         .order('rule_name')
 
       if (error) {
@@ -838,14 +844,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000
   })
 
-  // Run in parallel instead of waiting for stages
+  // Only load checklist templates for selected workflow
   const { data: workflowChecklistTemplates, refetch: refetchChecklistTemplates } = useQuery({
-    queryKey: ['workflow-checklist-templates'],
+    queryKey: ['workflow-checklist-templates', selectedWorkflow?.id],
+    enabled: !!selectedWorkflow?.id, // Defer until workflow selected
     queryFn: async () => {
+      if (!selectedWorkflow?.id) return []
+
       const { data, error } = await supabase
         .from('workflow_checklist_templates')
         .select('*')
-        .order('workflow_id')
+        .eq('workflow_id', selectedWorkflow.id)
         .order('stage_id')
         .order('sort_order')
 
@@ -959,9 +968,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000
   })
 
-  // Fetch asset lists for universe configuration
+  // Fetch asset lists for universe configuration - only when workflow selected
   const { data: assetLists } = useQuery({
     queryKey: ['asset-lists-for-universe'],
+    enabled: !!selectedWorkflow?.id, // Defer until workflow selected
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -984,9 +994,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 10 * 60 * 1000
   })
 
-  // Fetch themes for universe configuration
+  // Fetch themes for universe configuration - only when workflow selected
   const { data: themes } = useQuery({
     queryKey: ['themes-for-universe'],
+    enabled: !!selectedWorkflow?.id, // Defer until workflow selected
     queryFn: async () => {
       const { data, error } = await supabase
         .from('themes')
@@ -1004,9 +1015,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 10 * 60 * 1000
   })
 
-  // Fetch analysts for coverage universe configuration
+  // Fetch analysts for coverage universe configuration - only when workflow selected
   const { data: analysts } = useQuery({
     queryKey: ['analysts-for-universe'],
+    enabled: !!selectedWorkflow?.id, // Defer until workflow selected
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -1037,9 +1049,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 10 * 60 * 1000
   })
 
-  // Fetch portfolios for universe configuration
+  // Fetch portfolios for universe configuration - only when workflow selected
   const { data: portfolios } = useQuery({
     queryKey: ['portfolios-for-universe'],
+    enabled: !!selectedWorkflow?.id, // Defer until workflow selected
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolios')
@@ -1060,6 +1073,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   // Fetch universe rules for selected workflow
   const { data: universeRules } = useQuery({
     queryKey: ['workflow-universe-rules', selectedWorkflow?.id],
+    enabled: !!selectedWorkflow?.id, // Only fetch when workflow selected
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
@@ -1485,8 +1499,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError, refetch: refetchWorkflows } = useQuery({
-    queryKey: ['workflows-full', filterBy, sortBy, !!workflowStages],
-    enabled: !!workflowStages, // Only run when workflowStages are loaded
+    queryKey: ['workflows-full', filterBy, sortBy],
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -1495,7 +1508,49 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         return []
       }
 
-      // Get workflows based on filter
+      // OPTIMIZATION: Fetch all user-related data in parallel first
+      const [
+        collaborationsResult,
+        stakeholdersResult,
+        favoritesResult,
+        activeVersionsResult
+      ] = await Promise.all([
+        supabase
+          .from('workflow_collaborations')
+          .select('workflow_id, permission')
+          .eq('user_id', userId),
+        supabase
+          .from('workflow_stakeholders')
+          .select('workflow_id')
+          .eq('user_id', userId),
+        supabase
+          .from('workflow_favorites')
+          .select('workflow_id')
+          .eq('user_id', userId),
+        supabase
+          .from('workflow_template_versions')
+          .select('workflow_id, version_number, id')
+          .eq('is_active', true)
+      ])
+
+      // Extract data from results
+      const collaborations = collaborationsResult.data || []
+      const stakeholderWorkflows = stakeholdersResult.data || []
+      const userFavorites = favoritesResult.data || []
+      const activeVersions = activeVersionsResult.data || []
+
+      // Create maps/sets for quick lookups (used for both filtering AND permissions)
+      const collaborationMap = new Map(collaborations.map(c => [c.workflow_id, c.permission]))
+      const stakeholderWorkflowIds = new Set(stakeholderWorkflows.map(s => s.workflow_id))
+      const favoritedWorkflowIds = new Set(userFavorites.map(f => f.workflow_id))
+      const activeVersionMap = new Map(activeVersions.map(v => [v.workflow_id, v.version_number]))
+
+      // Get all accessible workflow IDs for filtering
+      const collaboratorIds = collaborations.map(c => c.workflow_id)
+      const stakeholderIds = stakeholderWorkflows.map(s => s.workflow_id)
+      const allAccessibleIds = [...new Set([...collaboratorIds, ...stakeholderIds])]
+
+      // Build the workflows query based on filter
       let workflowQuery = supabase.from('workflows').select(`
         *,
         users:created_by (
@@ -1503,63 +1558,24 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           last_name,
           email
         )
-      `).eq('archived', false).eq('deleted', false).is('parent_workflow_id', null) // Only show non-archived, non-deleted workflow templates (not branches)
+      `).eq('archived', false).eq('deleted', false).is('parent_workflow_id', null)
 
       switch (filterBy) {
         case 'my':
           workflowQuery = workflowQuery.eq('created_by', userId)
           break
         case 'shared':
-          // Get shared workflow IDs (as collaborator)
-          const { data: sharedCollabIds } = await supabase
-            .from('workflow_collaborations')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          // Get workflow IDs where user is a stakeholder
-          const { data: sharedStakeholderIds } = await supabase
-            .from('workflow_stakeholders')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          const sharedCollaboratorIds = sharedCollabIds?.map(s => s.workflow_id) || []
-          const sharedStakeholderWorkflowIds = sharedStakeholderIds?.map(s => s.workflow_id) || []
-          const ids = [...new Set([...sharedCollaboratorIds, ...sharedStakeholderWorkflowIds])]
-
-          if (ids.length === 0) return []
-          workflowQuery = workflowQuery.in('id', ids)
+          if (allAccessibleIds.length === 0) return []
+          workflowQuery = workflowQuery.in('id', allAccessibleIds)
           break
         case 'favorites':
-          // Get favorited workflow IDs first
-          const { data: favoriteIds } = await supabase
-            .from('workflow_favorites')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          const favIds = favoriteIds?.map(f => f.workflow_id) || []
+          const favIds = Array.from(favoritedWorkflowIds)
           if (favIds.length === 0) return []
           workflowQuery = workflowQuery.in('id', favIds)
           break
         case 'all':
         default:
-          // Get shared workflow IDs (as collaborator)
-          const { data: allCollabIds } = await supabase
-            .from('workflow_collaborations')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          // Get workflow IDs where user is a stakeholder
-          const { data: allStakeholderIds } = await supabase
-            .from('workflow_stakeholders')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          const allCollaboratorIds = allCollabIds?.map(s => s.workflow_id) || []
-          const allStakeholderWorkflowIds = allStakeholderIds?.map(s => s.workflow_id) || []
-          const allIds = [...new Set([...allCollaboratorIds, ...allStakeholderWorkflowIds])]
-
-          // Show only user's workflows + shared workflows + stakeholder workflows
-          const sharedFilter = allIds.length > 0 ? `,id.in.(${allIds.join(',')})` : ''
+          const sharedFilter = allAccessibleIds.length > 0 ? `,id.in.(${allAccessibleIds.join(',')})` : ''
           workflowQuery = workflowQuery.or(`created_by.eq.${userId}${sharedFilter}`)
           break
       }
@@ -1571,51 +1587,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         throw error
       }
 
-      // Get usage statistics with detailed progress info
-      const { data: usageStats } = await supabase
-        .from('asset_workflow_progress')
-        .select('workflow_id, is_started, completed_at, current_stage_key, started_at, asset_id')
-
-      // Get user's favorited workflows
-      const { data: userFavorites } = await supabase
-        .from('workflow_favorites')
-        .select('workflow_id')
-        .eq('user_id', userId)
-
-      const favoritedWorkflowIds = new Set(userFavorites?.map(f => f.workflow_id) || [])
-
-      // Get active template versions for all workflows
-      const { data: activeVersions } = await supabase
-        .from('workflow_template_versions')
-        .select('workflow_id, version_number, id')
-        .eq('is_active', true)
-
-      // Create a map of workflow_id to active version number
-      const activeVersionMap = new Map(
-        (activeVersions || []).map(v => [v.workflow_id, v.version_number])
-      )
-
-      // Get user's collaborations with permissions
-      const { data: collaborations } = await supabase
-        .from('workflow_collaborations')
-        .select('workflow_id, permission')
-        .eq('user_id', userId)
-
-      // Create a map of workflow_id to collaboration permission
-      const collaborationMap = new Map(
-        (collaborations || []).map(c => [c.workflow_id, c.permission])
-      )
-
-      // Get workflows where user is a stakeholder
-      const { data: stakeholderWorkflows } = await supabase
-        .from('workflow_stakeholders')
-        .select('workflow_id')
-        .eq('user_id', userId)
-
-      // Create a set of workflow IDs where user is stakeholder
-      const stakeholderWorkflowIds = new Set(
-        (stakeholderWorkflows || []).map(s => s.workflow_id)
-      )
+      // Only fetch usage stats if we have workflows (and limit to relevant workflows)
+      let usageStats: any[] = []
+      if (workflowData && workflowData.length > 0) {
+        const workflowIds = workflowData.map(w => w.id)
+        const { data: stats } = await supabase
+          .from('asset_workflow_progress')
+          .select('workflow_id, is_started, completed_at, current_stage_key, started_at, asset_id')
+          .in('workflow_id', workflowIds)
+        usageStats = stats || []
+      }
 
       // Calculate statistics for each workflow
       const workflowsWithStats: WorkflowWithStats[] = (workflowData || []).map(workflow => {
@@ -1650,10 +1631,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         // Admins and owners can archive workflows
         const canArchive = userPermission === 'admin'
 
-        // Get stages for this workflow and sort by sort_order
-        const workflowStagesData = workflowStages
-          ?.filter(stage => stage.workflow_id === workflow.id)
-          .sort((a, b) => a.sort_order - b.sort_order) || []
+        // Note: Stages are loaded separately when workflow is selected (not needed for list view)
 
         return {
           ...workflow,
@@ -1664,7 +1642,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           creator_name: creatorName,
           creator_email: creatorEmail,
           is_favorited: favoritedWorkflowIds.has(workflow.id),
-          stages: workflowStagesData,
+          stages: [], // Stages loaded on-demand when workflow selected
           user_permission: userPermission,
           can_archive: canArchive,
           usage_stats: workflowUsage, // Include detailed usage stats for progress calculation
@@ -1699,10 +1677,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000 // 5 minutes
   })
 
-  // Query for archived workflows with full data processing
+  // Query for archived workflows - only load when viewing archived section
   const { data: archivedWorkflows } = useQuery({
     queryKey: ['workflows-archived'],
-    enabled: !!workflowStages, // Only run when workflowStages are loaded
+    enabled: filterBy === 'archived', // Only load when user is viewing archived workflows
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
