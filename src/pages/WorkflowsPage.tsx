@@ -1909,58 +1909,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       if (!userId) throw new Error('Not authenticated')
 
-      // Get the original workflow
-      const { data: originalWorkflow, error: fetchError } = await supabase
-        .from('workflows')
-        .select('*')
-        .eq('id', workflowId)
-        .single()
+      // Use the RPC function to duplicate workflow with all stages and rules
+      const { data, error } = await supabase.rpc('copy_workflow_with_unique_name', {
+        source_workflow_id: workflowId,
+        suffix: 'Copy',
+        target_user_id: userId,
+        copy_progress: false
+      })
 
-      if (fetchError) throw fetchError
-
-      // Create duplicate workflow
-      const { data: newWorkflow, error: createError } = await supabase
-        .from('workflows')
-        .insert({
-          name: `${originalWorkflow.name} (Copy)`,
-          description: originalWorkflow.description,
-          color: originalWorkflow.color,
-          is_public: false,
-          is_default: false,
-          created_by: userId
-        })
-        .select()
-        .single()
-
-      if (createError) throw createError
-
-      // Get and duplicate workflow stages
-      const { data: originalStages, error: stagesError } = await supabase
-        .from('workflow_stages')
-        .select('*')
-        .eq('workflow_id', workflowId)
-        .order('sort_order')
-
-      if (stagesError) throw stagesError
-
-      if (originalStages && originalStages.length > 0) {
-        const newStages = originalStages.map(stage => ({
-          workflow_id: newWorkflow.id,
-          stage_key: stage.stage_key,
-          stage_label: stage.stage_label,
-          stage_description: stage.stage_description,
-          sort_order: stage.sort_order,
-          created_by: userId
-        }))
-
-        const { error: insertStagesError } = await supabase
-          .from('workflow_stages')
-          .insert(newStages)
-
-        if (insertStagesError) throw insertStagesError
-      }
-
-      return newWorkflow
+      if (error) throw error
+      return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
