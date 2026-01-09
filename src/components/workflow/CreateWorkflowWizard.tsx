@@ -10,7 +10,7 @@
  * 5. Automation Rules
  */
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X,
@@ -123,6 +123,9 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Ref to prevent multiple submissions (handles race conditions)
+  const isSubmittingRef = useRef(false)
 
   // Form state
   const [basicInfo, setBasicInfo] = useState({
@@ -898,6 +901,10 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const handleSubmit = async () => {
     if (!user) return
 
+    // Prevent multiple submissions using ref (synchronous check)
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
+
     setIsSubmitting(true)
     setSubmitError(null)
     try {
@@ -1040,12 +1047,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       queryClient.invalidateQueries({ queryKey: ['my-workflows'] })
 
-      // Complete
+      // Complete - modal will close, no need to reset isSubmitting
       onComplete(workflowId)
     } catch (error: any) {
       console.error('Error creating workflow:', error)
       setSubmitError(error?.message || 'Failed to create workflow. Please try again.')
-    } finally {
+      // Only reset on error so user can retry
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
