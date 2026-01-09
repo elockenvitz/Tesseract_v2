@@ -1931,10 +1931,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       console.log('🗄️ Archive mutation started for workflow:', workflowId)
       const { data: { user } } = await supabase.auth.getUser()
 
-      // First, pause all active branches for this workflow
+      // First, deactivate all active branches for this workflow
       const { error: branchError } = await supabase
         .from('workflows')
-        .update({ status: 'paused' })
+        .update({ status: 'inactive' })
         .eq('parent_workflow_id', workflowId)
         .eq('status', 'active')
 
