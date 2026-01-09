@@ -88,9 +88,10 @@ export function useWorkflowMutations({
 
   const duplicateWorkflow = useMutation({
     mutationFn: async (workflowId: string) => {
-      const { data, error } = await supabase.rpc('duplicate_workflow', {
-        p_workflow_id: workflowId,
-        p_user_id: userId
+      const { data, error } = await supabase.rpc('copy_workflow_with_unique_name', {
+        source_workflow_id: workflowId,
+        suffix: 'Copy',
+        target_user_id: userId
       })
 
       if (error) throw error
@@ -509,7 +510,7 @@ export function useWorkflowMutations({
     mutationFn: async (branchId: string) => {
       const { error } = await supabase
         .from('workflows')
-        .update({ status: 'ended' })
+        .update({ status: 'inactive' })
         .eq('id', branchId)
 
       if (error) throw error
