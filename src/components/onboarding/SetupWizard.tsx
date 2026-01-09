@@ -357,7 +357,9 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
       setAccessRequests(existingRequests.filter(r => r.status === 'pending'))
     }
     if (onboardingStatus) {
-      setCurrentStep(Math.max(0, (onboardingStatus.current_step || 1) - 1))
+      // Clamp step to valid range (0 to STEPS.length - 1)
+      const step = Math.min(Math.max(0, (onboardingStatus.current_step || 1) - 1), STEPS.length - 1)
+      setCurrentStep(step)
       setSkippedSteps(onboardingStatus.skipped_steps || [])
     }
 
@@ -491,7 +493,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-status'] })
-      onComplete()
+      // Note: onComplete is called from handleComplete after the mutation succeeds
     },
   })
 
@@ -532,9 +534,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
     console.log('handleComplete called')
     setIsSubmitting(true)
     try {
-      console.log('Saving progress...')
-      await saveProgressMutation.mutateAsync(STEPS[currentStep].id)
-      console.log('Progress saved')
+      // Submit any pending access requests first
       if (accessRequests.length > 0) {
         console.log('Submitting access requests...')
         await submitAccessRequestsMutation.mutateAsync(accessRequests)
@@ -579,6 +579,10 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
 
   // Render step content
   const renderStepContent = () => {
+    // Guard against out-of-bounds step (can happen during completion transition)
+    if (currentStep >= STEPS.length || currentStep < 0) {
+      return null
+    }
     switch (STEPS[currentStep].id) {
       case 'profile':
         return <ProfileStep profile={profile} setProfile={setProfile} user={user} />
@@ -618,6 +622,10 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
   }
 
   const canProceed = () => {
+    // Guard against out-of-bounds step
+    if (currentStep >= STEPS.length || currentStep < 0) {
+      return false
+    }
     switch (STEPS[currentStep].id) {
       case 'profile':
         return profile.user_type !== null
