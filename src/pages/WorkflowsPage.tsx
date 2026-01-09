@@ -1677,10 +1677,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     gcTime: 5 * 60 * 1000 // 5 minutes
   })
 
-  // Query for archived workflows - only load when viewing archived section
+  // Query for archived workflows - shown in separate section below main list
   const { data: archivedWorkflows } = useQuery({
     queryKey: ['workflows-archived'],
-    enabled: filterBy === 'archived', // Only load when user is viewing archived workflows
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
