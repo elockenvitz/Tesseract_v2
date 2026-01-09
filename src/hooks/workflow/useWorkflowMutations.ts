@@ -91,7 +91,8 @@ export function useWorkflowMutations({
       const { data, error } = await supabase.rpc('copy_workflow_with_unique_name', {
         source_workflow_id: workflowId,
         suffix: 'Copy',
-        target_user_id: userId
+        target_user_id: userId,
+        copy_progress: false
       })
 
       if (error) throw error
