@@ -122,6 +122,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const queryClient = useQueryClient()
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   // Form state
   const [basicInfo, setBasicInfo] = useState({
@@ -898,6 +899,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     if (!user) return
 
     setIsSubmitting(true)
+    setSubmitError(null)
     try {
       // 1. Create the workflow
       const { data: workflow, error: workflowError } = await supabase
@@ -1039,8 +1041,9 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
       // Complete
       onComplete(workflowId)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating workflow:', error)
+      setSubmitError(error?.message || 'Failed to create workflow. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -2136,42 +2139,69 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50">
-          <Button
-            variant="outline"
-            onClick={() => currentStep > 0 ? setCurrentStep(currentStep - 1) : onClose()}
-          >
-            <ChevronLeft className="w-4 h-4 mr-1" />
-            {currentStep === 0 ? 'Cancel' : 'Back'}
-          </Button>
+        <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
+          {/* Error Message */}
+          {submitError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">{submitError}</div>
+            </div>
+          )}
 
-          <div className="flex items-center space-x-3">
-            {currentStep < STEPS.length - 1 ? (
-              <Button
-                onClick={() => setCurrentStep(currentStep + 1)}
-                disabled={!isStepValid(currentStep)}
-              >
-                Next
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            ) : (
-              <Button
-                onClick={handleSubmit}
-                disabled={isSubmitting || !isStepValid(currentStep) || stages.length === 0}
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="animate-spin mr-2">⏳</span>
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4 mr-1" />
-                    Create Workflow
-                  </>
-                )}
-              </Button>
-            )}
+          {/* Warning when stages are missing on final step */}
+          {currentStep === STEPS.length - 1 && stages.length === 0 && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start space-x-2">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800">
+                You need to add at least one stage before creating the workflow.
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(3)}
+                  className="ml-1 text-amber-900 underline hover:no-underline font-medium"
+                >
+                  Go to Stages step
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              onClick={() => currentStep > 0 ? setCurrentStep(currentStep - 1) : onClose()}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              {currentStep === 0 ? 'Cancel' : 'Back'}
+            </Button>
+
+            <div className="flex items-center space-x-3">
+              {currentStep < STEPS.length - 1 ? (
+                <Button
+                  onClick={() => setCurrentStep(currentStep + 1)}
+                  disabled={!isStepValid(currentStep)}
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || !isStepValid(currentStep) || stages.length === 0}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-1" />
+                      Create Workflow
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
