@@ -1630,27 +1630,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
         // Determine user permission (simplified to admin or read)
         let userPermission: 'read' | 'admin' = 'read'
-        let canArchive = false  // Only owners and admin collaborators can archive
 
         if (workflow.created_by === userId) {
-          // Owner = admin and can archive
+          // Owner = admin
           userPermission = 'admin'
-          canArchive = true
         } else if (collaborationMap.has(workflow.id)) {
           // User is a collaborator - use their permission level (takes precedence over stakeholder)
           const collabPermission = collaborationMap.get(workflow.id)
           // Map write/admin/owner to admin, everything else to read
           userPermission = (collabPermission === 'admin' || collabPermission === 'write' || collabPermission === 'owner') ? 'admin' : 'read'
-          // Only admin collaborators can archive (not write)
-          canArchive = (collabPermission === 'admin' || collabPermission === 'owner')
         } else if (stakeholderWorkflowIds.has(workflow.id)) {
           // User is a stakeholder - read-only access
           userPermission = 'read'
         } else if (workflow.name === 'Research Workflow') {
-          // For Research Workflow, all logged-in users can be admin but cannot archive
+          // For Research Workflow, all logged-in users can be admin
           userPermission = 'admin'
-          canArchive = false
         }
+
+        // Admins and owners can archive workflows
+        const canArchive = userPermission === 'admin'
 
         // Get stages for this workflow and sort by sort_order
         const workflowStagesData = workflowStages
@@ -1783,24 +1781,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         const creator = workflow.users
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
 
-        // Determine user permission - owner and admin collaborators can restore archived workflows
+        // Determine user permission - admins can restore archived workflows
         let userPermission: 'read' | 'admin' = 'read'
-        let canArchive = false
         if (workflow.created_by === userId) {
-          // Owner = admin and can restore
+          // Owner = admin
           userPermission = 'admin'
-          canArchive = true
         } else if (archivedCollaborationMap.has(workflow.id)) {
           // User is a collaborator - use their permission level
           const collabPermission = archivedCollaborationMap.get(workflow.id)
           // Map write/admin/owner to admin, everything else to read
           userPermission = (collabPermission === 'admin' || collabPermission === 'write' || collabPermission === 'owner') ? 'admin' : 'read'
-          // Only admin collaborators can restore (not write)
-          canArchive = (collabPermission === 'admin' || collabPermission === 'owner')
         } else if (archivedStakeholderSet.has(workflow.id)) {
           // User is a stakeholder - read-only access
           userPermission = 'read'
         }
+
+        // Admins and owners can restore archived workflows
+        const canArchive = userPermission === 'admin'
 
         // Get stages for this archived workflow (stages are preserved)
         const workflowStagesData = workflowStages
