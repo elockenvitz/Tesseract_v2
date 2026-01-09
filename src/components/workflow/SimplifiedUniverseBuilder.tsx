@@ -76,6 +76,9 @@ export function SimplifiedUniverseBuilder({
   const queryClient = useQueryClient()
 
   // Initialize logic expression from rules
+  // Create a stable key from rule IDs to detect when rules actually change
+  const rulesKey = rules.map(r => r.id).join(',')
+
   useEffect(() => {
     if (rules.length === 0) {
       setLogicExpression([])
@@ -91,7 +94,7 @@ export function SimplifiedUniverseBuilder({
       expr.push({ type: 'filter', filterId: rule.id })
     })
     setLogicExpression(expr)
-  }, [rules.length]) // Only rebuild when number of rules changes
+  }, [rulesKey, rules.length]) // Rebuild when rules change (by ID) or count changes
 
   // Get filter by ID
   const getFilterById = (filterId: string): FilterRule | undefined => {
@@ -1035,12 +1038,29 @@ export function SimplifiedUniverseBuilder({
 
               {/* Logic Expression Display */}
               <div className="flex flex-wrap items-center gap-1.5 p-3 bg-white border border-gray-200 rounded-lg min-h-[48px]">
-                {logicExpression.map((token, index) => {
-                  const isSelected = selectedTokens.has(index)
+                {(() => {
+                  // Filter out orphaned operators (operators next to missing filters)
+                  const validExpression = logicExpression.filter((token, idx) => {
+                    if (token.type === 'filter') {
+                      return !!getFilterById(token.filterId)
+                    }
+                    if (token.type === 'operator') {
+                      // Check if both adjacent filters exist
+                      const prevFilter = logicExpression.slice(0, idx).reverse().find(t => t.type === 'filter')
+                      const nextFilter = logicExpression.slice(idx + 1).find(t => t.type === 'filter')
+                      const prevExists = prevFilter && getFilterById((prevFilter as any).filterId)
+                      const nextExists = nextFilter && getFilterById((nextFilter as any).filterId)
+                      return prevExists && nextExists
+                    }
+                    return true // parentheses
+                  })
 
-                  if (token.type === 'filter') {
-                    const filter = getFilterById(token.filterId)
-                    if (!filter) return null
+                  return validExpression.map((token, index) => {
+                    const isSelected = selectedTokens.has(logicExpression.indexOf(token))
+
+                    if (token.type === 'filter') {
+                      const filter = getFilterById(token.filterId)
+                      if (!filter) return null
                     const def = getFilterDefinition(filter.type)
                     const fullDetails = `${def?.name || filter.type} ${OPERATOR_LABELS[filter.operator]} ${formatFilterValueCompact(filter)}`
                     return (
@@ -1122,8 +1142,9 @@ export function SimplifiedUniverseBuilder({
                       </button>
                     )
                   }
-                  return null
-                })}
+                    return null
+                  })
+                })()}
               </div>
 
               <p className="text-xs text-gray-500 mt-2">
