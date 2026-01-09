@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import { clsx } from 'clsx'
-import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet } from 'lucide-react'
+import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet, LayoutGrid } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { TemplateManager } from '../templates/TemplateManager'
 import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManager'
+import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -527,7 +528,7 @@ function CaseTemplateCard({
 // MAIN COMPONENT
 // ============================================================================
 
-type TabSection = 'text' | 'cases' | 'excel'
+type TabSection = 'text' | 'cases' | 'excel' | 'research'
 
 export function TemplatesTab() {
   const [activeSection, setActiveSection] = useState<TabSection>('text')
@@ -538,7 +539,7 @@ export function TemplatesTab() {
       <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white">
         <h1 className="text-xl font-bold text-gray-900">Templates</h1>
         <p className="text-sm text-gray-500">
-          Manage quick text snippets, investment cases, and Excel extraction templates
+          Manage text snippets, investment cases, Excel templates, and research field layouts
         </p>
       </div>
 
@@ -581,6 +582,18 @@ export function TemplatesTab() {
             <FileSpreadsheet className="w-4 h-4" />
             Excel Extraction
           </button>
+          <button
+            onClick={() => setActiveSection('research')}
+            className={clsx(
+              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              activeSection === 'research'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            )}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            Research Fields
+          </button>
         </nav>
       </div>
 
@@ -589,6 +602,7 @@ export function TemplatesTab() {
         {activeSection === 'text' && <TemplateManager />}
         {activeSection === 'cases' && <CaseTemplatesManager />}
         {activeSection === 'excel' && <ExcelModelTemplateManager />}
+        {activeSection === 'research' && <ResearchFieldsManager />}
       </div>
     </div>
   )

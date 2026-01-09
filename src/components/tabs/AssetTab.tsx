@@ -32,6 +32,8 @@ import { RelatedProjects } from '../projects/RelatedProjects'
 import { ThesisContainer } from '../contributions'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { OutcomesContainer } from '../outcomes'
+import { AddWidgetModal, UserWidgetRenderer } from '../research'
+import { useUserAssetWidgets, type WidgetType } from '../../hooks/useUserAssetWidgets'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
@@ -195,6 +197,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.thesisViewMode || 'all'
   })
+  // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
+  // User asset widgets
+  const [showAddWidgetModal, setShowAddWidgetModal] = useState(false)
+  const [widgetCollapsedState, setWidgetCollapsedState] = useState<Record<string, boolean>>({})
   // Shared visibility state for all thesis sections
   const [sharedThesisVisibility, setSharedThesisVisibility] = useState<ContributionVisibility>('firm')
   const [sharedThesisTargetIds, setSharedThesisTargetIds] = useState<string[]>([])
@@ -495,6 +501,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const { contributions: userThesisContributions } = useContributions({ assetId: asset.id, section: 'thesis' })
   const { contributions: userWhereDiffContributions } = useContributions({ assetId: asset.id, section: 'where_different' })
   const { contributions: userRisksContributions } = useContributions({ assetId: asset.id, section: 'risks_to_thesis' })
+
+  // User-added widgets for this asset
+  const {
+    widgets: userWidgets,
+    myWidgets,
+    getWidgetValue,
+    isMyWidget,
+    createWidget,
+    deleteWidget,
+    saveWidgetValue,
+    isCreating: isCreatingWidget
+  } = useUserAssetWidgets(asset.id, researchViewFilter !== 'aggregated' ? researchViewFilter : undefined)
 
   // Get target options for selected visibility level
   const getTargetOptions = useCallback((visibility: ContributionVisibility) => {
@@ -2428,6 +2446,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               </div>
             )}
 
+            {/* Research Sections */}
             {/* Thesis Section */}
             <Card padding="none">
               <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
@@ -2965,11 +2984,65 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 data: { initialAssetFilter: asset.id }
               })}
               onViewAllFiles={() => onNavigate?.({
-                id: 'files-list',
+                id: 'files',
                 title: 'Files',
-                type: 'files-list',
+                type: 'files',
                 data: { initialAssetFilter: asset.id }
               })}
+            />
+
+            {/* User-Added Widgets Section */}
+            {userWidgets.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Custom Fields</span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+                {userWidgets.map(widget => (
+                  <UserWidgetRenderer
+                    key={widget.id}
+                    widget={widget}
+                    value={getWidgetValue(widget.id)}
+                    isOwner={isMyWidget(widget.id)}
+                    isCollapsed={widgetCollapsedState[widget.id] ?? false}
+                    onToggleCollapse={() => setWidgetCollapsedState(prev => ({
+                      ...prev,
+                      [widget.id]: !prev[widget.id]
+                    }))}
+                    onSaveValue={async (content, value) => {
+                      await saveWidgetValue({ widget_id: widget.id, content, value })
+                    }}
+                    onDelete={isMyWidget(widget.id) ? () => deleteWidget(widget.id) : undefined}
+                    assetId={asset.id}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Add Widget Button */}
+            {researchViewFilter === user?.id && (
+              <button
+                onClick={() => setShowAddWidgetModal(true)}
+                className="w-full py-3 border-2 border-dashed border-gray-200 rounded-lg text-sm text-gray-500 hover:text-primary-600 hover:border-primary-300 hover:bg-primary-50/50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Custom Field
+              </button>
+            )}
+
+            {/* Add Widget Modal */}
+            <AddWidgetModal
+              isOpen={showAddWidgetModal}
+              onClose={() => setShowAddWidgetModal(false)}
+              onAdd={async (widgetType: WidgetType, title: string, description?: string) => {
+                await createWidget({
+                  asset_id: asset.id,
+                  widget_type: widgetType,
+                  title,
+                  description
+                })
+              }}
+              isAdding={isCreatingWidget}
             />
           </div>
         )}

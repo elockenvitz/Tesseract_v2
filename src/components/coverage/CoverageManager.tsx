@@ -1159,7 +1159,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       // Get the user's node memberships (they might be in portfolios, teams, etc.)
       const { data: memberships, error: membershipError } = await supabase
         .from('org_chart_node_members')
-        .select('node_id, is_admin')
+        .select('node_id, is_coverage_admin')
         .eq('user_id', user.id)
 
       if (membershipError) throw membershipError
@@ -1176,13 +1176,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       if (!nodes || nodes.length === 0) return []
 
       // Find teams - either directly if user is team member, or through parent hierarchy
-      const teams: Array<{ id: string; name: string; node_type: string; parent_id: string | null; is_admin?: boolean }> = []
-      const membershipMap = new Map(memberships.map(m => [m.node_id, m.is_admin]))
+      const teams: Array<{ id: string; name: string; node_type: string; parent_id: string | null; is_coverage_admin?: boolean }> = []
+      const membershipMap = new Map(memberships.map(m => [m.node_id, m.is_coverage_admin]))
 
       for (const node of nodes) {
         if (node.node_type === 'team') {
           // User is directly a member of a team
-          teams.push({ ...node, is_admin: membershipMap.get(node.id) })
+          teams.push({ ...node, is_coverage_admin: membershipMap.get(node.id) })
         } else if (node.node_type === 'portfolio' && node.parent_id) {
           // User is a member of a portfolio - find the parent team
           const { data: parentTeam } = await supabase
@@ -1193,7 +1193,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             .single()
 
           if (parentTeam && !teams.find(t => t.id === parentTeam.id)) {
-            teams.push({ ...parentTeam, is_admin: membershipMap.get(node.id) })
+            teams.push({ ...parentTeam, is_coverage_admin: membershipMap.get(node.id) })
           }
         }
       }
@@ -1665,8 +1665,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     if (permission === 'team_lead') {
       // Check if user is coverage admin for this team or team lead
       if (canManageCoverageForNode(coverage.team_id)) return true
-      // Check if user is an admin of the team
-      const isTeamLead = userTeams?.some(t => t.id === coverage.team_id && t.is_admin)
+      // Check if user is a coverage admin of the team
+      const isTeamLead = userTeams?.some(t => t.id === coverage.team_id && t.is_coverage_admin)
       return !!isTeamLead
     }
     return false

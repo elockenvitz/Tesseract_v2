@@ -959,6 +959,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     return sharedPortfoliosMap.get(nodeId) || []
   }
 
+  // Get node name by ID (for tooltip display)
+  const getNodeName = (nodeId: string): string | undefined => {
+    return orgChartNodes.find(n => n.id === nodeId)?.name
+  }
+
   // Build tree structure from flat nodes, including linked portfolios
   const buildNodeTree = (nodes: OrgChartNode[], parentId: string | null = null): OrgChartNode[] => {
     // Get direct children (by parent_id)
@@ -2366,6 +2371,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                             parentId={null}
                             onRequestToJoin={(n) => setNodeJoinRequest(n)}
                             isUserMember={isUserMemberOfNode}
+                            getNodeName={getNodeName}
                           />
                         </div>
                       )
@@ -4268,9 +4274,10 @@ interface OrgChartNodeCardProps {
   parentId?: string | null
   onRequestToJoin?: (node: OrgChartNode) => void
   isUserMember?: (nodeId: string) => boolean
+  getNodeName?: (nodeId: string) => string | undefined
 }
 
-function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, onDelete, onAddMember, onRemoveMember, getNodeMembers, getSharedTeams, getTeamMembers, getTeamPortfolios, getPortfolioTeamMembers, onAddTeamMember, onRemoveTeamMember, onInsertBetween, onViewDetails, getCoverageStats, onViewTeamCoverage, depth = 0, parentId, onRequestToJoin, isUserMember }: OrgChartNodeCardProps) {
+function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, onDelete, onAddMember, onRemoveMember, getNodeMembers, getSharedTeams, getTeamMembers, getTeamPortfolios, getPortfolioTeamMembers, onAddTeamMember, onRemoveTeamMember, onInsertBetween, onViewDetails, getCoverageStats, onViewTeamCoverage, depth = 0, parentId, onRequestToJoin, isUserMember, getNodeName }: OrgChartNodeCardProps) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
 
@@ -4441,7 +4448,7 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, 
                 <div className="absolute z-30 top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
                   <div className="font-medium mb-1">{node.isLinkedInstance ? 'Linked portfolio' : 'Shared with:'}</div>
                   {node.isLinkedInstance ? (
-                    <div className="text-gray-300">Primary location: {orgChartNodes.find(n => n.id === node.parent_id)?.name || 'Unknown'}</div>
+                    <div className="text-gray-300">Primary location: {(node.parent_id && getNodeName?.(node.parent_id)) || 'Unknown'}</div>
                   ) : sharedTeams.map((teamName, idx) => (
                     <div key={idx} className="text-gray-300">{teamName}</div>
                   ))}
@@ -4666,6 +4673,7 @@ function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, 
                   parentId={node.id}
                   onRequestToJoin={onRequestToJoin}
                   isUserMember={isUserMember}
+                  getNodeName={getNodeName}
                 />
               </div>
             ))}

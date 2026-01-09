@@ -13,7 +13,10 @@ import {
   formatDataSnapshot,
   formatDataLive,
   formatAIContent,
+  formatVisibilityStart,
+  formatVisibilityEnd,
   DataFunctionType,
+  VisibilityType,
   AI_MODELS
 } from '../components/smart-input/types'
 
@@ -64,6 +67,7 @@ interface UseSmartInputReturn {
   selectTemplate: (template: Template) => void
   insertDataValue: (dataType: DataFunctionType, mode: 'snapshot' | 'live', value?: string) => void
   insertAIContent: (prompt: string, content: string) => void
+  insertVisibilityMarker: (type: VisibilityType, authorId: string, targetId?: string, targetName?: string) => void
   submitAIPrompt: () => Promise<void>
   cancelAIPrompt: () => void
   closeDropdown: () => void
@@ -221,6 +225,12 @@ export function useSmartInput({
         return { type: 'template', query, position: lastDot }
       }
 
+      // .visibility commands - .private, .team, .portfolio (check BEFORE data commands since 'p' matches both 'private' and 'price')
+      const visibilityCommands = ['private', 'team', 'portfolio']
+      if (cmd.length > 0 && visibilityCommands.some(v => v.startsWith(cmd) || cmd.startsWith(v))) {
+        return { type: 'visibility', query: cmd, position: lastDot }
+      }
+
       // .data functions - show suggestions as user types
       if (enableDataFunctions && assetContext) {
         const dataCommands = ['price', 'volume', 'marketcap', 'change', 'pe', 'dividend', 'data']
@@ -320,6 +330,40 @@ export function useSmartInput({
     // The text stays as $SYMBOL (no ID inline) - styled by overlay
     if (newValue[newCursorPos - 1] === ' ') {
       const beforeSpace = newValue.substring(0, newCursorPos - 1)
+
+      // Check for visibility command pattern: .private, .team, .portfolio followed by space
+      const visibilityMatch = beforeSpace.match(/\.(private|team|portfolio)$/i)
+      if (visibilityMatch) {
+        const visType = visibilityMatch[1].toLowerCase() as VisibilityType
+        // Find the position of the dot
+        const dotPos = beforeSpace.length - visibilityMatch[0].length
+
+        // We need the user's ID for private visibility
+        // This will be handled by the component that uses this hook
+        // For now, just close dropdown - the actual insertion will be handled via the picker
+        // But if user typed the full command + space, auto-insert
+        const startTag = formatVisibilityStart(visType, '', undefined, undefined)
+        const endTag = formatVisibilityEnd(visType)
+
+        const before = newValue.substring(0, dotPos)
+        const after = newValue.substring(newCursorPos)
+        const newContent = before + startTag + endTag + after
+        const insertCursorPos = before.length + startTag.length
+
+        setValue(newContent)
+        setCursorPosition(insertCursorPos)
+        setActiveDropdown(null)
+        setDropdownQuery('')
+
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+            textareaRef.current.setSelectionRange(insertCursorPos, insertCursorPos)
+          }
+        }, 0)
+        return
+      }
+
       // Look for $SYMBOL pattern at the end (symbol is uppercase letters/numbers)
       const cashtagMatch = beforeSpace.match(/\$([A-Z0-9.]+)$/)
 
@@ -588,6 +632,64 @@ export function useSmartInput({
       }]
     }))
   }, [insertAtTrigger, triggerPosition, isAIPromptMode, aiPromptStartPos, value, cursorPosition])
+
+  // Insert visibility marker around selected text or at cursor
+  const insertVisibilityMarker = useCallback((
+    type: VisibilityType,
+    authorId: string,
+    targetId?: string,
+    targetName?: string
+  ) => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const startTag = formatVisibilityStart(type, authorId, targetId, targetName)
+    const endTag = formatVisibilityEnd(type)
+
+    // Check if there's selected text to wrap
+    const selectionStart = textarea.selectionStart
+    const selectionEnd = textarea.selectionEnd
+    const hasSelection = selectionStart !== selectionEnd
+
+    // Remove the trigger text (.private, .team, .portfolio)
+    const before = value.substring(0, triggerPosition)
+    const afterTrigger = value.substring(cursorPosition)
+
+    if (hasSelection) {
+      // If user selected text before typing trigger, we need to handle differently
+      // For now, just insert at trigger position
+      const newValue = before + startTag + endTag + afterTrigger
+      const newCursorPos = before.length + startTag.length // Place cursor between tags
+
+      setValue(newValue)
+      setCursorPosition(newCursorPos)
+      setActiveDropdown(null)
+      setDropdownQuery('')
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus()
+          textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        }
+      }, 0)
+    } else {
+      // No selection - insert markers with cursor in between
+      const newValue = before + startTag + endTag + afterTrigger
+      const newCursorPos = before.length + startTag.length // Place cursor between tags
+
+      setValue(newValue)
+      setCursorPosition(newCursorPos)
+      setActiveDropdown(null)
+      setDropdownQuery('')
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus()
+          textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        }
+      }, 0)
+    }
+  }, [value, triggerPosition, cursorPosition])
 
   // Get current AI prompt text (text after ".AI " up to cursor)
   const aiPromptText = useMemo(() => {
@@ -906,6 +1008,7 @@ export function useSmartInput({
     selectTemplate,
     insertDataValue,
     insertAIContent,
+    insertVisibilityMarker,
     submitAIPrompt,
     cancelAIPrompt,
     selectAIModel,

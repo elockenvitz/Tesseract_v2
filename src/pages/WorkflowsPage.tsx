@@ -176,6 +176,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
+  const manualWorkflowUpdateTimeRef = useRef<number>(0) // Timestamp of last manual update
   const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(initialState.selectedWorkflowId || null)
   const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'universe' | 'cadence' | 'branches' | 'models'>(initialState.activeView || 'overview')
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
@@ -1483,7 +1484,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   }
 
   // Query to get all workflows with statistics
-  const { data: workflows, isLoading, error: workflowsError } = useQuery({
+  const { data: workflows, isLoading, error: workflowsError, refetch: refetchWorkflows } = useQuery({
     queryKey: ['workflows-full', filterBy, sortBy, !!workflowStages],
     enabled: !!workflowStages, // Only run when workflowStages are loaded
     queryFn: async () => {
@@ -1855,6 +1856,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Update selectedWorkflow when workflows data changes (to pick up updated stages)
   useEffect(() => {
+    // Skip if we recently manually updated selectedWorkflow (e.g., after saving version)
+    // This prevents stale query data from overwriting our manual update
+    const timeSinceManualUpdate = Date.now() - manualWorkflowUpdateTimeRef.current
+    if (timeSinceManualUpdate < 3000) {
+      return
+    }
+
     if (selectedWorkflow && workflows) {
       // Check both active and archived workflows for updates
       const updatedWorkflow = workflows.find(w => w.id === selectedWorkflow.id) ||
@@ -2359,11 +2367,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
             .insert(
               universeRules.map(rule => ({
                 workflow_id: newWorkflowId,
-                filter_type: rule.filter_type,
-                filter_operator: rule.filter_operator,
-                filter_values: rule.filter_values,
-                combinator: rule.combinator,
-                order_index: rule.order_index
+                rule_type: rule.rule_type,
+                rule_config: rule.rule_config,
+                combination_operator: rule.combination_operator,
+                sort_order: rule.sort_order,
+                is_active: rule.is_active,
+                description: rule.description
               }))
             )
 
@@ -2373,18 +2382,43 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
       return { data: versionId, versionName, versionType, newWorkflowId }
     },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['template-versions'] })
-      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    onSuccess: async (result, variables) => {
+      const workflowId = selectedWorkflow?.id
+
+      // Immediately update selectedWorkflow with the stages we already have
+      // This avoids the stale closure issue where refetch uses old workflowStages data
+      if (selectedWorkflow && variables.workflowData?.stages) {
+        const updatedWorkflow = {
+          ...selectedWorkflow,
+          name: variables.workflowData.name || selectedWorkflow.name,
+          description: variables.workflowData.description || selectedWorkflow.description,
+          color: variables.workflowData.color || selectedWorkflow.color,
+          stages: variables.workflowData.stages
+        }
+        // Mark the time so sync effect skips for a few seconds
+        manualWorkflowUpdateTimeRef.current = Date.now()
+        setSelectedWorkflow(updatedWorkflow)
+      }
+
+      // Invalidate queries for background refresh (don't await - fire and forget)
       queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
       queryClient.invalidateQueries({ queryKey: ['workflows-full'] })
-      refetchVersions()
-      refetchStages()
+      queryClient.invalidateQueries({ queryKey: ['template-versions', workflowId] })
+
       setShowCreateVersion(false)
 
-      // Calculate the new version number
+      // Calculate the new version number based on version type
+      // Major versions increment by 100 (e.g., 700 -> 800), minor versions increment by 1 (e.g., 700 -> 701)
       const currentMaxVersion = templateVersions?.length ? Math.max(...templateVersions.map(v => v.version_number)) : 0
-      const newVersionNumber = currentMaxVersion + 1
+      let newVersionNumber: number
+      if (result.versionType === 'major') {
+        // Get the major base (floor to nearest 100) and add 100
+        const currentMajorBase = Math.floor(currentMaxVersion / 100) * 100
+        newVersionNumber = currentMajorBase + 100
+      } else {
+        // Minor: just add 1
+        newVersionNumber = currentMaxVersion + 1
+      }
 
       // If major version, navigate to the new workflow
       if (result.versionType === 'major' && result.newWorkflowId) {
@@ -2482,15 +2516,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
     }
 
-    // 3. Apply reordering
-    for (const [stageId, reorderInfo] of Object.entries(draftChecklistItems.reordered)) {
-      const updates = reorderInfo.map(item =>
-        supabase
-          .from('workflow_checklist_templates')
-          .update({ sort_order: item.sort_order })
-          .eq('id', item.id)
+    // 3. Apply reordering (all stages in parallel)
+    if (Object.keys(draftChecklistItems.reordered).length > 0) {
+      const allReorderUpdates = Object.values(draftChecklistItems.reordered).flatMap(reorderInfo =>
+        reorderInfo.map(item =>
+          supabase
+            .from('workflow_checklist_templates')
+            .update({ sort_order: item.sort_order })
+            .eq('id', item.id)
+        )
       )
-      const results = await Promise.all(updates)
+      const results = await Promise.all(allReorderUpdates)
       const error = results.find(r => r.error)?.error
       if (error) {
         console.error('Error reordering checklist items:', error)
@@ -2498,16 +2534,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
     }
 
-    // 4. Apply updates
-    for (const [itemId, updates] of Object.entries(draftChecklistItems.updated)) {
-      const { error } = await supabase
-        .from('workflow_checklist_templates')
-        .update(updates)
-        .eq('id', itemId)
-
-      if (error) {
-        console.error('Error updating checklist item:', error)
-        throw error
+    // 4. Apply updates (in parallel)
+    if (Object.keys(draftChecklistItems.updated).length > 0) {
+      const updatePromises = Object.entries(draftChecklistItems.updated).map(([itemId, updates]) =>
+        supabase
+          .from('workflow_checklist_templates')
+          .update(updates)
+          .eq('id', itemId)
+      )
+      const updateResults = await Promise.all(updatePromises)
+      const updateError = updateResults.find(r => r.error)?.error
+      if (updateError) {
+        console.error('Error updating checklist item:', updateError)
+        throw updateError
       }
     }
 
@@ -2540,12 +2579,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
     }
 
-    // 6. Delete stages
-    if (draftStages.deleted.length > 0) {
+    // 6. Delete stages (only real DB IDs, not temp IDs)
+    // Filter out temp IDs - these stages were added and then "deleted" before ever being saved,
+    // or they have temp IDs from a previous save that don't exist in DB
+    const realStageIdsToDelete = draftStages.deleted.filter(id => !id.startsWith('temp_stage_'))
+    if (realStageIdsToDelete.length > 0) {
       const { error: stageDeleteError } = await supabase
         .from('workflow_stages')
         .delete()
-        .in('id', draftStages.deleted)
+        .in('id', realStageIdsToDelete)
 
       if (stageDeleteError) {
         console.error('Error deleting stages:', stageDeleteError)
@@ -2569,74 +2611,66 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
     }
 
-    // 8. Apply stage updates
-    for (const [stageId, updates] of Object.entries(draftStages.updated)) {
-      const { error } = await supabase
-        .from('workflow_stages')
-        .update(updates)
-        .eq('id', stageId)
-
-      if (error) {
-        console.error('Error updating stage:', error)
-        throw error
+    // 8. Apply stage updates (in parallel)
+    if (Object.keys(draftStages.updated).length > 0) {
+      const stageUpdatePromises = Object.entries(draftStages.updated).map(([stageId, updates]) =>
+        supabase
+          .from('workflow_stages')
+          .update(updates)
+          .eq('id', stageId)
+      )
+      const stageUpdateResults = await Promise.all(stageUpdatePromises)
+      const stageUpdateError = stageUpdateResults.find(r => r.error)?.error
+      if (stageUpdateError) {
+        console.error('Error updating stage:', stageUpdateError)
+        throw stageUpdateError
       }
     }
 
     // Clear stage draft state after successful commit
     setDraftStages({ added: [], deleted: [], updated: {}, reordered: [] })
 
-    // === WORKFLOW METADATA CHANGES ===
+    // === WORKFLOW METADATA AND CADENCE CHANGES (combined into single update) ===
 
-    // 9. Save workflow metadata (name, description, color) if changed
+    // 9. Combine metadata and cadence into single update for efficiency
+    const workflowUpdates: Record<string, any> = {}
+
+    // Metadata changes
     if (draftWorkflowMetadata || editingWorkflowData.name !== selectedWorkflow.name ||
         editingWorkflowData.description !== selectedWorkflow.description ||
         editingWorkflowData.color !== selectedWorkflow.color) {
-      const updates: Record<string, any> = {}
       if (editingWorkflowData.name && editingWorkflowData.name !== selectedWorkflow.name) {
-        updates.name = editingWorkflowData.name.trim()
+        workflowUpdates.name = editingWorkflowData.name.trim()
       }
       if (editingWorkflowData.description !== selectedWorkflow.description) {
-        updates.description = editingWorkflowData.description.trim()
+        workflowUpdates.description = editingWorkflowData.description.trim()
       }
       if (editingWorkflowData.color && editingWorkflowData.color !== selectedWorkflow.color) {
-        updates.color = editingWorkflowData.color
-      }
-
-      if (Object.keys(updates).length > 0) {
-        const { error: metadataError } = await supabase
-          .from('workflows')
-          .update(updates)
-          .eq('id', selectedWorkflow.id)
-
-        if (metadataError) {
-          console.error('Error updating workflow metadata:', metadataError)
-          throw metadataError
-        }
+        workflowUpdates.color = editingWorkflowData.color
       }
     }
 
-    // Clear workflow metadata draft
-    setDraftWorkflowMetadata(null)
-
-    // === CADENCE CHANGES ===
-
-    // 10. Save cadence if changed
+    // Cadence changes
     if (draftCadence) {
-      const { error: cadenceError } = await supabase
+      workflowUpdates.cadence_timeframe = draftCadence.cadence_timeframe
+      workflowUpdates.cadence_days = draftCadence.cadence_days
+    }
+
+    // Single update for all workflow-level changes
+    if (Object.keys(workflowUpdates).length > 0) {
+      const { error: workflowError } = await supabase
         .from('workflows')
-        .update({
-          cadence_timeframe: draftCadence.cadence_timeframe,
-          cadence_days: draftCadence.cadence_days
-        })
+        .update(workflowUpdates)
         .eq('id', selectedWorkflow.id)
 
-      if (cadenceError) {
-        console.error('Error updating cadence:', cadenceError)
-        throw cadenceError
+      if (workflowError) {
+        console.error('Error updating workflow:', workflowError)
+        throw workflowError
       }
     }
 
-    // Clear cadence draft
+    // Clear drafts
+    setDraftWorkflowMetadata(null)
     setDraftCadence(null)
 
     // === AUTOMATION RULES CHANGES ===
@@ -2678,47 +2712,55 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       }
     }
 
-    // 13. Update automation rules
-    for (const [ruleId, updates] of Object.entries(draftAutomationRules.updated)) {
-      const updateData: any = {
-        rule_name: updates.rule_name,
-        rule_type: updates.rule_type,
-        condition_type: updates.condition_type,
-        condition_value: updates.condition_value,
-        action_type: updates.action_type,
-        action_value: updates.action_value,
-        is_active: updates.is_active
-      }
-      // Include rule_category if provided
-      if (updates.rule_category) {
-        updateData.rule_category = updates.rule_category
-      }
+    // 13. Update automation rules (in parallel)
+    if (Object.keys(draftAutomationRules.updated).length > 0) {
+      const ruleUpdatePromises = Object.entries(draftAutomationRules.updated).map(([ruleId, updates]) => {
+        const updateData: any = {
+          rule_name: updates.rule_name,
+          rule_type: updates.rule_type,
+          condition_type: updates.condition_type,
+          condition_value: updates.condition_value,
+          action_type: updates.action_type,
+          action_value: updates.action_value,
+          is_active: updates.is_active
+        }
+        // Include rule_category if provided
+        if (updates.rule_category) {
+          updateData.rule_category = updates.rule_category
+        }
 
-      const { error } = await supabase
-        .from('workflow_automation_rules')
-        .update(updateData)
-        .eq('id', ruleId)
+        return supabase
+          .from('workflow_automation_rules')
+          .update(updateData)
+          .eq('id', ruleId)
+      })
 
-      if (error) {
-        console.error('Error updating automation rule:', error)
-        throw error
+      const ruleUpdateResults = await Promise.all(ruleUpdatePromises)
+      const ruleUpdateError = ruleUpdateResults.find(r => r.error)?.error
+      if (ruleUpdateError) {
+        console.error('Error updating automation rule:', ruleUpdateError)
+        throw ruleUpdateError
       }
     }
 
     // Clear automation rules draft
     setDraftAutomationRules({ added: [], deleted: [], updated: {} })
 
-    // Refetch to get fresh data with real IDs
-    await queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
-    await queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
-    await queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
-    await queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    // Invalidate queries for background refresh (non-blocking)
+    queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
+    queryClient.invalidateQueries({ queryKey: ['workflow-automation-rules'] })
+    queryClient.invalidateQueries({ queryKey: ['workflows'] })
   }
 
   const handleCreateVersion = async (versionName: string, versionType: 'major' | 'minor', description: string) => {
     if (!selectedWorkflow) return
 
     try {
+      // IMPORTANT: Capture effective stages/items BEFORE committing, because commitDraftChangesToDB
+      // clears the draft state, which would cause getEffectiveStages to return unfiltered data
+      const effectiveStages = getEffectiveStages()
+      const effectiveItems = getEffectiveChecklistItems()
+
       // Commit all draft changes to the database (stages, checklists, metadata, cadence)
       await commitDraftChangesToDB()
 
@@ -2726,8 +2768,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       saveUniverseRules()
 
       // Prepare workflow data for major version creation
-      // Use effective items which include the just-committed changes
-      const effectiveItems = getEffectiveChecklistItems()
       const workflowData = {
         name: editingWorkflowData.name || selectedWorkflow.name,
         description: editingWorkflowData.description || selectedWorkflow.description,
@@ -2735,7 +2775,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         parent_workflow_id: selectedWorkflow.parent_workflow_id,
         created_by: selectedWorkflow.created_by,
         project_id: selectedWorkflow.project_id,
-        stages: selectedWorkflow.stages || [],
+        stages: effectiveStages,
         checklists: effectiveItems,
         rules: automationRules?.filter(r => r.workflow_id === selectedWorkflow.id) || []
       }
@@ -3563,15 +3603,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
   }, [getEffectiveStages, trackChange])
 
   const handleDeleteStageDraft = useCallback((stageId: string) => {
-    // Check if this is a draft stage (temp ID)
-    const isDraftStage = stageId.startsWith('temp_stage_')
-
     // Get the stage for change description
     const effectiveStages = getEffectiveStages()
     const stage = effectiveStages.find(s => s.id === stageId)
-    const stageName = stage?.stage_label || 'Stage'
 
-    if (isDraftStage) {
+    // If stage is not found (already deleted), skip
+    if (!stage) return
+
+    const stageName = stage.stage_label || 'Stage'
+
+    // Check if this is actually a draft stage (in the added list, not just has temp prefix)
+    // A stage might have temp_ prefix but already be saved if the user saved and is editing again
+    const isActuallyDraftStage = draftStages.added.some(s => s.id === stageId)
+
+    if (isActuallyDraftStage) {
       // Remove from added list - this was never saved
       setDraftStages(prev => ({
         ...prev,
@@ -3581,16 +3626,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       // Remove the add change since we're deleting a draft stage
       setTemplateChanges(prev => prev.filter(c => c.elementId !== `stage_${stageId}`))
     } else {
-      // Mark existing DB stage for deletion
-      setDraftStages(prev => ({
-        ...prev,
-        deleted: [...prev.deleted, stageId]
-      }))
+      // Mark existing stage for deletion (avoid duplicates)
+      setDraftStages(prev => {
+        if (prev.deleted.includes(stageId)) return prev
+        return {
+          ...prev,
+          deleted: [...prev.deleted, stageId]
+        }
+      })
 
       // Track the change
       trackChange('stage_deleted', `Stage Deleted: "${stageName}"`, `stage_deleted_${stageId}`)
     }
-  }, [getEffectiveStages, trackChange])
+  }, [getEffectiveStages, draftStages.added, trackChange])
 
   const handleReorderStagesDraft = useCallback((reorderInfo: { id: string, sort_order: number }[]) => {
     // Get the new order of stage IDs (sorted by the new sort_order)
@@ -5488,13 +5536,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   }}
                   onEditStage={(stageId) => setEditingStage(stageId)}
                   onDeleteStage={(stageId) => {
-                    const effectiveStages = getEffectiveStages()
-                    const stage = effectiveStages.find(s => s.id === stageId)
-                    if (stage) {
-                      if (isTemplateEditMode) {
-                        // No confirmation needed in edit mode - changes can be discarded
-                        handleDeleteStageDraft(stageId)
-                      } else {
+                    if (isTemplateEditMode) {
+                      // No confirmation needed in edit mode - changes can be discarded
+                      handleDeleteStageDraft(stageId)
+                    } else {
+                      // Need stage info for the confirmation modal
+                      const effectiveStages = getEffectiveStages()
+                      const stage = effectiveStages.find(s => s.id === stageId)
+                      if (stage) {
                         setStageToDelete({
                           id: stage.id,
                           key: stage.stage_key,

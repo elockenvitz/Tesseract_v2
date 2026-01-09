@@ -7,7 +7,7 @@ import ReactDOM from 'react-dom/client'
 import {
   Sparkles, Camera, Image as ImageIcon, Link, FileText, BarChart3,
   Table2, ListChecks, Calendar, Hash, HelpCircle, Minus, LucideIcon,
-  TrendingUp, Activity, LineChart
+  TrendingUp, Activity, LineChart, Lock, Users, Building2
 } from 'lucide-react'
 
 const DotCommandPluginKey = new PluginKey('dotCommand')
@@ -18,7 +18,7 @@ export interface DotCommandItem {
   description: string
   icon: LucideIcon
   color: string
-  category: 'ai' | 'capture' | 'data' | 'chart' | 'content' | 'template' | 'other'
+  category: 'ai' | 'capture' | 'data' | 'chart' | 'content' | 'template' | 'visibility' | 'other'
 }
 
 const DOT_COMMANDS: DotCommandItem[] = [
@@ -57,6 +57,11 @@ const DOT_COMMANDS: DotCommandItem[] = [
   { id: 'note', name: '.note', description: 'Link to a note', icon: FileText, color: 'text-orange-600', category: 'content' },
   { id: 'link', name: '.link', description: 'Insert a link', icon: Link, color: 'text-blue-600', category: 'content' },
 
+  // Visibility commands
+  { id: 'private', name: '.private', description: 'Mark as private (only you)', icon: Lock, color: 'text-amber-600', category: 'visibility' },
+  { id: 'team', name: '.team', description: 'Visible to team only', icon: Users, color: 'text-blue-600', category: 'visibility' },
+  { id: 'portfolio', name: '.portfolio', description: 'Visible to portfolio members', icon: Building2, color: 'text-purple-600', category: 'visibility' },
+
   // Template commands are dynamically loaded from database (see getFilteredItems)
 
   // Other
@@ -85,11 +90,16 @@ export interface DotCommandSuggestionOptions {
   onTocCommand?: () => void
   onDividerCommand?: () => void
   onHelpCommand?: () => void
+  onVisibilityCommand?: (type: 'private' | 'team' | 'portfolio', targetId?: string, targetName?: string) => void
   templates?: TemplateWithShortcut[]
 }
 
 export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggestionOptions>({
   name: 'dotCommandSuggestion',
+
+  onCreate() {
+    console.log('[DotCommand] Extension created and initialized!')
+  },
 
   addOptions() {
     return {
@@ -105,6 +115,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       onTocCommand: undefined,
       onDividerCommand: undefined,
       onHelpCommand: undefined,
+      onVisibilityCommand: undefined,
       templates: [],
     }
   },
@@ -121,9 +132,11 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
 
     const getFilteredItems = (query: string): DotCommandItem[] => {
       const lowerQuery = query.toLowerCase()
+      console.log('[DotCommand] getFilteredItems called with query:', query)
 
       // Get base commands (excluding hardcoded templates)
       const baseCommands = DOT_COMMANDS.filter(cmd => !cmd.id.startsWith('template.'))
+      console.log('[DotCommand] baseCommands count:', baseCommands.length)
 
       // Create dynamic template commands from provided templates
       const templateCommands: DotCommandItem[] = (options.templates || []).map(template => ({
@@ -138,12 +151,14 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       // Combine all commands
       const allCommands = [...baseCommands, ...templateCommands]
 
-      return allCommands.filter(cmd => {
+      const filtered = allCommands.filter(cmd => {
         const cmdLower = cmd.name.toLowerCase().slice(1)
         return cmdLower.startsWith(lowerQuery) ||
           cmdLower.includes(lowerQuery) ||
           cmd.description.toLowerCase().includes(lowerQuery)
       }).slice(0, 10)
+      console.log('[DotCommand] filtered items:', filtered.map(f => f.id))
+      return filtered
     }
 
     const executeCommand = (commandId: string, symbol?: string) => {
@@ -202,6 +217,18 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
         case 'help':
           options.onHelpCommand?.()
           break
+        case 'private':
+          console.log('[DotCommand] executing private command')
+          options.onVisibilityCommand?.('private')
+          break
+        case 'team':
+          console.log('[DotCommand] executing team command')
+          options.onVisibilityCommand?.('team')
+          break
+        case 'portfolio':
+          console.log('[DotCommand] executing portfolio command')
+          options.onVisibilityCommand?.('portfolio')
+          break
         default:
           // Handle dynamic template commands (template.{shortcut})
           if (commandId.startsWith('template.')) {
@@ -239,6 +266,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
     }
 
     const showPopup = (view: EditorView, pos: number, items: DotCommandItem[], onSelect: (item: DotCommandItem) => void) => {
+      console.log('[DotCommand] showPopup called with', items.length, 'items')
       if (popup) {
         // Update existing popup position and content
         const coords = view.coordsAtPos(pos)
@@ -258,6 +286,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
         renderPopup(items, onSelect)
         return
       }
+      console.log('[DotCommand] creating new popup')
 
       // Create new popup
       popupElement = document.createElement('div')
@@ -299,13 +328,19 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
 
       // Find dot command pattern at end of text
       const match = textBefore.match(/\.([a-zA-Z0-9.]*)$/)
-      if (!match) return null
+      if (!match) {
+        return null
+      }
 
       // Check that the dot is at start or after whitespace
       const dotIndex = textBefore.length - match[0].length
-      if (dotIndex > 0 && !/\s/.test(textBefore[dotIndex - 1])) return null
+      if (dotIndex > 0 && !/\s/.test(textBefore[dotIndex - 1])) {
+        console.log('[DotCommand] dot not at start or after whitespace, textBefore:', textBefore)
+        return null
+      }
 
       const nodeStart = pos - $pos.parentOffset
+      console.log('[DotCommand] found command query:', match[1], 'at position:', nodeStart + dotIndex)
       return {
         query: match[1],
         start: nodeStart + dotIndex
@@ -356,7 +391,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
         }
       }
 
-      const otherCommands = ['capture', 'screenshot', 'embed', 'task', 'event', 'note', 'link', 'toc', 'divider', 'help']
+      const otherCommands = ['capture', 'screenshot', 'embed', 'task', 'event', 'note', 'link', 'toc', 'divider', 'help', 'private', 'team', 'portfolio']
       for (const cmd of otherCommands) {
         if (new RegExp(`\\.${cmd}$`, 'i').test(text)) {
           return { commandId: cmd }
@@ -467,12 +502,16 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
               return
             }
 
+            console.log('[DotCommand] updateHandler: query found:', cmdInfo.query)
             const items = getFilteredItems(cmdInfo.query)
 
             if (items.length === 0) {
+              console.log('[DotCommand] updateHandler: no items found, closing popup')
               if (popup) closePopup()
               return
             }
+
+            console.log('[DotCommand] updateHandler: showing popup with', items.length, 'items')
 
             // Ensure selectedIndex is valid
             if (selectedIndex >= items.length) {
@@ -482,6 +521,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
             triggerPos = cmdInfo.start
 
             showPopup(editorView, cmdInfo.start, items, (item) => {
+              console.log('[DotCommand] item selected:', item.id)
               closePopup()
               editorView.dispatch(editorView.state.tr.delete(cmdInfo.start, editorView.state.selection.from))
               executeCommand(item.id)
@@ -513,9 +553,9 @@ function DotCommandList({ items, selectedIndex, onSelect }: DotCommandListProps)
     }, 'No commands found')
   }
 
-  const categories = ['ai', 'capture', 'data', 'chart', 'content', 'template', 'other'] as const
+  const categories = ['ai', 'capture', 'data', 'chart', 'content', 'visibility', 'template', 'other'] as const
   const categoryLabels: Record<string, string> = {
-    ai: 'AI', capture: 'Capture', data: 'Data', chart: 'Charts', content: 'Content', template: 'Templates', other: 'Other'
+    ai: 'AI', capture: 'Capture', data: 'Data', chart: 'Charts', content: 'Content', visibility: 'Visibility', template: 'Templates', other: 'Other'
   }
 
   let globalIndex = 0

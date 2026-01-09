@@ -10,7 +10,10 @@ import {
   Calculator,
   Percent,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Lock,
+  Users,
+  Building2
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { EntityType, getEntityColor } from '../../hooks/useEntitySearch'
@@ -20,6 +23,9 @@ import {
   DATA_SNAPSHOT_REGEX,
   DATA_LIVE_REGEX,
   AI_CONTENT_REGEX,
+  VISIBILITY_PRIVATE_REGEX,
+  VISIBILITY_TEAM_REGEX,
+  VISIBILITY_PORTFOLIO_REGEX,
   DataFunctionType
 } from './types'
 
@@ -30,10 +36,14 @@ export interface SmartInputRendererProps {
   className?: string
   renderMarkdown?: boolean
   inline?: boolean
+  // Viewer context for visibility filtering
+  viewerId?: string
+  viewerTeamIds?: string[]
+  viewerPortfolioIds?: string[]
 }
 
 interface ParsedSegment {
-  type: 'text' | 'mention' | 'reference' | 'data-snapshot' | 'data-live' | 'ai-content'
+  type: 'text' | 'mention' | 'reference' | 'data-snapshot' | 'data-live' | 'ai-content' | 'visibility-private' | 'visibility-team' | 'visibility-portfolio'
   content: string
   data?: any
 }
@@ -44,10 +54,16 @@ export function SmartInputRenderer({
   onReferenceClick,
   className,
   renderMarkdown = true,
-  inline = false
+  inline = false,
+  viewerId,
+  viewerTeamIds = [],
+  viewerPortfolioIds = []
 }: SmartInputRendererProps) {
-  // Parse content into segments
-  const segments = useMemo(() => parseContent(content), [content])
+  // Parse content into segments, filtering based on viewer access
+  const segments = useMemo(() =>
+    parseContent(content, viewerId, viewerTeamIds, viewerPortfolioIds),
+    [content, viewerId, viewerTeamIds, viewerPortfolioIds]
+  )
 
   const Wrapper = inline ? 'span' : 'div'
 
@@ -67,7 +83,12 @@ export function SmartInputRenderer({
   )
 }
 
-function parseContent(content: string): ParsedSegment[] {
+function parseContent(
+  content: string,
+  viewerId?: string,
+  viewerTeamIds: string[] = [],
+  viewerPortfolioIds: string[] = []
+): ParsedSegment[] {
   const segments: ParsedSegment[] = []
   let lastIndex = 0
 
@@ -77,7 +98,11 @@ function parseContent(content: string): ParsedSegment[] {
     { regex: /#\[([^\]]+)\]\((\w+):([a-f0-9-]+)\)/g, type: 'reference' as const },
     { regex: /\.data\[(\w+):snapshot:([^:]+):([^\]]+)\]/g, type: 'data-snapshot' as const },
     { regex: /\.data\[(\w+):live:([a-f0-9-]+)\]/g, type: 'data-live' as const },
-    { regex: /\.AI\[([^\]]*)\]\{([^}]*)\}/g, type: 'ai-content' as const }
+    { regex: /\.AI\[([^\]]*)\]\{([^}]*)\}/g, type: 'ai-content' as const },
+    // Visibility patterns
+    { regex: /\[PRIVATE:([a-f0-9-]+)\]([\s\S]*?)\[\/PRIVATE\]/g, type: 'visibility-private' as const },
+    { regex: /\[TEAM:([a-f0-9-]*):([^\]]*)\]([\s\S]*?)\[\/TEAM\]/g, type: 'visibility-team' as const },
+    { regex: /\[PORTFOLIO:([a-f0-9-]*):([^\]]*)\]([\s\S]*?)\[\/PORTFOLIO\]/g, type: 'visibility-portfolio' as const }
   ]
 
   // Find all matches with their positions
@@ -87,6 +112,7 @@ function parseContent(content: string): ParsedSegment[] {
     type: ParsedSegment['type']
     data: any
     fullMatch: string
+    hasAccess: boolean
   }
 
   const allMatches: Match[] = []
@@ -96,6 +122,7 @@ function parseContent(content: string): ParsedSegment[] {
     const regexCopy = new RegExp(regex.source, regex.flags)
     while ((match = regexCopy.exec(content)) !== null) {
       const data: any = {}
+      let hasAccess = true
 
       switch (type) {
         case 'mention':
@@ -120,6 +147,26 @@ function parseContent(content: string): ParsedSegment[] {
           data.prompt = match[1]
           data.content = match[2]
           break
+        case 'visibility-private':
+          data.authorId = match[1]
+          data.innerContent = match[2]
+          // Only show if viewer is the author
+          hasAccess = viewerId === data.authorId
+          break
+        case 'visibility-team':
+          data.teamId = match[1]
+          data.teamName = match[2]
+          data.innerContent = match[3]
+          // Show if viewer is in the team (or if no teamId specified, show to all)
+          hasAccess = !data.teamId || viewerTeamIds.includes(data.teamId)
+          break
+        case 'visibility-portfolio':
+          data.portfolioId = match[1]
+          data.portfolioName = match[2]
+          data.innerContent = match[3]
+          // Show if viewer has portfolio access (or if no portfolioId specified, show to all)
+          hasAccess = !data.portfolioId || viewerPortfolioIds.includes(data.portfolioId)
+          break
       }
 
       allMatches.push({
@@ -127,7 +174,8 @@ function parseContent(content: string): ParsedSegment[] {
         length: match[0].length,
         type,
         data,
-        fullMatch: match[0]
+        fullMatch: match[0],
+        hasAccess
       })
     }
   })
@@ -145,12 +193,27 @@ function parseContent(content: string): ParsedSegment[] {
       })
     }
 
-    // Add the match
-    segments.push({
-      type: match.type,
-      content: match.fullMatch,
-      data: match.data
-    })
+    // For visibility segments, only add if user has access
+    // For non-visibility segments, always add
+    const isVisibility = match.type.startsWith('visibility-')
+    if (isVisibility) {
+      if (match.hasAccess) {
+        // User has access - show the inner content with a visual indicator
+        segments.push({
+          type: match.type,
+          content: match.data.innerContent,
+          data: match.data
+        })
+      }
+      // If no access, content is simply omitted
+    } else {
+      // Regular segment - add it
+      segments.push({
+        type: match.type,
+        content: match.fullMatch,
+        data: match.data
+      })
+    }
 
     lastIndex = match.index + match.length
   })
@@ -239,6 +302,27 @@ function SegmentRenderer({
           prompt={segment.data.prompt}
           content={segment.data.content}
         />
+      )
+
+    case 'visibility-private':
+      return (
+        <VisibilityBlock type="private" label="Private">
+          {segment.content}
+        </VisibilityBlock>
+      )
+
+    case 'visibility-team':
+      return (
+        <VisibilityBlock type="team" label={segment.data.teamName || 'Team'}>
+          {segment.content}
+        </VisibilityBlock>
+      )
+
+    case 'visibility-portfolio':
+      return (
+        <VisibilityBlock type="portfolio" label={segment.data.portfolioName || 'Portfolio'}>
+          {segment.content}
+        </VisibilityBlock>
       )
 
     default:
@@ -372,4 +456,57 @@ function getDataIcon(dataType: DataFunctionType) {
     dividend_yield: Percent
   }
   return icons[dataType] || DollarSign
+}
+
+// Visibility block component - shows restricted content with a visual indicator
+interface VisibilityBlockProps {
+  type: 'private' | 'team' | 'portfolio'
+  label: string
+  children: React.ReactNode
+}
+
+function VisibilityBlock({ type, label, children }: VisibilityBlockProps) {
+  const config = {
+    private: {
+      icon: Lock,
+      bgColor: 'bg-amber-50',
+      borderColor: 'border-amber-300',
+      textColor: 'text-amber-700',
+      badgeBg: 'bg-amber-100'
+    },
+    team: {
+      icon: Users,
+      bgColor: 'bg-blue-50',
+      borderColor: 'border-blue-300',
+      textColor: 'text-blue-700',
+      badgeBg: 'bg-blue-100'
+    },
+    portfolio: {
+      icon: Building2,
+      bgColor: 'bg-purple-50',
+      borderColor: 'border-purple-300',
+      textColor: 'text-purple-700',
+      badgeBg: 'bg-purple-100'
+    }
+  }
+
+  const { icon: Icon, bgColor, borderColor, textColor, badgeBg } = config[type]
+
+  return (
+    <span className={clsx(
+      'inline-flex items-start gap-1 px-2 py-0.5 rounded border-l-2',
+      bgColor,
+      borderColor
+    )}>
+      <span className={clsx(
+        'inline-flex items-center gap-0.5 text-xs font-medium px-1 py-0.5 rounded',
+        badgeBg,
+        textColor
+      )}>
+        <Icon className="w-3 h-3" />
+        {label}
+      </span>
+      <span className="text-gray-700">{children}</span>
+    </span>
+  )
 }

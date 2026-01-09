@@ -1,6 +1,9 @@
 import { EntityType } from '../../hooks/useEntitySearch'
 
-export type TriggerType = 'mention' | 'hashtag' | 'cashtag' | 'template' | 'data' | 'ai' | 'ai-model' | 'capture' | 'screenshot' | 'embed'
+export type TriggerType = 'mention' | 'hashtag' | 'cashtag' | 'template' | 'data' | 'ai' | 'ai-model' | 'capture' | 'screenshot' | 'embed' | 'visibility'
+
+// Visibility types for inline content restrictions
+export type VisibilityType = 'private' | 'team' | 'portfolio'
 
 export interface TriggerInfo {
   type: TriggerType
@@ -120,3 +123,49 @@ export function formatDataLive(dataType: DataFunctionType, assetId: string): str
 export function formatAIContent(prompt: string, content: string): string {
   return `.AI[${prompt}]{${content}}`
 }
+
+// Visibility block markers
+// Format: [PRIVATE]content[/PRIVATE] or [TEAM:teamId:Team Name]content[/TEAM] or [PORTFOLIO:portfolioId:Portfolio Name]content[/PORTFOLIO]
+export const VISIBILITY_PRIVATE_REGEX = /\[PRIVATE:([a-f0-9-]+)\]([\s\S]*?)\[\/PRIVATE\]/g
+export const VISIBILITY_TEAM_REGEX = /\[TEAM:([a-f0-9-]+):([^\]]+)\]([\s\S]*?)\[\/TEAM\]/g
+export const VISIBILITY_PORTFOLIO_REGEX = /\[PORTFOLIO:([a-f0-9-]+):([^\]]+)\]([\s\S]*?)\[\/PORTFOLIO\]/g
+
+export function formatVisibilityStart(type: VisibilityType, authorId: string, targetId?: string, targetName?: string): string {
+  switch (type) {
+    case 'private':
+      return `[PRIVATE:${authorId}]`
+    case 'team':
+      return `[TEAM:${targetId || ''}:${targetName || 'Team'}]`
+    case 'portfolio':
+      return `[PORTFOLIO:${targetId || ''}:${targetName || 'Portfolio'}]`
+    default:
+      return ''
+  }
+}
+
+export function formatVisibilityEnd(type: VisibilityType): string {
+  switch (type) {
+    case 'private':
+      return '[/PRIVATE]'
+    case 'team':
+      return '[/TEAM]'
+    case 'portfolio':
+      return '[/PORTFOLIO]'
+    default:
+      return ''
+  }
+}
+
+export interface VisibilityOption {
+  type: VisibilityType
+  label: string
+  description: string
+  icon: string
+  color: string
+}
+
+export const VISIBILITY_OPTIONS: VisibilityOption[] = [
+  { type: 'private', label: 'Private', description: 'Only you can see this', icon: 'Lock', color: 'text-amber-600' },
+  { type: 'team', label: 'Team', description: 'Visible to team members', icon: 'Users', color: 'text-blue-600' },
+  { type: 'portfolio', label: 'Portfolio', description: 'Visible to portfolio members', icon: 'Building2', color: 'text-purple-600' }
+]

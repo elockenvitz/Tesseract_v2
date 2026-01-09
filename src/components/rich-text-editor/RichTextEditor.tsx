@@ -39,6 +39,7 @@ import { DataValueExtension } from './extensions/DataValueExtension'
 import { DotCommandSuggestionExtension, TemplateWithShortcut } from './extensions/DotCommandSuggestionExtension'
 import { DotCommandExtension } from './extensions/DotCommandExtension'
 import { AIPromptExtension } from './extensions/AIPromptExtension'
+import { VisibilityBlockExtension, type VisibilityType } from './extensions/VisibilityBlockExtension'
 import { useCaptureMode } from '../../contexts/CaptureContext'
 import { useScreenCapture } from '../../hooks/useScreenCapture'
 import { useCapture } from '../../hooks/useCapture'
@@ -340,6 +341,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       ChartExtension,
       DataValueExtension,
       DotCommandExtension,
+      VisibilityBlockExtension,
       DotCommandSuggestionExtension.configure({
         onAICommand: (model?: string) => {
           // Insert .AI command text so the AIPromptExtension can take over
@@ -469,6 +471,23 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
               embeddedAt: new Date().toISOString()
             }
           }).run()
+        },
+        onVisibilityCommand: (type: VisibilityType, targetId?: string, targetName?: string) => {
+          console.log('[VisibilityCommand] called with type:', type)
+          const currentEditor = editorRef.current
+          if (!currentEditor) {
+            console.log('[VisibilityCommand] no editor ref!')
+            return
+          }
+
+          // Insert a new visibility block (handles both selection wrap and empty insertion)
+          console.log('[VisibilityCommand] inserting visibility block')
+          currentEditor.chain().focus().insertVisibilityBlock({
+            visibilityType: type,
+            targetId: targetId || null,
+            targetName: targetName || (type === 'private' ? 'Private' : type === 'team' ? 'Team Only' : 'Portfolio Only')
+          }).run()
+          console.log('[VisibilityCommand] done')
         }
       }),
       AIPromptExtension.configure({
@@ -988,6 +1007,16 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                   </div>
                 </div>
 
+                {/* Visibility Commands */}
+                <div>
+                  <h3 className="text-sm font-semibold text-amber-600 mb-2">Visibility Commands</h3>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-amber-600">.private</span><span className="text-gray-600">Private note (only you can see)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-blue-600">.team</span><span className="text-gray-600">Visible to your team only</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.portfolio</span><span className="text-gray-600">Visible to portfolio members</span></div>
+                  </div>
+                </div>
+
                 {/* Other Commands */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-600 mb-2">Other Commands</h3>
@@ -1409,6 +1438,32 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
         /* Dropcursor */
         .ProseMirror-dropcursor {
           border-left: 2px solid #6366f1 !important;
+        }
+
+        /* Visibility Block */
+        .visibility-block-wrapper {
+          margin: 0.5rem 0;
+        }
+
+        .visibility-block-content {
+          min-height: 1.5em;
+          outline: none;
+        }
+
+        .visibility-block-content p {
+          margin: 0.25rem 0;
+        }
+
+        .visibility-block-content:focus {
+          outline: none;
+        }
+
+        .visibility-block-content p.is-empty:first-child::before {
+          content: 'Type here...';
+          color: #9ca3af;
+          pointer-events: none;
+          float: left;
+          height: 0;
         }
       `}</style>
     </div>

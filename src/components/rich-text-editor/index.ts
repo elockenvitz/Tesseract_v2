@@ -4,3 +4,9 @@ export { MentionExtension, MentionList, type MentionItem } from './extensions/Me
 export { AssetExtension, AssetList, type AssetItem } from './extensions/AssetExtension'
 export { HashtagExtension, HashtagList, type HashtagItem } from './extensions/HashtagExtension'
 export { NoteLinkExtension, NoteLinkList, type NoteLinkItem } from './extensions/NoteLinkExtension'
+export {
+  VisibilityBlockExtension,
+  filterContentByVisibility,
+  type VisibilityType,
+  type VisibilityBlockAttrs
+} from './extensions/VisibilityBlockExtension'

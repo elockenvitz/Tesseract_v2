@@ -7,7 +7,9 @@ import { MentionSuggestions } from './MentionSuggestions'
 import { HashtagSuggestions } from './HashtagSuggestions'
 import { TemplateSuggestions } from './TemplateSuggestions'
 import { DataFunctionPicker } from './DataFunctionPicker'
-import { SmartInputMetadata, DataFunctionType, AI_MODELS } from './types'
+import { VisibilityPicker } from './VisibilityPicker'
+import { SmartInputMetadata, DataFunctionType, VisibilityType, AI_MODELS } from './types'
+import { useAuth } from '../../hooks/useAuth'
 
 export interface UniversalSmartInputProps {
   value: string
@@ -71,6 +73,8 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
     },
     ref
   ) {
+    const { user } = useAuth()
+
     const {
       value,
       setValue,
@@ -101,6 +105,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       selectTemplate,
       insertDataValue,
       insertAIContent,
+      insertVisibilityMarker,
       submitAIPrompt,
       cancelAIPrompt,
       closeDropdown,
@@ -181,6 +186,13 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
     // Handle data function selection
     const handleDataSelect = (dataType: DataFunctionType, mode: 'snapshot' | 'live', dataValue?: string) => {
       insertDataValue(dataType, mode, dataValue)
+      closeDropdown()
+    }
+
+    // Handle visibility selection
+    const handleVisibilitySelect = (type: VisibilityType, targetId?: string, targetName?: string) => {
+      if (!user?.id) return
+      insertVisibilityMarker(type, user.id, targetId, targetName)
       closeDropdown()
     }
 
@@ -471,6 +483,23 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
               query={dropdownQuery}
               assetContext={assetContext}
               onSelect={handleDataSelect}
+              onClose={closeDropdown}
+            />
+          </SmartInputDropdown>
+        )}
+
+        {/* Visibility Picker - shows when user types .private, .team, or .portfolio */}
+        {activeDropdown === 'visibility' && user?.id && (
+          <SmartInputDropdown
+            isOpen={true}
+            type="visibility"
+            position={dropdownPosition}
+            onClose={closeDropdown}
+          >
+            <VisibilityPicker
+              query={dropdownQuery}
+              authorId={user.id}
+              onSelect={handleVisibilitySelect}
               onClose={closeDropdown}
             />
           </SmartInputDropdown>
