@@ -6690,23 +6690,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         isLoading={deleteBranchMutation.isPending}
       />
 
-      {/* Upload Template Modal */}
+      {/* Upload File Modal */}
       {showUploadTemplateModal && selectedWorkflow && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Upload Template</h2>
-              <p className="text-sm text-gray-500 mt-1">Add a template file for your team to use</p>
+              <h2 className="text-xl font-bold text-gray-900">Upload File</h2>
+              <p className="text-sm text-gray-500 mt-1">Files will be accessible when working through this workflow and stored in the Files tab</p>
             </div>
 
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Template Name
+                  File Name
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g., Earnings Analysis Template"
+                  placeholder="e.g., Q4 Earnings Model"
                   value={templateFormData.name}
                   onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -6718,7 +6718,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                   Description (Optional)
                 </label>
                 <textarea
-                  placeholder="Describe what this template is used for..."
+                  placeholder="Describe what this file is used for..."
                   rows={3}
                   value={templateFormData.description}
                   onChange={(e) => setTemplateFormData({ ...templateFormData, description: e.target.value })}
@@ -6756,7 +6756,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
               <Button
                 onClick={() => {
                   if (!templateFormData.name.trim()) {
-                    alert('Please enter a template name')
+                    alert('Please enter a file name')
                     return
                   }
                   if (!templateFormData.file) {
@@ -6772,7 +6772,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                 }}
                 loading={uploadTemplateMutation.isPending}
               >
-                Upload Template
+                Upload File
               </Button>
             </div>
           </div>

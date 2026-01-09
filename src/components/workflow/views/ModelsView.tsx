@@ -67,12 +67,12 @@ export function ModelsView({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <h3 className="text-lg font-semibold text-gray-900">Document Templates</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Files</h3>
         </div>
         {canEdit && onUpload && (
           <Button onClick={onUpload}>
             <Upload className="w-4 h-4 mr-2" />
-            Upload Template
+            Upload File
           </Button>
         )}
       </div>
@@ -155,17 +155,11 @@ export function ModelsView({
             <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <FileText className="w-6 h-6 text-gray-400" />
             </div>
-            <h4 className="text-lg font-medium text-gray-900 mb-2">No templates yet</h4>
-            <p className="text-sm text-gray-500 mb-4">
-              Upload document templates, spreadsheets, or other files that users can reference
-              when working on this workflow.
+            <h4 className="text-lg font-medium text-gray-900 mb-2">No files yet</h4>
+            <p className="text-sm text-gray-500">
+              Upload files using the button above. Files will be accessible when working through
+              this workflow and stored in the Files tab for future use.
             </p>
-            {canEdit && onUpload && (
-              <Button onClick={onUpload}>
-                <Upload className="w-4 h-4 mr-2" />
-                Upload First Template
-              </Button>
-            )}
           </div>
         </div>
       )}
