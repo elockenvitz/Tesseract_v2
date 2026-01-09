@@ -954,7 +954,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         const collaboratorsData = admins.map(a => ({
           workflow_id: workflowId,
           user_id: a.userId,
-          permission: 'admin'
+          permission: 'admin',
+          invited_by: user.id
         }))
 
         const { error: collabError } = await supabase
