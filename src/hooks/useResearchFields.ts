@@ -588,121 +588,41 @@ export function useUserResearchLayout() {
 
       if (sectionsError) throw sectionsError
 
-      // 2. Get all universal fields
-      const { data: universalFields, error: universalError } = await supabase
+      // 2. Get ALL fields (visibility is controlled by user layout preferences, not is_universal)
+      const { data: allFields, error: fieldsError } = await supabase
         .from('research_fields')
         .select('*, section:research_sections(*)')
-        .eq('is_universal', true)
         .eq('is_archived', false)
 
-      if (universalError) throw universalError
+      if (fieldsError) throw fieldsError
 
-      // 3. Get user's team memberships
-      const { data: teamMemberships, error: teamError } = await supabase
-        .from('team_memberships')
-        .select('team_id, team:teams(id, name)')
-        .eq('user_id', user.id)
+      console.log('🔬 useUserResearchLayout - sections:', sections?.length, 'fields:', allFields?.length)
+      console.log('🔬 Fields:', allFields?.map(f => ({ id: f.id, name: f.name, section: f.section?.slug })))
 
-      if (teamError) throw teamError
-
-      const userTeamIds = (teamMemberships || []).map(tm => tm.team_id)
-
-      // 4. Get team research fields for user's teams
-      let teamFields: any[] = []
-      if (userTeamIds.length > 0) {
-        const { data: teamFieldsData, error: teamFieldsError } = await supabase
-          .from('team_research_fields')
-          .select(`
-            *,
-            field:research_fields(*, section:research_sections(*)),
-            team:teams(id, name)
-          `)
-          .in('team_id', userTeamIds)
-          .eq('is_active', true)
-
-        if (teamFieldsError) throw teamFieldsError
-        teamFields = teamFieldsData || []
-      }
-
-      // 5. Get explicit viewer access for non-team fields
-      const { data: viewerAccess, error: viewerError } = await supabase
-        .from('research_field_viewers')
-        .select(`
-          *,
-          team_field:team_research_fields(
-            *,
-            field:research_fields(*, section:research_sections(*)),
-            team:teams(id, name)
-          )
-        `)
-        .eq('user_id', user.id)
-
-      if (viewerError) throw viewerError
-
-      // Build accessible fields list
-      const accessibleFields: AccessibleField[] = []
-      const seenFieldIds = new Set<string>()
-
-      // Add universal fields first
-      for (const field of (universalFields || [])) {
-        if (!seenFieldIds.has(field.id)) {
-          seenFieldIds.add(field.id)
-          accessibleFields.push({
-            field: field as ResearchField,
-            accessType: 'universal',
-            isRequired: false,
-            displayOrder: 0
-          })
-        }
-      }
-
-      // Add team fields (contextual fields from user's teams)
-      for (const tf of teamFields) {
-        if (tf.field && !tf.field.is_universal && !seenFieldIds.has(tf.field.id)) {
-          seenFieldIds.add(tf.field.id)
-          accessibleFields.push({
-            field: tf.field as ResearchField,
-            accessType: 'team_member',
-            teamId: tf.team?.id,
-            teamName: tf.team?.name,
-            isRequired: tf.is_required,
-            displayOrder: tf.display_order
-          })
-        }
-      }
-
-      // Add viewer access fields
-      for (const va of (viewerAccess || [])) {
-        const tf = va.team_field
-        if (tf?.field && !seenFieldIds.has(tf.field.id)) {
-          seenFieldIds.add(tf.field.id)
-          accessibleFields.push({
-            field: tf.field as ResearchField,
-            accessType: 'viewer',
-            teamId: tf.team?.id,
-            teamName: tf.team?.name,
-            isRequired: false,
-            displayOrder: tf.display_order
-          })
-        }
-      }
+      // Build accessible fields list - all fields are accessible
+      // Visibility is controlled by user's layout preferences in useUserAssetPagePreferences
+      const accessibleFields: AccessibleField[] = (allFields || []).map(field => ({
+        field: field as ResearchField,
+        accessType: 'universal' as const,
+        isRequired: false,
+        displayOrder: 0
+      }))
 
       // Group fields by section
+      // Keep system sections (thesis, forecasts, supporting_docs) even if empty
+      // because they use hardcoded components
+      const systemSectionSlugs = ['thesis', 'forecasts', 'supporting_docs']
+
       const layoutSections: ResearchLayoutSection[] = (sections || []).map(section => {
         const sectionFields = accessibleFields
           .filter(af => af.field.section_id === section.id)
-          .sort((a, b) => {
-            // Universal fields first, then by display order
-            if (a.accessType === 'universal' && b.accessType !== 'universal') return -1
-            if (a.accessType !== 'universal' && b.accessType === 'universal') return 1
-            return a.displayOrder - b.displayOrder
-          })
+          .sort((a, b) => a.field.name.localeCompare(b.field.name))
 
         return {
           section: section as ResearchSection,
           fields: sectionFields
         }
-      }).filter(ls => ls.fields.length > 0)
+      }).filter(ls => ls.fields.length > 0 || systemSectionSlugs.includes(ls.section.slug))
 
       return {
         sections: layoutSections,

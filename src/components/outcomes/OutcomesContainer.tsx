@@ -11,10 +11,6 @@ import { AggregatedView, AnalystComparisonTable } from './AggregatedView'
 import { AggregationToolbar } from './AggregationToolbar'
 import { ScenarioManager } from './ScenarioManager'
 import { PriceTargetChart } from './PriceTargetChart'
-import { AnalystRatingsSection } from './AnalystRatingsSection'
-import { AnalystEstimatesSection } from './AnalystEstimatesSection'
-import { ModelFilesViewer } from './ModelFilesViewer'
-import { ExcelExporter } from './ExcelExporter'
 import { FirmConsensusPanel } from './FirmConsensusPanel'
 import { EstimateRevisionChart } from './EstimateRevisionChart'
 import { PriceTargetHistoryChart } from './PriceTargetHistoryChart'
@@ -445,7 +441,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
               </div>
 
               {/* Price Target Chart - aggregated view is read-only */}
-              {symbol && hasData && (
+              {symbol && (
                 <div className="mt-6">
                   <PriceTargetChart
                     assetId={assetId}
@@ -469,12 +465,6 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
       {/* Individual analyst view */}
       {activeTab !== 'aggregated' && activeTab !== 'comparison' && (
         <div className="space-y-6">
-          {/* Rating Section - First */}
-          <AnalystRatingsSection
-            assetId={assetId}
-            isEditable={isOwnTab}
-          />
-
           {/* Default scenarios (Bull/Base/Bear) */}
           <div>
             <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
@@ -549,7 +539,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
           )}
 
           {/* Price Target Chart for individual analyst */}
-          {symbol && getUserTargets(activeTab).length > 0 && (
+          {symbol && (
             <div className="mt-2">
               <PriceTargetChart
                 assetId={assetId}
@@ -561,25 +551,6 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
             </div>
           )}
 
-          {/* Estimates Section - Own section for extensibility */}
-          <AnalystEstimatesSection
-            assetId={assetId}
-            isEditable={isOwnTab}
-          />
-
-          {/* Synced Model Files Section */}
-          <div className="mt-6 space-y-4">
-            {/* Section Header with Export */}
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Synced Models
-              </h4>
-              <ExcelExporter assetId={assetId} />
-            </div>
-
-            {/* Synced Model Files - shows extracted data, version comparison */}
-            <ModelFilesViewer assetId={assetId} />
-          </div>
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet, LayoutGrid } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -530,8 +530,24 @@ function CaseTemplateCard({
 
 type TabSection = 'text' | 'cases' | 'excel' | 'research'
 
+const TEMPLATES_TAB_STORAGE_KEY = 'tesseract-templates-active-section'
+
 export function TemplatesTab() {
-  const [activeSection, setActiveSection] = useState<TabSection>('text')
+  // Initialize from localStorage, defaulting to 'text'
+  const [activeSection, setActiveSection] = useState<TabSection>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(TEMPLATES_TAB_STORAGE_KEY)
+      if (saved && ['text', 'cases', 'excel', 'research'].includes(saved)) {
+        return saved as TabSection
+      }
+    }
+    return 'text'
+  })
+
+  // Persist to localStorage when activeSection changes
+  useEffect(() => {
+    localStorage.setItem(TEMPLATES_TAB_STORAGE_KEY, activeSection)
+  }, [activeSection])
 
   return (
     <div className="h-full flex flex-col">
@@ -539,7 +555,7 @@ export function TemplatesTab() {
       <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white">
         <h1 className="text-xl font-bold text-gray-900">Templates</h1>
         <p className="text-sm text-gray-500">
-          Manage text snippets, investment cases, Excel templates, and research field layouts
+          Manage text snippets, investment cases, Excel templates, and your asset page layout
         </p>
       </div>
 
@@ -592,7 +608,7 @@ export function TemplatesTab() {
             )}
           >
             <LayoutGrid className="w-4 h-4" />
-            Research Fields
+            Research Layout
           </button>
         </nav>
       </div>

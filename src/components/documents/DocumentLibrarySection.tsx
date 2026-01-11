@@ -87,10 +87,12 @@ interface DocumentLibrarySectionProps {
   researchViewFilter: string
   isExpanded: boolean
   onToggleExpanded: () => void
-  onNoteClick: (noteId: string) => void
-  onCreateNote: () => void
+  onNoteClick?: (noteId: string) => void
+  onCreateNote?: () => void
   onViewAllNotes?: () => void
   onViewAllFiles?: () => void
+  /** When true, renders without Card wrapper and header (for embedding in other sections) */
+  isEmbedded?: boolean
 }
 
 const FILTER_OPTIONS: { value: DocumentFilter; label: string; icon: React.ElementType }[] = [
@@ -191,7 +193,8 @@ export function DocumentLibrarySection({
   onNoteClick,
   onCreateNote,
   onViewAllNotes,
-  onViewAllFiles
+  onViewAllFiles,
+  isEmbedded = false
 }: DocumentLibrarySectionProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -450,26 +453,9 @@ export function DocumentLibrarySection({
     }
   }
 
-  return (
-    <>
-      <Card padding="none">
-        {/* Section Header */}
-        <button
-          onClick={onToggleExpanded}
-          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
-        >
-          <span className="font-medium text-gray-900">Document Library</span>
-          <span className="text-sm text-gray-500">({filteredByPermission.length})</span>
-          {isExpanded ? (
-            <ChevronUp className="h-5 w-5 text-gray-400" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-gray-400" />
-          )}
-        </button>
-
-        {/* Content */}
-        {isExpanded && (
-          <div className="border-t border-gray-100 px-6 py-4">
+  // Content rendering (used in both embedded and non-embedded modes)
+  const renderContent = () => (
+    <div className={isEmbedded ? "" : "border-t border-gray-100 px-6 py-4"}>
             {/* Toolbar: Filters + Add Button */}
             <div className="flex items-center justify-between gap-4 mb-4">
               {/* Filter Pills */}
@@ -731,7 +717,7 @@ export function DocumentLibrarySection({
             )}
 
             {/* View All link - navigates based on current filter */}
-            {filteredByPermission.length > 0 && (
+            {filteredByPermission.length > 0 && !isEmbedded && (
               <button
                 onClick={() => {
                   if (filter === 'notes' && onViewAllNotes) {
@@ -748,8 +734,74 @@ export function DocumentLibrarySection({
                 <ArrowRight className="w-4 h-4" />
               </button>
             )}
+    </div>
+  )
+
+  // For embedded mode, render content directly without Card wrapper
+  if (isEmbedded) {
+    return (
+      <>
+        {renderContent()}
+
+        {/* External Link Modal */}
+        <ExternalLinkModal
+          isOpen={showExternalModal}
+          onClose={() => setShowExternalModal(false)}
+          onSubmit={handleCreateExternal}
+          type="document"
+          isLoading={isCreatingExternal}
+        />
+
+        {/* Excel Sync Modal */}
+        {showExcelSyncModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/50"
+              onClick={() => setShowExcelSyncModal(false)}
+            />
+            <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Sync Excel Model</h3>
+                <button
+                  onClick={() => setShowExcelSyncModal(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4">
+                <BulkExcelImporter
+                  assetId={assetId}
+                  onComplete={() => setShowExcelSyncModal(false)}
+                />
+              </div>
+            </div>
           </div>
         )}
+      </>
+    )
+  }
+
+  // Non-embedded mode: render with Card wrapper and header
+  return (
+    <>
+      <Card padding="none">
+        {/* Section Header */}
+        <button
+          onClick={onToggleExpanded}
+          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+        >
+          <span className="font-medium text-gray-900">Document Library</span>
+          <span className="text-sm text-gray-500">({filteredByPermission.length})</span>
+          {isExpanded ? (
+            <ChevronUp className="h-5 w-5 text-gray-400" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-gray-400" />
+          )}
+        </button>
+
+        {/* Content */}
+        {isExpanded && renderContent()}
       </Card>
 
       {/* External Link Modal */}

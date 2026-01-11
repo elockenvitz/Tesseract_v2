@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useAssetModels } from '../../hooks/useAssetModels'
@@ -29,10 +29,18 @@ import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { RelatedProjects } from '../projects/RelatedProjects'
-import { ThesisContainer } from '../contributions'
+import { ThesisContainer, ContributionSection } from '../contributions'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
-import { OutcomesContainer } from '../outcomes'
-import { AddWidgetModal, UserWidgetRenderer } from '../research'
+import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
+import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
+import { UserWidgetRenderer, AssetPageFieldCustomizer, ResearchSectionRenderer } from '../research'
+import {
+  ChecklistField,
+  MetricField,
+  TimelineField,
+  NumericField,
+  DateField
+} from '../research/FieldTypeRenderers'
 import { useUserAssetWidgets, type WidgetType } from '../../hooks/useUserAssetWidgets'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
@@ -199,7 +207,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
-  const [showAddWidgetModal, setShowAddWidgetModal] = useState(false)
+  const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
   const [widgetCollapsedState, setWidgetCollapsedState] = useState<Record<string, boolean>>({})
   // Shared visibility state for all thesis sections
   const [sharedThesisVisibility, setSharedThesisVisibility] = useState<ContributionVisibility>('firm')
@@ -513,6 +521,74 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     saveWidgetValue,
     isCreating: isCreatingWidget
   } = useUserAssetWidgets(asset.id, researchViewFilter !== 'aggregated' ? researchViewFilter : undefined)
+
+  // Get user's layout preferences for this asset (respects default layout + asset-specific overrides)
+  const {
+    fieldsWithPreferences,
+    fieldsBySection,
+    displayedFieldsBySection,
+    activeLayout,
+    isLoading: layoutLoading
+  } = useUserAssetPagePreferences(asset.id)
+
+  // Get section info with overrides (name, visibility, etc.)
+  const getSectionInfo = useCallback((sectionSlug: string) => {
+    const section = fieldsBySection.find(s => s.section_slug === sectionSlug)
+    // Section is hidden if: explicit section override OR no fields in the section are visible
+    // Default to true (visible) while loading to avoid flash of hidden content
+    const hasVisibleFields = section ? section.fields.some(f => f.is_visible) : true
+    const result = {
+      name: section?.section_name || null, // null indicates loading
+      isHidden: section?.section_is_hidden || !hasVisibleFields,
+      hasOverride: section?.section_has_override || false,
+      isLoading: !section // true if section data hasn't loaded yet
+    }
+    // Debug log section visibility (disabled for performance)
+    // console.log(`📦 Section "${sectionSlug}":`, {
+    //   found: !!section,
+    //   fieldCount: section?.fields.length ?? 0,
+    //   visibleFieldCount: section?.fields.filter(f => f.is_visible).length ?? 0,
+    //   hasVisibleFields,
+    //   isHidden: result.isHidden,
+    //   sectionIsHiddenOverride: section?.section_is_hidden
+    // })
+    return result
+  }, [fieldsBySection])
+
+  // Get custom (non-system) fields that are VISIBLE in user's layout for each section
+  // Logic:
+  // - Fields are sorted by default_display_order from research_fields table
+  // - System fields are rendered by ThesisContainer/OutcomesContainer
+  // - Custom fields are rendered before/after system components based on display_order
+  const hasUserLayout = !!activeLayout
+
+  // Get thesis section from displayedFieldsBySection (already filtered to template/override fields)
+  const thesisSection = displayedFieldsBySection.find(s => s.section_slug === 'thesis')
+  const allThesisFields = thesisSection?.fields.filter(f => f.is_visible) || []
+
+  // ThesisContainer renders these 3 core fields - everything else renders as ContributionSection
+  const coreThesisFieldSlugs = ['thesis', 'where_different', 'risks_to_thesis']
+
+  // Split into fields that come BEFORE core thesis fields (display_order < 1)
+  // Core thesis field (thesis) has display_order 1
+  const thesisFieldsBefore = allThesisFields
+    .filter(f => !coreThesisFieldSlugs.includes(f.field_slug) && (f.display_order ?? f.default_display_order) < 1)
+    .map(f => ({ field: { id: f.field_id, name: f.field_name, slug: f.field_slug, description: null, display_order: f.display_order ?? f.default_display_order } }))
+
+  // Fields after core thesis fields (display_order > 3, where risks_to_thesis is 3)
+  // This includes Business Model and other thesis section fields not in ThesisContainer
+  const thesisFieldsAfter = allThesisFields
+    .filter(f => !coreThesisFieldSlugs.includes(f.field_slug) && (f.display_order ?? f.default_display_order) >= 1)
+    .map(f => ({ field: { id: f.field_id, name: f.field_name, slug: f.field_slug, description: null, display_order: f.display_order ?? f.default_display_order } }))
+
+  // Debug: Log custom fields from layout (disabled for performance)
+  // console.log('📋 AssetTab Layout Fields:', {
+  //   hasUserLayout,
+  //   activeLayoutName: activeLayout?.name,
+  //   thesisFieldsBefore: thesisFieldsBefore.map(f => ({ name: f.field.name, order: f.field.display_order })),
+  //   thesisFieldsAfter: thesisFieldsAfter.map(f => ({ name: f.field.name, order: f.field.display_order })),
+  //   allThesisFields: allThesisFields.map(f => ({ name: f.field_name, order: f.default_display_order }))
+  // })
 
   // Get target options for selected visibility level
   const getTargetOptions = useCallback((visibility: ContributionVisibility) => {
@@ -2376,85 +2452,108 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       </div>
       </div>
 
+      {/* Research View Filter - Fixed bar that doesn't scroll */}
+      {activeSubPage === 'research' && (
+        <div className="px-8 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between gap-3">
+            {/* Left side: View filter */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500 font-medium">View:</span>
+              {researchAnalysts.length <= 5 ? (
+                // Pills mode for 5 or fewer analysts
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => setResearchViewFilter('aggregated')}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
+                      researchViewFilter === 'aggregated'
+                        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                    )}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Our View
+                  </button>
+                  {researchAnalysts.map(analyst => {
+                    const isCurrentUser = analyst.id === user?.id
+                    return (
+                      <button
+                        key={analyst.id}
+                        onClick={() => setResearchViewFilter(analyst.id)}
+                        className={clsx(
+                          'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
+                          researchViewFilter === analyst.id
+                            ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                            : isCurrentUser
+                              ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-300 hover:bg-cyan-100 dark:bg-cyan-900/20 dark:text-cyan-400 dark:ring-cyan-700 dark:hover:bg-cyan-900/30'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                        )}
+                      >
+                        {analyst.isCovering && (
+                          <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                        )}
+                        {!analyst.isCovering && <User className="w-3.5 h-3.5" />}
+                        {analyst.shortName}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                // Dropdown mode for more than 5 analysts
+                <select
+                  value={researchViewFilter}
+                  onChange={(e) => setResearchViewFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
+                >
+                  <option value="aggregated">Our View (All Analysts)</option>
+                  {researchAnalysts.map(analyst => {
+                    const prefix = analyst.isCovering ? '★ ' : ''
+                    return (
+                      <option key={analyst.id} value={analyst.id}>
+                        {prefix}{analyst.name}
+                      </option>
+                    )
+                  })}
+                </select>
+              )}
+            </div>
+
+            {/* Right side: Customize button - only show when viewing own view */}
+            {researchViewFilter === user?.id && (
+              <button
+                onClick={() => setShowFieldCustomizer(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                title="Customize asset page layout"
+              >
+                <Settings2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Customize</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
 
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
-            {/* Research View Filter */}
-            {researchAnalysts.length > 0 && (
-              <div className="flex items-center gap-3 px-2">
-                <span className="text-sm text-gray-500 font-medium">View:</span>
-                {researchAnalysts.length <= 5 ? (
-                  // Pills mode for 5 or fewer analysts
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      onClick={() => setResearchViewFilter('aggregated')}
-                      className={clsx(
-                        'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
-                        researchViewFilter === 'aggregated'
-                          ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                      )}
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      Our View
-                    </button>
-                    {researchAnalysts.map(analyst => {
-                      const isCurrentUser = analyst.id === user?.id
-                      return (
-                        <button
-                          key={analyst.id}
-                          onClick={() => setResearchViewFilter(analyst.id)}
-                          className={clsx(
-                            'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
-                            researchViewFilter === analyst.id
-                              ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                              : isCurrentUser
-                                ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-300 hover:bg-cyan-100 dark:bg-cyan-900/20 dark:text-cyan-400 dark:ring-cyan-700 dark:hover:bg-cyan-900/30'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                          )}
-                        >
-                          {analyst.isCovering && (
-                            <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                          )}
-                          {!analyst.isCovering && <User className="w-3.5 h-3.5" />}
-                          {analyst.shortName}
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  // Dropdown mode for more than 5 analysts
-                  <select
-                    value={researchViewFilter}
-                    onChange={(e) => setResearchViewFilter(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
-                  >
-                    <option value="aggregated">Our View (All Analysts)</option>
-                    {researchAnalysts.map(analyst => {
-                      const prefix = analyst.isCovering ? '★ ' : ''
-                      return (
-                        <option key={analyst.id} value={analyst.id}>
-                          {prefix}{analyst.name}
-                        </option>
-                      )
-                    })}
-                  </select>
-                )}
-              </div>
-            )}
+            {/* Research Sections - Rendered in order based on displayedFieldsBySection (respects template + overrides) */}
+            {displayedFieldsBySection.map(section => {
+              // Skip hidden sections
+              if (section.section_is_hidden) return null
 
-            {/* Research Sections */}
-            {/* Thesis Section */}
-            <Card padding="none">
+              // Thesis Section
+              if (section.section_slug === 'thesis') {
+                return (
+            <Card key={section.section_id} padding="none">
               <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                 <button
                   onClick={() => toggleSection('thesis')}
                   className="flex items-center gap-2 flex-1"
                 >
-                  <span className="font-medium text-gray-900">Thesis</span>
+                  <span className="font-medium text-gray-900">{section.section_name}</span>
                   {collapsedSections.thesis ? (
                     <ChevronDown className="h-5 w-5 text-gray-400" />
                   ) : (
@@ -2929,47 +3028,160 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         </p>
                       )}
                     </div>
+                  ) : layoutLoading ? (
+                    // Show loading state while layout data loads
+                    <div className="space-y-6">
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="animate-pulse">
+                          <div className="h-4 bg-gray-200 rounded w-1/4 mb-3" />
+                          <div className="h-24 bg-gray-100 rounded" />
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <ThesisContainer
-                      assetId={asset.id}
-                      viewFilter={researchViewFilter}
-                      viewMode={thesisViewMode}
-                      sharedVisibility={sharedThesisVisibility}
-                      sharedTargetIds={sharedThesisTargetIds}
-                    />
+                    <div className="space-y-6">
+                      {/* Custom fields BEFORE system fields (display_order < 1) */}
+                      {thesisFieldsBefore.map(af => (
+                        <ContributionSection
+                          key={af.field.id}
+                          assetId={asset.id}
+                          section={af.field.slug}
+                          title={af.field.name}
+                          viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
+                          userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                          defaultVisibility={sharedThesisVisibility}
+                          defaultTargetIds={sharedThesisTargetIds}
+                        />
+                      ))}
+
+                      {/* System thesis fields */}
+                      <ThesisContainer
+                        assetId={asset.id}
+                        viewFilter={researchViewFilter}
+                        viewMode={thesisViewMode}
+                        sharedVisibility={sharedThesisVisibility}
+                        sharedTargetIds={sharedThesisTargetIds}
+                      />
+
+                      {/* Custom fields AFTER system fields (display_order > 3) */}
+                      {thesisFieldsAfter.map(af => (
+                        <ContributionSection
+                          key={af.field.id}
+                          assetId={asset.id}
+                          section={af.field.slug}
+                          title={af.field.name}
+                          viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
+                          userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                          defaultVisibility={sharedThesisVisibility}
+                          defaultTargetIds={sharedThesisTargetIds}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
             </Card>
+                )
+              }
 
-            {/* Forecasts Section */}
-            <Card padding="none">
-              <button
-                onClick={() => toggleSection('outcomes')}
-                className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
-              >
-                <span className="font-medium text-gray-900">Forecasts</span>
-                {collapsedSections.outcomes ? (
-                  <ChevronDown className="h-5 w-5 text-gray-400" />
-                ) : (
-                  <ChevronUp className="h-5 w-5 text-gray-400" />
-                )}
-              </button>
-              {!collapsedSections.outcomes && (
-                <div className="border-t border-gray-100 px-6 py-6">
-                  <OutcomesContainer
-                    assetId={asset.id}
-                    symbol={asset.symbol}
-                    currentPrice={currentQuote?.price}
-                    onNavigate={onNavigate}
-                    viewFilter={researchViewFilter}
-                  />
-                </div>
-              )}
-            </Card>
+              // Forecasts Section - render fields individually as tiles
+              if (section.section_slug === 'forecasts') {
+                return (
+                  <Card key={section.section_id} padding="none">
+                    <button
+                      onClick={() => toggleSection('outcomes')}
+                      className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                    >
+                      <span className="font-medium text-gray-900">{section.section_name}</span>
+                      {collapsedSections.outcomes ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                    {!collapsedSections.outcomes && (
+                      <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+                        {section.fields
+                          .filter(f => f.is_visible)
+                          .map(field => {
+                            const fieldType = field.field_type
 
-            {/* Document Library Section */}
+                            // Price target field
+                            if (fieldType === 'price_target') {
+                              return (
+                                <div key={field.field_id} className="space-y-2">
+                                  <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                  {field.field_description && (
+                                    <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  )}
+                                  <OutcomesContainer
+                                    assetId={asset.id}
+                                    symbol={asset.symbol}
+                                    currentPrice={currentQuote?.price}
+                                    onNavigate={onNavigate}
+                                    viewFilter={researchViewFilter}
+                                  />
+                                </div>
+                              )
+                            }
+
+                            // Rating field
+                            if (fieldType === 'rating') {
+                              return (
+                                <div key={field.field_id} className="space-y-2">
+                                  <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                  {field.field_description && (
+                                    <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  )}
+                                  <AnalystRatingsSection
+                                    assetId={asset.id}
+                                    isEditable={true}
+                                  />
+                                </div>
+                              )
+                            }
+
+                            // Estimates field
+                            if (fieldType === 'estimates') {
+                              return (
+                                <div key={field.field_id} className="space-y-2">
+                                  <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                  {field.field_description && (
+                                    <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  )}
+                                  <AnalystEstimatesSection
+                                    assetId={asset.id}
+                                    isEditable={true}
+                                  />
+                                </div>
+                              )
+                            }
+
+                            // Default: rich_text or other custom fields
+                            return (
+                              <ContributionSection
+                                key={field.field_id}
+                                assetId={asset.id}
+                                section={field.field_slug}
+                                title={field.field_name}
+                                viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
+                                userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                                defaultVisibility={sharedThesisVisibility}
+                                defaultTargetIds={sharedThesisTargetIds}
+                              />
+                            )
+                          })}
+                      </div>
+                    )}
+                  </Card>
+                )
+              }
+
+              // Supporting Documents Section
+              if (section.section_slug === 'supporting_docs') {
+                return (
             <DocumentLibrarySection
+              key={section.section_id}
               assetId={asset.id}
               notes={notes || []}
               researchViewFilter={researchViewFilter}
@@ -2990,6 +3202,207 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 data: { initialAssetFilter: asset.id }
               })}
             />
+                )
+              }
+
+              // Generic Section - for all other section types
+              return (
+                <Card key={section.section_id} padding="none">
+                  <button
+                    onClick={() => toggleSection(section.section_slug as any)}
+                    className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900">{section.section_name}</span>
+                    {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
+                      <ChevronDown className="h-5 w-5 text-gray-400" />
+                    ) : (
+                      <ChevronUp className="h-5 w-5 text-gray-400" />
+                    )}
+                  </button>
+                  {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
+                    <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+                      {section.fields
+                        .filter(f => f.is_visible)
+                        .map(field => {
+                          // Render field based on its type
+                          const fieldType = field.field_type
+
+                          // Checklist field
+                          if (fieldType === 'checklist') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <ChecklistField
+                                  fieldId={field.field_id}
+                                  assetId={asset.id}
+                                  config={{}}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Metric field
+                          if (fieldType === 'metric') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <MetricField
+                                  fieldId={field.field_id}
+                                  assetId={asset.id}
+                                  config={{}}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Timeline field
+                          if (fieldType === 'timeline') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <TimelineField
+                                  fieldId={field.field_id}
+                                  assetId={asset.id}
+                                  config={{}}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Numeric field
+                          if (fieldType === 'numeric') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <NumericField
+                                  fieldId={field.field_id}
+                                  assetId={asset.id}
+                                  config={{}}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Date field
+                          if (fieldType === 'date') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <DateField
+                                  fieldId={field.field_id}
+                                  assetId={asset.id}
+                                  config={{}}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Documents field - render document library inline
+                          if (fieldType === 'documents') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <DocumentLibrarySection
+                                  assetId={asset.id}
+                                  notes={notes}
+                                  researchViewFilter={researchViewFilter}
+                                  isExpanded={true}
+                                  onToggleExpanded={() => {}}
+                                  onNoteClick={(noteId) => handleNoteClick({ id: noteId })}
+                                  onCreateNote={handleCreateNote}
+                                  isEmbedded={true}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Rating field - render analyst ratings section
+                          if (fieldType === 'rating') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <AnalystRatingsSection
+                                  assetId={asset.id}
+                                  isEditable={true}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Estimates field - render analyst estimates section
+                          if (fieldType === 'estimates') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <AnalystEstimatesSection
+                                  assetId={asset.id}
+                                  isEditable={true}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Price target field - render outcomes container for price targets
+                          if (fieldType === 'price_target') {
+                            return (
+                              <div key={field.field_id} className="space-y-2">
+                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                {field.field_description && (
+                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                )}
+                                <OutcomesContainer
+                                  assetId={asset.id}
+                                  symbol={asset.symbol}
+                                  currentPrice={currentQuote?.price}
+                                  viewFilter={researchViewFilter}
+                                />
+                              </div>
+                            )
+                          }
+
+                          // Default: rich_text or other text-based fields use ContributionSection
+                          return (
+                            <ContributionSection
+                              key={field.field_id}
+                              assetId={asset.id}
+                              section={field.field_slug}
+                              title={field.field_name}
+                              viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
+                              userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                              defaultVisibility={sharedThesisVisibility}
+                              defaultTargetIds={sharedThesisTargetIds}
+                            />
+                          )
+                        })}
+                    </div>
+                  )}
+                </Card>
+              )
+            })}
 
             {/* User-Added Widgets Section */}
             {userWidgets.length > 0 && (
@@ -3019,30 +3432,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               </div>
             )}
 
-            {/* Add Widget Button */}
-            {researchViewFilter === user?.id && (
-              <button
-                onClick={() => setShowAddWidgetModal(true)}
-                className="w-full py-3 border-2 border-dashed border-gray-200 rounded-lg text-sm text-gray-500 hover:text-primary-600 hover:border-primary-300 hover:bg-primary-50/50 transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Custom Field
-              </button>
-            )}
-
-            {/* Add Widget Modal */}
-            <AddWidgetModal
-              isOpen={showAddWidgetModal}
-              onClose={() => setShowAddWidgetModal(false)}
-              onAdd={async (widgetType: WidgetType, title: string, description?: string) => {
-                await createWidget({
-                  asset_id: asset.id,
-                  widget_type: widgetType,
-                  title,
-                  description
-                })
-              }}
-              isAdding={isCreatingWidget}
+            {/* Field Customizer Modal */}
+            <AssetPageFieldCustomizer
+              isOpen={showFieldCustomizer}
+              onClose={() => setShowFieldCustomizer(false)}
+              assetId={asset.id}
+              assetName={asset.name}
+              viewFilter={researchViewFilter}
+              currentUserId={user?.id}
             />
           </div>
         )}

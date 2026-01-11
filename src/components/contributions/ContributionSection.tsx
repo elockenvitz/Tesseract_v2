@@ -919,10 +919,10 @@ export function ContributionSection({
       </div>
 
       {/* Content */}
-      <div className="p-5">
+      <div className="px-5 py-3">
         {isLoading && (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <div className="flex items-center justify-center py-3">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
           </div>
         )}
 
@@ -940,9 +940,9 @@ export function ContributionSection({
                 {showHistory ? (
                   <div className="space-y-2">
                     {historyLoading ? (
-                      <div className="text-sm text-gray-500 text-center py-6">Loading history...</div>
+                      <div className="text-sm text-gray-500 text-center py-2">Loading history...</div>
                     ) : aggregateHistory.length === 0 ? (
-                      <div className="text-sm text-gray-400 text-center py-6">No edit history yet</div>
+                      <div className="text-sm text-gray-400 text-center py-2">No edit history yet</div>
                     ) : (
                       aggregateHistory.slice(0, 10).map((h: any) => (
                         <div key={h.id} className="pb-2 border-b border-gray-100 last:border-0">
@@ -966,7 +966,7 @@ export function ContributionSection({
                   </div>
                 ) : viewMode === 'combined' ? (
                   contributions.length === 0 ? (
-                    <div className="text-center py-6">
+                    <div className="text-center py-1">
                       <p className="text-gray-400 text-sm">No views shared yet</p>
                     </div>
                   ) : (
@@ -1167,7 +1167,7 @@ export function ContributionSection({
                 ) : showHistory ? (
                   <div className="space-y-2">
                     {individualHistory.length === 0 ? (
-                      <div className="text-sm text-gray-400 text-center py-6">No edit history yet</div>
+                      <div className="text-sm text-gray-400 text-center py-2">No edit history yet</div>
                     ) : (
                       individualHistory.slice(0, 10).map((h) => (
                         <div key={h.id} className="pb-2 border-b border-gray-100 last:border-0">
@@ -1235,12 +1235,8 @@ export function ContributionSection({
                           />
                         )}
                       </div>
-                    ) : activeTab === user?.id ? (
-                      <p className="text-gray-400 text-sm text-center py-6">You haven't shared your view yet</p>
                     ) : (
-                      <div className="text-sm text-gray-400 text-center py-8">
-                        This person hasn't shared a view for this section yet
-                      </div>
+                      <p className="text-gray-400 text-sm text-center py-1">No views shared yet</p>
                     )}
                   </>
                 )}

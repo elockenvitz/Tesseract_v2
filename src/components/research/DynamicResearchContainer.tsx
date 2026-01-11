@@ -15,14 +15,13 @@ import {
   CheckSquare,
   Clock,
   Gauge,
-  Download,
-  X
+  Download
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { InvestmentCaseBuilder } from './InvestmentCaseBuilder'
 import { ThesisContainer } from '../contributions'
-import { OutcomesContainer } from '../outcomes'
+import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
 import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { ContributionSection } from '../contributions/ContributionSection'
 import {
@@ -38,6 +37,7 @@ import {
   type ResearchLayoutSection,
   type FieldType
 } from '../../hooks/useResearchFields'
+import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
 import type { ContributionVisibility } from '../../hooks/useContributions'
 
 // ============================================================================
@@ -99,9 +99,15 @@ function FieldAccessBadge({ accessField }: { accessField: AccessibleField }) {
 interface CustomFieldRendererProps {
   accessField: AccessibleField
   assetId: string
+  symbol?: string
+  currentPrice?: number
   viewFilter?: 'aggregated' | string
   sharedVisibility?: ContributionVisibility
   sharedTargetIds?: string[]
+  // For documents field type
+  notes?: any[]
+  onNoteClick?: (note: any) => void
+  onCreateNote?: () => void
 }
 
 // Get icon for field type
@@ -126,9 +132,14 @@ function getFieldTypeIcon(type: FieldType) {
 function CustomFieldRenderer({
   accessField,
   assetId,
+  symbol,
+  currentPrice,
   viewFilter,
   sharedVisibility = 'firm',
-  sharedTargetIds = []
+  sharedTargetIds = [],
+  notes = [],
+  onNoteClick,
+  onCreateNote
 }: CustomFieldRendererProps) {
   const { field } = accessField
   const config = field.config as Record<string, unknown>
@@ -257,6 +268,78 @@ function CustomFieldRenderer({
     )
   }
 
+  // Documents field - render document library inline
+  if (field.field_type === 'documents') {
+    return (
+      <div className="space-y-2">
+        <FieldHeader />
+        {field.description && (
+          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
+        )}
+        <DocumentLibrarySection
+          assetId={assetId}
+          notes={notes}
+          researchViewFilter={viewFilter || 'aggregated'}
+          isExpanded={true}
+          onToggleExpanded={() => {}}
+          onNoteClick={onNoteClick ? (noteId) => onNoteClick({ id: noteId }) : undefined}
+          onCreateNote={onCreateNote}
+          isEmbedded={true}
+        />
+      </div>
+    )
+  }
+
+  // Rating field - render analyst ratings section
+  if (field.field_type === 'rating') {
+    return (
+      <div className="space-y-2">
+        <FieldHeader />
+        {field.description && (
+          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
+        )}
+        <AnalystRatingsSection
+          assetId={assetId}
+          isEditable={true}
+        />
+      </div>
+    )
+  }
+
+  // Estimates field - render analyst estimates section
+  if (field.field_type === 'estimates') {
+    return (
+      <div className="space-y-2">
+        <FieldHeader />
+        {field.description && (
+          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
+        )}
+        <AnalystEstimatesSection
+          assetId={assetId}
+          isEditable={true}
+        />
+      </div>
+    )
+  }
+
+  // Price target field - render outcomes container for price targets
+  if (field.field_type === 'price_target') {
+    return (
+      <div className="space-y-2">
+        <FieldHeader />
+        {field.description && (
+          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
+        )}
+        <OutcomesContainer
+          assetId={assetId}
+          symbol={symbol}
+          currentPrice={currentPrice}
+          viewFilter={viewFilter}
+        />
+      </div>
+    )
+  }
+
   // For other field types not yet implemented, show a placeholder
   return (
     <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -310,20 +393,11 @@ function SectionRenderer({
 }: SectionRendererProps) {
   const { section, fields } = layoutSection
 
-  // Check if section has system fields that use existing components
-  const systemFieldSlugs = fields
-    .filter(f => f.field.is_system)
-    .map(f => f.field.slug)
-
   const customFields = fields.filter(f => !f.field.is_system)
   const contextualFieldCount = fields.filter(f => f.accessType !== 'universal').length
 
-  // Thesis section - use ThesisContainer for system fields
+  // Thesis section - always render ThesisContainer (core system component)
   if (section.slug === 'thesis') {
-    const hasThesisSystemFields = ['thesis', 'where_different', 'risks_to_thesis'].some(
-      slug => systemFieldSlugs.includes(slug)
-    )
-
     return (
       <Card padding="none">
         <button
@@ -344,16 +418,14 @@ function SectionRenderer({
         </button>
         {!isCollapsed && (
           <div className="border-t border-gray-100 px-6 py-6 space-y-6">
-            {/* System thesis fields - use existing ThesisContainer */}
-            {hasThesisSystemFields && (
-              <ThesisContainer
-                assetId={assetId}
-                viewFilter={viewFilter}
-                viewMode={thesisViewMode}
-                sharedVisibility={sharedVisibility}
-                sharedTargetIds={sharedTargetIds}
-              />
-            )}
+            {/* Core thesis component - always render */}
+            <ThesisContainer
+              assetId={assetId}
+              viewFilter={viewFilter}
+              viewMode={thesisViewMode}
+              sharedVisibility={sharedVisibility}
+              sharedTargetIds={sharedTargetIds}
+            />
 
             {/* Custom fields in thesis section */}
             {customFields.length > 0 && (
@@ -366,9 +438,14 @@ function SectionRenderer({
                     key={af.field.id}
                     accessField={af}
                     assetId={assetId}
+                    symbol={symbol}
+                    currentPrice={currentPrice}
                     viewFilter={viewFilter}
                     sharedVisibility={sharedVisibility}
                     sharedTargetIds={sharedTargetIds}
+                    notes={notes}
+                    onNoteClick={onNoteClick}
+                    onCreateNote={onCreateNote}
                   />
                 ))}
               </div>
@@ -379,12 +456,8 @@ function SectionRenderer({
     )
   }
 
-  // Forecasts section - use OutcomesContainer for system fields
+  // Forecasts section - render fields individually as tiles
   if (section.slug === 'forecasts') {
-    const hasForecastSystemFields = ['price_targets', 'estimates', 'rating'].some(
-      slug => systemFieldSlugs.includes(slug)
-    )
-
     return (
       <Card padding="none">
         <button
@@ -404,35 +477,27 @@ function SectionRenderer({
           )}
         </button>
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-6 py-6 space-y-6">
-            {/* System forecast fields - use existing OutcomesContainer */}
-            {hasForecastSystemFields && (
-              <OutcomesContainer
-                assetId={assetId}
-                symbol={symbol}
-                currentPrice={currentPrice}
-                onNavigate={onNavigate}
-                viewFilter={viewFilter}
-              />
-            )}
-
-            {/* Custom fields in forecasts section */}
-            {customFields.length > 0 && (
-              <div className="pt-4 border-t border-gray-100 space-y-4">
-                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Additional Forecasts
-                </h4>
-                {customFields.map(af => (
-                  <CustomFieldRenderer
-                    key={af.field.id}
-                    accessField={af}
-                    assetId={assetId}
-                    viewFilter={viewFilter}
-                    sharedVisibility={sharedVisibility}
-                    sharedTargetIds={sharedTargetIds}
-                  />
-                ))}
-              </div>
+          <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+            {fields.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">
+                No fields configured for this section
+              </p>
+            ) : (
+              fields.map(af => (
+                <CustomFieldRenderer
+                  key={af.field.id}
+                  accessField={af}
+                  assetId={assetId}
+                  symbol={symbol}
+                  currentPrice={currentPrice}
+                  viewFilter={viewFilter}
+                  sharedVisibility={sharedVisibility}
+                  sharedTargetIds={sharedTargetIds}
+                  notes={notes}
+                  onNoteClick={onNoteClick}
+                  onCreateNote={onCreateNote}
+                />
+              ))
             )}
           </div>
         )}
@@ -498,9 +563,14 @@ function SectionRenderer({
                 key={af.field.id}
                 accessField={af}
                 assetId={assetId}
+                symbol={symbol}
+                currentPrice={currentPrice}
                 viewFilter={viewFilter}
                 sharedVisibility={sharedVisibility}
                 sharedTargetIds={sharedTargetIds}
+                notes={notes}
+                onNoteClick={onNoteClick}
+                onCreateNote={onCreateNote}
               />
             ))
           )}
@@ -531,6 +601,12 @@ export function DynamicResearchContainer({
   onCreateNote
 }: DynamicResearchContainerProps) {
   const { sections, isLoading, error, contextualFields } = useUserResearchLayout()
+  const {
+    fieldsWithPreferences,
+    activeLayout,
+    isLoading: layoutLoading
+  } = useUserAssetPagePreferences(assetId)
+
   const [showCaseBuilder, setShowCaseBuilder] = useState(false)
 
   // Local collapsed state if not controlled
@@ -544,7 +620,35 @@ export function DynamicResearchContainer({
     }
   }
 
-  if (isLoading) {
+  // Build a set of visible field IDs from user's layout preferences
+  const visibleFieldIds = new Set(
+    fieldsWithPreferences
+      .filter(f => f.is_visible)
+      .map(f => f.field_id)
+  )
+
+  // Debug logging
+  console.log('🔍 Research Layout Debug:', {
+    sectionsCount: sections.length,
+    fieldsWithPreferencesCount: fieldsWithPreferences.length,
+    visibleFieldIdsCount: visibleFieldIds.size,
+    activeLayout: activeLayout?.name || 'none',
+    sectionFields: sections.map(s => ({
+      section: s.section.slug,
+      fieldCount: s.fields.length,
+      fields: s.fields.map(f => ({ id: f.field.id, name: f.field.name, isSystem: f.field.is_system }))
+    })),
+    visibleIds: Array.from(visibleFieldIds)
+  })
+
+  // Apply layout filtering - show ALL fields for now (no filtering)
+  // System sections always show their core components
+  const filteredSections = sections.filter(layoutSection => {
+    const systemSections = ['thesis', 'forecasts', 'supporting_docs']
+    return layoutSection.fields.length > 0 || systemSections.includes(layoutSection.section.slug)
+  })
+
+  if (isLoading || layoutLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
@@ -606,7 +710,7 @@ export function DynamicResearchContainer({
       </div>
 
       {/* Render sections */}
-      {sections.map(layoutSection => (
+      {filteredSections.map(layoutSection => (
         <SectionRenderer
           key={layoutSection.section.id}
           layoutSection={layoutSection}

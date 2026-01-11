@@ -17,6 +17,7 @@ import {
 import { useModelFiles } from '../../hooks/useModelTemplates'
 import { useAnalystEstimates } from '../../hooks/useAnalystEstimates'
 import { useAuth } from '../../hooks/useAuth'
+import { ModelFilesViewer } from './ModelFilesViewer'
 import { formatDistanceToNow } from 'date-fns'
 
 interface AnalystEstimatesSectionProps {
@@ -514,6 +515,20 @@ export function AnalystEstimatesSection({
               isSaving={saveEstimate.isPending}
             />
           )}
+
+          {/* Uploaded Models List */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+              Uploaded Models
+            </h5>
+            {(modelFiles?.length ?? 0) > 0 ? (
+              <ModelFilesViewer assetId={assetId} />
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-3">
+                No models uploaded yet. Use "Upload Model" to add an Excel model.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>
