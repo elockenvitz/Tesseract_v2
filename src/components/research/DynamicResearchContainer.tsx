@@ -627,20 +627,6 @@ export function DynamicResearchContainer({
       .map(f => f.field_id)
   )
 
-  // Debug logging
-  console.log('🔍 Research Layout Debug:', {
-    sectionsCount: sections.length,
-    fieldsWithPreferencesCount: fieldsWithPreferences.length,
-    visibleFieldIdsCount: visibleFieldIds.size,
-    activeLayout: activeLayout?.name || 'none',
-    sectionFields: sections.map(s => ({
-      section: s.section.slug,
-      fieldCount: s.fields.length,
-      fields: s.fields.map(f => ({ id: f.field.id, name: f.field.name, isSystem: f.field.is_system }))
-    })),
-    visibleIds: Array.from(visibleFieldIds)
-  })
-
   // Apply layout filtering - show ALL fields for now (no filtering)
   // System sections always show their core components
   const filteredSections = sections.filter(layoutSection => {

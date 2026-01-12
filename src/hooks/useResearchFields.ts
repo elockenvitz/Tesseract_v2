@@ -596,9 +596,6 @@ export function useUserResearchLayout() {
 
       if (fieldsError) throw fieldsError
 
-      console.log('🔬 useUserResearchLayout - sections:', sections?.length, 'fields:', allFields?.length)
-      console.log('🔬 Fields:', allFields?.map(f => ({ id: f.id, name: f.name, section: f.section?.slug })))
-
       // Build accessible fields list - all fields are accessible
       // Visibility is controlled by user's layout preferences in useUserAssetPagePreferences
       const accessibleFields: AccessibleField[] = (allFields || []).map(field => ({

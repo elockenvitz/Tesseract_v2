@@ -2518,17 +2518,193 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               )}
             </div>
 
-            {/* Right side: Customize button - only show when viewing own view */}
-            {researchViewFilter === user?.id && (
-              <button
-                onClick={() => setShowFieldCustomizer(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                title="Customize asset page layout"
-              >
-                <Settings2 className="w-4 h-4" />
-                <span className="hidden sm:inline">Customize</span>
-              </button>
-            )}
+            {/* Right side: View mode buttons and Customize */}
+            <div className="flex items-center gap-2">
+              {/* View mode buttons */}
+              <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+                <button
+                  onClick={() => setThesisViewMode('all')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors',
+                    thesisViewMode === 'all'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="All sections"
+                >
+                  <Layers className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('summary')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors',
+                    thesisViewMode === 'summary'
+                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="AI summary"
+                >
+                  <Sparkles className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('history')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors',
+                    thesisViewMode === 'history'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="History timeline"
+                >
+                  <History className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('references')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors relative',
+                    thesisViewMode === 'references'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="Key references"
+                >
+                  <Link2 className="w-4 h-4" />
+                  {thesisReferences.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                      {thesisReferences.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Visibility control - only show when viewing own view */}
+              {researchViewFilter === user?.id && (
+                <div className="relative" ref={visibilityRef}>
+                  <button
+                    onClick={() => setShowVisibilityDropdown(!showVisibilityDropdown)}
+                    className={clsx(
+                      'inline-flex items-center px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                      VISIBILITY_CONFIG[sharedThesisVisibility].bgColor,
+                      VISIBILITY_CONFIG[sharedThesisVisibility].color,
+                      'hover:ring-1 hover:ring-gray-300'
+                    )}
+                    title="Research visibility"
+                  >
+                    {React.createElement(VISIBILITY_CONFIG[sharedThesisVisibility].icon, { className: 'w-4 h-4 mr-1.5' })}
+                    <span className="hidden sm:inline">{VISIBILITY_CONFIG[sharedThesisVisibility].label}</span>
+                    {sharedThesisTargetIds.length > 0 && (
+                      <span className="ml-1 opacity-75">({sharedThesisTargetIds.length})</span>
+                    )}
+                    <ChevronDown className="w-4 h-4 ml-1" />
+                  </button>
+
+                  {showVisibilityDropdown && (
+                    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg py-1">
+                      {visibilityStep === 'level' ? (
+                        <>
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
+                            Research visibility
+                          </div>
+                          {VISIBILITY_OPTIONS.map((option) => {
+                            const OptionIcon = option.icon
+                            const isSelected = sharedThesisVisibility === option.value
+                            const targets = getTargetOptions(option.value)
+                            const needsTargets = option.value !== 'firm' && targets.length > 0
+                            return (
+                              <button
+                                key={option.value}
+                                onClick={() => handleVisibilitySelect(option.value)}
+                                className={clsx(
+                                  'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700',
+                                  isSelected && 'bg-primary-50 dark:bg-primary-900/20'
+                                )}
+                              >
+                                <OptionIcon className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
+                                <div className="flex-1">
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{option.label}</span>
+                                  {needsTargets && (
+                                    <span className="text-xs text-gray-400 ml-1">→</span>
+                                  )}
+                                </div>
+                                {isSelected && <Check className="w-4 h-4 text-primary-600 dark:text-primary-400" />}
+                              </button>
+                            )
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b dark:border-gray-700 flex items-center">
+                            <button
+                              onClick={() => setVisibilityStep('level')}
+                              className="mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                              ←
+                            </button>
+                            Select {sharedThesisVisibility === 'portfolio' ? 'portfolios' :
+                                    sharedThesisVisibility === 'team' ? 'teams' :
+                                    sharedThesisVisibility === 'department' ? 'departments' : 'divisions'}
+                          </div>
+                          <div className="max-h-48 overflow-y-auto">
+                            {targetOptions.map((target) => {
+                              const isSelected = sharedThesisTargetIds.includes(target.id)
+                              return (
+                                <button
+                                  key={target.id}
+                                  onClick={() => {
+                                    setSharedThesisTargetIds(prev =>
+                                      prev.includes(target.id)
+                                        ? prev.filter(id => id !== target.id)
+                                        : [...prev, target.id]
+                                    )
+                                  }}
+                                  className={clsx(
+                                    'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700',
+                                    isSelected && 'bg-primary-50 dark:bg-primary-900/20'
+                                  )}
+                                >
+                                  <div className={clsx(
+                                    'w-4 h-4 rounded border mr-3 flex items-center justify-center',
+                                    isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
+                                  )}>
+                                    {isSelected && <Check className="w-3 h-3 text-white" />}
+                                  </div>
+                                  <span
+                                    className="w-3 h-3 rounded-full mr-2"
+                                    style={{ backgroundColor: target.color || '#6b7280' }}
+                                  />
+                                  <span className="flex-1 text-left text-gray-900 dark:text-gray-100">{target.name}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <div className="border-t dark:border-gray-700 px-3 py-2 flex justify-end">
+                            <button
+                              onClick={() => handleTargetsConfirm()}
+                              disabled={sharedThesisTargetIds.length === 0}
+                              className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Customize button - only show when viewing own view */}
+              {researchViewFilter === user?.id && (
+                <button
+                  onClick={() => setShowFieldCustomizer(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  title="Customize asset page layout"
+                >
+                  <Settings2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Customize</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2560,182 +2736,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     <ChevronUp className="h-5 w-5 text-gray-400" />
                   )}
                 </button>
-                {/* View mode icons */}
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('all') }}
-                    className={clsx(
-                      'p-1.5 rounded-md transition-colors',
-                      thesisViewMode === 'all'
-                        ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
-                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
-                    )}
-                    title="All sections"
-                  >
-                    <Layers className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('summary') }}
-                    className={clsx(
-                      'p-1.5 rounded-md transition-colors',
-                      thesisViewMode === 'summary'
-                        ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400'
-                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
-                    )}
-                    title="AI summary"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('history') }}
-                    className={clsx(
-                      'p-1.5 rounded-md transition-colors',
-                      thesisViewMode === 'history'
-                        ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
-                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
-                    )}
-                    title="History timeline"
-                  >
-                    <History className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setThesisViewMode('references') }}
-                    className={clsx(
-                      'p-1.5 rounded-md transition-colors relative',
-                      thesisViewMode === 'references'
-                        ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
-                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
-                    )}
-                    title="Key references"
-                  >
-                    <Link2 className="w-4 h-4" />
-                    {thesisReferences.length > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                        {thesisReferences.length}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Visibility control - shown when viewing own tab */}
-                  {isViewingOwnThesisTab && thesisViewMode === 'all' && (
-                    <>
-                      <div className="w-px h-4 bg-gray-300 mx-1.5" />
-                      <div className="relative" ref={visibilityRef}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setShowVisibilityDropdown(!showVisibilityDropdown) }}
-                          className={clsx(
-                            'inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors',
-                            VISIBILITY_CONFIG[sharedThesisVisibility].bgColor,
-                            VISIBILITY_CONFIG[sharedThesisVisibility].color,
-                            'hover:ring-1 hover:ring-gray-300'
-                          )}
-                          title="Thesis visibility"
-                        >
-                          {React.createElement(VISIBILITY_CONFIG[sharedThesisVisibility].icon, { className: 'w-3.5 h-3.5 mr-1' })}
-                          {VISIBILITY_CONFIG[sharedThesisVisibility].label}
-                          {sharedThesisTargetIds.length > 0 && (
-                            <span className="ml-1 opacity-75">({sharedThesisTargetIds.length})</span>
-                          )}
-                          <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
-                        </button>
-
-                        {showVisibilityDropdown && (
-                          <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white border rounded-lg shadow-lg py-1">
-                            {visibilityStep === 'level' ? (
-                              <>
-                                <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b">
-                                  Thesis visibility
-                                </div>
-                                {VISIBILITY_OPTIONS.map((option) => {
-                                  const OptionIcon = option.icon
-                                  const isSelected = sharedThesisVisibility === option.value
-                                  const targets = getTargetOptions(option.value)
-                                  const needsTargets = option.value !== 'firm' && targets.length > 0
-                                  return (
-                                    <button
-                                      key={option.value}
-                                      onClick={(e) => { e.stopPropagation(); handleVisibilitySelect(option.value) }}
-                                      className={clsx(
-                                        'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50',
-                                        isSelected && 'bg-primary-50'
-                                      )}
-                                    >
-                                      <OptionIcon className="w-4 h-4 mr-2 text-gray-500" />
-                                      <div className="flex-1">
-                                        <span className="font-medium text-gray-900">{option.label}</span>
-                                        {needsTargets && (
-                                          <span className="text-xs text-gray-400 ml-1">→</span>
-                                        )}
-                                      </div>
-                                      {isSelected && <Check className="w-4 h-4 text-primary-600" />}
-                                    </button>
-                                  )
-                                })}
-                              </>
-                            ) : (
-                              <>
-                                <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b flex items-center">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setVisibilityStep('level') }}
-                                    className="mr-2 text-gray-400 hover:text-gray-600"
-                                  >
-                                    ←
-                                  </button>
-                                  Select {sharedThesisVisibility === 'portfolio' ? 'portfolios' :
-                                          sharedThesisVisibility === 'team' ? 'teams' :
-                                          sharedThesisVisibility === 'department' ? 'departments' : 'divisions'}
-                                </div>
-                                <div className="max-h-48 overflow-y-auto">
-                                  {targetOptions.map((target) => {
-                                    const isSelected = sharedThesisTargetIds.includes(target.id)
-                                    return (
-                                      <button
-                                        key={target.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          setSharedThesisTargetIds(prev =>
-                                            prev.includes(target.id)
-                                              ? prev.filter(id => id !== target.id)
-                                              : [...prev, target.id]
-                                          )
-                                        }}
-                                        className={clsx(
-                                          'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50',
-                                          isSelected && 'bg-primary-50'
-                                        )}
-                                      >
-                                        <div className={clsx(
-                                          'w-4 h-4 rounded border mr-3 flex items-center justify-center',
-                                          isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
-                                        )}>
-                                          {isSelected && <Check className="w-3 h-3 text-white" />}
-                                        </div>
-                                        <span
-                                          className="w-3 h-3 rounded-full mr-2"
-                                          style={{ backgroundColor: target.color || '#6b7280' }}
-                                        />
-                                        <span className="flex-1 text-left">{target.name}</span>
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                                <div className="border-t px-3 py-2 flex justify-end">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleTargetsConfirm() }}
-                                    disabled={sharedThesisTargetIds.length === 0}
-                                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    Done
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
               </div>
               {!collapsedSections.thesis && (
                 <div className="border-t border-gray-100 px-6 py-4">
@@ -3047,10 +3047,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           assetId={asset.id}
                           section={af.field.slug}
                           title={af.field.name}
-                          viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
-                          userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                          activeTab={researchViewFilter}
                           defaultVisibility={sharedThesisVisibility}
-                          defaultTargetIds={sharedThesisTargetIds}
+                          hideViewModeButtons={true}
+                          sharedVisibility={sharedThesisVisibility}
+                          sharedTargetIds={sharedThesisTargetIds}
                         />
                       ))}
 
@@ -3070,10 +3071,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           assetId={asset.id}
                           section={af.field.slug}
                           title={af.field.name}
-                          viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
-                          userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                          activeTab={researchViewFilter}
                           defaultVisibility={sharedThesisVisibility}
-                          defaultTargetIds={sharedThesisTargetIds}
+                          hideViewModeButtons={true}
+                          sharedVisibility={sharedThesisVisibility}
+                          sharedTargetIds={sharedThesisTargetIds}
                         />
                       ))}
                     </div>
@@ -3164,10 +3166,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 assetId={asset.id}
                                 section={field.field_slug}
                                 title={field.field_name}
-                                viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
-                                userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                                activeTab={researchViewFilter}
                                 defaultVisibility={sharedThesisVisibility}
-                                defaultTargetIds={sharedThesisTargetIds}
+                                hideViewModeButtons={true}
+                                sharedVisibility={sharedThesisVisibility}
+                                sharedTargetIds={sharedThesisTargetIds}
                               />
                             )
                           })}
@@ -3391,10 +3394,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               assetId={asset.id}
                               section={field.field_slug}
                               title={field.field_name}
-                              viewMode={researchViewFilter === 'aggregated' ? 'aggregated' : 'individual'}
-                              userId={researchViewFilter !== 'aggregated' ? researchViewFilter : undefined}
+                              activeTab={researchViewFilter}
                               defaultVisibility={sharedThesisVisibility}
-                              defaultTargetIds={sharedThesisTargetIds}
+                              hideViewModeButtons={true}
+                              sharedVisibility={sharedThesisVisibility}
+                              sharedTargetIds={sharedThesisTargetIds}
                             />
                           )
                         })}

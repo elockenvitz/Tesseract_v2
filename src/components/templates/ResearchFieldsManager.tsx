@@ -255,6 +255,7 @@ interface SortableSectionProps {
   onToggleFieldVisibility: (fieldId: string) => void
   onRemoveField: (fieldId: string) => void
   onRemoveSection: () => void
+  onRenameSection: (newName: string) => void
   onAddField: () => void
   onFieldDragEnd: (activeId: string, overId: string) => void
 }
@@ -266,10 +267,13 @@ function SortableSection({
   onToggleFieldVisibility,
   onRemoveField,
   onRemoveSection,
+  onRenameSection,
   onAddField,
   onFieldDragEnd
 }: SortableSectionProps) {
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(section.section_name)
 
   const {
     attributes,
@@ -326,15 +330,52 @@ function SortableSection({
         </div>
 
         <div
-          onClick={onToggleExpand}
-          className="flex-1 flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors cursor-pointer"
+          onClick={isRenaming ? undefined : onToggleExpand}
+          className={clsx(
+            "flex-1 flex items-center gap-3 px-4 py-3 transition-colors",
+            !isRenaming && "hover:bg-gray-100 cursor-pointer"
+          )}
         >
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-gray-400" />
           ) : (
             <ChevronRight className="w-4 h-4 text-gray-400" />
           )}
-          <span className="font-medium text-gray-900">{section.section_name}</span>
+          {isRenaming ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (renameValue.trim() && renameValue.trim() !== section.section_name) {
+                  onRenameSection(renameValue.trim())
+                }
+                setIsRenaming(false)
+              }}
+              className="flex items-center gap-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                autoFocus
+                onBlur={() => {
+                  if (renameValue.trim() && renameValue.trim() !== section.section_name) {
+                    onRenameSection(renameValue.trim())
+                  }
+                  setIsRenaming(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setRenameValue(section.section_name)
+                    setIsRenaming(false)
+                  }
+                }}
+              />
+            </form>
+          ) : (
+            <span className="font-medium text-gray-900">{section.section_name}</span>
+          )}
           <span className="text-xs text-gray-500">
             {sectionVisibleCount} / {section.fields.length}
           </span>
@@ -352,6 +393,17 @@ function SortableSection({
 
         {/* Section actions */}
         <div className="flex items-center gap-1 pr-3">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setRenameValue(section.section_name)
+              setIsRenaming(true)
+            }}
+            className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Rename section"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
           <button
             onClick={onRemoveSection}
             className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1650,6 +1702,38 @@ function LayoutEditor({
         availableFields.map(f => [f.field_id, f])
       )
 
+      // Also create a map by slug for matching preset fields with timestamps
+      // e.g., "preset-competitive_landscape-1768168549905" should match field with slug "competitive_landscape"
+      const fieldBySlugMap = new Map(
+        availableFields.map(f => [f.field_slug, f])
+      )
+
+      // Helper to find a field by ID, with fallback to slug matching for preset IDs
+      const findFieldDetails = (fieldId: string) => {
+        // First try direct ID match
+        const directMatch = fieldDetailsMap.get(fieldId)
+        if (directMatch) return directMatch
+
+        // If it's a preset ID with timestamp (e.g., "preset-some_slug-123456789")
+        // try to match by extracting the slug
+        if (fieldId.startsWith('preset-')) {
+          const parts = fieldId.split('-')
+          if (parts.length >= 3) {
+            // Remove 'preset' prefix and timestamp suffix, join the middle parts
+            const slug = parts.slice(1, -1).join('-')
+            const slugMatch = fieldBySlugMap.get(slug)
+            if (slugMatch) return slugMatch
+
+            // Also try matching preset ID without timestamp
+            const presetIdWithoutTimestamp = `preset-${slug}`
+            const presetMatch = fieldDetailsMap.get(presetIdWithoutTimestamp)
+            if (presetMatch) return presetMatch
+          }
+        }
+
+        return undefined
+      }
+
       // Build a map of section details from fieldsBySection
       const sectionDetailsMap = new Map(
         fieldsBySection.map(s => [s.section_id, { name: s.section_name, slug: s.section_slug }])
@@ -1664,8 +1748,8 @@ function LayoutEditor({
       )
 
       for (const fc of sortedConfig) {
-        // Use section_id from config if available, otherwise look up from field details
-        const sectionId = (fc as any).section_id || fieldDetailsMap.get(fc.field_id)?.section_id
+        // Use section_id from config - fields are independent of sections
+        const sectionId = (fc as any).section_id
         if (!sectionId) continue
 
         if (!fieldsBySection_saved.has(sectionId)) {
@@ -1679,7 +1763,7 @@ function LayoutEditor({
       const seenSections = new Set<string>()
 
       for (const fc of sortedConfig) {
-        const sectionId = (fc as any).section_id || fieldDetailsMap.get(fc.field_id)?.section_id
+        const sectionId = (fc as any).section_id
         if (!sectionId || seenSections.has(sectionId)) continue
         seenSections.add(sectionId)
 
@@ -1693,7 +1777,7 @@ function LayoutEditor({
           display_order: sectionsArray.length,
           is_system: true,
           fields: fieldConfigs.map((fc, idx) => {
-            const fieldDetail = fieldDetailsMap.get(fc.field_id)
+            const fieldDetail = findFieldDetails(fc.field_id)
             return {
               field_id: fc.field_id,
               field_name: fieldDetail?.field_name || 'Unknown Field',
@@ -2011,6 +2095,19 @@ function LayoutEditor({
     setSections(prev => prev.filter(s => s.section_id !== sectionId))
   }
 
+  // Rename section
+  const renameSection = (sectionId: string, newName: string) => {
+    setSections(prev => prev.map(s => {
+      if (s.section_id !== sectionId) return s
+      const newSlug = newName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+      return {
+        ...s,
+        section_name: newName,
+        section_slug: newSlug
+      }
+    }))
+  }
+
   // Remove field from section
   const removeField = (sectionId: string, fieldId: string) => {
     setSections(prev => prev.map(s => {
@@ -2069,19 +2166,85 @@ function LayoutEditor({
   const handleSave = async () => {
     if (!name.trim()) return
 
-    // Build field config from all sections (including section_id for each field)
+    // Map to track temp section IDs -> real database IDs
+    const sectionIdMap = new Map<string, string>()
+
+    // First, create any new sections in the database
+    for (const section of sections) {
+      if (section.section_id.startsWith('new-')) {
+        try {
+          // Get user's organization
+          const { data: userData } = await supabase.auth.getUser()
+          if (!userData.user) continue
+
+          const { data: orgMembership } = await supabase
+            .from('organization_memberships')
+            .select('organization_id')
+            .eq('user_id', userData.user.id)
+            .eq('status', 'active')
+            .single()
+
+          if (!orgMembership) continue
+
+          // Create the section in the database
+          const { data: newSection, error } = await supabase
+            .from('research_sections')
+            .insert({
+              name: section.section_name,
+              slug: section.section_slug,
+              display_order: section.display_order,
+              is_system: false,
+              organization_id: orgMembership.organization_id
+            })
+            .select('id')
+            .single()
+
+          if (!error && newSection) {
+            sectionIdMap.set(section.section_id, newSection.id)
+          }
+        } catch (err) {
+          console.error('Error creating section:', err)
+        }
+      }
+    }
+
+    // Helper to normalize field IDs - strip timestamp from preset IDs
+    const normalizeFieldId = (fieldId: string): string => {
+      if (fieldId.startsWith('preset-')) {
+        // "preset-competitive_landscape-1768168549905" -> "preset-competitive_landscape"
+        const parts = fieldId.split('-')
+        if (parts.length >= 3) {
+          // Check if last part is a timestamp (all digits)
+          const lastPart = parts[parts.length - 1]
+          if (/^\d+$/.test(lastPart)) {
+            return parts.slice(0, -1).join('-')
+          }
+        }
+      }
+      return fieldId
+    }
+
+    // Build field config with normalized IDs
     const fieldConfig: FieldConfigItem[] = sections.flatMap((s, sectionIndex) =>
       s.fields.map((f, fieldIndex) => ({
-        field_id: f.field_id,
-        section_id: s.section_id,
+        field_id: normalizeFieldId(f.field_id),
+        section_id: sectionIdMap.get(s.section_id) || s.section_id, // Use real ID if we created it
         is_visible: f.is_visible,
         display_order: sectionIndex * 1000 + fieldIndex, // Preserve section and field order
         is_collapsed: false
       }))
     )
 
-    // Get section order
-    const sectionOrder = sections.map(s => s.section_id)
+    // Get section order with normalized IDs
+    const sectionOrder = sections.map(s => sectionIdMap.get(s.section_id) || s.section_id)
+
+    // Update local state with new section IDs
+    if (sectionIdMap.size > 0) {
+      setSections(prev => prev.map(s => {
+        const newId = sectionIdMap.get(s.section_id)
+        return newId ? { ...s, section_id: newId } : s
+      }))
+    }
 
     await onSave(name.trim(), description.trim(), fieldConfig, sectionOrder)
   }
@@ -2252,6 +2415,7 @@ function LayoutEditor({
                 onToggleFieldVisibility={(fieldId) => toggleFieldVisibility(section.section_id, fieldId)}
                 onRemoveField={(fieldId) => removeField(section.section_id, fieldId)}
                 onRemoveSection={() => removeSection(section.section_id)}
+                onRenameSection={(newName) => renameSection(section.section_id, newName)}
                 onAddField={() => setShowAddField(section.section_id)}
                 onFieldDragEnd={(activeId, overId) => handleFieldDragEnd(section.section_id, activeId, overId)}
               />

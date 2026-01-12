@@ -164,10 +164,12 @@ export function AssetPageFieldCustomizer({
   const [draftLayoutId, setDraftLayoutId] = useState<string | null | undefined>(undefined) // undefined = no change
   const [isSaving, setIsSaving] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const hasInitializedRef = useRef(false)
 
   // Initialize draft state when modal opens
   useEffect(() => {
-    if (isOpen && !isLoading) {
+    if (isOpen && !isLoading && !hasInitializedRef.current) {
+      hasInitializedRef.current = true
       // Initialize from current overrides
       const fieldMap = new Map<string, DraftFieldOverride>()
       for (const override of assetFieldOverrides) {
@@ -184,6 +186,10 @@ export function AssetPageFieldCustomizer({
       setDraftNewSections([])
       setDraftLayoutId(undefined) // No change to layout yet
       setHasUnsavedChanges(false)
+    }
+    // Reset init flag when modal closes
+    if (!isOpen) {
+      hasInitializedRef.current = false
     }
   }, [isOpen, isLoading, assetFieldOverrides, assetSectionOverrides])
 
@@ -291,39 +297,66 @@ export function AssetPageFieldCustomizer({
     }
   }, [sectionMenuOpen])
 
-  // Get current template info
-  const currentTemplateName = activeLayout?.name || 'Default'
+  // Get current template info (what's actually saved)
+  const savedTemplateName = activeLayout?.name || 'Default'
   const isUsingDefault = !activeLayout || activeLayout.id === 'system-default'
 
-  // Debug logging (disabled for performance)
-  // console.log('AssetPageFieldCustomizer layout info:', {
-  //   activeLayout: activeLayout?.name,
-  //   activeLayoutId: activeLayout?.id,
-  //   isUsingDefault,
-  //   assetLayoutSelection: assetLayoutSelection ? {
-  //     layout_id: assetLayoutSelection.layout_id,
-  //     layout_name: (assetLayoutSelection as any).layout?.name,
-  //     has_layout: !!(assetLayoutSelection as any).layout
-  //   } : null,
-  //   viewFilter,
-  //   currentUserId,
-  //   canChangeLayout
-  // })
+  // Computed values for draft template selection UI
+  // draftLayoutId: undefined = no change, null = default selected, string = specific layout selected
+  const isDraftDefault = draftLayoutId === null || (draftLayoutId === undefined && isUsingDefault)
+  const getDraftLayoutSelected = (layoutId: string) =>
+    draftLayoutId === layoutId || (draftLayoutId === undefined && activeLayout?.id === layoutId)
+
+  // Get the template name to DISPLAY (reflects draft selection if changed)
+  const displayTemplateName = useMemo(() => {
+    if (draftLayoutId === undefined) {
+      // No change - show current saved template
+      return savedTemplateName
+    }
+    if (draftLayoutId === null) {
+      // User selected Default
+      return 'Default'
+    }
+    // User selected a specific template - find its name
+    const selectedLayout = layouts?.find(l => l.id === draftLayoutId)
+    return selectedLayout?.name || savedTemplateName
+  }, [draftLayoutId, savedTemplateName, layouts])
+
+  // Is the DISPLAYED template the default? (for showing read-only label)
+  const isDisplayingDefault = draftLayoutId === null || (draftLayoutId === undefined && isUsingDefault)
+
+  // Get the draft-selected layout object (for previewing field configuration)
+  // This is the layout that WOULD be active if the user saves their changes
+  const draftActiveLayout = useMemo(() => {
+    if (draftLayoutId === undefined) {
+      // No change - use current active layout
+      return activeLayout
+    }
+    if (draftLayoutId === null) {
+      // User selected Default - no layout
+      return null
+    }
+    // User selected a specific layout - find it
+    return layouts?.find(l => l.id === draftLayoutId) || null
+  }, [draftLayoutId, activeLayout, layouts])
+
+  // Is the draft selection using the default template?
+  const isDraftUsingDefault = draftLayoutId === null || (draftLayoutId === undefined && isUsingDefault)
 
   // Check if this asset has field overrides
   const hasFieldOverrides = assetFieldOverrides.length > 0
 
-  // Get template field IDs for comparison
+  // Get template field IDs for comparison - uses DRAFT layout for preview
   const templateFieldIds = useMemo(() => {
-    if (isUsingDefault) {
+    if (isDraftUsingDefault) {
       // Default template = universal fields
       return new Set(fieldsWithPreferences.filter(f => f.is_universal).map(f => f.field_id))
     }
-    if (activeLayout?.field_config && activeLayout.field_config.length > 0) {
-      return new Set(activeLayout.field_config.map(fc => fc.field_id))
+    if (draftActiveLayout?.field_config && draftActiveLayout.field_config.length > 0) {
+      return new Set(draftActiveLayout.field_config.map(fc => fc.field_id))
     }
     return new Set(fieldsWithPreferences.map(f => f.field_id))
-  }, [isUsingDefault, activeLayout, fieldsWithPreferences])
+  }, [isDraftUsingDefault, draftActiveLayout, fieldsWithPreferences])
 
   // Get field IDs that were added via DRAFT override (visible but not in template)
   const draftOverrideAddedFieldIds = useMemo(() => {
@@ -339,6 +372,7 @@ export function AssetPageFieldCustomizer({
   // Compute displayed sections using DRAFT state
   // This shows what the layout will look like when saved
   const displayedFieldsBySection = useMemo(() => {
+
     // First, build a map of field_id -> target section_id from draft overrides
     // This tells us which fields have been moved to different sections
     const fieldToTargetSection = new Map<string, string>()
@@ -348,64 +382,201 @@ export function AssetPageFieldCustomizer({
       }
     })
 
-    // Build sections with draft overrides applied
-    const sectionsWithDraft = fieldsBySection.map(section => {
-      // Check draft section override
-      const draftSectionOverride = draftSectionOverrides.get(section.section_id)
+    // Create a map of field_id -> field data for quick lookup
+    const fieldMap = new Map<string, FieldWithPreference>()
+    fieldsWithPreferences.forEach(f => fieldMap.set(f.field_id, f))
 
-      // Get fields that belong to this section:
-      // 1. Fields originally in this section (from template or override) that haven't been moved elsewhere
-      // 2. Fields that have been moved TO this section via draft override
-      const sectionFields: typeof section.fields = []
+    // Also create a map by slug for matching preset fields with timestamps
+    // e.g., "preset-competitive_landscape-1768168549905" should match field with slug "competitive_landscape"
+    const fieldBySlugMap = new Map<string, FieldWithPreference>()
+    fieldsWithPreferences.forEach(f => fieldBySlugMap.set(f.field_slug, f))
 
-      // Add fields originally in this section (if not moved elsewhere)
-      section.fields.forEach(field => {
-        const targetSection = fieldToTargetSection.get(field.field_id)
-        // Include if: in template or added via override, AND not moved to a different section
-        if ((templateFieldIds.has(field.field_id) || draftOverrideAddedFieldIds.has(field.field_id))) {
-          if (!targetSection || targetSection === section.section_id) {
-            sectionFields.push(field)
+    // Helper to find a field by ID, with fallback to slug matching for preset IDs
+    const findField = (fieldId: string): FieldWithPreference | undefined => {
+      // First try direct ID match
+      const directMatch = fieldMap.get(fieldId)
+      if (directMatch) return directMatch
+
+      // If it's a preset ID with timestamp (e.g., "preset-some_slug-123456789")
+      // try to match by extracting the slug
+      if (fieldId.startsWith('preset-')) {
+        // Extract slug: "preset-competitive_landscape-1768168549905" -> "competitive_landscape"
+        const parts = fieldId.split('-')
+        if (parts.length >= 3) {
+          // Remove 'preset' prefix and timestamp suffix, join the middle parts
+          const slug = parts.slice(1, -1).join('-')
+          const slugMatch = fieldBySlugMap.get(slug)
+          if (slugMatch) return slugMatch
+
+          // Also try matching preset ID without timestamp
+          const presetIdWithoutTimestamp = `preset-${slug}`
+          const presetMatch = fieldMap.get(presetIdWithoutTimestamp)
+          if (presetMatch) return presetMatch
+        }
+      }
+
+      return undefined
+    }
+
+    // Create a map of section_id -> section info from allSections
+    const sectionInfoMap = new Map<string, { id: string; name: string; slug: string; display_order: number }>()
+    if (allSections) {
+      allSections.forEach(s => sectionInfoMap.set(s.id, { id: s.id, name: s.name, slug: s.slug, display_order: s.display_order }))
+    }
+    // Also add sections from fieldsBySection for fallback
+    fieldsBySection.forEach(s => {
+      if (!sectionInfoMap.has(s.section_id)) {
+        sectionInfoMap.set(s.section_id, { id: s.section_id, name: s.section_name, slug: s.section_slug, display_order: s.section_display_order })
+      }
+    })
+
+    // Build sections based on draft template
+    const sectionsMap = new Map<string, {
+      section_id: string
+      section_name: string
+      section_slug: string
+      section_display_order: number
+      section_is_hidden: boolean
+      section_is_added: boolean
+      section_original_name: string
+      section_has_override: boolean
+      fields: Array<FieldWithPreference & { isFromTemplate?: boolean; isAddedViaOverride?: boolean }>
+    }>()
+
+    // Helper to get or create section entry
+    const getOrCreateSection = (sectionId: string) => {
+      if (!sectionsMap.has(sectionId)) {
+        const sectionInfo = sectionInfoMap.get(sectionId)
+        const draftSectionOverride = draftSectionOverrides.get(sectionId)
+        sectionsMap.set(sectionId, {
+          section_id: sectionId,
+          section_name: draftSectionOverride?.name_override || sectionInfo?.name || 'Unknown Section',
+          section_slug: sectionInfo?.slug || sectionId,
+          section_display_order: draftSectionOverride?.display_order ?? sectionInfo?.display_order ?? 999,
+          section_is_hidden: draftSectionOverride?.is_hidden ?? false,
+          section_is_added: draftSectionOverride?.is_added ?? false,
+          section_original_name: sectionInfo?.name || 'Unknown Section',
+          section_has_override: !!draftSectionOverride,
+          fields: []
+        })
+      }
+      return sectionsMap.get(sectionId)!
+    }
+
+    // Helper to calculate visibility for a field
+    const getFieldVisibility = (field: FieldWithPreference, layoutConfig?: { is_visible: boolean }) => {
+      const draftOverride = draftFieldOverrides.get(field.field_id)
+      if (draftOverride?.is_visible !== undefined) {
+        return draftOverride.is_visible
+      }
+      if (isDraftUsingDefault) {
+        return field.is_universal === true
+      }
+      if (layoutConfig) {
+        return layoutConfig.is_visible
+      }
+      return false
+    }
+
+    // For custom templates: group fields by the template's section_id
+    if (!isDraftUsingDefault && draftActiveLayout?.field_config && draftActiveLayout.field_config.length > 0) {
+      // Process fields from the template's field_config
+      draftActiveLayout.field_config.forEach(config => {
+        const field = findField(config.field_id)
+        if (!field) return
+
+        // Check if field has been moved via draft override
+        const overrideTargetSection = fieldToTargetSection.get(config.field_id)
+        // Use override section, or template's section
+        const targetSectionId = overrideTargetSection || config.section_id
+
+        const section = getOrCreateSection(targetSectionId)
+        const draftOverride = draftFieldOverrides.get(field.field_id)
+        const isVisible = draftOverride?.is_visible ?? config.is_visible
+        const displayOrder = draftOverride?.display_order ?? config.display_order ?? field.default_display_order
+
+        section.fields.push({
+          ...field,
+          section_id: targetSectionId,
+          is_visible: isVisible,
+          display_order: displayOrder,
+          isFromTemplate: true,
+          isAddedViaOverride: false
+        })
+      })
+
+      // Add fields from draft overrides that aren't in the template
+      draftFieldOverrides.forEach((override, fieldId) => {
+        if (override.is_visible && !templateFieldIds.has(fieldId)) {
+          const field = findField(fieldId)
+          if (!field) return
+
+          const targetSectionId = override.section_id || field.section_id
+          const section = getOrCreateSection(targetSectionId)
+
+          // Check if field was already added
+          if (!section.fields.some(f => f.field_id === fieldId)) {
+            section.fields.push({
+              ...field,
+              section_id: targetSectionId,
+              is_visible: true,
+              display_order: override.display_order ?? field.default_display_order,
+              isFromTemplate: false,
+              isAddedViaOverride: true
+            })
           }
         }
       })
+    } else {
+      // Default template: use fields grouped by their default sections
+      fieldsBySection.forEach(section => {
+        const draftSectionOverride = draftSectionOverrides.get(section.section_id)
 
-      // Add fields that have been moved TO this section from other sections
-      fieldsWithPreferences.forEach(field => {
-        const targetSection = fieldToTargetSection.get(field.field_id)
-        if (targetSection === section.section_id && field.section_id !== section.section_id) {
-          // This field was moved here from another section
-          sectionFields.push(field)
+        section.fields.forEach(field => {
+          // For default template, only include universal fields (unless overridden)
+          const draftOverride = draftFieldOverrides.get(field.field_id)
+          const isInTemplate = field.is_universal === true
+          const isAddedViaOverride = draftOverride?.is_visible === true && !isInTemplate
+
+          if (!isInTemplate && !isAddedViaOverride) return
+
+          // Check if field has been moved via draft override
+          const overrideTargetSection = fieldToTargetSection.get(field.field_id)
+          const targetSectionId = overrideTargetSection || section.section_id
+
+          const targetSection = getOrCreateSection(targetSectionId)
+          const isVisible = draftOverride?.is_visible ?? (isInTemplate ? true : false)
+          const displayOrder = draftOverride?.display_order ?? field.display_order
+
+          targetSection.fields.push({
+            ...field,
+            section_id: targetSectionId,
+            is_visible: isVisible,
+            display_order: displayOrder,
+            isFromTemplate: isInTemplate,
+            isAddedViaOverride: isAddedViaOverride
+          })
+        })
+
+        // Apply section override if present
+        if (sectionsMap.has(section.section_id) && draftSectionOverride) {
+          const s = sectionsMap.get(section.section_id)!
+          s.section_name = draftSectionOverride.name_override || section.section_name
+          s.section_is_hidden = draftSectionOverride.is_hidden ?? false
+          s.section_display_order = draftSectionOverride.display_order ?? section.section_display_order
         }
       })
+    }
 
-      return {
-        ...section,
-        section_name: draftSectionOverride?.name_override || section.section_name,
-        section_is_hidden: draftSectionOverride?.is_hidden ?? section.section_is_hidden,
-        section_is_added: draftSectionOverride?.is_added ?? section.section_is_added,
-        section_display_order: draftSectionOverride?.display_order ?? section.section_display_order,
-        fields: sectionFields
-          .map(field => {
-            // Apply draft field override
-            const draftOverride = draftFieldOverrides.get(field.field_id)
-            const isVisible = draftOverride?.is_visible ?? field.is_visible
-            const displayOrder = draftOverride?.display_order ?? field.display_order
-
-            return {
-              ...field,
-              is_visible: isVisible,
-              display_order: displayOrder,
-              isFromTemplate: templateFieldIds.has(field.field_id),
-              isAddedViaOverride: draftOverrideAddedFieldIds.has(field.field_id)
-            }
-          })
-          .sort((a, b) => {
-            const aOrder = a.display_order ?? a.default_display_order
-            const bOrder = b.display_order ?? b.default_display_order
-            return aOrder - bOrder
-          })
-      }
-    })
+    // Convert map to array and sort
+    const sectionsWithDraft = Array.from(sectionsMap.values()).map(section => ({
+      ...section,
+      fields: section.fields.sort((a, b) => {
+        const aOrder = a.display_order ?? a.default_display_order
+        const bOrder = b.display_order ?? b.default_display_order
+        return aOrder - bOrder
+      })
+    }))
 
     // Add new sections from draft
     for (const newSection of draftNewSections) {
@@ -431,9 +602,10 @@ export function AssetPageFieldCustomizer({
         section_has_override: true,
         fields: newSectionFields.map(field => {
           const fieldDraftOverride = draftFieldOverrides.get(field.field_id)
+          // Fields added to new sections should be visible by default
           return {
             ...field,
-            is_visible: fieldDraftOverride?.is_visible ?? field.is_visible,
+            is_visible: fieldDraftOverride?.is_visible ?? true,
             display_order: fieldDraftOverride?.display_order ?? field.display_order,
             isFromTemplate: false,
             isAddedViaOverride: true
@@ -446,7 +618,7 @@ export function AssetPageFieldCustomizer({
     return sectionsWithDraft
       .sort((a, b) => a.section_display_order - b.section_display_order)
       .filter(section => section.fields.length > 0 || section.section_is_added)
-  }, [fieldsBySection, templateFieldIds, draftOverrideAddedFieldIds, draftFieldOverrides, draftSectionOverrides, draftNewSections])
+  }, [fieldsBySection, templateFieldIds, draftOverrideAddedFieldIds, draftFieldOverrides, draftSectionOverrides, draftNewSections, isDraftUsingDefault, draftActiveLayout, fieldsWithPreferences, allSections])
 
   // ALL fields from library for the Add Field dropdown, filtered by search
   // Show all fields, marking which are already visible (using draft state)
@@ -460,15 +632,26 @@ export function AssetPageFieldCustomizer({
         (f.creator_name?.toLowerCase().includes(search))
       )
       .map(f => {
-        // Apply draft visibility
+        // Calculate template default visibility based on DRAFT selection
+        let templateDefaultVisibility: boolean
+        if (isDraftUsingDefault) {
+          templateDefaultVisibility = f.is_universal === true
+        } else if (draftActiveLayout?.field_config) {
+          const layoutConfig = draftActiveLayout.field_config.find(fc => fc.field_id === f.field_id)
+          templateDefaultVisibility = layoutConfig?.is_visible ?? false
+        } else {
+          templateDefaultVisibility = f.is_visible
+        }
+
+        // Apply draft override, then template default
         const draftOverride = draftFieldOverrides.get(f.field_id)
         return {
           ...f,
-          is_visible: draftOverride?.is_visible ?? f.is_visible
+          is_visible: draftOverride?.is_visible ?? templateDefaultVisibility
         }
       })
       .sort((a, b) => a.section_name.localeCompare(b.section_name) || a.field_name.localeCompare(b.field_name))
-  }, [fieldsWithPreferences, addFieldSearch, draftFieldOverrides])
+  }, [fieldsWithPreferences, addFieldSearch, draftFieldOverrides, isDraftUsingDefault, draftActiveLayout])
 
   // Count visible and total fields - use displayedFieldsBySection to respect template filtering
   const allDisplayedFields = displayedFieldsBySection.flatMap(s => s.fields)
@@ -712,11 +895,6 @@ export function AssetPageFieldCustomizer({
   }
 
   const handleSelectTemplate = (layout: LayoutWithSharing | null) => {
-    console.log('📋 handleSelectTemplate called:', {
-      layoutId: layout?.id || null,
-      layoutName: layout?.name || 'Default',
-      previousDraftLayoutId: draftLayoutId
-    })
     setDraftLayoutId(layout?.id || null)
     setShowTemplateSelector(false)
     setHasUnsavedChanges(true)
@@ -860,16 +1038,7 @@ export function AssetPageFieldCustomizer({
   // SAVE FUNCTION - Commits all draft changes
   // ============================================
   const handleSaveChanges = async () => {
-    console.log('💾 handleSaveChanges called:', {
-      assetId,
-      hasUnsavedChanges,
-      draftLayoutId,
-      draftLayoutIdType: typeof draftLayoutId,
-      willSaveLayout: draftLayoutId !== undefined
-    })
-
     if (!assetId || !hasUnsavedChanges) {
-      console.log('💾 Early exit - no assetId or no unsaved changes')
       onClose()
       return
     }
@@ -878,14 +1047,10 @@ export function AssetPageFieldCustomizer({
     try {
       // 1. Handle layout change if needed
       if (draftLayoutId !== undefined) {
-        console.log('💾 Saving layout selection:', { assetId, layoutId: draftLayoutId })
         await selectLayoutForAsset.mutateAsync({
           assetId,
           layoutId: draftLayoutId
         })
-        console.log('💾 Layout selection saved successfully')
-      } else {
-        console.log('💾 Skipping layout save - draftLayoutId is undefined')
       }
 
       // 2. Create any new sections first
@@ -1127,8 +1292,8 @@ export function AssetPageFieldCustomizer({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900 text-sm">{currentTemplateName}</span>
-                        {isUsingDefault && (
+                        <span className="font-medium text-gray-900 text-sm">{displayTemplateName}</span>
+                        {isDisplayingDefault && (
                           <span className="text-xs text-gray-500">(read-only)</span>
                         )}
                       </div>
@@ -1183,7 +1348,7 @@ export function AssetPageFieldCustomizer({
                       onClick={() => handleSelectTemplate(null)}
                       className={clsx(
                         'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors',
-                        isUsingDefault && 'bg-primary-50'
+                        isDraftDefault && 'bg-primary-50'
                       )}
                     >
                       <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center shrink-0">
@@ -1193,7 +1358,7 @@ export function AssetPageFieldCustomizer({
                         <span className="font-medium text-gray-900 text-sm">Default</span>
                         <p className="text-xs text-gray-500">Standard layout for all users</p>
                       </div>
-                      {isUsingDefault && (
+                      {isDraftDefault && (
                         <Check className="w-4 h-4 text-primary-600 shrink-0" />
                       )}
                     </button>
@@ -1212,7 +1377,7 @@ export function AssetPageFieldCustomizer({
                             onClick={() => handleSelectTemplate(layout)}
                             className={clsx(
                               'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors',
-                              activeLayout?.id === layout.id && 'bg-primary-50'
+                              getDraftLayoutSelected(layout.id) && 'bg-primary-50'
                             )}
                           >
                             <div className="w-7 h-7 rounded-md bg-primary-100 flex items-center justify-center shrink-0">
@@ -1229,7 +1394,7 @@ export function AssetPageFieldCustomizer({
                                 <p className="text-xs text-gray-500 truncate">{layout.description}</p>
                               )}
                             </div>
-                            {activeLayout?.id === layout.id && (
+                            {getDraftLayoutSelected(layout.id) && (
                               <Check className="w-4 h-4 text-primary-600 shrink-0" />
                             )}
                           </button>

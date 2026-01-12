@@ -317,18 +317,6 @@ export function useUserAssetPagePreferences(assetId?: string) {
   // 3. System default (all fields visible)
   const activeLayout = assetLayoutSelection?.layout || defaultLayout
 
-  // Debug: Log layout determination
-  console.log('🎨 Layout Determination:', {
-    assetId,
-    hasAssetLayoutSelection: !!assetLayoutSelection,
-    assetLayoutId: assetLayoutSelection?.layout_id,
-    assetLayoutName: assetLayoutSelection?.layout?.name,
-    hasDefaultLayout: !!defaultLayout,
-    defaultLayoutName: defaultLayout?.name,
-    activeLayoutName: activeLayout?.name || 'System Default (null)',
-    activeLayoutFieldCount: activeLayout?.field_config?.length ?? 'N/A (no custom template)'
-  })
-
   // Get asset-specific field overrides (if any)
   const assetFieldOverrides = assetLayoutSelection?.field_overrides || []
 
@@ -345,8 +333,28 @@ export function useUserAssetPagePreferences(assetId?: string) {
     // Check asset-specific overrides first (highest priority)
     const assetOverride = assetFieldOverrides.find(o => o.field_id === field.id)
 
-    // Check if there's a section override for this field
-    const overrideSectionId = assetOverride?.section_id
+    // Check layout's field_config (template section assignment)
+    // Need to handle preset field IDs which may have timestamps like "preset-slug-1234567890"
+    const layoutConfig = activeLayout?.field_config?.find(fc => {
+      // Direct ID match
+      if (fc.field_id === field.id) return true
+      // Match preset fields by slug (handles timestamp variations)
+      if (fc.field_id.startsWith('preset-') && field.slug) {
+        const parts = fc.field_id.split('-')
+        if (parts.length >= 2) {
+          // Extract slug: "preset-some_slug-123456789" -> "some_slug"
+          // or "preset-some_slug" -> "some_slug"
+          const lastPart = parts[parts.length - 1]
+          const isTimestamp = /^\d+$/.test(lastPart)
+          const slug = isTimestamp ? parts.slice(1, -1).join('-') : parts.slice(1).join('-')
+          if (slug === field.slug) return true
+        }
+      }
+      return false
+    })
+
+    // Determine section: asset override > template section > default section
+    const overrideSectionId = assetOverride?.section_id || layoutConfig?.section_id
     let section = defaultSection
     if (overrideSectionId && allSections) {
       const overrideSection = allSections.find(s => s.id === overrideSectionId)
@@ -354,9 +362,6 @@ export function useUserAssetPagePreferences(assetId?: string) {
         section = overrideSection as typeof defaultSection
       }
     }
-
-    // Check layout's field_config second
-    const layoutConfig = activeLayout?.field_config?.find(fc => fc.field_id === field.id)
 
     // Fallback to individual preferences (legacy support)
     const pref = preferences?.find(p => p.field_id === field.id)
@@ -506,22 +511,42 @@ export function useUserAssetPagePreferences(assetId?: string) {
   // Compute displayed sections - filtered to only show sections relevant to the current template/overrides
   // This is what should be used for rendering on the asset page
   const isUsingCustomTemplate = activeLayout && activeLayout.field_config && activeLayout.field_config.length > 0
-  const templateFieldIds = new Set(
-    (activeLayout?.field_config || []).map(fc => fc.field_id)
-  )
+  const templateFieldConfig = activeLayout?.field_config || []
   const overrideAddedFieldIds = new Set(
     assetFieldOverrides.filter(o => o.is_visible).map(o => o.field_id)
   )
+
+  // Helper to check if a field is in the template (handles preset field ID matching)
+  const isFieldInTemplate = (fieldId: string, fieldSlug: string): boolean => {
+    return templateFieldConfig.some(fc => {
+      // Direct ID match
+      if (fc.field_id === fieldId) return true
+      // Match preset fields by slug (handles timestamp variations)
+      if (fc.field_id.startsWith('preset-') && fieldSlug) {
+        const parts = fc.field_id.split('-')
+        if (parts.length >= 2) {
+          const lastPart = parts[parts.length - 1]
+          const isTimestamp = /^\d+$/.test(lastPart)
+          const slug = isTimestamp ? parts.slice(1, -1).join('-') : parts.slice(1).join('-')
+          if (slug === fieldSlug) return true
+        }
+      }
+      return false
+    })
+  }
 
   const displayedFieldsBySection = fieldsBySection
     .map(section => ({
       ...section,
       fields: section.fields
-        .map(field => ({
-          ...field,
-          isFromTemplate: templateFieldIds.has(field.field_id),
-          isAddedViaOverride: overrideAddedFieldIds.has(field.field_id) && !templateFieldIds.has(field.field_id)
-        }))
+        .map(field => {
+          const inTemplate = isFieldInTemplate(field.field_id, field.field_slug)
+          return {
+            ...field,
+            isFromTemplate: inTemplate,
+            isAddedViaOverride: overrideAddedFieldIds.has(field.field_id) && !inTemplate
+          }
+        })
         // Filter fields based on whether we're using a custom template
         // - Custom template: only show fields from template or added via override
         // - Default template: show all fields (visibility controlled by is_visible)
@@ -905,8 +930,6 @@ export function useUserAssetPagePreferences(assetId?: string) {
     mutationFn: async ({ assetId: targetAssetId, layoutId }: { assetId: string; layoutId: string | null }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      console.log('selectLayoutForAsset called:', { targetAssetId, layoutId })
-
       // Get existing selection to preserve field_overrides and section_overrides
       const { data: existing, error: fetchError } = await supabase
         .from('user_asset_layout_selections')
@@ -920,17 +943,12 @@ export function useUserAssetPagePreferences(assetId?: string) {
         throw fetchError
       }
 
-      console.log('Existing selection:', existing)
-
       const existingFieldOverrides = existing?.field_overrides || []
       const existingSectionOverrides = existing?.section_overrides || []
       const hasOverrides = existingFieldOverrides.length > 0 || existingSectionOverrides.length > 0
 
-      console.log('Has overrides:', hasOverrides, { fieldCount: existingFieldOverrides.length, sectionCount: existingSectionOverrides.length })
-
       if (layoutId === null && !hasOverrides) {
         // No layout and no overrides - remove the selection entirely
-        console.log('Deleting selection (no layout, no overrides)')
         if (existing) {
           const { error } = await supabase
             .from('user_asset_layout_selections')
@@ -938,14 +956,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
             .eq('id', existing.id)
 
           if (error) {
-            console.error('Error deleting selection:', error)
             throw error
           }
-          console.log('Selection deleted successfully')
         }
       } else if (existing) {
         // Update existing row
-        console.log('Updating existing selection with layout_id:', layoutId)
         const { error } = await supabase
           .from('user_asset_layout_selections')
           .update({
@@ -957,13 +972,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
           .eq('id', existing.id)
 
         if (error) {
-          console.error('Error updating selection:', error)
           throw error
         }
-        console.log('Selection updated successfully')
       } else {
         // Insert new row
-        console.log('Inserting new selection with layout_id:', layoutId)
         const { error } = await supabase
           .from('user_asset_layout_selections')
           .insert({
@@ -975,10 +987,8 @@ export function useUserAssetPagePreferences(assetId?: string) {
           })
 
         if (error) {
-          console.error('Error inserting selection:', error)
           throw error
         }
-        console.log('Selection inserted successfully')
       }
     },
     onSuccess: () => {

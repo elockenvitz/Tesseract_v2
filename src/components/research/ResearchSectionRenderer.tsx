@@ -86,8 +86,8 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     return null
   }
 
-  const viewMode = viewFilter === 'aggregated' ? 'aggregated' : 'individual'
-  const userId = viewFilter !== 'aggregated' ? viewFilter : undefined
+  // For ContributionSection: activeTab is either 'aggregated' or a user ID
+  const activeTab = viewFilter
 
   // Render section header
   const renderHeader = () => (
@@ -270,16 +270,19 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     }
 
     // Default: rich_text or other text-based fields use ContributionSection
+    // Match the styling of Investment Thesis, Where We Are Different, and Risks to Thesis
     return (
       <ContributionSection
         key={field.field_id}
         assetId={assetId}
         section={field.field_slug}
         title={field.field_name}
-        viewMode={viewMode}
-        userId={userId}
+        description={field.field_description || undefined}
+        activeTab={activeTab}
         defaultVisibility={sharedVisibility}
-        defaultTargetIds={sharedTargetIds}
+        hideViewModeButtons={true}
+        sharedVisibility={sharedVisibility}
+        sharedTargetIds={sharedTargetIds}
       />
     )
   }
