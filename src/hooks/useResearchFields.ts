@@ -253,6 +253,38 @@ export function useResearchFields() {
     }
   })
 
+  // Delete field mutation (hard delete - only for creator)
+  const deleteField = useMutation({
+    mutationFn: async (id: string) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      // First verify the user is the creator
+      const { data: field, error: fetchError } = await supabase
+        .from('research_fields')
+        .select('created_by, is_system')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+      if (!field) throw new Error('Field not found')
+      if (field.is_system) throw new Error('Cannot delete system fields')
+      if (field.created_by !== user.id) throw new Error('You can only delete fields you created')
+
+      // Delete the field
+      const { error } = await supabase
+        .from('research_fields')
+        .delete()
+        .eq('id', id)
+        .eq('created_by', user.id) // Extra safety check
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['research-fields'] })
+      queryClient.invalidateQueries({ queryKey: ['available-research-fields'] })
+    }
+  })
+
   // Add field from preset
   const addFromPreset = useMutation({
     mutationFn: async ({ presetSlug, sectionSlug }: { presetSlug: string; sectionSlug?: string }) => {
@@ -282,10 +314,12 @@ export function useResearchFields() {
     createField,
     updateField,
     archiveField,
+    deleteField,
     addFromPreset,
     isCreating: createField.isPending,
     isUpdating: updateField.isPending,
-    isArchiving: archiveField.isPending
+    isArchiving: archiveField.isPending,
+    isDeleting: deleteField.isPending
   }
 }
 

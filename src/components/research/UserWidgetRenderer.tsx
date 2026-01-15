@@ -192,6 +192,7 @@ function RichTextWidgetContent({
       section={`custom_${widget.id}`}
       title=""
       hideTitle
+      hideVisibility={true}
       viewMode="individual"
     />
   )

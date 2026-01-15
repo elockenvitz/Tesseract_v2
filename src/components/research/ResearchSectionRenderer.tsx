@@ -281,6 +281,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
         activeTab={activeTab}
         defaultVisibility={sharedVisibility}
         hideViewModeButtons={true}
+        hideVisibility={true}
         sharedVisibility={sharedVisibility}
         sharedTargetIds={sharedTargetIds}
       />

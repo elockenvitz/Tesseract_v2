@@ -287,7 +287,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
             field_type: preset.field_type,
             section_id: section?.id || null,
             is_universal: false, // Presets are available but not universal by default
-            is_system: true, // Presets are standard system fields
+            is_system: false, // Presets are library fields, not part of default template
             display_order: 999, // Show after regular fields
             created_by: null,
             created_at: preset.created_at,
@@ -1432,7 +1432,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
   // Reorder fields within a section for this asset
   const reorderFieldsInSection = useMutation({
-    mutationFn: async ({ sectionId, orderedFieldIds }: { sectionId: string; orderedFieldIds: string[] }) => {
+    mutationFn: async ({ sectionId, orderedFieldIds, hiddenFieldIds = [] }: { sectionId: string; orderedFieldIds: string[]; hiddenFieldIds?: string[] }) => {
       if (!user?.id || !assetId) throw new Error('Not authenticated or no asset')
 
       // Get existing selection
@@ -1453,6 +1453,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
         if (existingIdx >= 0) {
           newOverrides[existingIdx] = {
             ...newOverrides[existingIdx],
+            is_visible: true,
             display_order: index,
             section_id: sectionId
           }
@@ -1461,6 +1462,23 @@ export function useUserAssetPagePreferences(assetId?: string) {
             field_id: fieldId,
             is_visible: true,
             display_order: index,
+            section_id: sectionId
+          })
+        }
+      })
+
+      // Update/add overrides for hidden fields (removed from section)
+      hiddenFieldIds.forEach((fieldId) => {
+        const existingIdx = newOverrides.findIndex(o => o.field_id === fieldId)
+        if (existingIdx >= 0) {
+          newOverrides[existingIdx] = {
+            ...newOverrides[existingIdx],
+            is_visible: false
+          }
+        } else {
+          newOverrides.push({
+            field_id: fieldId,
+            is_visible: false,
             section_id: sectionId
           })
         }

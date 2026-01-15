@@ -2629,7 +2629,7 @@ export function ResearchFieldsManager() {
   if (editingLayout || isCreatingNew) {
     return (
       <LayoutEditor
-        layout={isEditingSystemDefault ? null : editingLayout}
+        layout={isEditingSystemDefault ? systemDefaultLayout : editingLayout}
         isEditingSystemDefault={isEditingSystemDefault}
         initialMode={newLayoutMode}
         availableFields={fieldsWithPreferences}

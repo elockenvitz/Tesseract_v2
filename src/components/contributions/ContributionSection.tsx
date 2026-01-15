@@ -832,8 +832,8 @@ export function ContributionSection({
                     Draft
                   </button>
                 )}
-                {/* Hide visibility badge when controlled from parent (viewing own tab) */}
-                {!(hideVisibility && selectedContribution.created_by === user?.id) && (
+                {/* Hide visibility badge when controlled from parent */}
+                {!hideVisibility && (
                   <VisibilityBadge
                     contribution={selectedContribution}
                     isOwn={selectedContribution.created_by === user?.id}

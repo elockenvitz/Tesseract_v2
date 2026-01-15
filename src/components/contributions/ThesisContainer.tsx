@@ -232,7 +232,7 @@ export function ThesisContainer({
         </div>
       )}
 
-      {/* Contribution sections - hide visibility controls when viewing own tab */}
+      {/* Contribution sections - visibility controlled from toolbar */}
       <ContributionSection
         assetId={assetId}
         section="thesis"
@@ -244,7 +244,7 @@ export function ThesisContainer({
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
         hideViewModeButtons={true}
-        hideVisibility={!!isViewingOwnTab}
+        hideVisibility={true}
         sharedVisibility={sharedVisibility}
         sharedTargetIds={sharedTargetIds}
       />
@@ -260,7 +260,7 @@ export function ThesisContainer({
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
         hideViewModeButtons={true}
-        hideVisibility={!!isViewingOwnTab}
+        hideVisibility={true}
         sharedVisibility={sharedVisibility}
         sharedTargetIds={sharedTargetIds}
       />
@@ -276,7 +276,7 @@ export function ThesisContainer({
         defaultVisibility="firm"
         coveringAnalystIds={coveringAnalystIds}
         hideViewModeButtons={true}
-        hideVisibility={!!isViewingOwnTab}
+        hideVisibility={true}
         sharedVisibility={sharedVisibility}
         sharedTargetIds={sharedTargetIds}
       />

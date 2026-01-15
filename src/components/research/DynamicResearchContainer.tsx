@@ -178,6 +178,7 @@ function CustomFieldRenderer({
           defaultVisibility={sharedVisibility}
           defaultTargetIds={sharedTargetIds}
           hideTitle
+          hideVisibility={true}
         />
       </div>
     )

@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
@@ -56,7 +57,13 @@ import {
   MoreVertical,
   FolderPlus,
   GripVertical,
-  ArrowRight
+  ArrowRight,
+  FileText,
+  Hash,
+  Calendar,
+  CheckSquare,
+  Clock,
+  Gauge
 } from 'lucide-react'
 import {
   useUserAssetPagePreferences,
@@ -66,6 +73,9 @@ import {
   type SectionOverride,
   type FieldOverride
 } from '../../hooks/useUserAssetPagePreferences'
+import { useResearchFields } from '../../hooks/useResearchFields'
+import { useAuth } from '../../hooks/useAuth'
+import { supabase } from '../../lib/supabase'
 
 // Draft state types for local changes before saving
 interface DraftFieldOverride {
@@ -141,6 +151,11 @@ export function AssetPageFieldCustomizer({
     saveLayout
   } = useUserAssetPageLayouts()
 
+  const { createField, deleteField, isDeleting: isDeletingField } = useResearchFields()
+  const { user } = useAuth()
+  const [fieldToDelete, setFieldToDelete] = useState<{ id: string; name: string } | null>(null)
+  const queryClient = useQueryClient()
+
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [showTemplateSelector, setShowTemplateSelector] = useState(false)
   const [showCopyDialog, setShowCopyDialog] = useState(false)
@@ -154,6 +169,24 @@ export function AssetPageFieldCustomizer({
   const [showCreateSection, setShowCreateSection] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
   const [pendingFieldForNewSection, setPendingFieldForNewSection] = useState<string | null>(null)
+  const sectionNameInputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-focus section name input when creating a new section
+  useEffect(() => {
+    if (showCreateSection) {
+      // Small delay to ensure the input is rendered
+      setTimeout(() => {
+        sectionNameInputRef.current?.focus()
+      }, 50)
+    }
+  }, [showCreateSection])
+
+  // Field creation state
+  const [showCreateField, setShowCreateField] = useState(false)
+  const [newFieldName, setNewFieldName] = useState('')
+  const [newFieldType, setNewFieldType] = useState('rich_text')
+  const [newFieldCategory, setNewFieldCategory] = useState<string>('')
+  const [isCreatingField, setIsCreatingField] = useState(false)
 
   // ============================================
   // DRAFT STATE - Changes are only saved on "Done"
@@ -211,6 +244,7 @@ export function AssetPageFieldCustomizer({
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [activeDragType, setActiveDragType] = useState<'section' | 'field' | 'library-field' | null>(null)
   const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null)
+  const [dragOverPositionId, setDragOverPositionId] = useState<string | null>(null)
   const [draggedFieldData, setDraggedFieldData] = useState<FieldWithPreference | null>(null)
 
   // dnd-kit sensors - lower activation distance for snappier feel
@@ -230,13 +264,23 @@ export function AssetPageFieldCustomizer({
     // For library field drags, use pointer within detection for droppable sections
     if (activeDragType === 'library-field') {
       const pointerCollisions = pointerWithin(args)
-      // Check for new section zone first (prioritize it when hovering)
+
+      // Check for position-specific drop zones first (highest priority)
+      const positionCollisions = pointerCollisions.filter(
+        collision => String(collision.id).startsWith('field-position-')
+      )
+      if (positionCollisions.length > 0) {
+        return positionCollisions
+      }
+
+      // Check for new section zone next
       const newSectionCollision = pointerCollisions.find(
         collision => String(collision.id) === 'droppable-new-section'
       )
       if (newSectionCollision) {
         return [newSectionCollision]
       }
+
       // Then check for existing section droppables
       const droppableSectionCollisions = pointerCollisions.filter(
         collision => String(collision.id).startsWith('droppable-section-')
@@ -490,6 +534,12 @@ export function AssetPageFieldCustomizer({
         // Use override section, or template's section
         const targetSectionId = overrideTargetSection || config.section_id
 
+        // Skip fields that are being moved to a NEW section (temp ID)
+        // These will be handled in the draftNewSections loop below
+        if (targetSectionId && draftNewSections.some(ns => ns.temp_id === targetSectionId)) {
+          return
+        }
+
         const section = getOrCreateSection(targetSectionId)
         const draftOverride = draftFieldOverrides.get(field.field_id)
         const isVisible = draftOverride?.is_visible ?? config.is_visible
@@ -512,6 +562,13 @@ export function AssetPageFieldCustomizer({
           if (!field) return
 
           const targetSectionId = override.section_id || field.section_id
+
+          // Skip fields that are being moved to a NEW section (temp ID)
+          // These will be handled in the draftNewSections loop below
+          if (targetSectionId && draftNewSections.some(ns => ns.temp_id === targetSectionId)) {
+            return
+          }
+
           const section = getOrCreateSection(targetSectionId)
 
           // Check if field was already added
@@ -542,6 +599,13 @@ export function AssetPageFieldCustomizer({
 
           // Check if field has been moved via draft override
           const overrideTargetSection = fieldToTargetSection.get(field.field_id)
+
+          // Skip fields that are being moved to a NEW section (temp ID)
+          // These will be handled in the draftNewSections loop below
+          if (overrideTargetSection && draftNewSections.some(ns => ns.temp_id === overrideTargetSection)) {
+            return
+          }
+
           const targetSectionId = overrideTargetSection || section.section_id
 
           const targetSection = getOrCreateSection(targetSectionId)
@@ -572,8 +636,9 @@ export function AssetPageFieldCustomizer({
     const sectionsWithDraft = Array.from(sectionsMap.values()).map(section => ({
       ...section,
       fields: section.fields.sort((a, b) => {
-        const aOrder = a.display_order ?? a.default_display_order
-        const bOrder = b.display_order ?? b.default_display_order
+        // Use display_order first, then default_display_order, then fallback to 9999 for stable sorting
+        const aOrder = a.display_order ?? a.default_display_order ?? 9999
+        const bOrder = b.display_order ?? b.default_display_order ?? 9999
         return aOrder - bOrder
       })
     }))
@@ -610,6 +675,11 @@ export function AssetPageFieldCustomizer({
             isFromTemplate: false,
             isAddedViaOverride: true
           }
+        }).sort((a, b) => {
+          // Sort by display_order with fallback for stable ordering
+          const aOrder = a.display_order ?? a.default_display_order ?? 9999
+          const bOrder = b.display_order ?? b.default_display_order ?? 9999
+          return aOrder - bOrder
         })
       })
     }
@@ -657,6 +727,26 @@ export function AssetPageFieldCustomizer({
   const allDisplayedFields = displayedFieldsBySection.flatMap(s => s.fields)
   const visibleCount = allDisplayedFields.filter(f => f.is_visible).length
   const totalCount = allDisplayedFields.length
+
+  // Find similar existing fields based on name input (must be before early return)
+  const similarFields = useMemo(() => {
+    if (!newFieldName.trim() || newFieldName.trim().length < 2) return []
+    if (!fieldsWithPreferences || fieldsWithPreferences.length === 0) return []
+
+    const searchTerms = newFieldName.toLowerCase().trim().split(/\s+/)
+
+    return fieldsWithPreferences
+      .filter(field => {
+        const fieldName = (field.field_name || '').toLowerCase()
+        const fieldSlug = (field.field_slug || '').toLowerCase()
+
+        // Check if any search term matches
+        return searchTerms.some(term =>
+          fieldName.includes(term) || fieldSlug.includes(term)
+        )
+      })
+      .slice(0, 5) // Limit to 5 suggestions
+  }, [newFieldName, fieldsWithPreferences])
 
   // Early return after all hooks
   if (!isOpen) return null
@@ -778,19 +868,30 @@ export function AssetPageFieldCustomizer({
     const { over } = event
     if (!over) {
       setDragOverSectionId(null)
+      setDragOverPositionId(null)
       return
     }
 
     const overId = String(over.id)
 
-    // When dragging a library field, track which section we're over
+    // When dragging a library field, track which section and position we're over
     if (activeDragType === 'library-field') {
-      if (overId.startsWith('droppable-section-')) {
+      // Check for position-specific drop zones first
+      if (overId.startsWith('field-position-')) {
+        setDragOverPositionId(overId)
+        // Extract section ID from position ID (format: field-position-{sectionId}-{index})
+        const parts = overId.replace('field-position-', '').split('-')
+        const sectionId = parts.slice(0, -1).join('-') // Everything except the last part (index)
+        setDragOverSectionId(sectionId)
+      } else if (overId.startsWith('droppable-section-')) {
         setDragOverSectionId(overId.replace('droppable-section-', ''))
+        setDragOverPositionId(null)
       } else if (overId.startsWith('section-')) {
         setDragOverSectionId(overId.replace('section-', ''))
+        setDragOverPositionId(null)
       } else {
         setDragOverSectionId(null)
+        setDragOverPositionId(null)
       }
     }
   }
@@ -804,6 +905,7 @@ export function AssetPageFieldCustomizer({
     setActiveDragId(null)
     setActiveDragType(null)
     setDragOverSectionId(null)
+    setDragOverPositionId(null)
     setDraggedFieldData(null)
 
     if (!over) return
@@ -819,6 +921,18 @@ export function AssetPageFieldCustomizer({
         return
       }
 
+      // Check if dropped on a specific position within a section
+      if (overId.startsWith('field-position-')) {
+        // Parse position ID (format: field-position-{sectionId}-{index})
+        const withoutPrefix = overId.replace('field-position-', '')
+        const lastDashIndex = withoutPrefix.lastIndexOf('-')
+        const targetSectionId = withoutPrefix.substring(0, lastDashIndex)
+        const targetIndex = parseInt(withoutPrefix.substring(lastDashIndex + 1), 10)
+
+        handleAddFieldToSectionAtPosition(currentDragId, targetSectionId, targetIndex)
+        return
+      }
+
       let targetSectionId: string | null = null
 
       if (overId.startsWith('droppable-section-')) {
@@ -828,7 +942,7 @@ export function AssetPageFieldCustomizer({
       }
 
       if (targetSectionId) {
-        // Add the field to the section
+        // Add the field to the section (at the end)
         handleAddFieldToSection(currentDragId, targetSectionId)
       }
       return
@@ -902,15 +1016,60 @@ export function AssetPageFieldCustomizer({
 
   // Add field to section (draft)
   const handleAddFieldToSection = (fieldId: string, sectionId: string) => {
+    // Calculate the max display_order in the target section to add at the bottom
+    const targetSection = displayedFieldsBySection.find(s => s.section_id === sectionId)
+    const maxOrder = targetSection?.fields.reduce((max, f) => Math.max(max, f.display_order || 0), 0) || 0
+
     setDraftFieldOverrides(prev => {
       const newMap = new Map(prev)
-      const existing = newMap.get(fieldId)
       newMap.set(fieldId, {
         field_id: fieldId,
         is_visible: true,
         section_id: sectionId,
-        display_order: existing?.display_order
+        display_order: maxOrder + 1 // Add at the bottom of the section
       })
+      return newMap
+    })
+    setAddingFieldId(null)
+    setHasUnsavedChanges(true)
+  }
+
+  // Add field to a specific position within a section (draft)
+  const handleAddFieldToSectionAtPosition = (fieldId: string, sectionId: string, position: number) => {
+    const targetSection = displayedFieldsBySection.find(s => s.section_id === sectionId)
+    if (!targetSection) {
+      // Fallback to adding at end if section not found
+      handleAddFieldToSection(fieldId, sectionId)
+      return
+    }
+
+    setDraftFieldOverrides(prev => {
+      const newMap = new Map(prev)
+
+      // Set display_order for ALL existing fields in the section
+      // Fields before insertion point keep their index
+      // Fields at and after insertion point shift down by 1
+      targetSection.fields.forEach((field, idx) => {
+        const existing = newMap.get(field.field_id) || {
+          field_id: field.field_id,
+          is_visible: field.is_visible
+        }
+        const newOrder = idx < position ? idx : idx + 1
+        newMap.set(field.field_id, {
+          ...existing,
+          section_id: sectionId,
+          display_order: newOrder
+        })
+      })
+
+      // Add the new field at the target position
+      newMap.set(fieldId, {
+        field_id: fieldId,
+        is_visible: true,
+        section_id: sectionId,
+        display_order: position
+      })
+
       return newMap
     })
     setAddingFieldId(null)
@@ -922,12 +1081,29 @@ export function AssetPageFieldCustomizer({
     setDraftFieldOverrides(prev => {
       const newMap = new Map(prev)
       const existing = newMap.get(fieldId)
-      newMap.set(fieldId, {
-        field_id: fieldId,
-        is_visible: false,
-        section_id: existing?.section_id,
-        display_order: existing?.display_order
-      })
+
+      // Check if this field is from the template
+      const isFromTemplate = templateFieldIds.has(fieldId)
+
+      if (isFromTemplate) {
+        // Field is from template - set is_visible: false to hide it (this is an override)
+        newMap.set(fieldId, {
+          field_id: fieldId,
+          is_visible: false,
+          section_id: existing?.section_id,
+          display_order: existing?.display_order
+        })
+      } else {
+        // Field was added as an override - mark for removal (will be cleaned up on save)
+        newMap.set(fieldId, {
+          field_id: fieldId,
+          is_visible: false,
+          section_id: existing?.section_id,
+          display_order: existing?.display_order,
+          _removeFromDatabase: true // Flag to indicate this should be removed entirely
+        } as DraftFieldOverride & { _removeFromDatabase?: boolean })
+      }
+
       return newMap
     })
     setHasUnsavedChanges(true)
@@ -1039,6 +1215,7 @@ export function AssetPageFieldCustomizer({
   // ============================================
   const handleSaveChanges = async () => {
     if (!assetId || !hasUnsavedChanges) {
+      setSectionMenuOpen(null)
       onClose()
       return
     }
@@ -1051,6 +1228,20 @@ export function AssetPageFieldCustomizer({
           assetId,
           layoutId: draftLayoutId
         })
+      }
+
+      // 1b. Check if user clicked Reset (all draft overrides are empty)
+      // If so, clear all overrides from database and exit
+      const hasNoOverrides = draftFieldOverrides.size === 0 &&
+                             draftSectionOverrides.size === 0 &&
+                             draftNewSections.length === 0
+
+      if (hasNoOverrides) {
+        // User clicked Reset - clear all overrides from database
+        await clearAssetOverrides.mutateAsync(assetId)
+        setSectionMenuOpen(null)
+        onClose()
+        return
       }
 
       // 2. Create any new sections first
@@ -1095,29 +1286,79 @@ export function AssetPageFieldCustomizer({
         })
       })
 
-      // 5. Save all overrides in one batch
-      // Use the hook's batch save - for now we'll use individual calls
-      // since we need to handle section overrides too
+      // 5. Save field overrides - directly update database with only actual overrides
+      // This preserves display_order values and only saves fields that have real changes
+      if (draftFieldOverrides.size > 0 && user?.id) {
+        // Build the list of overrides to save (excluding fields marked for removal)
+        const overridesToSave: FieldOverride[] = []
+        const fieldsToRemoveFromDb: string[] = []
 
-      // Save field overrides by reordering fields (this sets display_order)
-      // Group fields by section
-      const fieldsBySection = new Map<string, string[]>()
-      fieldOverridesToSave
-        .filter(o => o.section_id)
-        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
-        .forEach(override => {
-          const sectionId = override.section_id!
-          const existing = fieldsBySection.get(sectionId) || []
-          existing.push(override.field_id)
-          fieldsBySection.set(sectionId, existing)
+        draftFieldOverrides.forEach((override, fieldId) => {
+          // Check if this field should be completely removed from database
+          if ((override as DraftFieldOverride & { _removeFromDatabase?: boolean })._removeFromDatabase) {
+            fieldsToRemoveFromDb.push(fieldId)
+            return
+          }
+
+          // Map temp section IDs to real IDs
+          const sectionId = override.section_id
+            ? (sectionIdMap.get(override.section_id) || override.section_id)
+            : undefined
+
+          overridesToSave.push({
+            field_id: fieldId,
+            is_visible: override.is_visible,
+            section_id: sectionId,
+            display_order: override.display_order
+          })
         })
 
-      // Reorder fields in each section
-      for (const [sectionId, fieldIds] of fieldsBySection) {
-        await reorderFieldsInSection.mutateAsync({
-          sectionId,
-          orderedFieldIds: fieldIds
-        })
+        // Fetch current field_overrides from database
+        const { data: currentSelection } = await supabase
+          .from('user_asset_layout_selections')
+          .select('id, field_overrides')
+          .eq('user_id', user.id)
+          .eq('asset_id', assetId)
+          .maybeSingle()
+
+        // Merge overrides: update existing, add new, remove marked for deletion
+        let mergedOverrides: FieldOverride[] = []
+
+        if (currentSelection?.field_overrides) {
+          // Start with existing overrides, excluding those being updated or removed
+          const existingOverrides = currentSelection.field_overrides as FieldOverride[]
+          const updatedFieldIds = new Set(overridesToSave.map(o => o.field_id))
+          const removedFieldIds = new Set(fieldsToRemoveFromDb)
+
+          mergedOverrides = existingOverrides.filter(o =>
+            !updatedFieldIds.has(o.field_id) && !removedFieldIds.has(o.field_id)
+          )
+        }
+
+        // Add the new/updated overrides
+        mergedOverrides.push(...overridesToSave)
+
+        // Save to database
+        if (currentSelection) {
+          await supabase
+            .from('user_asset_layout_selections')
+            .update({ field_overrides: mergedOverrides })
+            .eq('id', currentSelection.id)
+        } else if (mergedOverrides.length > 0) {
+          // Create new selection record if needed
+          await supabase
+            .from('user_asset_layout_selections')
+            .insert({
+              user_id: user.id,
+              asset_id: assetId,
+              layout_id: draftLayoutId,
+              field_overrides: mergedOverrides,
+              section_overrides: []
+            })
+        }
+
+        // Invalidate query cache so modal loads fresh data on reopen
+        await queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user.id, assetId] })
       }
 
       // Save section overrides by reordering sections
@@ -1130,15 +1371,6 @@ export function AssetPageFieldCustomizer({
         await reorderSections.mutateAsync({ orderedSectionIds })
       }
 
-      // Handle visibility overrides for fields not in sections
-      for (const override of fieldOverridesToSave) {
-        if (!override.section_id) {
-          await toggleAssetFieldVisibility.mutateAsync({
-            assetId,
-            fieldId: override.field_id
-          })
-        }
-      }
 
       // Handle section name and visibility overrides
       for (const override of sectionOverridesToSave) {
@@ -1152,6 +1384,7 @@ export function AssetPageFieldCustomizer({
         }
       }
 
+      setSectionMenuOpen(null)
       onClose()
     } catch (error) {
       console.error('Failed to save changes:', error)
@@ -1162,6 +1395,7 @@ export function AssetPageFieldCustomizer({
 
   // Handle cancel - show confirmation if unsaved changes
   const handleCancel = () => {
+    setSectionMenuOpen(null) // Close any open section menu
     if (hasUnsavedChanges) {
       setShowDiscardConfirm(true)
     } else {
@@ -1172,6 +1406,7 @@ export function AssetPageFieldCustomizer({
   // Confirm discard and close
   const handleConfirmDiscard = () => {
     setShowDiscardConfirm(false)
+    setSectionMenuOpen(null) // Close any open section menu
     onClose()
   }
 
@@ -1197,6 +1432,100 @@ export function AssetPageFieldCustomizer({
     setNewTemplateName('')
   }
 
+  // Field categories for the create field dialog
+  const fieldCategories = [
+    { value: 'analysis', label: 'Analysis', description: 'Research analysis and thesis fields' },
+    { value: 'data', label: 'Data', description: 'Metrics, ratings, and numerical data' },
+    { value: 'events', label: 'Events', description: 'Catalysts, timelines, and milestones' },
+    { value: 'specialized', label: 'Specialized', description: 'Documents, links, and other fields' }
+  ]
+
+  // Field types for the create field dialog
+  const fieldTypes = [
+    { value: 'rich_text', label: 'Rich Text', description: 'Formatted text with headings, lists, and links' },
+    { value: 'checklist', label: 'Checklist', description: 'Track items with checkboxes' },
+    { value: 'timeline', label: 'Timeline', description: 'Events and milestones over time' },
+    { value: 'metric', label: 'Metric', description: 'Track numerical KPIs with charts' },
+    { value: 'numeric', label: 'Numeric', description: 'Single number value' },
+    { value: 'date', label: 'Date', description: 'Date picker field' }
+  ]
+
+  // Field type icon helper
+  const getFieldTypeIcon = (type: string) => {
+    const icons: Record<string, React.ReactNode> = {
+      rich_text: <FileText className="w-4 h-4" />,
+      numeric: <Hash className="w-4 h-4" />,
+      date: <Calendar className="w-4 h-4" />,
+      checklist: <CheckSquare className="w-4 h-4" />,
+      timeline: <Clock className="w-4 h-4" />,
+      metric: <Gauge className="w-4 h-4" />
+    }
+    return icons[type] || <FileText className="w-4 h-4" />
+  }
+
+  // Map category to a default section (use first available section as fallback)
+  const getCategorySectionId = (category: string): string => {
+    // Try to find a section that matches the category name
+    const categoryToSlugMap: Record<string, string[]> = {
+      'analysis': ['thesis', 'investment_thesis', 'analysis'],
+      'data': ['data', 'metrics', 'ratings'],
+      'events': ['catalysts', 'events', 'catalysts_events'],
+      'specialized': ['documents', 'specialized', 'other']
+    }
+
+    const slugsToTry = categoryToSlugMap[category] || []
+    for (const slug of slugsToTry) {
+      const section = allSections?.find(s => s.slug === slug || s.name.toLowerCase().includes(slug))
+      if (section) return section.id
+    }
+
+    // Fallback to first available section
+    return allSections?.[0]?.id || ''
+  }
+
+  // Handle creating a new custom field
+  const handleCreateField = async () => {
+    if (!newFieldName.trim() || !user?.id || !newFieldCategory) return
+
+    const sectionId = getCategorySectionId(newFieldCategory)
+    if (!sectionId) {
+      console.error('No section available for category:', newFieldCategory)
+      return
+    }
+
+    setIsCreatingField(true)
+    try {
+      const slug = newFieldName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+
+      await createField.mutateAsync({
+        name: newFieldName.trim(),
+        slug,
+        section_id: sectionId,
+        field_type: newFieldType as any,
+        is_universal: false
+      })
+
+      // Refresh the field list so the new field appears in the Field Library
+      // The user can then drag it to their layout if they want it visible
+      // Use invalidateQueries to properly match queries with additional key parts (user id, version)
+      await queryClient.invalidateQueries({ queryKey: ['available-research-fields'] })
+      await queryClient.invalidateQueries({ queryKey: ['research-fields'] })
+      // Force refetch to ensure data is immediately available
+      await queryClient.refetchQueries({ queryKey: ['available-research-fields'], exact: false })
+      await queryClient.refetchQueries({ queryKey: ['research-fields'], exact: false })
+
+      // Reset and close dialog
+      setNewFieldName('')
+      setNewFieldType('rich_text')
+      setNewFieldCategory('')
+      setShowCreateField(false)
+    } catch (error) {
+      console.error('Failed to create field:', error)
+    } finally {
+      setIsCreatingField(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-xl shadow-2xl w-[900px] h-[700px] flex flex-col mx-4">
@@ -1216,18 +1545,18 @@ export function AssetPageFieldCustomizer({
             )}
           </div>
           <div className="flex items-center gap-3">
-            {/* Override indicator in header */}
-            {(assetFieldOverrides.length > 0 || assetSectionOverrides.length > 0) && (
+            {/* Override indicator in header - shows DRAFT state (real-time) */}
+            {(draftFieldOverrides.size > 0 || draftSectionOverrides.size > 0 || draftNewSections.length > 0) && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-200">
                 <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
                 <span className="text-xs text-amber-700 font-medium">
                   Overrides:{' '}
-                  {assetFieldOverrides.length > 0 && (
-                    <span>{assetFieldOverrides.length} field{assetFieldOverrides.length !== 1 ? 's' : ''}</span>
+                  {draftFieldOverrides.size > 0 && (
+                    <span>{draftFieldOverrides.size} field{draftFieldOverrides.size !== 1 ? 's' : ''}</span>
                   )}
-                  {assetFieldOverrides.length > 0 && assetSectionOverrides.length > 0 && ', '}
-                  {assetSectionOverrides.length > 0 && (
-                    <span>{assetSectionOverrides.length} section{assetSectionOverrides.length !== 1 ? 's' : ''}</span>
+                  {draftFieldOverrides.size > 0 && (draftSectionOverrides.size > 0 || draftNewSections.length > 0) && ', '}
+                  {(draftSectionOverrides.size > 0 || draftNewSections.length > 0) && (
+                    <span>{draftSectionOverrides.size + draftNewSections.length} section{(draftSectionOverrides.size + draftNewSections.length) !== 1 ? 's' : ''}</span>
                   )}
                 </span>
                 <button
@@ -1412,6 +1741,16 @@ export function AssetPageFieldCustomizer({
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
+                autoScroll={{
+                  enabled: true,
+                  threshold: { x: 0, y: 0.15 },
+                  acceleration: 25,
+                  interval: 2,
+                  canScroll(element) {
+                    // Only allow auto-scroll on the Current Layout container
+                    return element.getAttribute('data-autoscroll-container') === 'current-layout'
+                  }
+                }}
               >
               <div className="flex gap-4 h-[420px]">
                 {/* Left Column: Current Layout */}
@@ -1421,7 +1760,7 @@ export function AssetPageFieldCustomizer({
                     <span className="text-xs text-gray-500">{visibleCount} visible</span>
                   </div>
                   <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col">
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 overflow-y-auto" data-autoscroll-container="current-layout">
                       {displayedFieldsBySection.length === 0 ? (
                         <div className={clsx(
                           "flex flex-col items-center justify-center h-full text-gray-500 p-4",
@@ -1473,6 +1812,8 @@ export function AssetPageFieldCustomizer({
                                   handleRemoveFieldFromSection={handleRemoveFieldFromSection}
                                   handleToggleVisibility={handleToggleVisibility}
                                   isSaving={isSaving}
+                                  isDraggingLibraryField={activeDragType === 'library-field'}
+                                  dragOverPositionId={dragOverPositionId}
                                 />
                               </DroppableSection>
                             ))}
@@ -1503,12 +1844,12 @@ export function AssetPageFieldCustomizer({
                           })()}
                           <div className="flex items-center gap-2">
                             <input
+                              ref={sectionNameInputRef}
                               type="text"
                               value={newSectionName}
                               onChange={(e) => setNewSectionName(e.target.value)}
                               placeholder="Enter section name..."
                               className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                              autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === 'Escape') {
                                   setShowCreateSection(false)
@@ -1568,13 +1909,24 @@ export function AssetPageFieldCustomizer({
                 <div className="w-[340px] flex flex-col shrink-0">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium text-gray-700">Field Library</h3>
-                    {activeDragType === 'library-field' ? (
-                      <span className="text-xs text-primary-600 font-medium animate-pulse">
-                        Drop on a section ←
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-500">{fieldsWithPreferences.length} fields</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {activeDragType === 'library-field' ? (
+                        <span className="text-xs text-primary-600 font-medium animate-pulse">
+                          Drop on a section ←
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setShowCreateField(true)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded transition-colors"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Create
+                          </button>
+                          <span className="text-xs text-gray-500">{fieldsWithPreferences.length} fields</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-gray-50">
                     {/* Search */}
@@ -1667,6 +2019,9 @@ export function AssetPageFieldCustomizer({
                                     field={field}
                                     isAlreadyVisible={field.is_visible}
                                     onRemove={() => handleRemoveFieldFromSection(field.field_id)}
+                                    canDelete={field.is_custom && field.created_by === user?.id}
+                                    onDelete={() => setFieldToDelete({ id: field.field_id, name: field.field_name })}
+                                    isDeleting={isDeletingField && fieldToDelete?.id === field.field_id}
                                   />
                                 ))}
                               </div>
@@ -1767,6 +2122,255 @@ export function AssetPageFieldCustomizer({
           </div>
         </div>
       )}
+
+      {/* Create Field Dialog */}
+      {showCreateField && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-[500px] h-[600px] mx-4 overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <h3 className="text-lg font-semibold text-gray-900">Create Custom Field</h3>
+              <button
+                onClick={() => {
+                  setShowCreateField(false)
+                  setNewFieldName('')
+                  setNewFieldType('rich_text')
+                  setNewFieldCategory('')
+                }}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
+              {/* Field Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Field Name
+                </label>
+                <input
+                  type="text"
+                  value={newFieldName}
+                  onChange={(e) => setNewFieldName(e.target.value)}
+                  placeholder="e.g., Key Metrics, Competitors, Notes"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+
+              {/* Similar Fields Warning */}
+              {similarFields.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-amber-800 mb-2">
+                    Similar fields already exist - consider using one of these instead:
+                  </p>
+                  <div className="space-y-1.5">
+                    {similarFields.map(field => (
+                      <div
+                        key={field.field_id}
+                        className="flex items-center justify-between bg-white rounded px-2 py-1.5 border border-amber-200"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-medium text-gray-900 truncate">
+                            {field.field_name}
+                          </span>
+                          <span className="text-[10px] text-gray-500 shrink-0">
+                            {field.field_type.replace('_', ' ')}
+                          </span>
+                          {field.is_custom && field.creator_name && (
+                            <span className="text-[10px] text-blue-600 shrink-0">
+                              by {field.creator_name}
+                            </span>
+                          )}
+                        </div>
+                        {!field.is_visible && (
+                          <button
+                            onClick={() => {
+                              // Add existing field instead of creating new one
+                              // Use category-based section if selected, otherwise use field's original section
+                              const sectionId = newFieldCategory ? getCategorySectionId(newFieldCategory) : field.section_id
+                              if (sectionId) {
+                                setDraftFieldOverrides(prev => {
+                                  const next = new Map(prev)
+                                  next.set(field.field_id, {
+                                    field_id: field.field_id,
+                                    is_visible: true,
+                                    section_id: sectionId,
+                                    display_order: 0
+                                  })
+                                  return next
+                                })
+                                setHasUnsavedChanges(true)
+                                setShowCreateField(false)
+                                setNewFieldName('')
+                                setNewFieldCategory('')
+                              }
+                            }}
+                            className="text-xs text-primary-600 hover:text-primary-700 font-medium shrink-0"
+                          >
+                            Use this
+                          </button>
+                        )}
+                        {field.is_visible && (
+                          <span className="text-[10px] text-green-600 shrink-0">Already added</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Category Selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Category
+                </label>
+                <select
+                  value={newFieldCategory}
+                  onChange={(e) => setNewFieldCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+                >
+                  <option value="">Select a category...</option>
+                  {fieldCategories.map((cat) => (
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label} - {cat.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Field Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Field Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {fieldTypes.map((ft) => (
+                    <button
+                      key={ft.value}
+                      onClick={() => setNewFieldType(ft.value)}
+                      className={`flex items-start gap-3 p-3 rounded-lg border-2 text-left transition-all ${
+                        newFieldType === ft.value
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg ${
+                        newFieldType === ft.value ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {getFieldTypeIcon(ft.value)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm font-medium block ${
+                          newFieldType === ft.value ? 'text-primary-700' : 'text-gray-700'
+                        }`}>
+                          {ft.label}
+                        </span>
+                        <span className="text-xs text-gray-500 line-clamp-1">
+                          {ft.description}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Info about custom fields */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-700">
+                  Custom fields you create will be marked with your name and available in the Field Library for reuse across all assets.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-200 shrink-0">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowCreateField(false)
+                  setNewFieldName('')
+                  setNewFieldType('rich_text')
+                  setNewFieldCategory('')
+                }}
+                disabled={isCreatingField}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateField}
+                disabled={!newFieldName.trim() || !newFieldCategory || isCreatingField}
+              >
+                {isCreatingField ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Create Field
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Field Confirmation Dialog */}
+      {fieldToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-[400px] mx-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Delete Custom Field?</h3>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-gray-600">
+                Are you sure you want to delete <span className="font-medium text-gray-900">"{fieldToDelete.name}"</span>?
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                This will permanently remove the field from the Field Library. Any data stored in this field across all assets will also be deleted.
+              </p>
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-xs text-red-700 font-medium">
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => setFieldToDelete(null)}
+                disabled={isDeletingField}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  try {
+                    await deleteField.mutateAsync(fieldToDelete.id)
+                    setFieldToDelete(null)
+                  } catch (error) {
+                    console.error('Failed to delete field:', error)
+                  }
+                }}
+                disabled={isDeletingField}
+              >
+                {isDeletingField ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Delete Field
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1800,6 +2404,8 @@ interface SectionItemProps {
   handleRemoveFieldFromSection: (fieldId: string) => void
   handleToggleVisibility: (fieldId: string) => void
   isSaving: boolean
+  isDraggingLibraryField?: boolean
+  dragOverPositionId?: string | null
 }
 
 // Sortable section component
@@ -1822,7 +2428,9 @@ function SortableSection({
   handleResetSection,
   handleRemoveFieldFromSection,
   handleToggleVisibility,
-  isSaving
+  isSaving,
+  isDraggingLibraryField = false,
+  dragOverPositionId = null
 }: SectionItemProps) {
   const {
     attributes,
@@ -2036,25 +2644,89 @@ function SortableSection({
         >
           <div className="divide-y divide-gray-100">
             {section.fields.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-gray-400 text-center">
-                No fields in this section
+              <div className={clsx(
+                "px-3 py-3 text-sm text-gray-400 text-center",
+                isDraggingLibraryField && "py-4"
+              )}>
+                {isDraggingLibraryField ? (
+                  <EmptySectionDropZone
+                    id={`field-position-${section.section_id}-0`}
+                    isOver={dragOverPositionId === `field-position-${section.section_id}-0`}
+                  />
+                ) : (
+                  "No fields in this section"
+                )}
               </div>
             ) : (
-              section.fields.map(field => (
-                <SortableFieldRow
-                  key={field.field_id}
-                  field={field}
-                  onToggleVisibility={handleToggleVisibility}
-                  onRemove={handleRemoveFieldFromSection}
-                  isSaving={isSaving}
-                  isFromTemplate={(field as any).isFromTemplate}
-                  isAddedViaOverride={(field as any).isAddedViaOverride}
-                />
-              ))
+              <>
+                {/* Drop zone at the top */}
+                {isDraggingLibraryField && (
+                  <FieldPositionDropZone
+                    id={`field-position-${section.section_id}-0`}
+                    isOver={dragOverPositionId === `field-position-${section.section_id}-0`}
+                  />
+                )}
+                {section.fields.map((field, index) => (
+                  <div key={field.field_id}>
+                    <SortableFieldRow
+                      field={field}
+                      onToggleVisibility={handleToggleVisibility}
+                      onRemove={handleRemoveFieldFromSection}
+                      isSaving={isSaving}
+                      isFromTemplate={(field as any).isFromTemplate}
+                      isAddedViaOverride={(field as any).isAddedViaOverride}
+                    />
+                    {/* Drop zone after each field */}
+                    {isDraggingLibraryField && (
+                      <FieldPositionDropZone
+                        id={`field-position-${section.section_id}-${index + 1}`}
+                        isOver={dragOverPositionId === `field-position-${section.section_id}-${index + 1}`}
+                      />
+                    )}
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </SortableContext>
       )}
+    </div>
+  )
+}
+
+// Drop zone for positioning library fields within a section
+function FieldPositionDropZone({ id, isOver }: { id: string; isOver: boolean }) {
+  const { setNodeRef, isOver: isDirectlyOver } = useDroppable({ id })
+  const active = isOver || isDirectlyOver
+
+  return (
+    <div ref={setNodeRef} className="relative h-3 -my-1.5 z-10">
+      {active && (
+        <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 h-0.5 bg-primary-500 rounded-full">
+          <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-primary-500 rounded-full" />
+          <div className="absolute -right-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-primary-500 rounded-full" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Drop zone for empty sections
+function EmptySectionDropZone({ id, isOver }: { id: string; isOver: boolean }) {
+  const { setNodeRef, isOver: isDirectlyOver } = useDroppable({ id })
+  const active = isOver || isDirectlyOver
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={clsx(
+        "rounded border-2 border-dashed py-2 px-3 text-xs transition-colors",
+        active
+          ? "border-primary-400 bg-primary-50 text-primary-600"
+          : "border-gray-200 text-gray-400"
+      )}
+    >
+      {active ? "Drop to add" : "Drop field here"}
     </div>
   )
 }
@@ -2191,11 +2863,17 @@ function SortableFieldRow({
 function DraggableLibraryField({
   field,
   isAlreadyVisible,
-  onRemove
+  onRemove,
+  canDelete,
+  onDelete,
+  isDeleting
 }: {
   field: FieldWithPreference
   isAlreadyVisible: boolean
   onRemove: () => void
+  canDelete?: boolean
+  onDelete?: () => void
+  isDeleting?: boolean
 }) {
   const {
     attributes,
@@ -2238,12 +2916,20 @@ function DraggableLibraryField({
               <span className="text-sm font-medium text-green-700 truncate">
                 {field.field_name}
               </span>
+              {field.is_custom && (
+                <span className="px-1 py-0.5 text-[9px] bg-blue-100 text-blue-600 rounded font-medium shrink-0">
+                  Custom
+                </span>
+              )}
               <span className="px-1 py-0.5 text-[9px] bg-green-100 text-green-600 rounded font-medium shrink-0">
                 Added
               </span>
             </div>
             <p className="text-[10px] text-gray-400 truncate">
               {field.section_name}
+              {field.is_custom && field.creator_name && (
+                <span className="text-gray-400"> · by {field.creator_name}</span>
+              )}
             </p>
           </div>
         </div>
@@ -2255,20 +2941,51 @@ function DraggableLibraryField({
   return (
     <div
       ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className="px-3 py-2 border-b border-gray-100 bg-white hover:bg-primary-50 cursor-grab active:cursor-grabbing transition-colors touch-none select-none"
+      className="px-3 py-2 border-b border-gray-100 bg-white hover:bg-primary-50 transition-colors group"
     >
       <div className="flex items-center gap-2">
-        <GripVertical className="w-4 h-4 text-gray-400 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-gray-900 truncate block">
-            {field.field_name}
-          </span>
-          <p className="text-[10px] text-gray-400 truncate">
-            {field.section_name}
-          </p>
+        <div
+          {...attributes}
+          {...listeners}
+          className="flex items-center gap-2 flex-1 min-w-0 cursor-grab active:cursor-grabbing touch-none select-none"
+        >
+          <GripVertical className="w-4 h-4 text-gray-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-gray-900 truncate">
+                {field.field_name}
+              </span>
+              {field.is_custom && (
+                <span className="px-1 py-0.5 text-[9px] bg-blue-100 text-blue-600 rounded font-medium shrink-0">
+                  Custom
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400 truncate">
+              {field.section_name}
+              {field.is_custom && field.creator_name && (
+                <span className="text-gray-400"> · by {field.creator_name}</span>
+              )}
+            </p>
+          </div>
         </div>
+        {canDelete && onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+            disabled={isDeleting}
+            className="p-1 rounded text-gray-400 hover:bg-red-100 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+            title="Delete this custom field"
+          >
+            {isDeleting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
       </div>
     </div>
   )

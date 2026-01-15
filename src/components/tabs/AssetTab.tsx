@@ -2715,8 +2715,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
-            {/* Research Sections - Rendered in order based on displayedFieldsBySection (respects template + overrides) */}
-            {displayedFieldsBySection.map(section => {
+            {/* Show loading skeleton while layout data loads */}
+            {layoutLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => (
+                  <Card key={i} padding="none">
+                    <div className="px-6 py-4 animate-pulse">
+                      <div className="h-5 bg-gray-200 rounded w-1/4 mb-3" />
+                      <div className="space-y-2">
+                        <div className="h-3 bg-gray-100 rounded w-3/4" />
+                        <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+            /* Research Sections - Rendered in order based on displayedFieldsBySection (respects template + overrides) */
+            displayedFieldsBySection.map(section => {
               // Skip hidden sections
               if (section.section_is_hidden) return null
 
@@ -3050,6 +3066,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           activeTab={researchViewFilter}
                           defaultVisibility={sharedThesisVisibility}
                           hideViewModeButtons={true}
+                          hideVisibility={true}
                           sharedVisibility={sharedThesisVisibility}
                           sharedTargetIds={sharedThesisTargetIds}
                         />
@@ -3074,6 +3091,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           activeTab={researchViewFilter}
                           defaultVisibility={sharedThesisVisibility}
                           hideViewModeButtons={true}
+                          hideVisibility={true}
                           sharedVisibility={sharedThesisVisibility}
                           sharedTargetIds={sharedThesisTargetIds}
                         />
@@ -3169,6 +3187,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 activeTab={researchViewFilter}
                                 defaultVisibility={sharedThesisVisibility}
                                 hideViewModeButtons={true}
+                                hideVisibility={true}
                                 sharedVisibility={sharedThesisVisibility}
                                 sharedTargetIds={sharedThesisTargetIds}
                               />
@@ -3397,6 +3416,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               activeTab={researchViewFilter}
                               defaultVisibility={sharedThesisVisibility}
                               hideViewModeButtons={true}
+                              hideVisibility={true}
                               sharedVisibility={sharedThesisVisibility}
                               sharedTargetIds={sharedThesisTargetIds}
                             />
@@ -3406,7 +3426,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   )}
                 </Card>
               )
-            })}
+            })
+            )}
 
             {/* User-Added Widgets Section */}
             {userWidgets.length > 0 && (
