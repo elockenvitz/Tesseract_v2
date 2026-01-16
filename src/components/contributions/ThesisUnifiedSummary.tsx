@@ -59,11 +59,14 @@ interface UnifiedThesisAnalysis {
 interface ThesisUnifiedSummaryProps {
   assetId: string
   viewFilter: 'aggregated' | string
-  thesisContributions: Contribution[]
-  whereDiffContributions: Contribution[]
-  risksContributions: Contribution[]
+  /** All contributions for this asset (grouped by section internally) */
+  contributions?: Contribution[]
   coveringAnalystIds: Set<string>
   className?: string
+  // Legacy props - deprecated, use contributions instead
+  thesisContributions?: Contribution[]
+  whereDiffContributions?: Contribution[]
+  risksContributions?: Contribution[]
 }
 
 // ============================================================================
@@ -71,9 +74,8 @@ interface ThesisUnifiedSummaryProps {
 // ============================================================================
 
 interface SimpleSummaryProps {
-  thesisContributions: Contribution[]
-  whereDiffContributions: Contribution[]
-  risksContributions: Contribution[]
+  /** All contributions grouped by section */
+  contributionsBySection: Map<string, Contribution[]>
   coveringAnalystIds: Set<string>
   viewFilter: 'aggregated' | string
 }
@@ -93,10 +95,16 @@ function getAnalystName(c: Contribution): string {
   return c.user?.full_name || 'Unknown'
 }
 
+// Helper to convert section slug to readable title
+function formatSectionTitle(slug: string): string {
+  return slug
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 function SimpleSummaryView({
-  thesisContributions,
-  whereDiffContributions,
-  risksContributions,
+  contributionsBySection,
   coveringAnalystIds,
   viewFilter
 }: SimpleSummaryProps) {
@@ -106,15 +114,29 @@ function SimpleSummaryView({
     return contributions.filter(c => c.created_by === viewFilter)
   }
 
-  const filteredThesis = filterContributions(thesisContributions)
-  const filteredDiff = filterContributions(whereDiffContributions)
-  const filteredRisks = filterContributions(risksContributions)
+  // Get all sections with filtered contributions
+  const sectionsWithContent: Array<{ section: string; contributions: Contribution[] }> = []
+  contributionsBySection.forEach((contributions, section) => {
+    const filtered = filterContributions(contributions)
+    if (filtered.length > 0) {
+      sectionsWithContent.push({ section, contributions: filtered })
+    }
+  })
 
-  const hasContent = filteredThesis.length > 0 || filteredDiff.length > 0 || filteredRisks.length > 0
+  const hasContent = sectionsWithContent.length > 0
 
-  // Get covering analyst thesis (prioritized)
-  const coveringThesis = filteredThesis.filter(c => coveringAnalystIds.has(c.created_by))
-  const primaryThesis = coveringThesis.length > 0 ? coveringThesis[0] : filteredThesis[0]
+  // Find the first contribution to highlight (prioritize covering analysts)
+  let primaryContribution: Contribution | null = null
+  for (const { contributions } of sectionsWithContent) {
+    const coveringContrib = contributions.find(c => coveringAnalystIds.has(c.created_by))
+    if (coveringContrib) {
+      primaryContribution = coveringContrib
+      break
+    }
+    if (!primaryContribution && contributions.length > 0) {
+      primaryContribution = contributions[0]
+    }
+  }
 
   if (!hasContent) {
     return (
@@ -129,13 +151,15 @@ function SimpleSummaryView({
     <div className="space-y-4">
       {/* Combined Narrative Card */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        {/* Primary Thesis Highlight */}
-        {primaryThesis && (
+        {/* Primary Contribution Highlight */}
+        {primaryContribution && (
           <div className="p-4 bg-primary-50 border-b border-primary-100">
             <div className="flex items-center gap-2 mb-2">
               <Target className="w-4 h-4 text-primary-600" />
-              <span className="text-xs font-semibold text-primary-700 uppercase tracking-wide">Core Thesis</span>
-              {coveringAnalystIds.has(primaryThesis.created_by) && (
+              <span className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
+                {formatSectionTitle(primaryContribution.section)}
+              </span>
+              {coveringAnalystIds.has(primaryContribution.created_by) && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">
                   <Star className="w-2.5 h-2.5 fill-yellow-500" />
                   Covering
@@ -143,70 +167,42 @@ function SimpleSummaryView({
               )}
             </div>
             <p className="text-sm text-gray-800 leading-relaxed">
-              {truncateToSentences(primaryThesis.content, 3)}
+              {truncateToSentences(primaryContribution.content, 3)}
             </p>
-            <p className="text-xs text-gray-500 mt-2">- {getAnalystName(primaryThesis)}</p>
+            <p className="text-xs text-gray-500 mt-2">- {getAnalystName(primaryContribution)}</p>
           </div>
         )}
 
-        {/* Section Summaries */}
+        {/* All Section Summaries */}
         <div className="p-4 space-y-4">
-          {/* Thesis Points */}
-          {filteredThesis.length > 1 && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-3.5 h-3.5 text-primary-600" />
-                <span className="text-xs font-semibold text-gray-700">Other Thesis Views ({filteredThesis.length - 1})</span>
-              </div>
-              <ul className="space-y-1.5 pl-5">
-                {filteredThesis.slice(1).map((c) => (
-                  <li key={c.id} className="text-xs text-gray-600 leading-relaxed">
-                    <span className="font-medium text-gray-700">{getAnalystName(c)}:</span>{' '}
-                    {truncateToSentences(c.content, 2)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {sectionsWithContent.map(({ section, contributions }) => {
+            // Skip if this is the primary contribution's section and only has 1 item
+            const isPrimarySection = primaryContribution?.section === section
+            const displayContributions = isPrimarySection ? contributions.slice(1) : contributions
 
-          {/* Differentiators */}
-          {filteredDiff.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                <span className="text-xs font-semibold text-gray-700">Where We're Different ({filteredDiff.length})</span>
-              </div>
-              <ul className="space-y-1.5 pl-5">
-                {filteredDiff.map((c) => (
-                  <li key={c.id} className="text-xs text-gray-600 leading-relaxed">
-                    <span className="font-medium text-gray-700">{getAnalystName(c)}:</span>{' '}
-                    {truncateToSentences(c.content, 2)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            if (displayContributions.length === 0) return null
 
-          {/* Risks */}
-          {filteredRisks.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-xs font-semibold text-gray-700">Key Risks ({filteredRisks.length})</span>
+            return (
+              <div key={section}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="w-3.5 h-3.5 text-primary-600" />
+                  <span className="text-xs font-semibold text-gray-700">
+                    {formatSectionTitle(section)} ({displayContributions.length})
+                  </span>
+                </div>
+                <ul className="space-y-1.5 pl-5">
+                  {displayContributions.map((c) => (
+                    <li key={c.id} className="text-xs text-gray-600 leading-relaxed">
+                      <span className="font-medium text-gray-700">{getAnalystName(c)}:</span>{' '}
+                      {truncateToSentences(c.content, 2)}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="space-y-1.5 pl-5">
-                {filteredRisks.map((c) => (
-                  <li key={c.id} className="text-xs text-gray-600 leading-relaxed">
-                    <span className="font-medium text-gray-700">{getAnalystName(c)}:</span>{' '}
-                    {truncateToSentences(c.content, 2)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            )
+          })}
         </div>
       </div>
-
     </div>
   )
 }
@@ -728,13 +724,44 @@ function IndividualViews({
 export function ThesisUnifiedSummary({
   assetId,
   viewFilter,
-  thesisContributions,
-  whereDiffContributions,
-  risksContributions,
+  contributions,
   coveringAnalystIds,
-  className
+  className,
+  // Legacy props - for backward compatibility
+  thesisContributions = [],
+  whereDiffContributions = [],
+  risksContributions = []
 }: ThesisUnifiedSummaryProps) {
-  // Use the unified analysis hook
+  // Build contributions by section Map
+  // If new `contributions` prop is provided, use it; otherwise fall back to legacy props
+  const contributionsBySection = useMemo(() => {
+    const map = new Map<string, Contribution[]>()
+
+    if (contributions && contributions.length > 0) {
+      // Use new contributions prop - group by section
+      contributions.forEach(c => {
+        const existing = map.get(c.section) || []
+        existing.push(c)
+        map.set(c.section, existing)
+      })
+    } else {
+      // Fall back to legacy props (for backward compatibility)
+      if (thesisContributions.length > 0) map.set('thesis', thesisContributions)
+      if (whereDiffContributions.length > 0) map.set('where_different', whereDiffContributions)
+      if (risksContributions.length > 0) map.set('risks_to_thesis', risksContributions)
+    }
+
+    return map
+  }, [contributions, thesisContributions, whereDiffContributions, risksContributions])
+
+  // Get all contributions as a flat array for counting
+  const allContributions = useMemo(() => {
+    const all: Contribution[] = []
+    contributionsBySection.forEach(contribs => all.push(...contribs))
+    return all
+  }, [contributionsBySection])
+
+  // Use the unified analysis hook (pass empty arrays if using new approach - AI analysis needs refactoring too)
   const {
     analysis,
     isLoading,
@@ -745,9 +772,9 @@ export function ThesisUnifiedSummary({
     generateAnalysis
   } = useUnifiedThesisAnalysis({
     assetId,
-    thesisContributions,
-    whereDiffContributions,
-    risksContributions,
+    thesisContributions: contributions ? [] : thesisContributions,
+    whereDiffContributions: contributions ? [] : whereDiffContributions,
+    risksContributions: contributions ? [] : risksContributions,
     coveringAnalystIds
   })
 
@@ -772,9 +799,9 @@ export function ThesisUnifiedSummary({
   // Get unique analyst count
   const uniqueAnalysts = useMemo(() => {
     const ids = new Set<string>()
-    ;[...thesisContributions, ...whereDiffContributions, ...risksContributions].forEach(c => ids.add(c.created_by))
+    allContributions.forEach(c => ids.add(c.created_by))
     return ids.size
-  }, [thesisContributions, whereDiffContributions, risksContributions])
+  }, [allContributions])
 
   // Auto-generate on first view
   useEffect(() => {
@@ -816,9 +843,7 @@ export function ThesisUnifiedSummary({
           </p>
         </div>
         <SimpleSummaryView
-          thesisContributions={thesisContributions}
-          whereDiffContributions={whereDiffContributions}
-          risksContributions={risksContributions}
+          contributionsBySection={contributionsBySection}
           coveringAnalystIds={coveringAnalystIds}
           viewFilter={viewFilter}
         />
@@ -911,9 +936,7 @@ export function ThesisUnifiedSummary({
           </button>
         </div>
         <SimpleSummaryView
-          thesisContributions={thesisContributions}
-          whereDiffContributions={whereDiffContributions}
-          risksContributions={risksContributions}
+          contributionsBySection={contributionsBySection}
           coveringAnalystIds={coveringAnalystIds}
           viewFilter={viewFilter}
         />

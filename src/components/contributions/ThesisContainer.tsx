@@ -4,7 +4,8 @@ import {
   Target,
   Sparkles,
   AlertTriangle,
-  Star
+  Star,
+  Users
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useQuery } from '@tanstack/react-query'
@@ -20,12 +21,16 @@ interface ThesisContainerProps {
   className?: string
   /** Optional external view filter - when provided, hides internal tabs and uses this filter */
   viewFilter?: 'aggregated' | string
+  /** Callback when tab changes (used when externally controlled) */
+  onTabChange?: (tab: string) => void
   /** View mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline */
   viewMode?: 'all' | 'summary' | 'history'
   /** Shared visibility for all thesis sections (controlled from parent) */
   sharedVisibility?: ContributionVisibility
   /** Shared target IDs for visibility (controlled from parent) */
   sharedTargetIds?: string[]
+  /** When true, only shows fields that have at least one contribution (for aggregated view) */
+  hideEmptyFields?: boolean
 }
 
 type TabType = 'aggregated' | string // 'aggregated' or a user ID
@@ -40,16 +45,20 @@ export function ThesisContainer({
   assetId,
   className,
   viewFilter,
+  onTabChange: externalOnTabChange,
   viewMode = 'all',
   sharedVisibility = 'firm',
-  sharedTargetIds = []
+  sharedTargetIds = [],
+  hideEmptyFields = false
 }: ThesisContainerProps) {
   const { user } = useAuth()
   const [internalTab, setInternalTab] = useState<TabType>('aggregated')
 
   // Use external viewFilter if provided, otherwise use internal tab state
   const activeTab = viewFilter ?? internalTab
-  const setActiveTab = viewFilter ? () => {} : setInternalTab // No-op if externally controlled
+  const setActiveTab = viewFilter
+    ? (tab: string) => externalOnTabChange?.(tab) // Use external callback when externally controlled
+    : setInternalTab
   const isExternallyControlled = viewFilter !== undefined
 
   // Is the current user viewing their own tab?
@@ -172,18 +181,20 @@ export function ThesisContainer({
     <div className={clsx('space-y-6', className)}>
       {/* Universal tabs - hidden when externally controlled */}
       {!isExternallyControlled && (
-        <div className="border-b border-gray-200">
-          <div className="flex items-center space-x-1 overflow-x-auto">
+        <div className="flex items-center gap-3 pb-4">
+          <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">View</span>
+          <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm border border-gray-200">
             {/* Our View tab */}
             <button
               onClick={() => setActiveTab('aggregated')}
               className={clsx(
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                 activeTab === 'aggregated'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               )}
             >
+              <Users className="w-3.5 h-3.5" />
               Our View
             </button>
 
@@ -194,10 +205,10 @@ export function ThesisContainer({
                 onClick={() => setActiveTab(contributor.userId)}
                 title={`${contributor.isCovering ? `Covering Analyst${contributor.coverageRole ? ` (${contributor.coverageRole})` : ''} · ` : ''}Updated ${formatDistanceToNow(new Date(contributor.updatedAt), { addSuffix: true })}`}
                 className={clsx(
-                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                   activeTab === contributor.userId
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 )}
               >
                 {contributor.isCovering && (
@@ -216,10 +227,10 @@ export function ThesisContainer({
                   : 'Your view'
                 }
                 className={clsx(
-                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap rounded-t-md flex items-center gap-1.5',
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                   activeTab === user.id
-                    ? 'border-primary-600 text-primary-600 bg-primary-100'
-                    : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-50'
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'bg-primary-50 text-primary-700 hover:bg-primary-100'
                 )}
               >
                 {currentUserContributor?.isCovering && (
@@ -233,53 +244,81 @@ export function ThesisContainer({
       )}
 
       {/* Contribution sections - visibility controlled from toolbar */}
-      <ContributionSection
-        assetId={assetId}
-        section="thesis"
-        title="Investment Thesis"
-        description="Core investment thesis and rationale"
-        icon={Target}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        defaultVisibility="firm"
-        coveringAnalystIds={coveringAnalystIds}
-        hideViewModeButtons={true}
-        hideVisibility={true}
-        sharedVisibility={sharedVisibility}
-        sharedTargetIds={sharedTargetIds}
-      />
+      {/* When hideEmptyFields is true, only render sections that have contributions */}
+      {/* When hideEmptyFields is true (aggregated view), also use flatMode for simpler rendering */}
 
-      <ContributionSection
-        assetId={assetId}
-        section="where_different"
-        title="Where We Are Different"
-        description="Unique insights vs consensus"
-        icon={Sparkles}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        defaultVisibility="firm"
-        coveringAnalystIds={coveringAnalystIds}
-        hideViewModeButtons={true}
-        hideVisibility={true}
-        sharedVisibility={sharedVisibility}
-        sharedTargetIds={sharedTargetIds}
-      />
+      {/* Empty state for aggregated view when no contributions exist */}
+      {hideEmptyFields && allContributions.length === 0 && (
+        <div className="text-center py-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3">
+            <Users className="w-6 h-6 text-gray-400" />
+          </div>
+          <h3 className="text-sm font-medium text-gray-900 mb-1">No research yet</h3>
+          <p className="text-sm text-gray-500 max-w-xs mx-auto">
+            Be the first to share your investment thesis on this asset.
+          </p>
+        </div>
+      )}
 
-      <ContributionSection
-        assetId={assetId}
-        section="risks_to_thesis"
-        title="Risks to Thesis"
-        description="Key risks that could invalidate the thesis"
-        icon={AlertTriangle}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        defaultVisibility="firm"
-        coveringAnalystIds={coveringAnalystIds}
-        hideViewModeButtons={true}
-        hideVisibility={true}
-        sharedVisibility={sharedVisibility}
-        sharedTargetIds={sharedTargetIds}
-      />
+      {(!hideEmptyFields || thesisContributions.length > 0) && (
+        <ContributionSection
+          assetId={assetId}
+          section="thesis"
+          title="Investment Thesis"
+          description="The core investment thesis explaining why this is an attractive opportunity"
+          icon={Target}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          defaultVisibility="firm"
+          coveringAnalystIds={coveringAnalystIds}
+          hideViewModeButtons={true}
+          hideVisibility={true}
+          sharedVisibility={sharedVisibility}
+          sharedTargetIds={sharedTargetIds}
+          sectionType="thesis"
+          flatMode={hideEmptyFields}
+        />
+      )}
+
+      {(!hideEmptyFields || whereDiffContributions.length > 0) && (
+        <ContributionSection
+          assetId={assetId}
+          section="where_different"
+          title="Where We Differ"
+          description="How our view differs from market consensus"
+          icon={Sparkles}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          defaultVisibility="firm"
+          coveringAnalystIds={coveringAnalystIds}
+          hideViewModeButtons={true}
+          hideVisibility={true}
+          sharedVisibility={sharedVisibility}
+          sharedTargetIds={sharedTargetIds}
+          sectionType="thesis"
+          flatMode={hideEmptyFields}
+        />
+      )}
+
+      {(!hideEmptyFields || risksContributions.length > 0) && (
+        <ContributionSection
+          assetId={assetId}
+          section="risks_to_thesis"
+          title="Risks to Thesis"
+          description="Key risks that could invalidate the thesis"
+          icon={AlertTriangle}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          defaultVisibility="firm"
+          coveringAnalystIds={coveringAnalystIds}
+          hideViewModeButtons={true}
+          hideVisibility={true}
+          sharedVisibility={sharedVisibility}
+          sharedTargetIds={sharedTargetIds}
+          sectionType="thesis"
+          flatMode={hideEmptyFields}
+        />
+      )}
     </div>
   )
 }

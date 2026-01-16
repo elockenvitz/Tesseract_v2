@@ -77,7 +77,7 @@ function FieldAccessBadge({ accessField }: { accessField: AccessibleField }) {
 
   if (accessField.accessType === 'team_member') {
     return (
-      <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded">
+      <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
         <Users className="w-3 h-3" />
         {accessField.teamName || 'Team'}
       </span>
@@ -144,11 +144,16 @@ function CustomFieldRenderer({
   const { field } = accessField
   const config = field.config as Record<string, unknown>
 
-  // Field header with badges
+  // Consistent field wrapper styling to match ContributionSection
+  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-4 space-y-3"
+
+  // Field header with badges and inline description - updated styling to match ContributionSection
   const FieldHeader = () => (
-    <div className="flex items-center gap-2 mb-2">
-      <span className="text-gray-400">{getFieldTypeIcon(field.field_type)}</span>
-      <h4 className="text-sm font-medium text-gray-700">{field.name}</h4>
+    <div className="flex items-baseline gap-3 flex-wrap">
+      <h4 className="text-base font-semibold text-gray-900">{field.name}</h4>
+      {field.description && (
+        <p className="text-sm text-gray-500">{field.description}</p>
+      )}
       {accessField.accessType !== 'universal' && (
         <FieldAccessBadge accessField={accessField} />
       )}
@@ -161,37 +166,28 @@ function CustomFieldRenderer({
     </div>
   )
 
-  // Rich text field - use ContributionSection
+  // Rich text field - use ContributionSection (already has its own border)
   if (field.field_type === 'rich_text') {
     return (
-      <div className="space-y-2">
-        <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500">{field.description}</p>
-        )}
-        <ContributionSection
-          assetId={assetId}
-          section={field.slug}
-          title=""
-          viewMode={viewFilter === 'aggregated' ? 'aggregated' : 'individual'}
-          userId={viewFilter !== 'aggregated' ? viewFilter : undefined}
-          defaultVisibility={sharedVisibility}
-          defaultTargetIds={sharedTargetIds}
-          hideTitle
-          hideVisibility={true}
-        />
-      </div>
+      <ContributionSection
+        assetId={assetId}
+        section={field.slug}
+        title={field.name}
+        description={field.description || undefined}
+        viewMode={viewFilter === 'aggregated' ? 'aggregated' : 'individual'}
+        userId={viewFilter !== 'aggregated' ? viewFilter : undefined}
+        defaultVisibility={sharedVisibility}
+        defaultTargetIds={sharedTargetIds}
+        hideVisibility={true}
+      />
     )
   }
 
   // Checklist field
   if (field.field_type === 'checklist') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <ChecklistField
           fieldId={field.id}
           assetId={assetId}
@@ -204,11 +200,8 @@ function CustomFieldRenderer({
   // Metric field
   if (field.field_type === 'metric') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <MetricField
           fieldId={field.id}
           assetId={assetId}
@@ -221,11 +214,8 @@ function CustomFieldRenderer({
   // Timeline field
   if (field.field_type === 'timeline') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <TimelineField
           fieldId={field.id}
           assetId={assetId}
@@ -238,11 +228,8 @@ function CustomFieldRenderer({
   // Numeric field
   if (field.field_type === 'numeric') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <NumericField
           fieldId={field.id}
           assetId={assetId}
@@ -255,11 +242,8 @@ function CustomFieldRenderer({
   // Date field
   if (field.field_type === 'date') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <DateField
           fieldId={field.id}
           assetId={assetId}
@@ -272,11 +256,8 @@ function CustomFieldRenderer({
   // Documents field - render document library inline
   if (field.field_type === 'documents') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <DocumentLibrarySection
           assetId={assetId}
           notes={notes}
@@ -294,14 +275,12 @@ function CustomFieldRenderer({
   // Rating field - render analyst ratings section
   if (field.field_type === 'rating') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <AnalystRatingsSection
           assetId={assetId}
           isEditable={true}
+          embedded={true}
         />
       </div>
     )
@@ -310,14 +289,12 @@ function CustomFieldRenderer({
   // Estimates field - render analyst estimates section
   if (field.field_type === 'estimates') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <AnalystEstimatesSection
           assetId={assetId}
           isEditable={true}
+          embedded={true}
         />
       </div>
     )
@@ -326,11 +303,8 @@ function CustomFieldRenderer({
   // Price target field - render outcomes container for price targets
   if (field.field_type === 'price_target') {
     return (
-      <div className="space-y-2">
+      <div className={fieldWrapperClass}>
         <FieldHeader />
-        {field.description && (
-          <p className="text-xs text-gray-500 mb-3">{field.description}</p>
-        )}
         <OutcomesContainer
           assetId={assetId}
           symbol={symbol}
@@ -343,10 +317,10 @@ function CustomFieldRenderer({
 
   // For other field types not yet implemented, show a placeholder
   return (
-    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+    <div className={fieldWrapperClass}>
       <FieldHeader />
       {field.description && (
-        <p className="text-xs text-gray-500 mb-2">{field.description}</p>
+        <p className="text-sm text-gray-500">{field.description}</p>
       )}
       <p className="text-xs text-gray-400 italic">
         Field type "{field.field_type}" renderer coming soon
@@ -407,7 +381,7 @@ function SectionRenderer({
         >
           <span className="font-medium text-gray-900">{section.name}</span>
           {contextualFieldCount > 0 && (
-            <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
               +{contextualFieldCount} team fields
             </span>
           )}
@@ -467,7 +441,7 @@ function SectionRenderer({
         >
           <span className="font-medium text-gray-900">{section.name}</span>
           {contextualFieldCount > 0 && (
-            <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
               +{contextualFieldCount} team fields
             </span>
           )}
@@ -542,7 +516,7 @@ function SectionRenderer({
       >
         <span className="font-medium text-gray-900">{section.name}</span>
         {contextualFieldCount > 0 && (
-          <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+          <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
             +{contextualFieldCount} team fields
           </span>
         )}
@@ -674,7 +648,7 @@ export function DynamicResearchContainer({
       <div className="flex items-center justify-between">
         {/* Contextual fields indicator */}
         {contextualFields.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
             <Lock className="w-4 h-4" />
             <span>
               You have access to {contextualFields.length} team-specific field{contextualFields.length !== 1 ? 's' : ''} in this view

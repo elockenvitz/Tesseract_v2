@@ -24,6 +24,8 @@ interface AnalystEstimatesSectionProps {
   assetId: string
   className?: string
   isEditable?: boolean
+  /** When true, hides the internal header (for use as an embedded field) */
+  embedded?: boolean
 }
 
 // Format value based on type
@@ -260,7 +262,8 @@ function FieldRow({ field, isEditable, onEdit, onDelete, isSaving }: FieldRowPro
 export function AnalystEstimatesSection({
   assetId,
   className,
-  isEditable = false
+  isEditable = false,
+  embedded = false
 }: AnalystEstimatesSectionProps) {
   const { user } = useAuth()
   const [isExpanded, setIsExpanded] = useState(true)
@@ -394,7 +397,11 @@ export function AnalystEstimatesSection({
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx(
+        'bg-white rounded-lg',
+        !embedded && 'border border-gray-200 p-4',
+        className
+      )}>
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
@@ -403,7 +410,11 @@ export function AnalystEstimatesSection({
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
+    <div className={clsx(
+      'bg-white rounded-lg',
+      !embedded && 'border border-gray-200',
+      className
+    )}>
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -413,55 +424,82 @@ export function AnalystEstimatesSection({
         className="hidden"
       />
 
-      {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between">
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 flex-1"
-        >
-          <TrendingUp className="w-4 h-4 text-gray-500" />
-          <h4 className="text-sm font-medium text-gray-900">Estimates</h4>
-          {hasData && (
-            <span className="text-xs text-gray-500">
-              ({allFields.length})
-            </span>
-          )}
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-gray-400" />
-          )}
-        </button>
+      {/* Header - only show when not embedded */}
+      {!embedded && (
+        <div className="px-4 py-3 flex items-center justify-between">
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-2 flex-1"
+          >
+            <TrendingUp className="w-4 h-4 text-gray-500" />
+            <h4 className="text-sm font-medium text-gray-900">Estimates</h4>
+            {hasData && (
+              <span className="text-xs text-gray-500">
+                ({allFields.length})
+              </span>
+            )}
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
 
-        {/* Actions */}
-        {isEditable && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {isUploading ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Upload className="w-3.5 h-3.5" />
-              )}
-              Upload Model
-            </button>
-            <button
-              onClick={() => setIsAdding(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Field
-            </button>
-          </div>
-        )}
-      </div>
+          {/* Actions */}
+          {isEditable && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                Upload Model
+              </button>
+              <button
+                onClick={() => setIsAdding(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Field
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actions for embedded mode */}
+      {embedded && isEditable && (
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {isUploading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Upload className="w-3.5 h-3.5" />
+            )}
+            Upload Model
+          </button>
+          <button
+            onClick={() => setIsAdding(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Field
+          </button>
+        </div>
+      )}
 
       {/* Content */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 px-4 py-2">
+      {(embedded || isExpanded) && (
+        <div className={clsx(!embedded && 'border-t border-gray-100 px-4 py-2')}>
           {/* Fields list */}
           {hasData ? (
             <div>

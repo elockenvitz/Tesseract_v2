@@ -4,6 +4,35 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    // Section theme colors - left borders
+    'border-l-blue-400',
+    'border-l-blue-500',
+    'border-l-emerald-500',
+    'border-l-purple-500',
+    'border-l-gray-400',
+    // Section theme colors - hover borders
+    'hover:border-blue-200',
+    'hover:border-emerald-200',
+    'hover:border-purple-200',
+    'hover:border-amber-200',
+    // Section theme colors - hover backgrounds
+    'hover:bg-blue-50/30',
+    'hover:bg-emerald-50/30',
+    'hover:bg-purple-50/30',
+    'hover:bg-amber-50/30',
+    'hover:bg-amber-50/50',
+    // Icon backgrounds
+    'bg-blue-50',
+    'bg-emerald-50',
+    'bg-purple-50',
+    'bg-gray-100',
+    // Icon colors
+    'text-blue-600',
+    'text-emerald-600',
+    'text-purple-600',
+    'text-gray-600',
+  ],
   darkMode: 'class',
   theme: {
     extend: {

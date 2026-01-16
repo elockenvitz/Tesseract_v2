@@ -8,9 +8,11 @@ interface AnalystRatingsSectionProps {
   assetId: string
   className?: string
   isEditable?: boolean
+  /** When true, hides the internal header (for use as an embedded field) */
+  embedded?: boolean
 }
 
-export function AnalystRatingsSection({ assetId, className, isEditable = false }: AnalystRatingsSectionProps) {
+export function AnalystRatingsSection({ assetId, className, isEditable = false, embedded = false }: AnalystRatingsSectionProps) {
   const { user } = useAuth()
   const {
     ratings,
@@ -71,12 +73,18 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false }
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h4 className="text-sm font-medium text-gray-900">Rating</h4>
-      </div>
+    <div className={clsx(
+      'bg-white rounded-lg',
+      !embedded && 'border border-gray-200',
+      className
+    )}>
+      {!embedded && (
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h4 className="text-sm font-medium text-gray-900">Rating</h4>
+        </div>
+      )}
 
-      <div className="p-4 space-y-4">
+      <div className={clsx('space-y-4', !embedded && 'p-4')}>
         {/* Consensus View */}
         {consensus.length > 0 && (
           <div className="space-y-2">

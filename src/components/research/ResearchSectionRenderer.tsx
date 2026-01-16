@@ -104,6 +104,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     </button>
   )
 
+  // Consistent field wrapper styling to match ContributionSection
+  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-4 space-y-3"
+
   // Render field based on type
   const renderField = (field: FieldWithPreference) => {
     if (!field.is_visible) return null
@@ -113,11 +116,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Checklist field
     if (fieldType === 'checklist') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <ChecklistField
             fieldId={field.field_id}
             assetId={assetId}
@@ -130,11 +135,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Metric field
     if (fieldType === 'metric') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <MetricField
             fieldId={field.field_id}
             assetId={assetId}
@@ -147,11 +154,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Timeline field
     if (fieldType === 'timeline') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <TimelineField
             fieldId={field.field_id}
             assetId={assetId}
@@ -164,11 +173,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Numeric field
     if (fieldType === 'numeric') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <NumericField
             fieldId={field.field_id}
             assetId={assetId}
@@ -181,11 +192,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Date field
     if (fieldType === 'date') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <DateField
             fieldId={field.field_id}
             assetId={assetId}
@@ -198,11 +211,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Documents field - render document library inline
     if (fieldType === 'documents') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <DocumentLibrarySection
             assetId={assetId}
             notes={notes}
@@ -222,14 +237,17 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Rating field - render analyst ratings section
     if (fieldType === 'rating') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <AnalystRatingsSection
             assetId={assetId}
             isEditable={true}
+            embedded={true}
           />
         </div>
       )
@@ -238,14 +256,17 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Estimates field - render analyst estimates section
     if (fieldType === 'estimates') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <AnalystEstimatesSection
             assetId={assetId}
             isEditable={true}
+            embedded={true}
           />
         </div>
       )
@@ -254,11 +275,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     // Price target field - render outcomes container for price targets
     if (fieldType === 'price_target') {
       return (
-        <div key={field.field_id} className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
-          {field.field_description && (
-            <p className="text-xs text-gray-500">{field.field_description}</p>
-          )}
+        <div key={field.field_id} className={fieldWrapperClass}>
+          <div className="flex items-baseline gap-3">
+            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            {field.field_description && (
+              <p className="text-sm text-gray-500">{field.field_description}</p>
+            )}
+          </div>
           <OutcomesContainer
             assetId={assetId}
             symbol={assetSymbol}
@@ -315,7 +338,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
                 />
                 {/* Additional custom fields in thesis section */}
                 {section.fields
-                  .filter(f => f.is_visible && !['investment_thesis', 'key_points', 'key_risks'].includes(f.field_slug))
+                  .filter(f => f.is_visible && !['thesis', 'where_different', 'risks_to_thesis'].includes(f.field_slug))
                   .map(renderField)}
               </div>
             )}

@@ -46,6 +46,7 @@ import {
 } from '../../hooks/useContributions'
 import { ThesisSummaryView } from './ThesisSummaryView'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { InfoTooltip } from '../ui/Tooltip'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
 import { DiffView } from './DiffView'
@@ -73,7 +74,45 @@ interface ContributionSectionProps {
   sharedVisibility?: ContributionVisibility
   /** Shared target IDs from parent */
   sharedTargetIds?: string[]
+  /** Section type for color theming */
+  sectionType?: 'thesis' | 'forecasts' | 'supporting' | 'custom'
+  /** Flat mode: removes section wrapper and header, shows only content (for aggregated view) */
+  flatMode?: boolean
+  /** Hide this section entirely when there are no contributions */
+  hideWhenEmpty?: boolean
 }
+
+// Section color themes - unified blue accent with amber hover
+const SECTION_THEMES = {
+  thesis: {
+    accent: 'border-l-blue-400',
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    hoverBorder: 'hover:border-amber-200',
+    hoverBg: 'hover:bg-amber-50/30',
+  },
+  forecasts: {
+    accent: 'border-l-blue-400',
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    hoverBorder: 'hover:border-amber-200',
+    hoverBg: 'hover:bg-amber-50/30',
+  },
+  supporting: {
+    accent: 'border-l-blue-400',
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    hoverBorder: 'hover:border-amber-200',
+    hoverBg: 'hover:bg-amber-50/30',
+  },
+  custom: {
+    accent: 'border-l-blue-400',
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    hoverBorder: 'hover:border-amber-200',
+    hoverBg: 'hover:bg-amber-50/30',
+  },
+} as const
 
 const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
   { value: 'firm', label: 'Firm-wide', icon: Globe, description: 'Everyone in the firm can see this' },
@@ -149,8 +188,13 @@ export function ContributionSection({
   hideViewModeButtons = false,
   hideVisibility = false,
   sharedVisibility,
-  sharedTargetIds = []
+  sharedTargetIds = [],
+  sectionType = 'thesis',
+  flatMode = false,
+  hideWhenEmpty = false
 }: ContributionSectionProps) {
+  // Get theme based on section type
+  const theme = SECTION_THEMES[sectionType]
   const { user } = useAuth()
   const [viewMode, setViewMode] = useState<'combined' | 'ai'>('combined')
   const [showHistory, setShowHistory] = useState(false)
@@ -196,6 +240,11 @@ export function ContributionSection({
     assetId,
     section
   })
+
+  // Hide section if no contributions and hideWhenEmpty is true
+  if (hideWhenEmpty && !isLoading && contributions.length === 0) {
+    return null
+  }
 
   const { history: aggregateHistory, isLoading: historyLoading } = useAggregateHistory({
     assetId,
@@ -794,18 +843,122 @@ export function ContributionSection({
   // Show toolbar when hovering, editing, or history is open
   const showToolbar = isHovered || isEditing || showHistory
 
+  // Flat mode: render just the contributions without wrapper/header (for aggregated view)
+  if (flatMode && activeTab === 'aggregated') {
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center py-3">
+          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+        </div>
+      )
+    }
+    if (error) {
+      return null // Hide errors in flat mode
+    }
+    if (contributions.length === 0) {
+      return null // Hide empty sections in flat mode
+    }
+
+    // Sort contributions: covering analysts first, then by recency
+    const sortedContributions = [...contributions].sort((a, b) => {
+      const aIsCovering = coveringAnalystIds.has(a.created_by)
+      const bIsCovering = coveringAnalystIds.has(b.created_by)
+      if (aIsCovering && !bIsCovering) return -1
+      if (!aIsCovering && bIsCovering) return 1
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    })
+
+    // Render clean aggregated view
+    return (
+      <div className={clsx("space-y-4", className)}>
+        {/* Section header */}
+        <div className="flex items-center gap-2.5 border-b border-gray-100 pb-2">
+          <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+          <span className="text-xs text-gray-400">
+            {contributions.length} {contributions.length === 1 ? 'analyst' : 'analysts'}
+          </span>
+        </div>
+
+        {/* Contributions - clean list */}
+        <div className="space-y-4">
+          {sortedContributions.map((c) => {
+            const isCovering = coveringAnalystIds.has(c.created_by)
+            return (
+              <div key={c.id} className="group">
+                {/* Author line - clickable to view analyst's full research */}
+                <div className="flex items-center gap-2 mb-1">
+                  {isCovering && (
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" title="Covering Analyst" />
+                  )}
+                  <button
+                    onClick={() => onTabChange?.(c.created_by)}
+                    className={clsx(
+                      "text-sm font-medium hover:underline transition-colors",
+                      isCovering
+                        ? "text-amber-700 hover:text-amber-800"
+                        : "text-gray-700 hover:text-primary-600"
+                    )}
+                    title={`View ${c.user?.full_name}'s full research`}
+                  >
+                    {c.user?.full_name}
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    {formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}
+                  </span>
+                </div>
+                {/* Content - clickable to view analyst's full research */}
+                <button
+                  onClick={() => onTabChange?.(c.created_by)}
+                  className="text-left w-full text-sm text-gray-600 leading-relaxed pl-5 prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 hover:text-gray-900 transition-colors cursor-pointer"
+                  title={`View ${c.user?.full_name}'s full research`}
+                >
+                  <SmartInputRenderer content={c.content} />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
-      className={clsx('bg-white border border-gray-200 rounded-lg', className)}
+      className={clsx(
+        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200',
+        theme.accent,
+        theme.hoverBorder,
+        theme.hoverBg,
+        'hover:shadow-sm',
+        className
+      )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100 min-h-[44px]">
+      <div className="flex items-center justify-between px-5 py-2.5 border-b border-gray-100 min-h-[48px]">
         <div className="flex items-center space-x-3">
-          {Icon && <Icon className="w-5 h-5 text-gray-400" />}
-          <div className="flex items-center gap-3">
-            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+          {Icon && (
+            <div className={clsx('p-1.5 rounded-lg', theme.iconBg)}>
+              <Icon className={clsx('w-4 h-4', theme.iconColor)} />
+            </div>
+          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            {activeTab === 'aggregated' && user ? (
+              <button
+                onClick={handleStartEdit}
+                className="group flex items-center gap-1.5"
+                title="Click to add your view"
+              >
+                <h3 className="text-base font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">{title}</h3>
+                <Edit3 className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ) : (
+              <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+            )}
+            {description && (
+              <InfoTooltip content={description} position="right" />
+            )}
             {activeTab === 'aggregated' && lastUpdated && !showHistory && (
               <span className="text-xs text-gray-400">
                 Updated {formatDistanceToNow(new Date(lastUpdated), { addSuffix: true })}
@@ -967,7 +1120,15 @@ export function ContributionSection({
                 ) : viewMode === 'combined' ? (
                   contributions.length === 0 ? (
                     <div className="text-center py-1">
-                      <p className="text-gray-400 text-sm">No views shared yet</p>
+                      {user && (
+                        <button
+                          onClick={handleStartEdit}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          Add your view
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -1236,7 +1397,19 @@ export function ContributionSection({
                         )}
                       </div>
                     ) : (
-                      <p className="text-gray-400 text-sm text-center py-1">No views shared yet</p>
+                      <div className="text-center py-1">
+                        {activeTab === user?.id ? (
+                          <button
+                            onClick={handleStartEdit}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Add your view
+                          </button>
+                        ) : (
+                          <p className="text-gray-400 text-sm">No contribution yet</p>
+                        )}
+                      </div>
                     )}
                   </>
                 )}

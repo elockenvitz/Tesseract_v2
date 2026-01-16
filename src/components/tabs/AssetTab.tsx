@@ -29,11 +29,11 @@ import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { RelatedProjects } from '../projects/RelatedProjects'
-import { ThesisContainer, ContributionSection } from '../contributions'
+import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView } from '../contributions'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
-import { UserWidgetRenderer, AssetPageFieldCustomizer, ResearchSectionRenderer } from '../research'
+import { UserWidgetRenderer, AssetPageFieldCustomizer } from '../research'
 import {
   ChecklistField,
   MetricField,
@@ -505,10 +505,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     enabled: !!user?.id
   })
 
-  // Fetch user's thesis contributions to initialize visibility
-  const { contributions: userThesisContributions } = useContributions({ assetId: asset.id, section: 'thesis' })
-  const { contributions: userWhereDiffContributions } = useContributions({ assetId: asset.id, section: 'where_different' })
-  const { contributions: userRisksContributions } = useContributions({ assetId: asset.id, section: 'risks_to_thesis' })
+  // Fetch ALL contributions for this asset (for unified summary view)
+  const { contributions: allAssetContributions } = useContributions({ assetId: asset.id })
+
+  // Legacy: Fetch specific section contributions for visibility initialization (deprecated - will be removed)
+  const userThesisContributions = allAssetContributions.filter(c => c.section === 'thesis')
+  const userWhereDiffContributions = allAssetContributions.filter(c => c.section === 'where_different')
+  const userRisksContributions = allAssetContributions.filter(c => c.section === 'risks_to_thesis')
 
   // User-added widgets for this asset
   const {
@@ -530,6 +533,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     activeLayout,
     isLoading: layoutLoading
   } = useUserAssetPagePreferences(asset.id)
+
+  // Check if user is viewing their own tab - used to conditionally apply layout customizations
+  // Layout/template customizations should ONLY apply when viewing "My View"
+  const isViewingOwnTab = user && researchViewFilter === user.id
+  const isAggregatedView = researchViewFilter === 'aggregated'
 
   // Get section info with overrides (name, visibility, etc.)
   const getSectionInfo = useCallback((sectionSlug: string) => {
@@ -555,40 +563,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     return result
   }, [fieldsBySection])
 
-  // Get custom (non-system) fields that are VISIBLE in user's layout for each section
-  // Logic:
-  // - Fields are sorted by default_display_order from research_fields table
-  // - System fields are rendered by ThesisContainer/OutcomesContainer
-  // - Custom fields are rendered before/after system components based on display_order
+  // Track if user has a custom layout configured
   const hasUserLayout = !!activeLayout
-
-  // Get thesis section from displayedFieldsBySection (already filtered to template/override fields)
-  const thesisSection = displayedFieldsBySection.find(s => s.section_slug === 'thesis')
-  const allThesisFields = thesisSection?.fields.filter(f => f.is_visible) || []
-
-  // ThesisContainer renders these 3 core fields - everything else renders as ContributionSection
-  const coreThesisFieldSlugs = ['thesis', 'where_different', 'risks_to_thesis']
-
-  // Split into fields that come BEFORE core thesis fields (display_order < 1)
-  // Core thesis field (thesis) has display_order 1
-  const thesisFieldsBefore = allThesisFields
-    .filter(f => !coreThesisFieldSlugs.includes(f.field_slug) && (f.display_order ?? f.default_display_order) < 1)
-    .map(f => ({ field: { id: f.field_id, name: f.field_name, slug: f.field_slug, description: null, display_order: f.display_order ?? f.default_display_order } }))
-
-  // Fields after core thesis fields (display_order > 3, where risks_to_thesis is 3)
-  // This includes Business Model and other thesis section fields not in ThesisContainer
-  const thesisFieldsAfter = allThesisFields
-    .filter(f => !coreThesisFieldSlugs.includes(f.field_slug) && (f.display_order ?? f.default_display_order) >= 1)
-    .map(f => ({ field: { id: f.field_id, name: f.field_name, slug: f.field_slug, description: null, display_order: f.display_order ?? f.default_display_order } }))
-
-  // Debug: Log custom fields from layout (disabled for performance)
-  // console.log('📋 AssetTab Layout Fields:', {
-  //   hasUserLayout,
-  //   activeLayoutName: activeLayout?.name,
-  //   thesisFieldsBefore: thesisFieldsBefore.map(f => ({ name: f.field.name, order: f.field.display_order })),
-  //   thesisFieldsAfter: thesisFieldsAfter.map(f => ({ name: f.field.name, order: f.field.display_order })),
-  //   allThesisFields: allThesisFields.map(f => ({ name: f.field_name, order: f.default_display_order }))
-  // })
 
   // Get target options for selected visibility level
   const getTargetOptions = useCallback((visibility: ContributionVisibility) => {
@@ -2458,17 +2434,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           <div className="flex items-center justify-between gap-3">
             {/* Left side: View filter */}
             <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500 font-medium">View:</span>
+              <span className="text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
               {researchAnalysts.length <= 5 ? (
                 // Pills mode for 5 or fewer analysts
-                <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                   <button
                     onClick={() => setResearchViewFilter('aggregated')}
                     className={clsx(
-                      'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
+                      'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                       researchViewFilter === 'aggregated'
-                        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                        ? 'bg-primary-600 text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                     )}
                   >
                     <Users className="w-3.5 h-3.5" />
@@ -2481,18 +2457,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         key={analyst.id}
                         onClick={() => setResearchViewFilter(analyst.id)}
                         className={clsx(
-                          'px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5',
+                          'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                           researchViewFilter === analyst.id
-                            ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                            ? 'bg-primary-600 text-white shadow-sm'
                             : isCurrentUser
-                              ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-300 hover:bg-cyan-100 dark:bg-cyan-900/20 dark:text-cyan-400 dark:ring-cyan-700 dark:hover:bg-cyan-900/30'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                              ? 'text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                         )}
                       >
                         {analyst.isCovering && (
                           <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
                         )}
-                        {!analyst.isCovering && <User className="w-3.5 h-3.5" />}
                         {analyst.shortName}
                       </button>
                     )
@@ -2730,379 +2705,340 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </Card>
                 ))}
               </div>
-            ) : (
-            /* Research Sections - Rendered in order based on displayedFieldsBySection (respects template + overrides) */
-            displayedFieldsBySection.map(section => {
-              // Skip hidden sections
-              if (section.section_is_hidden) return null
+            ) : thesisViewMode === 'summary' ? (
+              /* AI Summary View - shows unified summary */
+              <Card padding="md">
+                <ThesisUnifiedSummary
+                  assetId={asset.id}
+                  viewFilter={researchViewFilter}
+                  contributions={allAssetContributions}
+                  coveringAnalystIds={new Set(coverage?.map(c => c.user_id) || [])}
+                />
+              </Card>
+            ) : thesisViewMode === 'history' ? (
+              /* History View - shows timeline instead of full layout */
+              <Card padding="md">
+                <ThesisHistoryView
+                  assetId={asset.id}
+                  viewFilter={researchViewFilter}
+                />
+              </Card>
+            ) : thesisViewMode === 'references' ? (
+              /* References View - shows supporting documents instead of full layout */
+              <Card padding="md">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Supporting Documentation</h4>
+                      <p className="text-xs text-gray-500">Key documents, models, and links that support this thesis</p>
+                    </div>
+                    {addRefType === 'none' && (
+                      <button
+                        onClick={() => setAddRefType('note')}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add
+                      </button>
+                    )}
+                  </div>
 
-              // Thesis Section
-              if (section.section_slug === 'thesis') {
-                return (
-            <Card key={section.section_id} padding="none">
-              <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                <button
-                  onClick={() => toggleSection('thesis')}
-                  className="flex items-center gap-2 flex-1"
-                >
-                  <span className="font-medium text-gray-900">{section.section_name}</span>
-                  {collapsedSections.thesis ? (
-                    <ChevronDown className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <ChevronUp className="h-5 w-5 text-gray-400" />
-                  )}
-                </button>
-              </div>
-              {!collapsedSections.thesis && (
-                <div className="border-t border-gray-100 px-6 py-4">
-                  {thesisViewMode === 'references' ? (
-                    <div className="space-y-3">
-                      {/* Header with Add button */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Supporting Documentation</h4>
-                          <p className="text-xs text-gray-500">Key documents, models, and links that support this thesis</p>
-                        </div>
-                        {addRefType === 'none' && (
+                  {/* Add Reference Panel */}
+                  {addRefType !== 'none' && (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-800/50">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="flex gap-1">
                           <button
                             onClick={() => setAddRefType('note')}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                            className={clsx(
+                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                              addRefType === 'note'
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            )}
                           >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add
+                            <FileText className="w-3 h-3" /> Note
                           </button>
-                        )}
+                          <button
+                            onClick={() => setAddRefType('file')}
+                            className={clsx(
+                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                              addRefType === 'file'
+                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400'
+                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            )}
+                          >
+                            <File className="w-3 h-3" /> File
+                          </button>
+                          <button
+                            onClick={() => setAddRefType('model')}
+                            className={clsx(
+                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                              addRefType === 'model'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            )}
+                          >
+                            <FileSpreadsheet className="w-3 h-3" /> Model
+                          </button>
+                          <button
+                            onClick={() => setAddRefType('link')}
+                            className={clsx(
+                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
+                              addRefType === 'link'
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            )}
+                          >
+                            <ExternalLink className="w-3 h-3" /> URL
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => setAddRefType('none')}
+                          className="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
 
-                      {/* Add Reference Panel - Shows in middle when active */}
-                      {addRefType !== 'none' && (
-                        <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-800/50">
-                          {/* Type selector */}
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => setAddRefType('note')}
-                                className={clsx(
-                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                                  addRefType === 'note'
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
-                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                )}
-                              >
-                                <FileText className="w-3 h-3" /> Note
-                              </button>
-                              <button
-                                onClick={() => setAddRefType('file')}
-                                className={clsx(
-                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                                  addRefType === 'file'
-                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400'
-                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                )}
-                              >
-                                <File className="w-3 h-3" /> File
-                              </button>
-                              <button
-                                onClick={() => setAddRefType('model')}
-                                className={clsx(
-                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                                  addRefType === 'model'
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                )}
-                              >
-                                <FileSpreadsheet className="w-3 h-3" /> Model
-                              </button>
-                              <button
-                                onClick={() => setAddRefType('url')}
-                                className={clsx(
-                                  'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                                  addRefType === 'url'
-                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
-                                    : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                )}
-                              >
-                                <ExternalLink className="w-3 h-3" /> URL
-                              </button>
-                            </div>
-                            <button
-                              onClick={() => { setAddRefType('none'); setNewRefUrl(''); setNewRefTitle('') }}
-                              className="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
+                      {/* Notes selection */}
+                        {addRefType === 'note' && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {assetNotes.length === 0 ? (
+                              <p className="text-xs text-gray-400 text-center py-2">No notes for this asset yet</p>
+                            ) : (
+                              assetNotes.map(note => {
+                                const isLinked = thesisReferences.some(r => r.type === 'note' && r.id === note.id)
+                                return (
+                                  <button
+                                    key={note.id}
+                                    onClick={() => !isLinked && addThesisRef({ type: 'note', id: note.id, title: note.title })}
+                                    disabled={isLinked}
+                                    className={clsx(
+                                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors',
+                                      isLinked
+                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700/50'
+                                        : 'hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                    )}
+                                  >
+                                    <FileText className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                    <span className="truncate">{note.title}</span>
+                                    {isLinked && <Check className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+                                  </button>
+                                )
+                              })
+                            )}
                           </div>
+                        )}
 
-                          {/* Items to add based on type */}
-                          {addRefType === 'note' && (
-                            <div className="max-h-40 overflow-y-auto space-y-0.5">
-                              {notes && notes.filter((n: any) => n.source_type === 'platform' || n.source_type === 'written').length > 0 ? (
-                                notes.filter((n: any) => n.source_type === 'platform' || n.source_type === 'written').map((note: any) => {
-                                  const isLinked = thesisReferences.some(r => r.type === 'note' && r.id === note.id)
-                                  return (
-                                    <button
-                                      key={note.id}
-                                      onClick={() => {
-                                        if (!isLinked) {
-                                          addThesisRef({ type: 'note', id: note.id, title: note.title || 'Untitled' })
-                                        }
-                                      }}
-                                      disabled={isLinked}
-                                      className={clsx(
-                                        'w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors',
-                                        isLinked
-                                          ? 'bg-green-50 text-green-600 dark:bg-green-900/20'
-                                          : 'hover:bg-white dark:hover:bg-gray-700'
-                                      )}
-                                    >
-                                      {isLinked ? <Check className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                                      <span className="truncate">{note.title || 'Untitled'}</span>
-                                      {isLinked && <span className="text-[10px] ml-auto">Added</span>}
-                                    </button>
-                                  )
-                                })
-                              ) : (
-                                <p className="text-xs text-gray-400 text-center py-3">No notes available</p>
-                              )}
-                            </div>
-                          )}
+                        {/* Files selection */}
+                        {addRefType === 'file' && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {assetFiles.length === 0 ? (
+                              <p className="text-xs text-gray-400 text-center py-2">No files for this asset yet</p>
+                            ) : (
+                              assetFiles.map(file => {
+                                const isLinked = thesisReferences.some(r => r.type === 'file' && r.id === file.id)
+                                return (
+                                  <button
+                                    key={file.id}
+                                    onClick={() => !isLinked && addThesisRef({ type: 'file', id: file.id, title: file.name })}
+                                    disabled={isLinked}
+                                    className={clsx(
+                                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors',
+                                      isLinked
+                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700/50'
+                                        : 'hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                                    )}
+                                  >
+                                    <File className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                                    <span className="truncate">{file.name}</span>
+                                    {isLinked && <Check className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+                                  </button>
+                                )
+                              })
+                            )}
+                          </div>
+                        )}
 
-                          {addRefType === 'file' && (
-                            <div className="max-h-40 overflow-y-auto space-y-0.5">
-                              {notes && notes.filter((n: any) => n.source_type === 'uploaded').length > 0 ? (
-                                notes.filter((n: any) => n.source_type === 'uploaded').map((file: any) => {
-                                  const isLinked = thesisReferences.some(r => r.type === 'file' && r.id === file.id)
-                                  return (
-                                    <button
-                                      key={file.id}
-                                      onClick={() => {
-                                        if (!isLinked) {
-                                          addThesisRef({ type: 'file', id: file.id, title: file.title || file.file_name || 'Untitled' })
-                                        }
-                                      }}
-                                      disabled={isLinked}
-                                      className={clsx(
-                                        'w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors',
-                                        isLinked
-                                          ? 'bg-green-50 text-green-600 dark:bg-green-900/20'
-                                          : 'hover:bg-white dark:hover:bg-gray-700'
-                                      )}
-                                    >
-                                      {isLinked ? <Check className="w-3.5 h-3.5 shrink-0" /> : <File className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
-                                      <span className="truncate">{file.title || file.file_name || 'Untitled'}</span>
-                                      {isLinked && <span className="text-[10px] ml-auto">Added</span>}
-                                    </button>
-                                  )
-                                })
-                              ) : (
-                                <p className="text-xs text-gray-400 text-center py-3">No files available</p>
-                              )}
-                            </div>
-                          )}
+                        {/* Models selection */}
+                        {addRefType === 'model' && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {assetModels.length === 0 ? (
+                              <p className="text-xs text-gray-400 text-center py-2">No models for this asset yet</p>
+                            ) : (
+                              assetModels.map(model => {
+                                const isLinked = thesisReferences.some(r => r.type === 'model' && r.id === model.id)
+                                return (
+                                  <button
+                                    key={model.id}
+                                    onClick={() => !isLinked && addThesisRef({ type: 'model', id: model.id, title: model.name })}
+                                    disabled={isLinked}
+                                    className={clsx(
+                                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors',
+                                      isLinked
+                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700/50'
+                                        : 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+                                    )}
+                                  >
+                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                    <span className="truncate">{model.name} v{model.version}</span>
+                                    {isLinked && <Check className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+                                  </button>
+                                )
+                              })
+                            )}
+                          </div>
+                        )}
 
-                          {addRefType === 'model' && (
-                            <div className="max-h-40 overflow-y-auto space-y-0.5">
-                              {assetModels.length > 0 ? (
-                                assetModels.map((model) => {
-                                  const isLinked = thesisReferences.some(r => r.type === 'model' && r.id === model.id)
-                                  return (
-                                    <button
-                                      key={model.id}
-                                      onClick={() => {
-                                        if (!isLinked) {
-                                          addThesisRef({ type: 'model' as any, id: model.id, title: model.name })
-                                        }
-                                      }}
-                                      disabled={isLinked}
-                                      className={clsx(
-                                        'w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors',
-                                        isLinked
-                                          ? 'bg-green-50 text-green-600 dark:bg-green-900/20'
-                                          : 'hover:bg-white dark:hover:bg-gray-700'
-                                      )}
-                                    >
-                                      {isLinked ? <Check className="w-3.5 h-3.5 shrink-0" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
-                                      <span className="truncate">{model.name}</span>
-                                      <span className="text-[10px] text-gray-400 ml-auto">v{model.version}</span>
-                                      {isLinked && <span className="text-[10px] text-green-600 ml-1">Added</span>}
-                                    </button>
-                                  )
-                                })
-                              ) : (
-                                <p className="text-xs text-gray-400 text-center py-3">No models available</p>
-                              )}
-                            </div>
-                          )}
-
-                          {addRefType === 'url' && (
-                            <div className="space-y-2">
-                              <input
-                                type="url"
-                                value={newRefUrl}
-                                onChange={(e) => setNewRefUrl(e.target.value)}
-                                placeholder="https://..."
-                                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                autoFocus
-                              />
-                              <input
-                                type="text"
-                                value={newRefTitle}
-                                onChange={(e) => setNewRefTitle(e.target.value)}
-                                placeholder="Title (optional)"
-                                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              />
-                              <button
-                                onClick={() => {
-                                  if (newRefUrl.trim()) {
-                                    addThesisRef({
-                                      type: 'link',
-                                      url: newRefUrl.trim(),
-                                      title: newRefTitle.trim() || newRefUrl.trim()
-                                    })
-                                    setNewRefUrl('')
-                                    setNewRefTitle('')
-                                    setAddRefType('none')
-                                  }
-                                }}
-                                disabled={!newRefUrl.trim()}
-                                className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-40 transition-colors"
-                              >
-                                Add URL
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* References Grid - Latest Model + Linked References */}
-                      {(assetModels.length > 0 || thesisReferences.length > 0) ? (
-                        <div className="flex flex-wrap gap-2">
-                          {/* Latest Model - Auto-displayed first */}
-                          {assetModels.length > 0 && (
-                            <div
-                              onClick={() => console.log('Open model:', assetModels[0].id)}
-                              title={assetModels[0].name}
-                              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-                            >
-                              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                              <div className="min-w-0">
-                                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
-                                  {assetModels[0].name}
-                                </span>
-                                <span className="text-[10px] text-gray-500">v{assetModels[0].version} · {new Date(assetModels[0].updated_at).toLocaleDateString()}</span>
-                              </div>
-                              <span className="text-[9px] px-1.5 py-0.5 bg-emerald-200 dark:bg-emerald-800 rounded text-emerald-700 dark:text-emerald-300 font-semibold shrink-0">
-                                LATEST
-                              </span>
-                            </div>
-                          )}
-                          {thesisReferences.map((ref, index) => (
-                            <div
-                              key={index}
-                              title={ref.title}
-                              className={clsx(
-                                'flex items-center gap-2 px-3 py-2 rounded-lg group cursor-pointer transition-colors',
-                                ref.type === 'note' && 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40',
-                                ref.type === 'file' && 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40',
-                                ref.type === 'model' && 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40',
-                                ref.type === 'link' && 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40'
-                              )}
+                        {/* URL input */}
+                        {addRefType === 'link' && (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              placeholder="Title"
+                              value={linkTitle}
+                              onChange={(e) => setLinkTitle(e.target.value)}
+                              className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                            <input
+                              type="url"
+                              placeholder="https://..."
+                              value={linkUrl}
+                              onChange={(e) => setLinkUrl(e.target.value)}
+                              className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                            <button
                               onClick={() => {
-                                if (ref.type === 'link' && ref.url) {
-                                  window.open(ref.url, '_blank', 'noopener,noreferrer')
-                                } else if (ref.type === 'note' && ref.id) {
-                                  onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
-                                } else if (ref.type === 'file' && ref.id) {
-                                  onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
-                                } else if (ref.type === 'model' && ref.id) {
-                                  console.log('Open model:', ref.id)
+                                if (linkUrl && linkTitle) {
+                                  addThesisRef({ type: 'link', url: linkUrl, title: linkTitle })
+                                  setLinkUrl('')
+                                  setLinkTitle('')
+                                  setAddRefType('none')
                                 }
                               }}
+                              disabled={!linkUrl || !linkTitle}
+                              className="w-full px-2 py-1.5 text-xs bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded transition-colors"
                             >
-                              {ref.type === 'note' && <FileText className="w-4 h-4 text-amber-500 shrink-0" />}
-                              {ref.type === 'file' && <File className="w-4 h-4 text-purple-500 shrink-0" />}
-                              {ref.type === 'model' && <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />}
-                              {ref.type === 'link' && <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />}
-                              <div className="min-w-0">
-                                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
-                                  {ref.title}
-                                </span>
-                                <span className="text-[10px] text-gray-500 capitalize">{ref.type} · {ref.addedAt ? new Date(ref.addedAt).toLocaleDateString() : ''}</span>
-                              </div>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); removeThesisRef(index) }}
-                                className="p-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                              Add URL
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* References Grid */}
+                    {(assetModels.length > 0 || thesisReferences.length > 0) ? (
+                      <div className="flex flex-wrap gap-2">
+                        {assetModels.length > 0 && (
+                          <div
+                            onClick={() => console.log('Open model:', assetModels[0].id)}
+                            title={assetModels[0].name}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <div className="min-w-0">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
+                                {assetModels[0].name}
+                              </span>
+                              <span className="text-[10px] text-gray-500">v{assetModels[0].version} · {new Date(assetModels[0].updated_at).toLocaleDateString()}</span>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 text-center py-4">
-                          No supporting documents yet. Click Add to link notes, files, or URLs.
-                        </p>
-                      )}
-                    </div>
-                  ) : layoutLoading ? (
-                    // Show loading state while layout data loads
-                    <div className="space-y-6">
-                      {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="animate-pulse">
-                          <div className="h-4 bg-gray-200 rounded w-1/4 mb-3" />
-                          <div className="h-24 bg-gray-100 rounded" />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {/* Custom fields BEFORE system fields (display_order < 1) */}
-                      {thesisFieldsBefore.map(af => (
-                        <ContributionSection
-                          key={af.field.id}
-                          assetId={asset.id}
-                          section={af.field.slug}
-                          title={af.field.name}
-                          activeTab={researchViewFilter}
-                          defaultVisibility={sharedThesisVisibility}
-                          hideViewModeButtons={true}
-                          hideVisibility={true}
-                          sharedVisibility={sharedThesisVisibility}
-                          sharedTargetIds={sharedThesisTargetIds}
-                        />
-                      ))}
-
-                      {/* System thesis fields */}
-                      <ThesisContainer
-                        assetId={asset.id}
-                        viewFilter={researchViewFilter}
-                        viewMode={thesisViewMode}
-                        sharedVisibility={sharedThesisVisibility}
-                        sharedTargetIds={sharedThesisTargetIds}
-                      />
-
-                      {/* Custom fields AFTER system fields (display_order > 3) */}
-                      {thesisFieldsAfter.map(af => (
-                        <ContributionSection
-                          key={af.field.id}
-                          assetId={asset.id}
-                          section={af.field.slug}
-                          title={af.field.name}
-                          activeTab={researchViewFilter}
-                          defaultVisibility={sharedThesisVisibility}
-                          hideViewModeButtons={true}
-                          hideVisibility={true}
-                          sharedVisibility={sharedThesisVisibility}
-                          sharedTargetIds={sharedThesisTargetIds}
-                        />
-                      ))}
-                    </div>
-                  )}
+                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-200 dark:bg-emerald-800 rounded text-emerald-700 dark:text-emerald-300 font-semibold shrink-0">
+                              LATEST
+                            </span>
+                          </div>
+                        )}
+                        {thesisReferences.map((ref, index) => (
+                          <div
+                            key={index}
+                            title={ref.title}
+                            className={clsx(
+                              'flex items-center gap-2 px-3 py-2 rounded-lg group cursor-pointer transition-colors',
+                              ref.type === 'note' && 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40',
+                              ref.type === 'file' && 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40',
+                              ref.type === 'model' && 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40',
+                              ref.type === 'link' && 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40'
+                            )}
+                            onClick={() => {
+                              if (ref.type === 'link' && ref.url) {
+                                window.open(ref.url, '_blank', 'noopener,noreferrer')
+                              } else if (ref.type === 'note' && ref.id) {
+                                onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
+                              } else if (ref.type === 'file' && ref.id) {
+                                onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
+                              } else if (ref.type === 'model' && ref.id) {
+                                console.log('Open model:', ref.id)
+                              }
+                            }}
+                          >
+                            {ref.type === 'note' && <FileText className="w-4 h-4 text-amber-500 shrink-0" />}
+                            {ref.type === 'file' && <File className="w-4 h-4 text-purple-500 shrink-0" />}
+                            {ref.type === 'model' && <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />}
+                            {ref.type === 'link' && <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />}
+                            <div className="min-w-0">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
+                                {ref.title}
+                              </span>
+                              <span className="text-[10px] text-gray-500 capitalize">{ref.type} · {ref.addedAt ? new Date(ref.addedAt).toLocaleDateString() : ''}</span>
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removeThesisRef(index) }}
+                              className="p-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 text-center py-4">
+                        No supporting documents yet. Click Add to link notes, files, or URLs.
+                      </p>
+                    )}
                 </div>
-              )}
-            </Card>
-                )
-              }
+              </Card>
+            ) : isAggregatedView ? (
+              /* Aggregated "All" View - clean flat list of fields with content */
+              <div className="space-y-3">
+                {displayedFieldsBySection.flatMap(section => {
+                  if (section.section_is_hidden) return []
+
+                  return section.fields
+                    .filter(f => f.is_visible)
+                    .map(field => {
+                      const fieldType = field.field_type
+
+                      // Skip non-contribution field types in aggregated view
+                      // (they don't have the hideWhenEmpty logic)
+                      if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'documents', 'rating', 'estimates', 'price_target'].includes(fieldType)) {
+                        return null
+                      }
+
+                      // Contribution-based fields (rich_text, etc.)
+                      return (
+                        <ContributionSection
+                          key={field.field_id}
+                          assetId={asset.id}
+                          section={field.field_slug}
+                          title={field.field_name}
+                          activeTab={researchViewFilter}
+                          defaultVisibility={sharedThesisVisibility}
+                          hideViewModeButtons={true}
+                          hideVisibility={true}
+                          sharedVisibility={sharedThesisVisibility}
+                          sharedTargetIds={sharedThesisTargetIds}
+                          hideWhenEmpty={true}
+                          flatMode={false}
+                        />
+                      )
+                    })
+                })}
+              </div>
+            ) : (
+              /* Individual User "All" View - shows full layout with all sections */
+              displayedFieldsBySection.map(section => {
+                // Skip hidden sections
+                if (section.section_is_hidden) return null
 
               // Forecasts Section - render fields individually as tiles
               if (section.section_slug === 'forecasts') {
@@ -3252,10 +3188,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <ChecklistField
                                   fieldId={field.field_id}
@@ -3269,10 +3205,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <MetricField
                                   fieldId={field.field_id}
@@ -3286,10 +3222,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <TimelineField
                                   fieldId={field.field_id}
@@ -3303,10 +3239,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <NumericField
                                   fieldId={field.field_id}
@@ -3320,10 +3256,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <DateField
                                   fieldId={field.field_id}
@@ -3337,10 +3273,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Documents field - render document library inline
                           if (fieldType === 'documents') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <DocumentLibrarySection
                                   assetId={asset.id}
@@ -3359,10 +3295,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <AnalystRatingsSection
                                   assetId={asset.id}
@@ -3375,10 +3311,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <AnalystEstimatesSection
                                   assetId={asset.id}
@@ -3391,10 +3327,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} className="space-y-2">
-                                <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                 )}
                                 <OutcomesContainer
                                   assetId={asset.id}
