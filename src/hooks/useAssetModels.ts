@@ -32,6 +32,26 @@ export interface AssetModel {
   }
 }
 
+export interface ModelVersion {
+  id: string
+  model_id: string
+  version_number: number
+  file_path: string
+  file_name: string
+  file_size: number | null
+  file_type: string | null
+  change_summary: string | null
+  created_by: string
+  created_at: string
+  // Joined user data
+  user?: {
+    id: string
+    first_name: string | null
+    last_name: string | null
+    email: string
+  }
+}
+
 interface CreateModelData {
   asset_id: string
   name: string
@@ -250,6 +270,184 @@ export function useAssetModels(assetId: string | undefined) {
     }
   })
 
+  // Upload a new version of an existing model (preserves history)
+  const uploadNewVersion = useMutation({
+    mutationFn: async ({
+      modelId,
+      file,
+      changeSummary
+    }: {
+      modelId: string
+      file: File
+      changeSummary?: string
+    }) => {
+      if (!user || !assetId) throw new Error('Not authenticated or no asset')
+
+      // Get current model data
+      const { data: currentModel, error: fetchError } = await supabase
+        .from('asset_models')
+        .select('*')
+        .eq('id', modelId)
+        .single()
+
+      if (fetchError) throw fetchError
+      if (!currentModel) throw new Error('Model not found')
+
+      // Save current version to history before overwriting
+      if (currentModel.file_path) {
+        const { error: versionError } = await supabase
+          .from('model_versions')
+          .insert({
+            model_id: modelId,
+            version_number: currentModel.version,
+            file_path: currentModel.file_path,
+            file_name: currentModel.file_name,
+            file_size: currentModel.file_size,
+            file_type: currentModel.file_type,
+            change_summary: changeSummary || null,
+            created_by: user.id
+          })
+
+        if (versionError) throw versionError
+      }
+
+      // Upload new file
+      const randomId = Math.random().toString(36).substring(2, 10)
+      const extension = file.name.split('.').pop() || 'bin'
+      const filePath = `models/${assetId}/${Date.now()}_${randomId}.${extension}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('assets')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      // Update model record with new file and incremented version
+      const { data: model, error } = await supabase
+        .from('asset_models')
+        .update({
+          file_path: filePath,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type,
+          version: currentModel.version + 1
+        })
+        .eq('id', modelId)
+        .select(`
+          *,
+          user:users!asset_models_created_by_fkey(id, first_name, last_name, email)
+        `)
+        .single()
+
+      if (error) {
+        // Clean up uploaded file if db update fails
+        await supabase.storage.from('assets').remove([filePath])
+        throw error
+      }
+
+      return model as AssetModel
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['asset-models', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['model-versions', variables.modelId] })
+    }
+  })
+
+  // Restore a model to a previous version
+  const restoreVersion = useMutation({
+    mutationFn: async ({
+      modelId,
+      versionId
+    }: {
+      modelId: string
+      versionId: string
+    }) => {
+      if (!user) throw new Error('Not authenticated')
+
+      // Get the version to restore
+      const { data: version, error: versionError } = await supabase
+        .from('model_versions')
+        .select('*')
+        .eq('id', versionId)
+        .single()
+
+      if (versionError) throw versionError
+      if (!version) throw new Error('Version not found')
+
+      // Get current model state
+      const { data: currentModel, error: modelError } = await supabase
+        .from('asset_models')
+        .select('*')
+        .eq('id', modelId)
+        .single()
+
+      if (modelError) throw modelError
+      if (!currentModel) throw new Error('Model not found')
+
+      // Save current state to history before restoring
+      if (currentModel.file_path) {
+        await supabase
+          .from('model_versions')
+          .insert({
+            model_id: modelId,
+            version_number: currentModel.version,
+            file_path: currentModel.file_path,
+            file_name: currentModel.file_name,
+            file_size: currentModel.file_size,
+            file_type: currentModel.file_type,
+            change_summary: `Backup before restoring to v${version.version_number}`,
+            created_by: user.id
+          })
+      }
+
+      // Copy the old version file to a new path
+      const randomId = Math.random().toString(36).substring(2, 10)
+      const extension = version.file_name.split('.').pop() || 'bin'
+      const newFilePath = `models/${currentModel.asset_id}/${Date.now()}_${randomId}_restored.${extension}`
+
+      // Download old file and re-upload
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('assets')
+        .download(version.file_path)
+
+      if (downloadError) throw downloadError
+
+      const { error: uploadError } = await supabase.storage
+        .from('assets')
+        .upload(newFilePath, fileData)
+
+      if (uploadError) throw uploadError
+
+      // Update model record
+      const { data: model, error } = await supabase
+        .from('asset_models')
+        .update({
+          file_path: newFilePath,
+          file_name: version.file_name,
+          file_size: version.file_size,
+          file_type: version.file_type,
+          version: currentModel.version + 1
+        })
+        .eq('id', modelId)
+        .select(`
+          *,
+          user:users!asset_models_created_by_fkey(id, first_name, last_name, email)
+        `)
+        .single()
+
+      if (error) {
+        await supabase.storage.from('assets').remove([newFilePath])
+        throw error
+      }
+
+      return model as AssetModel
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['asset-models', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['model-versions', variables.modelId] })
+    }
+  })
+
   return {
     models,
     isLoading,
@@ -261,9 +459,69 @@ export function useAssetModels(assetId: string | undefined) {
     deleteModel: deleteModel.mutateAsync,
     getDownloadUrl,
     incrementVersion: incrementVersion.mutateAsync,
+    // Version management
+    uploadNewVersion: uploadNewVersion.mutateAsync,
+    restoreVersion: restoreVersion.mutateAsync,
     isCreating: createModel.isPending,
-    isUploading: uploadModel.isPending,
+    isUploading: uploadModel.isPending || uploadNewVersion.isPending,
     isUpdating: updateModel.isPending,
-    isDeleting: deleteModel.isPending
+    isDeleting: deleteModel.isPending,
+    isRestoring: restoreVersion.isPending
+  }
+}
+
+// Hook for fetching version history of a model
+export function useModelVersions(modelId: string | undefined) {
+  const { user } = useAuth()
+
+  const { data: versions = [], isLoading, error, refetch } = useQuery({
+    queryKey: ['model-versions', modelId],
+    queryFn: async (): Promise<ModelVersion[]> => {
+      if (!modelId) return []
+
+      const { data, error } = await supabase
+        .from('model_versions')
+        .select(`
+          *,
+          user:users!model_versions_created_by_fkey(id, first_name, last_name, email)
+        `)
+        .eq('model_id', modelId)
+        .order('version_number', { ascending: false })
+
+      if (error) throw error
+      return (data || []) as ModelVersion[]
+    },
+    enabled: !!modelId
+  })
+
+  // Get download URL for a specific version
+  const getVersionDownloadUrl = async (version: ModelVersion): Promise<string | null> => {
+    if (!version.file_path) return null
+
+    const { data } = await supabase.storage
+      .from('assets')
+      .createSignedUrl(version.file_path, 3600) // 1 hour expiry
+
+    return data?.signedUrl || null
+  }
+
+  // Get formatted author name
+  const getVersionAuthor = (version: ModelVersion): string => {
+    if (version.user?.first_name && version.user?.last_name) {
+      return `${version.user.first_name} ${version.user.last_name}`
+    }
+    if (version.user?.email) {
+      return version.user.email.split('@')[0]
+    }
+    return 'Unknown'
+  }
+
+  return {
+    versions,
+    isLoading,
+    error,
+    refetch,
+    getVersionDownloadUrl,
+    getVersionAuthor
   }
 }

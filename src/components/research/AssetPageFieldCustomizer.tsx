@@ -63,8 +63,13 @@ import {
   Calendar,
   CheckSquare,
   Clock,
-  Gauge
+  Gauge,
+  ClipboardCheck,
+  SlidersHorizontal,
+  Grid3X3,
+  GitBranch
 } from 'lucide-react'
+import { SCENARIO_PRESETS, METRIC_PRESETS } from './FieldTypeRenderers'
 import {
   useUserAssetPagePreferences,
   useUserAssetPageLayouts,
@@ -187,6 +192,53 @@ export function AssetPageFieldCustomizer({
   const [newFieldType, setNewFieldType] = useState('rich_text')
   const [newFieldCategory, setNewFieldCategory] = useState<string>('')
   const [isCreatingField, setIsCreatingField] = useState(false)
+
+  // Field configuration state (for configurable field types)
+  const [fieldConfig, setFieldConfig] = useState<Record<string, unknown>>({})
+  // Slider config
+  const [sliderMin, setSliderMin] = useState(0)
+  const [sliderMax, setSliderMax] = useState(100)
+  const [sliderStyle, setSliderStyle] = useState<'slider' | 'gauge' | 'progress'>('slider')
+  const [sliderLabels, setSliderLabels] = useState({ min: '', mid: '', max: '' })
+  // Scenario config
+  const [scenarioPreset, setScenarioPreset] = useState<keyof typeof SCENARIO_PRESETS>('bull-base-bear')
+  const [metricPreset, setMetricPreset] = useState<keyof typeof METRIC_PRESETS>('valuation')
+  // Scorecard config
+  const [scorecardMaxScore, setScorecardMaxScore] = useState(5)
+  const [scorecardCriteria, setScorecardCriteria] = useState<Array<{ name: string; weight: number }>>([
+    { name: 'Quality', weight: 25 },
+    { name: 'Value', weight: 25 },
+    { name: 'Growth', weight: 25 },
+    { name: 'Risk', weight: 25 }
+  ])
+  // Spreadsheet config
+  const [spreadsheetColumns, setSpreadsheetColumns] = useState<Array<{ name: string; type: 'text' | 'number' | 'currency' | 'percent' }>>([
+    { name: 'Label', type: 'text' },
+    { name: 'Value', type: 'number' }
+  ])
+
+  // Reset field config when type changes
+  useEffect(() => {
+    setFieldConfig({})
+    // Reset to defaults
+    setSliderMin(0)
+    setSliderMax(100)
+    setSliderStyle('slider')
+    setSliderLabels({ min: '', mid: '', max: '' })
+    setScenarioPreset('bull-base-bear')
+    setMetricPreset('valuation')
+    setScorecardMaxScore(5)
+    setScorecardCriteria([
+      { name: 'Quality', weight: 25 },
+      { name: 'Value', weight: 25 },
+      { name: 'Growth', weight: 25 },
+      { name: 'Risk', weight: 25 }
+    ])
+    setSpreadsheetColumns([
+      { name: 'Label', type: 'text' },
+      { name: 'Value', type: 'number' }
+    ])
+  }, [newFieldType])
 
   // ============================================
   // DRAFT STATE - Changes are only saved on "Done"
@@ -1447,7 +1499,11 @@ export function AssetPageFieldCustomizer({
     { value: 'timeline', label: 'Timeline', description: 'Events and milestones over time' },
     { value: 'metric', label: 'Metric', description: 'Track numerical KPIs with charts' },
     { value: 'numeric', label: 'Numeric', description: 'Single number value' },
-    { value: 'date', label: 'Date', description: 'Date picker field' }
+    { value: 'date', label: 'Date', description: 'Date picker field' },
+    { value: 'scorecard', label: 'Scorecard', description: 'Multi-criteria weighted scoring matrix' },
+    { value: 'slider', label: 'Slider / Gauge', description: 'Visual scale for ratings and confidence' },
+    { value: 'spreadsheet', label: 'Spreadsheet', description: 'Mini Excel grid with formulas' },
+    { value: 'scenario', label: 'Scenario Analysis', description: 'Bull/Base/Bear case comparison' }
   ]
 
   // Field type icon helper
@@ -1458,7 +1514,11 @@ export function AssetPageFieldCustomizer({
       date: <Calendar className="w-4 h-4" />,
       checklist: <CheckSquare className="w-4 h-4" />,
       timeline: <Clock className="w-4 h-4" />,
-      metric: <Gauge className="w-4 h-4" />
+      metric: <Gauge className="w-4 h-4" />,
+      scorecard: <ClipboardCheck className="w-4 h-4" />,
+      slider: <SlidersHorizontal className="w-4 h-4" />,
+      spreadsheet: <Grid3X3 className="w-4 h-4" />,
+      scenario: <GitBranch className="w-4 h-4" />
     }
     return icons[type] || <FileText className="w-4 h-4" />
   }
@@ -1483,6 +1543,57 @@ export function AssetPageFieldCustomizer({
     return allSections?.[0]?.id || ''
   }
 
+  // Build configuration object based on field type
+  const buildFieldConfig = (): Record<string, unknown> | undefined => {
+    switch (newFieldType) {
+      case 'slider':
+        return {
+          min: sliderMin,
+          max: sliderMax,
+          displayStyle: sliderStyle,
+          showLabels: !!(sliderLabels.min || sliderLabels.mid || sliderLabels.max),
+          labels: sliderLabels,
+          showValue: true,
+          colorMode: 'gradient' as const
+        }
+      case 'scenario': {
+        const preset = SCENARIO_PRESETS[scenarioPreset]
+        const metrics = METRIC_PRESETS[metricPreset]
+        return {
+          scenarios: preset.scenarios,
+          metrics: metrics,
+          showProbabilityWeighted: true,
+          defaultScenarios: scenarioPreset
+        }
+      }
+      case 'scorecard':
+        return {
+          criteria: scorecardCriteria.map((c, i) => ({
+            id: `criterion_${i}`,
+            name: c.name,
+            weight: c.weight
+          })),
+          maxScore: scorecardMaxScore,
+          showWeightedTotal: true
+        }
+      case 'spreadsheet':
+        return {
+          columns: spreadsheetColumns.map((c, i) => ({
+            id: `col_${i}`,
+            name: c.name,
+            type: c.type
+          })),
+          defaultRows: 5,
+          maxRows: 20,
+          showRowNumbers: true,
+          allowAddRows: true,
+          allowAddColumns: true
+        }
+      default:
+        return undefined
+    }
+  }
+
   // Handle creating a new custom field
   const handleCreateField = async () => {
     if (!newFieldName.trim() || !user?.id || !newFieldCategory) return
@@ -1496,13 +1607,15 @@ export function AssetPageFieldCustomizer({
     setIsCreatingField(true)
     try {
       const slug = newFieldName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+      const config = buildFieldConfig()
 
       await createField.mutateAsync({
         name: newFieldName.trim(),
         slug,
         section_id: sectionId,
         field_type: newFieldType as any,
-        is_universal: false
+        is_universal: false,
+        ...(config && { config })
       })
 
       // Refresh the field list so the new field appears in the Field Library
@@ -1966,7 +2079,11 @@ export function AssetPageFieldCustomizer({
                             'boolean': 'Yes/No Fields',
                             'currency': 'Currency',
                             'price_targets': 'Price Targets',
-                            'documents': 'Documents'
+                            'documents': 'Documents',
+                            'scorecard': 'Scorecards',
+                            'slider': 'Sliders & Gauges',
+                            'spreadsheet': 'Spreadsheets',
+                            'scenario': 'Scenario Analysis'
                           }
                           const categories = new Map<string, typeof allLibraryFields>()
                           allLibraryFields.forEach(f => {
@@ -2273,6 +2390,246 @@ export function AssetPageFieldCustomizer({
                   ))}
                 </div>
               </div>
+
+              {/* Field Configuration - shown for configurable types */}
+              {newFieldType === 'slider' && (
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+                  <h4 className="text-sm font-medium text-gray-700">Slider Configuration</h4>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Style</label>
+                      <select
+                        value={sliderStyle}
+                        onChange={(e) => setSliderStyle(e.target.value as 'slider' | 'gauge' | 'progress')}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      >
+                        <option value="slider">Slider</option>
+                        <option value="gauge">Gauge</option>
+                        <option value="progress">Progress Bar</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Min</label>
+                      <input
+                        type="number"
+                        value={sliderMin}
+                        onChange={(e) => setSliderMin(Number(e.target.value))}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Max</label>
+                      <input
+                        type="number"
+                        value={sliderMax}
+                        onChange={(e) => setSliderMax(Number(e.target.value))}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Min Label</label>
+                      <input
+                        type="text"
+                        value={sliderLabels.min}
+                        onChange={(e) => setSliderLabels({ ...sliderLabels, min: e.target.value })}
+                        placeholder="e.g., Bearish"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Mid Label</label>
+                      <input
+                        type="text"
+                        value={sliderLabels.mid}
+                        onChange={(e) => setSliderLabels({ ...sliderLabels, mid: e.target.value })}
+                        placeholder="e.g., Neutral"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Max Label</label>
+                      <input
+                        type="text"
+                        value={sliderLabels.max}
+                        onChange={(e) => setSliderLabels({ ...sliderLabels, max: e.target.value })}
+                        placeholder="e.g., Bullish"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {newFieldType === 'scenario' && (
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+                  <h4 className="text-sm font-medium text-gray-700">Scenario Analysis Configuration</h4>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Scenario Preset</label>
+                      <select
+                        value={scenarioPreset}
+                        onChange={(e) => setScenarioPreset(e.target.value as keyof typeof SCENARIO_PRESETS)}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      >
+                        {Object.entries(SCENARIO_PRESETS).map(([key, preset]) => (
+                          <option key={key} value={key}>{preset.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Metric Preset</label>
+                      <select
+                        value={metricPreset}
+                        onChange={(e) => setMetricPreset(e.target.value as keyof typeof METRIC_PRESETS)}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      >
+                        {Object.entries(METRIC_PRESETS).map(([key]) => (
+                          <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    You can add, remove, or modify scenarios and metrics after creating the field.
+                  </p>
+                </div>
+              )}
+
+              {newFieldType === 'scorecard' && (
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+                  <h4 className="text-sm font-medium text-gray-700">Scorecard Configuration</h4>
+
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Max Score</label>
+                      <select
+                        value={scorecardMaxScore}
+                        onChange={(e) => setScorecardMaxScore(Number(e.target.value))}
+                        className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                      >
+                        <option value={5}>5 (1-5 scale)</option>
+                        <option value={10}>10 (1-10 scale)</option>
+                        <option value={100}>100 (percentage)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-2">Criteria (weights should total 100%)</label>
+                    <div className="space-y-2">
+                      {scorecardCriteria.map((criterion, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={criterion.name}
+                            onChange={(e) => {
+                              const updated = [...scorecardCriteria]
+                              updated[index].name = e.target.value
+                              setScorecardCriteria(updated)
+                            }}
+                            placeholder="Criterion name"
+                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                          />
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              value={criterion.weight}
+                              onChange={(e) => {
+                                const updated = [...scorecardCriteria]
+                                updated[index].weight = Number(e.target.value)
+                                setScorecardCriteria(updated)
+                              }}
+                              min={0}
+                              max={100}
+                              className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                            />
+                            <span className="text-xs text-gray-500">%</span>
+                          </div>
+                          {scorecardCriteria.length > 1 && (
+                            <button
+                              onClick={() => setScorecardCriteria(scorecardCriteria.filter((_, i) => i !== index))}
+                              className="p-1 text-gray-400 hover:text-red-500"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setScorecardCriteria([...scorecardCriteria, { name: '', weight: 0 }])}
+                      className="mt-2 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                      + Add Criterion
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {newFieldType === 'spreadsheet' && (
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+                  <h4 className="text-sm font-medium text-gray-700">Spreadsheet Configuration</h4>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-2">Columns</label>
+                    <div className="space-y-2">
+                      {spreadsheetColumns.map((column, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={column.name}
+                            onChange={(e) => {
+                              const updated = [...spreadsheetColumns]
+                              updated[index].name = e.target.value
+                              setSpreadsheetColumns(updated)
+                            }}
+                            placeholder="Column name"
+                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                          />
+                          <select
+                            value={column.type}
+                            onChange={(e) => {
+                              const updated = [...spreadsheetColumns]
+                              updated[index].type = e.target.value as 'text' | 'number' | 'currency' | 'percent'
+                              setSpreadsheetColumns(updated)
+                            }}
+                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                          >
+                            <option value="text">Text</option>
+                            <option value="number">Number</option>
+                            <option value="currency">Currency</option>
+                            <option value="percent">Percent</option>
+                          </select>
+                          {spreadsheetColumns.length > 1 && (
+                            <button
+                              onClick={() => setSpreadsheetColumns(spreadsheetColumns.filter((_, i) => i !== index))}
+                              className="p-1 text-gray-400 hover:text-red-500"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setSpreadsheetColumns([...spreadsheetColumns, { name: '', type: 'text' }])}
+                      className="mt-2 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                      + Add Column
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    Users can add more rows and columns after creation. Formulas like =SUM(A1:A5) are supported.
+                  </p>
+                </div>
+              )}
 
               {/* Info about custom fields */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -2780,7 +3137,11 @@ function SortableFieldRow({
     'boolean': 'Yes/No',
     'currency': 'Currency',
     'price_targets': 'Price Targets',
-    'documents': 'Documents'
+    'documents': 'Documents',
+    'scorecard': 'Scorecard',
+    'slider': 'Slider / Gauge',
+    'spreadsheet': 'Spreadsheet',
+    'scenario': 'Scenario Analysis'
   }
 
   const fieldTypeName = fieldTypeDisplayNames[field.field_type] || field.field_type

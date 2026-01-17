@@ -20,8 +20,8 @@ export interface ResearchSection {
 
 export interface ResearchField {
   id: string
-  organization_id: string
-  section_id: string
+  organization_id: string | null  // null for system-wide preset fields
+  section_id: string | null       // null for system-wide preset fields (use suggested_section)
   name: string
   slug: string
   description: string | null
@@ -34,19 +34,13 @@ export interface ResearchField {
   created_at: string
   updated_at: string
   section?: ResearchSection
+  // Fields for system presets
+  category?: string | null
+  suggested_section?: string | null
 }
 
-export interface ResearchFieldPreset {
-  id: string
-  name: string
-  slug: string
-  description: string | null
-  suggested_section: string
-  field_type: FieldType
-  config: Record<string, unknown>
-  category: string | null
-  created_at: string
-}
+// Legacy type alias - now just uses ResearchField with organization_id = null
+export type ResearchFieldPreset = ResearchField
 
 export interface TeamResearchField {
   id: string
@@ -88,6 +82,10 @@ export type FieldType =
   | 'estimates'
   | 'timeline'
   | 'metric'
+  | 'scorecard'
+  | 'slider'
+  | 'spreadsheet'
+  | 'scenario'
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   rich_text: 'Rich Text',
@@ -101,7 +99,11 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   price_target: 'Price Target',
   estimates: 'Estimates',
   timeline: 'Timeline',
-  metric: 'Metric'
+  metric: 'Metric',
+  scorecard: 'Scorecard',
+  slider: 'Slider / Gauge',
+  spreadsheet: 'Spreadsheet',
+  scenario: 'Scenario Analysis'
 }
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
@@ -116,7 +118,11 @@ export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   price_target: 'Target',
   estimates: 'TrendingUp',
   timeline: 'Clock',
-  metric: 'Gauge'
+  metric: 'Gauge',
+  scorecard: 'ClipboardCheck',
+  slider: 'SlidersHorizontal',
+  spreadsheet: 'Grid3X3',
+  scenario: 'GitBranch'
 }
 
 // ============================================================================
@@ -148,7 +154,7 @@ export function useResearchFields() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
-  // Fetch all fields with their sections
+  // Fetch all organization fields with their sections (excludes system presets)
   const { data: fields = [], isLoading, error, refetch } = useQuery({
     queryKey: ['research-fields'],
     queryFn: async () => {
@@ -158,6 +164,7 @@ export function useResearchFields() {
           *,
           section:research_sections(*)
         `)
+        .not('organization_id', 'is', null)  // Exclude system presets (templates)
         .eq('is_archived', false)
         .order('name', { ascending: true })
 
@@ -326,14 +333,17 @@ export function useResearchFields() {
 // ============================================================================
 // HOOK: useResearchFieldPresets
 // ============================================================================
+// Now queries system fields from research_fields table (organization_id IS NULL)
 
 export function useResearchFieldPresets() {
   const { data: presets = [], isLoading, error } = useQuery({
     queryKey: ['research-field-presets'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('research_field_presets')
+        .from('research_fields')
         .select('*')
+        .is('organization_id', null)  // System-wide preset fields
+        .eq('is_system', true)
         .order('category', { ascending: true })
         .order('name', { ascending: true })
 
@@ -622,10 +632,11 @@ export function useUserResearchLayout() {
 
       if (sectionsError) throw sectionsError
 
-      // 2. Get ALL fields (visibility is controlled by user layout preferences, not is_universal)
+      // 2. Get ALL organization fields (excludes system presets where organization_id IS NULL)
       const { data: allFields, error: fieldsError } = await supabase
         .from('research_fields')
         .select('*, section:research_sections(*)')
+        .not('organization_id', 'is', null)  // Exclude system presets (templates)
         .eq('is_archived', false)
 
       if (fieldsError) throw fieldsError

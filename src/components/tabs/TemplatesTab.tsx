@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { clsx } from 'clsx'
-import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet, LayoutGrid } from 'lucide-react'
+import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet, LayoutGrid, FileText } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { TemplateManager } from '../templates/TemplateManager'
 import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManager'
 import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
+import { InvestmentCaseTemplateManager } from '../investment-case-templates'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -528,7 +529,7 @@ function CaseTemplateCard({
 // MAIN COMPONENT
 // ============================================================================
 
-type TabSection = 'text' | 'cases' | 'excel' | 'research'
+type TabSection = 'text' | 'excel' | 'research' | 'pdf'
 
 const TEMPLATES_TAB_STORAGE_KEY = 'tesseract-templates-active-section'
 
@@ -537,7 +538,7 @@ export function TemplatesTab() {
   const [activeSection, setActiveSection] = useState<TabSection>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(TEMPLATES_TAB_STORAGE_KEY)
-      if (saved && ['text', 'cases', 'excel', 'research'].includes(saved)) {
+      if (saved && ['text', 'excel', 'research', 'pdf'].includes(saved)) {
         return saved as TabSection
       }
     }
@@ -575,18 +576,6 @@ export function TemplatesTab() {
             Quick Text
           </button>
           <button
-            onClick={() => setActiveSection('cases')}
-            className={clsx(
-              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
-              activeSection === 'cases'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            )}
-          >
-            <Target className="w-4 h-4" />
-            Investment Cases
-          </button>
-          <button
             onClick={() => setActiveSection('excel')}
             className={clsx(
               'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
@@ -610,15 +599,27 @@ export function TemplatesTab() {
             <LayoutGrid className="w-4 h-4" />
             Research Layout
           </button>
+          <button
+            onClick={() => setActiveSection('pdf')}
+            className={clsx(
+              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              activeSection === 'pdf'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            )}
+          >
+            <FileText className="w-4 h-4" />
+            Investment Case PDF
+          </button>
         </nav>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto px-6 pt-2 pb-4 bg-gray-50">
         {activeSection === 'text' && <TemplateManager />}
-        {activeSection === 'cases' && <CaseTemplatesManager />}
         {activeSection === 'excel' && <ExcelModelTemplateManager />}
         {activeSection === 'research' && <ResearchFieldsManager />}
+        {activeSection === 'pdf' && <InvestmentCaseTemplateManager />}
       </div>
     </div>
   )

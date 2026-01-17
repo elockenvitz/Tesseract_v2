@@ -15,21 +15,27 @@ import {
   CheckSquare,
   Clock,
   Gauge,
-  Download
+  Download,
+  Bookmark
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { InvestmentCaseBuilder } from './InvestmentCaseBuilder'
-import { ThesisContainer } from '../contributions'
+import { ThesisContainer, KeyReferencesSection, AddReferenceModal, ModelVersionHistory } from '../contributions'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
 import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { ContributionSection } from '../contributions/ContributionSection'
+import { useAssetModels } from '../../hooks/useAssetModels'
 import {
   ChecklistField,
   MetricField,
   TimelineField,
   NumericField,
-  DateField
+  DateField,
+  SliderField,
+  ScorecardField,
+  ScenarioField,
+  SpreadsheetField
 } from './FieldTypeRenderers'
 import {
   useUserResearchLayout,
@@ -93,6 +99,68 @@ function FieldAccessBadge({ accessField }: { accessField: AccessibleField }) {
 }
 
 // ============================================================================
+// KEY REFERENCES WRAPPER (with modal state)
+// ============================================================================
+
+interface KeyReferencesSectionWrapperProps {
+  assetId: string
+  isCollapsed: boolean
+  onToggle: () => void
+}
+
+function KeyReferencesSectionWrapper({
+  assetId,
+  isCollapsed,
+  onToggle
+}: KeyReferencesSectionWrapperProps) {
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+
+  const { models } = useAssetModels(assetId)
+  const selectedModel = selectedModelId
+    ? models.find(m => m.id === selectedModelId)
+    : null
+
+  return (
+    <>
+      <KeyReferencesSection
+        assetId={assetId}
+        isExpanded={!isCollapsed}
+        onToggleExpanded={onToggle}
+        onOpenAddModal={() => setShowAddModal(true)}
+        onViewModelHistory={(modelId) => {
+          setSelectedModelId(modelId)
+          setShowVersionHistory(true)
+        }}
+      />
+
+      {/* Add Reference Modal */}
+      <AddReferenceModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        assetId={assetId}
+      />
+
+      {/* Model Version History Modal */}
+      {selectedModel && (
+        <ModelVersionHistory
+          isOpen={showVersionHistory}
+          onClose={() => {
+            setShowVersionHistory(false)
+            setSelectedModelId(null)
+          }}
+          modelId={selectedModel.id}
+          assetId={assetId}
+          modelName={selectedModel.name}
+          currentVersion={selectedModel.version}
+        />
+      )}
+    </>
+  )
+}
+
+// ============================================================================
 // CUSTOM FIELD RENDERER
 // ============================================================================
 
@@ -112,7 +180,7 @@ interface CustomFieldRendererProps {
 
 // Get icon for field type
 function getFieldTypeIcon(type: FieldType) {
-  const icons: Record<FieldType, React.ReactNode> = {
+  const icons: Record<string, React.ReactNode> = {
     rich_text: <FileText className="w-4 h-4" />,
     numeric: <Hash className="w-4 h-4" />,
     date: <Calendar className="w-4 h-4" />,
@@ -124,7 +192,12 @@ function getFieldTypeIcon(type: FieldType) {
     price_target: <FileText className="w-4 h-4" />,
     estimates: <FileText className="w-4 h-4" />,
     timeline: <Clock className="w-4 h-4" />,
-    metric: <Gauge className="w-4 h-4" />
+    metric: <Gauge className="w-4 h-4" />,
+    key_references: <Bookmark className="w-4 h-4" />,
+    scorecard: <CheckSquare className="w-4 h-4" />,
+    slider: <Gauge className="w-4 h-4" />,
+    spreadsheet: <FileText className="w-4 h-4" />,
+    scenario: <FileText className="w-4 h-4" />
   }
   return icons[type] || <FileText className="w-4 h-4" />
 }
@@ -310,6 +383,76 @@ function CustomFieldRenderer({
           symbol={symbol}
           currentPrice={currentPrice}
           viewFilter={viewFilter}
+        />
+      </div>
+    )
+  }
+
+  // Key references field - per-user curated document references
+  if (field.field_type === 'key_references') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <KeyReferencesSectionWrapper
+          assetId={assetId}
+          isCollapsed={false}
+          onToggle={() => {}}
+        />
+      </div>
+    )
+  }
+
+  // Slider / Gauge field
+  if (field.field_type === 'slider') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <SliderField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Scorecard field
+  if (field.field_type === 'scorecard') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <ScorecardField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Scenario table field
+  if (field.field_type === 'scenario') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <ScenarioField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Spreadsheet field
+  if (field.field_type === 'spreadsheet') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <SpreadsheetField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
         />
       </div>
     )
@@ -503,6 +646,17 @@ function SectionRenderer({
           type: 'files',
           data: { initialAssetFilter: assetId }
         })}
+      />
+    )
+  }
+
+  // Key references section - per-user curated document references
+  if (section.slug === 'key_references') {
+    return (
+      <KeyReferencesSectionWrapper
+        assetId={assetId}
+        isCollapsed={isCollapsed}
+        onToggle={onToggle}
       />
     )
   }

@@ -11,9 +11,13 @@ import { formatDistanceToNow } from 'date-fns'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
+import { useAssetModels } from '../../hooks/useAssetModels'
 import { ContributionSection } from './ContributionSection'
 import { ThesisUnifiedSummary } from './ThesisUnifiedSummary'
 import { ThesisHistoryView } from './ThesisHistoryView'
+import { KeyReferencesSection } from './KeyReferencesSection'
+import { AddReferenceModal } from './AddReferenceModal'
+import { ModelVersionHistory } from './ModelVersionHistory'
 import { supabase } from '../../lib/supabase'
 
 interface ThesisContainerProps {
@@ -23,8 +27,8 @@ interface ThesisContainerProps {
   viewFilter?: 'aggregated' | string
   /** Callback when tab changes (used when externally controlled) */
   onTabChange?: (tab: string) => void
-  /** View mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline */
-  viewMode?: 'all' | 'summary' | 'history'
+  /** View mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline, 'references' shows key references */
+  viewMode?: 'all' | 'summary' | 'history' | 'references'
   /** Shared visibility for all thesis sections (controlled from parent) */
   sharedVisibility?: ContributionVisibility
   /** Shared target IDs for visibility (controlled from parent) */
@@ -53,6 +57,13 @@ export function ThesisContainer({
 }: ThesisContainerProps) {
   const { user } = useAuth()
   const [internalTab, setInternalTab] = useState<TabType>('aggregated')
+
+  // State for key references modals
+  const [showAddReferenceModal, setShowAddReferenceModal] = useState(false)
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+  const { models } = useAssetModels(assetId)
+  const selectedModel = selectedModelId ? models.find(m => m.id === selectedModelId) : null
 
   // Use external viewFilter if provided, otherwise use internal tab state
   const activeTab = viewFilter ?? internalTab
@@ -176,6 +187,47 @@ export function ThesisContainer({
     )
   }
 
+  // Render Key References view
+  if (viewMode === 'references') {
+    return (
+      <>
+        <KeyReferencesSection
+          assetId={assetId}
+          isExpanded={true}
+          onToggleExpanded={() => {}}
+          onOpenAddModal={() => setShowAddReferenceModal(true)}
+          onViewModelHistory={(modelId) => {
+            setSelectedModelId(modelId)
+            setShowVersionHistory(true)
+          }}
+          isEmbedded={true}
+        />
+
+        {/* Add Reference Modal */}
+        <AddReferenceModal
+          isOpen={showAddReferenceModal}
+          onClose={() => setShowAddReferenceModal(false)}
+          assetId={assetId}
+        />
+
+        {/* Model Version History Modal */}
+        {selectedModel && (
+          <ModelVersionHistory
+            isOpen={showVersionHistory}
+            onClose={() => {
+              setShowVersionHistory(false)
+              setSelectedModelId(null)
+            }}
+            modelId={selectedModel.id}
+            assetId={assetId}
+            modelName={selectedModel.name}
+            currentVersion={selectedModel.version}
+          />
+        )}
+      </>
+    )
+  }
+
   // Default: Render All (3 sections) view
   return (
     <div className={clsx('space-y-6', className)}>
@@ -248,76 +300,95 @@ export function ThesisContainer({
       {/* When hideEmptyFields is true (aggregated view), also use flatMode for simpler rendering */}
 
       {/* Empty state for aggregated view when no contributions exist */}
-      {hideEmptyFields && allContributions.length === 0 && (
-        <div className="text-center py-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3">
-            <Users className="w-6 h-6 text-gray-400" />
+      {activeTab === 'aggregated' && allContributions.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 px-6">
+          <div className="relative mb-6">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center">
+              <Target className="w-10 h-10 text-primary-400" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center">
+              <Users className="w-4 h-4 text-gray-400" />
+            </div>
           </div>
-          <h3 className="text-sm font-medium text-gray-900 mb-1">No research yet</h3>
-          <p className="text-sm text-gray-500 max-w-xs mx-auto">
-            Be the first to share your investment thesis on this asset.
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No team research yet</h3>
+          <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
+            No one has shared their investment thesis on this asset yet. Switch to your personal view to start documenting your research.
           </p>
+          {user && (
+            <button
+              onClick={() => setActiveTab(user.id)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+            >
+              <Target className="w-4 h-4" />
+              Start Your Research
+            </button>
+          )}
         </div>
       )}
 
-      {(!hideEmptyFields || thesisContributions.length > 0) && (
-        <ContributionSection
-          assetId={assetId}
-          section="thesis"
-          title="Investment Thesis"
-          description="The core investment thesis explaining why this is an attractive opportunity"
-          icon={Target}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          defaultVisibility="firm"
-          coveringAnalystIds={coveringAnalystIds}
-          hideViewModeButtons={true}
-          hideVisibility={true}
-          sharedVisibility={sharedVisibility}
-          sharedTargetIds={sharedTargetIds}
-          sectionType="thesis"
-          flatMode={hideEmptyFields}
-        />
-      )}
+      {/* Only render sections if not showing empty state */}
+      {!(activeTab === 'aggregated' && allContributions.length === 0) && (
+        <>
+          {(!hideEmptyFields || thesisContributions.length > 0) && (
+            <ContributionSection
+              assetId={assetId}
+              section="thesis"
+              title="Investment Thesis"
+              description="The core investment thesis explaining why this is an attractive opportunity"
+              icon={Target}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              defaultVisibility="firm"
+              coveringAnalystIds={coveringAnalystIds}
+              hideViewModeButtons={true}
+              hideVisibility={true}
+              sharedVisibility={sharedVisibility}
+              sharedTargetIds={sharedTargetIds}
+              sectionType="thesis"
+              flatMode={hideEmptyFields}
+            />
+          )}
 
-      {(!hideEmptyFields || whereDiffContributions.length > 0) && (
-        <ContributionSection
-          assetId={assetId}
-          section="where_different"
-          title="Where We Differ"
-          description="How our view differs from market consensus"
-          icon={Sparkles}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          defaultVisibility="firm"
-          coveringAnalystIds={coveringAnalystIds}
-          hideViewModeButtons={true}
-          hideVisibility={true}
-          sharedVisibility={sharedVisibility}
-          sharedTargetIds={sharedTargetIds}
-          sectionType="thesis"
-          flatMode={hideEmptyFields}
-        />
-      )}
+          {(!hideEmptyFields || whereDiffContributions.length > 0) && (
+            <ContributionSection
+              assetId={assetId}
+              section="where_different"
+              title="Where We Differ"
+              description="How our view differs from market consensus"
+              icon={Sparkles}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              defaultVisibility="firm"
+              coveringAnalystIds={coveringAnalystIds}
+              hideViewModeButtons={true}
+              hideVisibility={true}
+              sharedVisibility={sharedVisibility}
+              sharedTargetIds={sharedTargetIds}
+              sectionType="thesis"
+              flatMode={hideEmptyFields}
+            />
+          )}
 
-      {(!hideEmptyFields || risksContributions.length > 0) && (
-        <ContributionSection
-          assetId={assetId}
-          section="risks_to_thesis"
-          title="Risks to Thesis"
-          description="Key risks that could invalidate the thesis"
-          icon={AlertTriangle}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          defaultVisibility="firm"
-          coveringAnalystIds={coveringAnalystIds}
-          hideViewModeButtons={true}
-          hideVisibility={true}
-          sharedVisibility={sharedVisibility}
-          sharedTargetIds={sharedTargetIds}
-          sectionType="thesis"
-          flatMode={hideEmptyFields}
-        />
+          {(!hideEmptyFields || risksContributions.length > 0) && (
+            <ContributionSection
+              assetId={assetId}
+              section="risks_to_thesis"
+              title="Risks to Thesis"
+              description="Key risks that could invalidate the thesis"
+              icon={AlertTriangle}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              defaultVisibility="firm"
+              coveringAnalystIds={coveringAnalystIds}
+              hideViewModeButtons={true}
+              hideVisibility={true}
+              sharedVisibility={sharedVisibility}
+              sharedTargetIds={sharedTargetIds}
+              sectionType="thesis"
+              flatMode={hideEmptyFields}
+            />
+          )}
+        </>
       )}
     </div>
   )

@@ -12,11 +12,23 @@ import {
   Star,
   User,
   ChevronRight,
-  Link2
+  List,
+  GitCompare,
+  Lightbulb,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useHistoryEvolutionAnalysis, type HistoryEvent, type EvolutionAnalysis } from '../../hooks/useContributions'
+import { EvolutionOverview, type EvolutionStats, type Sentiment } from './EvolutionOverview'
+import { EvolutionTimeline } from './EvolutionTimeline'
+import { VersionComparison } from './VersionComparison'
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
 
 interface ThesisHistoryViewProps {
   assetId: string
@@ -24,21 +36,21 @@ interface ThesisHistoryViewProps {
   className?: string
 }
 
-interface HistoryEvent {
-  id: string
-  type: 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference'
-  timestamp: Date
-  userId: string
-  userName: string
-  isCovering: boolean
-  // For contributions
-  content?: string
-  previousContent?: string
-  // For price targets
-  priceTarget?: number
-  previousPriceTarget?: number
-  sentiment?: 'bullish' | 'neutral' | 'bearish'
-}
+type ViewMode = 'timeline' | 'list' | 'compare'
+type HistoryFilter = 'all' | 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference'
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const filterConfig: { value: HistoryFilter; label: string; color: string }[] = [
+  { value: 'all', label: 'All', color: 'text-gray-600' },
+  { value: 'thesis', label: 'Thesis', color: 'text-primary-600' },
+  { value: 'where_different', label: 'Different', color: 'text-purple-600' },
+  { value: 'risks_to_thesis', label: 'Risks', color: 'text-amber-600' },
+  { value: 'price_target', label: 'Targets', color: 'text-green-600' },
+  { value: 'reference', label: 'Docs', color: 'text-blue-600' },
+]
 
 // ============================================================================
 // SIMPLE DIFF FUNCTION
@@ -49,15 +61,12 @@ interface DiffPart {
   text: string
 }
 
-// Helper to get the "base" of a word (alphanumeric only) for comparison
 function getWordBase(word: string): string {
   return word.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
 }
 
-// Check if two words are "similar enough" to be considered the same
 function wordsMatch(a: string, b: string): boolean {
   if (a === b) return true
-  // Consider words the same if their alphanumeric content matches
   return getWordBase(a) === getWordBase(b) && getWordBase(a).length > 0
 }
 
@@ -66,14 +75,12 @@ function computeSimpleDiff(oldText: string | null, newText: string | null): Diff
   if (!oldText) return [{ type: 'added', text: newText! }]
   if (!newText) return [{ type: 'removed', text: oldText }]
 
-  // Split into words (keeping words only, not whitespace as separate tokens)
   const oldWords = oldText.split(/\s+/).filter(w => w.length > 0)
   const newWords = newText.split(/\s+/).filter(w => w.length > 0)
 
   const m = oldWords.length
   const n = newWords.length
 
-  // Build LCS table using fuzzy word matching
   const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0))
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
@@ -85,13 +92,11 @@ function computeSimpleDiff(oldText: string | null, newText: string | null): Diff
     }
   }
 
-  // Backtrack to find diff
   const parts: DiffPart[] = []
   let i = m, j = n
 
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && wordsMatch(oldWords[i - 1], newWords[j - 1])) {
-      // Words match - use the new version (in case punctuation changed)
       parts.unshift({ type: 'unchanged', text: newWords[j - 1] })
       i--
       j--
@@ -104,7 +109,6 @@ function computeSimpleDiff(oldText: string | null, newText: string | null): Diff
     }
   }
 
-  // Merge consecutive parts of same type, adding spaces between words
   const result: DiffPart[] = []
   for (const part of parts) {
     const last = result[result.length - 1]
@@ -156,7 +160,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string | null; newCo
 }
 
 // ============================================================================
-// TIMELINE EVENT CARD
+// LIST VIEW TIMELINE EVENT
 // ============================================================================
 
 function TimelineEvent({ event }: { event: HistoryEvent }) {
@@ -170,18 +174,15 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
 
   const config = typeConfig[event.type]
 
-  // Calculate price target change
   const priceChange = event.type === 'price_target' && event.priceTarget && event.previousPriceTarget
     ? ((event.priceTarget - event.previousPriceTarget) / event.previousPriceTarget) * 100
     : null
 
   return (
     <div className="py-2 border-b border-gray-100 last:border-b-0">
-      {/* Header line: Section · User · Time */}
       <div className="flex items-center gap-1.5 text-xs mb-1 flex-wrap">
         <span className={clsx('font-semibold', config.color)}>{config.label}</span>
         <span className="text-gray-300">·</span>
-        {event.isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
         <span className="font-medium text-gray-600">{event.userName}</span>
         <span className="text-gray-300">·</span>
         <span className="text-gray-400" title={format(event.timestamp, 'PPpp')}>
@@ -189,7 +190,6 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
         </span>
       </div>
 
-      {/* Price target display */}
       {event.type === 'price_target' && (
         <div className="flex items-center gap-2 text-sm">
           {event.previousPriceTarget && (
@@ -210,7 +210,6 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
         </div>
       )}
 
-      {/* Contribution content with diff view */}
       {event.type !== 'price_target' && (
         <div className="text-sm">
           {event.previousContent ? (
@@ -225,21 +224,159 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
 }
 
 // ============================================================================
+// AI INSIGHTS PANEL
+// ============================================================================
+
+interface AIInsightsPanelProps {
+  analysis: EvolutionAnalysis | null
+  isLoading: boolean
+}
+
+function AIInsightsPanel({ analysis, isLoading }: AIInsightsPanelProps) {
+  const [expanded, setExpanded] = useState(true)
+
+  if (isLoading) {
+    return (
+      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 animate-pulse">
+        <div className="h-4 bg-purple-200 rounded w-1/3 mb-3" />
+        <div className="space-y-2">
+          <div className="h-3 bg-purple-200 rounded w-full" />
+          <div className="h-3 bg-purple-200 rounded w-4/5" />
+          <div className="h-3 bg-purple-200 rounded w-3/5" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!analysis) return null
+
+  return (
+    <div className="bg-purple-50 border border-purple-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-purple-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Lightbulb className="w-4 h-4 text-purple-600" />
+          <span className="text-sm font-semibold text-purple-900">AI Evolution Insights</span>
+        </div>
+        {expanded ? (
+          <ChevronUp className="w-4 h-4 text-purple-400" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-purple-400" />
+        )}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4">
+          {/* Thesis Evolution Summary */}
+          <div>
+            <p className="text-xs font-medium text-purple-700 mb-1">Thesis Evolution</p>
+            <p className="text-sm text-purple-900">{analysis.thesisEvolution}</p>
+          </div>
+
+          {/* Key Insights */}
+          <div>
+            <p className="text-xs font-medium text-purple-700 mb-2">Key Insights</p>
+            <ul className="space-y-1.5">
+              {analysis.insights.map((insight, idx) => (
+                <li key={idx} className="flex items-start gap-2 text-sm text-purple-800">
+                  <Sparkles className="w-3 h-3 text-purple-500 mt-0.5 flex-shrink-0" />
+                  {insight}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Price Target Summary */}
+          {analysis.priceTargetSummary && (
+            <div>
+              <p className="text-xs font-medium text-purple-700 mb-1">Price Target Evolution</p>
+              <p className="text-sm text-purple-800">{analysis.priceTargetSummary}</p>
+            </div>
+          )}
+
+          {/* Risk Evolution */}
+          {analysis.riskEvolution && (
+            <div>
+              <p className="text-xs font-medium text-purple-700 mb-1">Risk Perception</p>
+              <p className="text-sm text-purple-800">{analysis.riskEvolution}</p>
+            </div>
+          )}
+
+          {/* Conviction Indicators */}
+          {analysis.convictionIndicators.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-purple-700 mb-2">Conviction Signals</p>
+              <div className="flex flex-wrap gap-2">
+                {analysis.convictionIndicators.map((indicator, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full"
+                  >
+                    {indicator}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Generated timestamp */}
+          <p className="text-xs text-purple-400 pt-2 border-t border-purple-200">
+            Generated {formatDistanceToNow(new Date(analysis.generatedAt), { addSuffix: true })}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// VIEW MODE TOGGLE
+// ============================================================================
+
+interface ViewModeToggleProps {
+  mode: ViewMode
+  onChange: (mode: ViewMode) => void
+}
+
+function ViewModeToggle({ mode, onChange }: ViewModeToggleProps) {
+  const modes: { value: ViewMode; label: string; icon: React.ElementType }[] = [
+    { value: 'timeline', label: 'Timeline', icon: Clock },
+    { value: 'list', label: 'List', icon: List },
+    { value: 'compare', label: 'Compare', icon: GitCompare },
+  ]
+
+  return (
+    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+      {modes.map(m => {
+        const Icon = m.icon
+        return (
+          <button
+            key={m.value}
+            onClick={() => onChange(m.value)}
+            className={clsx(
+              'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
+              mode === m.value
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            )}
+          >
+            <Icon className="w-3 h-3" />
+            {m.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-type HistoryFilter = 'all' | 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference'
-
-const filterConfig: { value: HistoryFilter; label: string; color: string }[] = [
-  { value: 'all', label: 'All', color: 'text-gray-600' },
-  { value: 'thesis', label: 'Thesis', color: 'text-primary-600' },
-  { value: 'where_different', label: 'Different', color: 'text-purple-600' },
-  { value: 'risks_to_thesis', label: 'Risks', color: 'text-amber-600' },
-  { value: 'price_target', label: 'Targets', color: 'text-green-600' },
-  { value: 'reference', label: 'Docs', color: 'text-blue-600' },
-]
-
 export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHistoryViewProps) {
+  const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const [typeFilter, setTypeFilter] = useState<HistoryFilter>('all')
 
   // Fetch contribution history
@@ -316,7 +453,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     staleTime: 5 * 60 * 1000
   })
 
-  // Fetch reference history (thesis_references changes)
+  // Fetch reference history
   const { data: referenceHistory = [] } = useQuery({
     queryKey: ['reference-history', assetId],
     queryFn: async () => {
@@ -398,11 +535,9 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
 
     // Add contribution history events
     contributionHistory.forEach((h: any) => {
-      // Use joined user data first, fall back to lookup
       const userName = h.user
         ? `${h.user.first_name || ''} ${h.user.last_name || ''}`.trim() || 'Unknown'
         : (userLookup[h.changed_by]?.name || 'Unknown')
-      const isCovering = coveringIds.has(h.changed_by)
 
       allEvents.push({
         id: h.id,
@@ -410,7 +545,6 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         timestamp: new Date(h.changed_at),
         userId: h.changed_by,
         userName,
-        isCovering,
         content: h.new_content,
         previousContent: h.old_content
       })
@@ -427,7 +561,6 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
           timestamp: new Date(c.updated_at),
           userId: c.created_by,
           userName: userInfo.name,
-          isCovering: userInfo.isCovering,
           content: c.content
         })
       }
@@ -444,13 +577,12 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         timestamp: new Date(pt.updated_at || pt.created_at),
         userId: pt.created_by,
         userName: userInfo.name,
-        isCovering: userInfo.isCovering,
         priceTarget: pt.target_price,
         previousPriceTarget: previousTarget?.target_price
       })
     })
 
-    // Add reference (supporting docs) events
+    // Add reference events
     referenceHistory.forEach((rh: any) => {
       const userInfo = userLookup[rh.changed_by] || { name: 'Unknown', isCovering: false }
 
@@ -460,7 +592,6 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         timestamp: new Date(rh.changed_at),
         userId: rh.changed_by,
         userName: userInfo.name,
-        isCovering: userInfo.isCovering,
         content: rh.new_value,
         previousContent: rh.old_value
       })
@@ -474,7 +605,68 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
 
     // Sort by timestamp descending
     return filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-  }, [contributionHistory, contributions, priceTargetHistory, referenceHistory, userLookup, coveringIds, viewFilter])
+  }, [contributionHistory, contributions, priceTargetHistory, referenceHistory, userLookup, viewFilter])
+
+  // Compute evolution stats
+  const evolutionStats = useMemo((): EvolutionStats => {
+    if (events.length === 0) {
+      return {
+        totalRevisions: 0,
+        firstEditDate: null,
+        lastEditDate: null,
+        thesisChanges: 0,
+        riskUpdates: 0,
+        priceTargetRevisions: 0,
+        whereDifferentChanges: 0,
+        referenceChanges: 0,
+        sentimentTrajectory: 'unknown'
+      }
+    }
+
+    const sortedEvents = [...events].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+    const firstEvent = sortedEvents[0]
+    const lastEvent = sortedEvents[sortedEvents.length - 1]
+
+    // Detect sentiment from price target changes
+    const priceEvents = events.filter(e => e.type === 'price_target' && e.priceTarget)
+    let trajectory: EvolutionStats['sentimentTrajectory'] = 'stable'
+
+    if (priceEvents.length >= 2) {
+      const firstPrice = priceEvents[priceEvents.length - 1].priceTarget
+      const lastPrice = priceEvents[0].priceTarget
+      if (firstPrice && lastPrice) {
+        const change = (lastPrice - firstPrice) / firstPrice
+        if (change > 0.1) trajectory = 'more_bullish'
+        else if (change < -0.1) trajectory = 'more_bearish'
+      }
+    }
+
+    return {
+      totalRevisions: events.length,
+      firstEditDate: firstEvent.timestamp,
+      lastEditDate: lastEvent.timestamp,
+      thesisChanges: events.filter(e => e.type === 'thesis').length,
+      riskUpdates: events.filter(e => e.type === 'risks_to_thesis').length,
+      priceTargetRevisions: events.filter(e => e.type === 'price_target').length,
+      whereDifferentChanges: events.filter(e => e.type === 'where_different').length,
+      referenceChanges: events.filter(e => e.type === 'reference').length,
+      sentimentTrajectory: trajectory
+    }
+  }, [events])
+
+  // Use evolution analysis hook
+  const userId = viewFilter !== 'aggregated' ? viewFilter : undefined
+  const {
+    analysis: evolutionAnalysis,
+    isLoading: isLoadingAnalysis,
+    isGenerating: isGeneratingAnalysis,
+    isStale: isAnalysisStale,
+    generateAnalysis
+  } = useHistoryEvolutionAnalysis({
+    assetId,
+    userId,
+    historyEvents: events
+  })
 
   // Apply type filter
   const filteredEvents = useMemo(() => {
@@ -488,7 +680,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     return (
       <div className={clsx('space-y-4', className)}>
         <div className="h-8 bg-gray-100 rounded animate-pulse" />
-        <div className="h-24 bg-gray-100 rounded animate-pulse" />
+        <div className="h-32 bg-gray-100 rounded animate-pulse" />
         <div className="h-24 bg-gray-100 rounded animate-pulse" />
         <div className="h-24 bg-gray-100 rounded animate-pulse" />
       </div>
@@ -497,39 +689,82 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
 
   if (events.length === 0) {
     return (
-      <div className={clsx('text-center py-4', className)}>
-        <p className="text-sm text-gray-400">No history yet</p>
+      <div className={clsx('text-center py-8', className)}>
+        <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+        <p className="text-sm text-gray-500">No history yet</p>
+        <p className="text-xs text-gray-400 mt-1">Changes will be tracked as you edit</p>
       </div>
     )
   }
 
   return (
-    <div className={clsx('', className)}>
-      {/* Filter buttons */}
-      <div className="flex items-center gap-1 mb-3 flex-wrap">
-        {filterConfig.map(f => (
-          <button
-            key={f.value}
-            onClick={() => setTypeFilter(f.value)}
-            className={clsx(
-              'px-2 py-0.5 text-xs rounded-full transition-colors',
-              typeFilter === f.value
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
+    <div className={clsx('space-y-4', className)}>
+      {/* Evolution Overview */}
+      <EvolutionOverview
+        stats={evolutionStats}
+        isAnalyzing={isGeneratingAnalysis}
+        hasAnalysis={!!evolutionAnalysis}
+        isAnalysisStale={isAnalysisStale}
+        onAnalyzeEvolution={() => generateAnalysis()}
+      />
+
+      {/* AI Insights Panel */}
+      <AIInsightsPanel
+        analysis={evolutionAnalysis}
+        isLoading={isLoadingAnalysis}
+      />
+
+      {/* View Mode Toggle & Filters */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+
+        {/* Type filter (only show for list/timeline views) */}
+        {viewMode !== 'compare' && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {filterConfig.map(f => (
+              <button
+                key={f.value}
+                onClick={() => setTypeFilter(f.value)}
+                className={clsx(
+                  'px-2 py-0.5 text-xs rounded-full transition-colors',
+                  typeFilter === f.value
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Events */}
-      {filteredEvents.length > 0 ? (
-        filteredEvents.map(event => (
-          <TimelineEvent key={event.id} event={event} />
-        ))
-      ) : (
-        <p className="text-sm text-gray-400 text-center py-2">No {typeFilter.replace('_', ' ')} changes</p>
+      {/* View Content */}
+      {viewMode === 'timeline' && (
+        <EvolutionTimeline
+          events={filteredEvents}
+          milestones={evolutionAnalysis?.keyMilestones}
+        />
+      )}
+
+      {viewMode === 'list' && (
+        <div className="bg-white border border-gray-200 rounded-lg">
+          <div className="p-4">
+            {filteredEvents.length > 0 ? (
+              filteredEvents.map(event => (
+                <TimelineEvent key={event.id} event={event} />
+              ))
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-2">
+                No {typeFilter.replace('_', ' ')} changes
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'compare' && (
+        <VersionComparison events={events} />
       )}
     </div>
   )

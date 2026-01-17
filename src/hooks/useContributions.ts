@@ -1350,3 +1350,291 @@ IMPORTANT:
     generateAnalysis: generateAnalysisMutation.mutate
   }
 }
+
+// ============================================================================
+// HISTORY EVOLUTION ANALYSIS
+// ============================================================================
+
+// Interface for evolution analysis results
+export interface EvolutionAnalysis {
+  insights: string[]
+  thesisEvolution: string
+  sentimentShift: {
+    initial: Sentiment
+    current: Sentiment
+    trajectory: 'more_bullish' | 'more_bearish' | 'stable'
+  }
+  keyMilestones: {
+    date: string
+    type: 'thesis_shift' | 'risk_identified' | 'price_target_change' | 'conviction_change'
+    description: string
+    significance: 'high' | 'medium' | 'low'
+  }[]
+  priceTargetSummary: string | null
+  riskEvolution: string | null
+  convictionIndicators: string[]
+  generatedAt: string
+}
+
+export interface HistoryEvent {
+  id: string
+  type: 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference'
+  timestamp: Date
+  userId: string
+  userName: string
+  content?: string
+  previousContent?: string
+  priceTarget?: number
+  previousPriceTarget?: number
+}
+
+// Hook for AI-powered history evolution analysis
+export function useHistoryEvolutionAnalysis({
+  assetId,
+  userId,
+  historyEvents
+}: {
+  assetId: string
+  userId?: string
+  historyEvents: HistoryEvent[]
+}) {
+  const { user } = useAuth()
+  const { effectiveConfig } = useAIConfig()
+  const queryClient = useQueryClient()
+
+  // Build cache key based on whether we're filtering by user
+  const cacheSection = userId ? `evolution_analysis_${userId}` : 'evolution_analysis'
+
+  // Check if we have a cached analysis
+  const { data: cachedAnalysis, isLoading: cacheLoading } = useQuery({
+    queryKey: ['evolution-analysis', assetId, cacheSection],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contribution_summaries')
+        .select('*')
+        .eq('asset_id', assetId)
+        .eq('section', cacheSection)
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error
+
+      if (data?.summary) {
+        try {
+          const parsed = JSON.parse(data.summary)
+          if (parsed.insights) {
+            return {
+              ...parsed,
+              generatedAt: data.generated_at
+            } as EvolutionAnalysis
+          }
+        } catch {
+          // Not structured data
+        }
+      }
+      return null
+    },
+    enabled: !!assetId
+  })
+
+  // Generate evolution analysis mutation
+  const generateAnalysisMutation = useMutation({
+    mutationFn: async (): Promise<EvolutionAnalysis> => {
+      if (!user) throw new Error('Not authenticated')
+      if (!effectiveConfig.isConfigured) {
+        throw new Error('AI not configured. Please set up AI in Settings.')
+      }
+      if (historyEvents.length === 0) {
+        throw new Error('No history to analyze')
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('No session')
+
+      // Sort events chronologically
+      const sortedEvents = [...historyEvents].sort(
+        (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+      )
+
+      // Build timeline narrative for AI
+      const eventDescriptions = sortedEvents.map(e => {
+        const date = e.timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+        if (e.type === 'price_target') {
+          const change = e.previousPriceTarget
+            ? `$${e.previousPriceTarget} → $${e.priceTarget}`
+            : `Set to $${e.priceTarget}`
+          return `[${date}] Price Target: ${change}`
+        }
+
+        const typeLabels: Record<string, string> = {
+          thesis: 'Investment Thesis',
+          where_different: 'Where Different',
+          risks_to_thesis: 'Risks',
+          reference: 'Supporting Docs'
+        }
+
+        const hasChange = e.previousContent && e.content
+        const action = hasChange ? 'Updated' : 'Added'
+        const contentPreview = e.content ? e.content.slice(0, 200) + (e.content.length > 200 ? '...' : '') : ''
+
+        return `[${date}] ${action} ${typeLabels[e.type] || e.type}: "${contentPreview}"`
+      }).join('\n\n')
+
+      // Count changes by type
+      const thesisChanges = sortedEvents.filter(e => e.type === 'thesis').length
+      const riskChanges = sortedEvents.filter(e => e.type === 'risks_to_thesis').length
+      const priceChanges = sortedEvents.filter(e => e.type === 'price_target').length
+
+      const prompt = `Analyze this investment thesis evolution timeline and provide structured insights.
+
+TIMELINE OF CHANGES:
+${eventDescriptions}
+
+SUMMARY:
+- ${thesisChanges} thesis changes
+- ${riskChanges} risk updates
+- ${priceChanges} price target revisions
+- Time span: ${sortedEvents.length > 0 ? sortedEvents[0].timestamp.toLocaleDateString() : 'N/A'} to ${sortedEvents.length > 0 ? sortedEvents[sortedEvents.length - 1].timestamp.toLocaleDateString() : 'N/A'}
+
+Provide your analysis as a JSON object with EXACTLY this structure (no markdown, just raw JSON):
+{
+  "insights": [
+    "Insight 1 about how the thesis evolved",
+    "Insight 2 about key perspective shifts",
+    "Insight 3 about conviction changes"
+  ],
+  "thesisEvolution": "1-2 sentence summary of how the main thesis evolved over time",
+  "sentimentShift": {
+    "initial": "bullish" | "neutral" | "bearish",
+    "current": "bullish" | "neutral" | "bearish",
+    "trajectory": "more_bullish" | "more_bearish" | "stable"
+  },
+  "keyMilestones": [
+    {
+      "date": "YYYY-MM-DD",
+      "type": "thesis_shift" | "risk_identified" | "price_target_change" | "conviction_change",
+      "description": "What happened",
+      "significance": "high" | "medium" | "low"
+    }
+  ],
+  "priceTargetSummary": "Summary of price target changes if any, or null",
+  "riskEvolution": "Summary of how risk perception evolved, or null",
+  "convictionIndicators": ["Evidence of conviction increase/decrease from language changes"]
+}
+
+IMPORTANT:
+- Return ONLY valid JSON, no explanation text
+- Generate 3-5 actionable insights
+- Identify 2-5 key milestones
+- Analyze language for conviction shifts (more assertive = higher conviction)
+- Focus on the "why" behind changes, not just "what" changed`
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            message: prompt,
+            conversationHistory: [],
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to generate analysis')
+      }
+
+      const data = await response.json()
+      let analysisText = data.response as string
+
+      // Clean up markdown code blocks
+      analysisText = analysisText.trim()
+      if (analysisText.startsWith('```json')) {
+        analysisText = analysisText.slice(7)
+      } else if (analysisText.startsWith('```')) {
+        analysisText = analysisText.slice(3)
+      }
+      if (analysisText.endsWith('```')) {
+        analysisText = analysisText.slice(0, -3)
+      }
+      analysisText = analysisText.trim()
+
+      // Parse JSON
+      let analysis: Partial<EvolutionAnalysis>
+      try {
+        analysis = JSON.parse(analysisText)
+      } catch (e) {
+        console.error('Failed to parse AI response:', analysisText)
+        throw new Error('Failed to parse AI analysis response')
+      }
+
+      // Build full analysis with defaults
+      const fullAnalysis: EvolutionAnalysis = {
+        insights: analysis.insights || ['No insights could be generated'],
+        thesisEvolution: analysis.thesisEvolution || 'Unable to determine thesis evolution',
+        sentimentShift: analysis.sentimentShift || {
+          initial: 'neutral',
+          current: 'neutral',
+          trajectory: 'stable'
+        },
+        keyMilestones: analysis.keyMilestones || [],
+        priceTargetSummary: analysis.priceTargetSummary || null,
+        riskEvolution: analysis.riskEvolution || null,
+        convictionIndicators: analysis.convictionIndicators || [],
+        generatedAt: new Date().toISOString()
+      }
+
+      // Cache the analysis
+      const { error: upsertError } = await supabase
+        .from('contribution_summaries')
+        .upsert({
+          asset_id: assetId,
+          section: cacheSection,
+          summary: JSON.stringify(fullAnalysis),
+          contribution_count: historyEvents.length,
+          last_contribution_at: sortedEvents.length > 0
+            ? sortedEvents[sortedEvents.length - 1].timestamp.toISOString()
+            : new Date().toISOString(),
+          generated_at: new Date().toISOString(),
+          generated_by: user.id
+        }, {
+          onConflict: 'asset_id,section'
+        })
+
+      if (upsertError) {
+        console.error('Failed to cache evolution analysis:', upsertError)
+      }
+
+      return fullAnalysis
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evolution-analysis', assetId, cacheSection] })
+    }
+  })
+
+  // Check if analysis is stale
+  const latestEvent = historyEvents.length > 0
+    ? historyEvents.reduce((latest, e) =>
+        e.timestamp > latest.timestamp ? e : latest
+      )
+    : null
+
+  const isStale = cachedAnalysis && latestEvent && (
+    new Date(latestEvent.timestamp) > new Date(cachedAnalysis.generatedAt)
+  )
+
+  return {
+    analysis: cachedAnalysis || null,
+    isLoading: cacheLoading,
+    isGenerating: generateAnalysisMutation.isPending,
+    isStale: !!isStale,
+    isConfigured: effectiveConfig.isConfigured,
+    error: generateAnalysisMutation.error as Error | null,
+    generateAnalysis: generateAnalysisMutation.mutate
+  }
+}

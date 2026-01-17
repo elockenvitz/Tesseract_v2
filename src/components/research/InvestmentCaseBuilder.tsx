@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
 import {
   FileText,
@@ -25,6 +25,9 @@ import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { useUserResearchLayout, type AccessibleField } from '../../hooks/useResearchFields'
 import { useContributions } from '../../hooks/useContributions'
+import { useInvestmentCaseTemplates } from '../../hooks/useInvestmentCaseTemplates'
+import { InvestmentCaseTemplateSelector } from '../investment-case-templates'
+import { InvestmentCaseTemplate, CoverPageConfig, DEFAULT_STYLE_CONFIG, DEFAULT_COVER_CONFIG, DEFAULT_HEADER_FOOTER_CONFIG, DEFAULT_TOC_CONFIG } from '../../types/investmentCaseTemplates'
 import jsPDF from 'jspdf'
 
 // ============================================================================
@@ -55,25 +58,6 @@ interface FieldConfig {
   fieldType: string
 }
 
-interface CoverPageConfig {
-  includeDate: boolean
-  includeAuthor: boolean
-  includeDisclaimer: boolean
-  customTitle?: string
-  disclaimerText: string
-}
-
-// ============================================================================
-// DEFAULT CONFIGURATIONS
-// ============================================================================
-
-const DEFAULT_COVER_CONFIG: CoverPageConfig = {
-  includeDate: true,
-  includeAuthor: true,
-  includeDisclaimer: true,
-  disclaimerText: 'This document is for informational purposes only and does not constitute investment advice. Past performance is not indicative of future results.'
-}
-
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -87,11 +71,35 @@ export function InvestmentCaseBuilder({
 }: InvestmentCaseBuilderProps) {
   const { sections, fields, isLoading } = useUserResearchLayout()
   const { contributions } = useContributions(assetId)
+  const { recordUsage, getLogoUrl, defaultTemplate } = useInvestmentCaseTemplates()
 
   const [isGenerating, setIsGenerating] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<InvestmentCaseTemplate | null>(null)
   const [coverConfig, setCoverConfig] = useState<CoverPageConfig>(DEFAULT_COVER_CONFIG)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null)
+
+  // Load logo when template changes
+  useEffect(() => {
+    if (selectedTemplate?.branding_config.logoPath) {
+      getLogoUrl(selectedTemplate.branding_config.logoPath).then(url => {
+        if (url) {
+          // Convert to data URL for jsPDF
+          fetch(url)
+            .then(r => r.blob())
+            .then(blob => {
+              const reader = new FileReader()
+              reader.onloadend = () => setLogoDataUrl(reader.result as string)
+              reader.readAsDataURL(blob)
+            })
+            .catch(() => setLogoDataUrl(null))
+        }
+      }).catch(() => setLogoDataUrl(null))
+    } else {
+      setLogoDataUrl(null)
+    }
+  }, [selectedTemplate?.branding_config.logoPath, getLogoUrl])
 
   // Build section configurations from user's accessible fields
   const [sectionConfigs, setSectionConfigs] = useState<SectionConfig[]>(() =>
@@ -172,75 +180,170 @@ export function InvestmentCaseBuilder({
     setIsGenerating(true)
 
     try {
+      // Get template configs (use defaults if no template selected)
+      const template = selectedTemplate
+      const styleConfig = template?.style_config || DEFAULT_STYLE_CONFIG
+      const coverCfg = template?.cover_config || coverConfig
+      const brandingConfig = template?.branding_config
+      const headerFooterConfig = template?.header_footer_config || DEFAULT_HEADER_FOOTER_CONFIG
+      const tocConfig = template?.toc_config || DEFAULT_TOC_CONFIG
+
+      // Convert hex color to RGB
+      const hexToRgb = (hex: string) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+        return result ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16)
+        } : { r: 0, g: 0, b: 0 }
+      }
+
       const pdf = new jsPDF({
-        orientation: 'portrait',
+        orientation: styleConfig.orientation,
         unit: 'mm',
-        format: 'a4'
+        format: styleConfig.pageFormat
       })
 
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
-      const margin = 20
-      const contentWidth = pageWidth - margin * 2
-      let yOffset = margin
+      const margins = styleConfig.margins
+      const contentWidth = pageWidth - margins.left - margins.right
+      let yOffset = margins.top
+      let currentPage = 1
+
+      // Colors
+      const colors = styleConfig.colors
+      const primaryRgb = hexToRgb(colors.primary)
+      const textRgb = hexToRgb(colors.text)
+      const headingRgb = hexToRgb(colors.headingText)
+      const mutedRgb = hexToRgb(colors.mutedText)
+      const secondaryRgb = hexToRgb(colors.secondary)
+
+      // Helper to add header
+      const addHeader = (isFirstPage: boolean) => {
+        if (headerFooterConfig.header.enabled && (!isFirstPage || headerFooterConfig.header.showOnFirstPage)) {
+          pdf.setFontSize(8)
+          pdf.setFont(styleConfig.fonts.body.family, 'normal')
+          pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+
+          let headerText = headerFooterConfig.header.content || ''
+          headerText = headerText.replace('{{firmName}}', brandingConfig?.firmName || '')
+          headerText = headerText.replace('{{symbol}}', symbol)
+          headerText = headerText.replace('{{date}}', new Date().toLocaleDateString())
+
+          if (headerText) {
+            pdf.text(headerText, pageWidth / 2, 10, { align: 'center' })
+          }
+          if (headerFooterConfig.header.showPageNumber) {
+            pdf.text(`Page ${currentPage}`, pageWidth - margins.right, 10, { align: 'right' })
+          }
+        }
+      }
+
+      // Helper to add footer
+      const addFooter = () => {
+        if (headerFooterConfig.footer.enabled) {
+          pdf.setFontSize(8)
+          pdf.setFont(styleConfig.fonts.body.family, 'normal')
+          pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+
+          const footerY = pageHeight - 10
+
+          if (headerFooterConfig.footer.content) {
+            pdf.text(headerFooterConfig.footer.content, margins.left, footerY)
+          }
+
+          if (headerFooterConfig.footer.showPageNumber) {
+            const pageText = headerFooterConfig.footer.pageNumberFormat
+              .replace('{page}', String(currentPage))
+              .replace('{total}', '?') // Will be updated later if possible
+            pdf.text(pageText, pageWidth - margins.right, footerY, { align: 'right' })
+          }
+        }
+      }
 
       // Helper to add a new page if needed
       const checkNewPage = (requiredHeight: number) => {
-        if (yOffset + requiredHeight > pageHeight - margin) {
+        const footerSpace = headerFooterConfig.footer.enabled ? 15 : 0
+        if (yOffset + requiredHeight > pageHeight - margins.bottom - footerSpace) {
+          addFooter()
           pdf.addPage()
-          yOffset = margin
+          currentPage++
+          yOffset = margins.top + (headerFooterConfig.header.enabled ? 10 : 0)
+          addHeader(false)
           return true
         }
         return false
       }
 
       // Helper to add text with wrapping
-      const addWrappedText = (text: string, fontSize: number, isBold = false) => {
+      const addWrappedText = (text: string, fontSize: number, fontWeight: 'normal' | 'bold' = 'normal') => {
         pdf.setFontSize(fontSize)
-        pdf.setFont('helvetica', isBold ? 'bold' : 'normal')
+        pdf.setFont(styleConfig.fonts.body.family, fontWeight)
         const lines = pdf.splitTextToSize(text, contentWidth)
         const lineHeight = fontSize * 0.4
 
         for (const line of lines) {
           checkNewPage(lineHeight + 2)
-          pdf.text(line, margin, yOffset)
-          yOffset += lineHeight + 1
+          pdf.text(line, margins.left, yOffset)
+          yOffset += lineHeight + styleConfig.spacing.paragraphGap
         }
-        yOffset += 2
+        yOffset += styleConfig.spacing.paragraphGap
       }
 
       // ========== COVER PAGE ==========
+      addHeader(true)
+
+      // Add logo if available
+      if (coverCfg.showLogo && logoDataUrl && brandingConfig) {
+        try {
+          const logoX = coverCfg.logoPosition.includes('left') ? margins.left :
+                       coverCfg.logoPosition.includes('right') ? pageWidth - margins.right - brandingConfig.logoWidth :
+                       (pageWidth - brandingConfig.logoWidth) / 2
+          const logoY = coverCfg.logoPosition.includes('top') ? margins.top + 5 :
+                       pageHeight - margins.bottom - (brandingConfig.logoHeight || 20) - 20
+
+          pdf.addImage(logoDataUrl, 'PNG', logoX, logoY, brandingConfig.logoWidth, brandingConfig.logoHeight || brandingConfig.logoWidth * 0.5)
+        } catch (e) {
+          console.error('Failed to add logo:', e)
+        }
+      }
+
       // Title
       yOffset = 60
-      pdf.setFontSize(28)
-      pdf.setFont('helvetica', 'bold')
-      pdf.setTextColor(33, 33, 33)
-      const title = coverConfig.customTitle || `Investment Case: ${symbol}`
-      pdf.text(title, pageWidth / 2, yOffset, { align: 'center' })
+      const fonts = styleConfig.fonts
+      pdf.setFontSize(fonts.title.size)
+      pdf.setFont(fonts.title.family, fonts.title.weight)
+      pdf.setTextColor(headingRgb.r, headingRgb.g, headingRgb.b)
+
+      const title = coverCfg.customTitle || `Investment Case: ${symbol}`
+      const titleAlign = coverCfg.titlePosition === 'left' ? 'left' : coverCfg.titlePosition === 'right' ? 'right' : 'center'
+      const titleX = titleAlign === 'left' ? margins.left : titleAlign === 'right' ? pageWidth - margins.right : pageWidth / 2
+      pdf.text(title, titleX, yOffset, { align: titleAlign })
       yOffset += 15
 
       // Company Name
-      if (companyName) {
-        pdf.setFontSize(16)
-        pdf.setFont('helvetica', 'normal')
-        pdf.setTextColor(100, 100, 100)
-        pdf.text(companyName, pageWidth / 2, yOffset, { align: 'center' })
+      if (coverCfg.showCompanyName && companyName) {
+        pdf.setFontSize(fonts.heading.size)
+        pdf.setFont(fonts.heading.family, 'normal')
+        pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b)
+        pdf.text(companyName, titleX, yOffset, { align: titleAlign })
         yOffset += 10
       }
 
       // Current Price
-      if (currentPrice) {
-        pdf.setFontSize(14)
-        pdf.text(`Current Price: $${currentPrice.toFixed(2)}`, pageWidth / 2, yOffset + 10, { align: 'center' })
+      if (coverCfg.showCurrentPrice && currentPrice) {
+        pdf.setFontSize(fonts.subheading.size)
+        pdf.text(`Current Price: $${currentPrice.toFixed(2)}`, titleX, yOffset + 10, { align: titleAlign })
         yOffset += 20
       }
 
       // Metadata
       yOffset = pageHeight - 60
       pdf.setFontSize(10)
-      pdf.setTextColor(128, 128, 128)
+      pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
 
-      if (coverConfig.includeDate) {
+      if (coverCfg.includeDate) {
         const dateStr = new Date().toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'long',
@@ -250,61 +353,88 @@ export function InvestmentCaseBuilder({
         yOffset += 6
       }
 
-      if (coverConfig.includeAuthor) {
-        pdf.text('Prepared using Tesseract Research Platform', pageWidth / 2, yOffset, { align: 'center' })
+      if (coverCfg.includeAuthor) {
+        const authorText = brandingConfig?.firmName
+          ? `Prepared by ${brandingConfig.firmName}`
+          : 'Prepared using Tesseract Research Platform'
+        pdf.text(authorText, pageWidth / 2, yOffset, { align: 'center' })
         yOffset += 6
       }
 
       // Disclaimer
-      if (coverConfig.includeDisclaimer) {
+      if (coverCfg.includeDisclaimer) {
         yOffset = pageHeight - 30
         pdf.setFontSize(8)
-        pdf.setTextColor(150, 150, 150)
-        const disclaimerLines = pdf.splitTextToSize(coverConfig.disclaimerText, contentWidth)
+        pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+        const disclaimerLines = pdf.splitTextToSize(coverCfg.disclaimerText, contentWidth)
         for (const line of disclaimerLines) {
           pdf.text(line, pageWidth / 2, yOffset, { align: 'center' })
           yOffset += 4
         }
       }
 
+      // Watermark on cover
+      if (brandingConfig?.watermarkEnabled && brandingConfig.watermarkText) {
+        pdf.setFontSize(48)
+        pdf.setTextColor(200, 200, 200)
+        pdf.setGState(new pdf.GState({ opacity: brandingConfig.watermarkOpacity }))
+        pdf.text(brandingConfig.watermarkText, pageWidth / 2, pageHeight / 2, {
+          align: 'center',
+          angle: 45
+        })
+        pdf.setGState(new pdf.GState({ opacity: 1 }))
+      }
+
+      addFooter()
+
+      // ========== TABLE OF CONTENTS (if enabled) ==========
+      if (tocConfig.enabled) {
+        pdf.addPage()
+        currentPage++
+        yOffset = margins.top + (headerFooterConfig.header.enabled ? 10 : 0)
+        addHeader(false)
+
+        pdf.setFontSize(fonts.heading.size)
+        pdf.setFont(fonts.heading.family, fonts.heading.weight)
+        pdf.setTextColor(headingRgb.r, headingRgb.g, headingRgb.b)
+        pdf.text(tocConfig.title, margins.left, yOffset)
+        yOffset += 12
+
+        pdf.setFontSize(fonts.body.size + 1)
+        pdf.setFont(fonts.body.family, 'normal')
+        pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
+        enabledSections.forEach((section, index) => {
+          pdf.text(`${index + 1}. ${section.name}`, margins.left + 5, yOffset)
+          yOffset += 6
+        })
+
+        addFooter()
+      }
+
       // ========== CONTENT PAGES ==========
       pdf.addPage()
-      yOffset = margin
-
-      // Table of Contents
-      pdf.setFontSize(18)
-      pdf.setFont('helvetica', 'bold')
-      pdf.setTextColor(33, 33, 33)
-      pdf.text('Table of Contents', margin, yOffset)
-      yOffset += 12
-
-      pdf.setFontSize(11)
-      pdf.setFont('helvetica', 'normal')
-      enabledSections.forEach((section, index) => {
-        pdf.text(`${index + 1}. ${section.name}`, margin + 5, yOffset)
-        yOffset += 6
-      })
-
-      yOffset += 10
+      currentPage++
+      yOffset = margins.top + (headerFooterConfig.header.enabled ? 10 : 0)
+      addHeader(false)
 
       // Content Sections
       for (const section of enabledSections) {
         checkNewPage(30)
 
         // Section Header
-        pdf.setFontSize(16)
-        pdf.setFont('helvetica', 'bold')
-        pdf.setTextColor(59, 130, 246) // Primary blue
-        pdf.text(section.name, margin, yOffset)
+        pdf.setFontSize(fonts.heading.size)
+        pdf.setFont(fonts.heading.family, fonts.heading.weight)
+        pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b)
+        pdf.text(section.name, margins.left, yOffset)
         yOffset += 3
 
         // Underline
-        pdf.setDrawColor(59, 130, 246)
+        pdf.setDrawColor(primaryRgb.r, primaryRgb.g, primaryRgb.b)
         pdf.setLineWidth(0.5)
-        pdf.line(margin, yOffset, pageWidth - margin, yOffset)
-        yOffset += 10
+        pdf.line(margins.left, yOffset, pageWidth - margins.right, yOffset)
+        yOffset += styleConfig.spacing.sectionGap
 
-        pdf.setTextColor(33, 33, 33)
+        pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
 
         // Get content for each enabled field in this section
         const enabledFields = section.fields?.filter(f => f.enabled) || []
@@ -313,40 +443,49 @@ export function InvestmentCaseBuilder({
           checkNewPage(20)
 
           // Field Name
-          pdf.setFontSize(12)
-          pdf.setFont('helvetica', 'bold')
-          pdf.text(field.name, margin, yOffset)
-          yOffset += 6
+          pdf.setFontSize(fonts.subheading.size)
+          pdf.setFont(fonts.subheading.family, fonts.subheading.weight)
+          pdf.setTextColor(headingRgb.r, headingRgb.g, headingRgb.b)
+          pdf.text(field.name, margins.left, yOffset)
+          yOffset += styleConfig.spacing.fieldGap
 
           // Field Content - Get from contributions or show placeholder
           const fieldContent = getFieldContent(field, contributions)
-          pdf.setFontSize(10)
-          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(fonts.body.size)
+          pdf.setFont(fonts.body.family, 'normal')
+          pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
 
           if (fieldContent) {
-            addWrappedText(fieldContent, 10)
+            addWrappedText(fieldContent, fonts.body.size)
           } else {
-            pdf.setTextColor(150, 150, 150)
-            addWrappedText('No content available for this field.', 10)
-            pdf.setTextColor(33, 33, 33)
+            pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+            addWrappedText('No content available for this field.', fonts.body.size)
+            pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
           }
 
-          yOffset += 5
+          yOffset += styleConfig.spacing.fieldGap
         }
 
-        yOffset += 10
+        yOffset += styleConfig.spacing.sectionGap
       }
+
+      addFooter()
 
       // Save the PDF
       const filename = `${symbol}_Investment_Case_${new Date().toISOString().split('T')[0]}.pdf`
       pdf.save(filename)
+
+      // Record template usage if one was selected
+      if (selectedTemplate) {
+        recordUsage(selectedTemplate.id)
+      }
 
     } catch (err) {
       console.error('Failed to generate PDF:', err)
     } finally {
       setIsGenerating(false)
     }
-  }, [sectionConfigs, coverConfig, symbol, companyName, currentPrice, contributions])
+  }, [sectionConfigs, coverConfig, selectedTemplate, symbol, companyName, currentPrice, contributions, logoDataUrl, recordUsage])
 
   if (isLoading) {
     return (
@@ -367,6 +506,10 @@ export function InvestmentCaseBuilder({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <InvestmentCaseTemplateSelector
+            selectedTemplateId={selectedTemplate?.id || null}
+            onSelect={setSelectedTemplate}
+          />
           <Button
             variant="outline"
             size="sm"

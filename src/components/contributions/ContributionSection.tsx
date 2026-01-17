@@ -241,11 +241,6 @@ export function ContributionSection({
     section
   })
 
-  // Hide section if no contributions and hideWhenEmpty is true
-  if (hideWhenEmpty && !isLoading && contributions.length === 0) {
-    return null
-  }
-
   const { history: aggregateHistory, isLoading: historyLoading } = useAggregateHistory({
     assetId,
     section
@@ -389,6 +384,12 @@ export function ContributionSection({
       setStableButtonText(myContribution ? 'Edit' : 'Add View')
     }
   }, [isFetching, isLoading, myContribution])
+
+  // Hide section if no contributions and hideWhenEmpty is true
+  // NOTE: This early return must come AFTER all hooks are called to follow React rules
+  if (hideWhenEmpty && !isLoading && contributions.length === 0) {
+    return null
+  }
 
   // Check if there's an unpublished draft
   const hasDraft = myContribution?.draft_content !== null && myContribution?.draft_content !== undefined

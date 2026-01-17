@@ -29,11 +29,13 @@ import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
 import { RelatedProjects } from '../projects/RelatedProjects'
-import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView } from '../contributions'
+import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer } from '../contributions'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
+import { useKeyReferences } from '../../hooks/useKeyReferences'
+import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
 import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
-import { UserWidgetRenderer, AssetPageFieldCustomizer } from '../research'
+import { UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder } from '../research'
 import {
   ChecklistField,
   MetricField,
@@ -116,7 +118,18 @@ interface AssetTabProps {
 
 export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
   const { user } = useAuth()
-  const [assetPriority, setAssetPriority] = useState(asset.priority || 'none')
+
+  // Per-user priority system
+  const {
+    myPriority,
+    allPriorities,
+    setPriority: setUserPriority,
+    isSaving: isPrioritySaving
+  } = useUserAssetPriority(asset.id)
+
+  // Get other users' priorities (excluding current user)
+  const otherPriorities = allPriorities.filter(p => p.user_id !== user?.id)
+
   const [workflowPriorityState, setWorkflowPriorityState] = useState('none')
 
   // Extract navigation data if it was passed from notification
@@ -208,6 +221,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
   const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
+  const [showCaseBuilder, setShowCaseBuilder] = useState(false)
   const [widgetCollapsedState, setWidgetCollapsedState] = useState<Record<string, boolean>>({})
   // Shared visibility state for all thesis sections
   const [sharedThesisVisibility, setSharedThesisVisibility] = useState<ContributionVisibility>('firm')
@@ -296,11 +310,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   useEffect(() => {
     setWorkflowPriorityState(workflowPriority || 'none')
   }, [workflowPriority])
-
-  // Update asset priority when asset changes
-  useEffect(() => {
-    setAssetPriority(asset.priority || 'none')
-  }, [asset.priority])
 
   // Update local state when switching to a different asset
   useEffect(() => {
@@ -506,7 +515,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
 
   // Fetch ALL contributions for this asset (for unified summary view)
-  const { contributions: allAssetContributions } = useContributions({ assetId: asset.id })
+  const { contributions: allAssetContributions, isLoading: contributionsLoading } = useContributions({ assetId: asset.id })
 
   // Legacy: Fetch specific section contributions for visibility initialization (deprecated - will be removed)
   const userThesisContributions = allAssetContributions.filter(c => c.section === 'thesis')
@@ -1308,6 +1317,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     updateThesisRefsMutation.mutate(thesisReferences.filter((_, i) => i !== index))
   }
 
+  // Fetch per-user key references (new system)
+  const { references: userKeyReferences = [] } = useKeyReferences(asset.id)
+
   const nameFor = (id?: string | null) => {
     if (!id) return 'Unknown'
     const u = usersById?.[id]
@@ -1798,10 +1810,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }
 
-  const handleAssetPriorityChange = (newPriority: string) => {
-    setAssetPriority(newPriority)
-    setHasLocalChanges(true)
-    updateAssetMutation.mutate({ priority: newPriority })
+  const handleAssetPriorityChange = async (newPriority: Priority) => {
+    try {
+      await setUserPriority(newPriority)
+    } catch (error) {
+      console.error('Error updating priority:', error)
+    }
   }
 
   const handleWorkflowPriorityChange = async (newPriority: string) => {
@@ -2268,25 +2282,28 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
 
           <div className="flex items-center gap-3">
-          {/* Asset Priority Badge */}
-          <div className="relative">
-            <div className="flex items-center space-x-2">
+          {/* Priority Badges - User Priority + Firm Priority */}
+          <div className="flex items-center gap-2">
+            {/* User's Priority (editable) */}
+            <div className="relative">
               <button
                 onClick={() => setShowAssetPriorityDropdown(!showAssetPriorityDropdown)}
-                className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 hover:opacity-90 transition-opacity ${
-                  assetPriority === 'critical' ? 'bg-red-600 text-white' :
-                  assetPriority === 'high' ? 'bg-orange-500 text-white' :
-                  assetPriority === 'medium' ? 'bg-blue-500 text-white' :
-                  assetPriority === 'low' ? 'bg-green-500 text-white' :
+                disabled={isPrioritySaving}
+                className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 hover:opacity-90 transition-opacity ${
+                  myPriority === 'critical' ? 'bg-red-600 text-white' :
+                  myPriority === 'high' ? 'bg-orange-500 text-white' :
+                  myPriority === 'medium' ? 'bg-blue-500 text-white' :
+                  myPriority === 'low' ? 'bg-green-500 text-white' :
                   'bg-gray-400 text-white'
-                }`}
+                } ${isPrioritySaving ? 'opacity-50' : ''}`}
+                title="Your personal priority for this asset"
               >
-                {assetPriority === 'critical' && <AlertTriangle className="w-3 h-3" />}
-                {assetPriority === 'high' && <Zap className="w-3 h-3" />}
-                {assetPriority === 'medium' && <Target className="w-3 h-3" />}
-                {assetPriority === 'low' && <Clock className="w-3 h-3" />}
-                {!assetPriority || assetPriority === 'none' && <Clock className="w-3 h-3" />}
-                <span>Asset: {assetPriority === 'critical' ? 'Critical' : assetPriority === 'high' ? 'High' : assetPriority === 'medium' ? 'Medium' : assetPriority === 'low' ? 'Low' : 'None'}</span>
+                {myPriority === 'critical' && <AlertTriangle className="w-3 h-3" />}
+                {myPriority === 'high' && <Zap className="w-3 h-3" />}
+                {myPriority === 'medium' && <Target className="w-3 h-3" />}
+                {myPriority === 'low' && <Clock className="w-3 h-3" />}
+                {(!myPriority || myPriority === 'none') && <Clock className="w-3 h-3" />}
+                <span>You: {myPriority === 'critical' ? 'Critical' : myPriority === 'high' ? 'High' : myPriority === 'medium' ? 'Medium' : myPriority === 'low' ? 'Low' : 'None'}</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
 
@@ -2296,73 +2313,57 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     className="fixed inset-0 z-10"
                     onClick={() => setShowAssetPriorityDropdown(false)}
                   />
-                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
-                    <div className="p-2">
-                      <button
-                        onClick={() => {
-                          handleAssetPriorityChange('critical')
-                          setShowAssetPriorityDropdown(false)
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-red-600 text-white flex items-center space-x-1 mb-1 ${
-                          assetPriority === 'critical' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>Critical</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleAssetPriorityChange('high')
-                          setShowAssetPriorityDropdown(false)
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-orange-500 text-white flex items-center space-x-1 mb-1 ${
-                          assetPriority === 'high' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <Zap className="w-3 h-3" />
-                        <span>High</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleAssetPriorityChange('medium')
-                          setShowAssetPriorityDropdown(false)
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 text-white flex items-center space-x-1 mb-1 ${
-                          assetPriority === 'medium' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <Target className="w-3 h-3" />
-                        <span>Medium</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleAssetPriorityChange('low')
-                          setShowAssetPriorityDropdown(false)
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-green-500 text-white flex items-center space-x-1 mb-1 ${
-                          assetPriority === 'low' ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <Clock className="w-3 h-3" />
-                        <span>Low</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleAssetPriorityChange('none')
-                          setShowAssetPriorityDropdown(false)
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-all bg-gray-400 text-white flex items-center space-x-1 ${
-                          (!assetPriority || assetPriority === 'none') ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <Clock className="w-3 h-3" />
-                        <span>None</span>
-                      </button>
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden min-w-[120px]">
+                    <div className="px-3 py-1.5 text-[10px] font-medium text-gray-500 border-b border-gray-100 uppercase tracking-wide">
+                      Your Priority
+                    </div>
+                    <div className="p-1.5">
+                      {(['critical', 'high', 'medium', 'low', 'none'] as Priority[]).map((priority) => {
+                        const config = {
+                          critical: { bg: 'bg-red-600', icon: AlertTriangle, label: 'Critical' },
+                          high: { bg: 'bg-orange-500', icon: Zap, label: 'High' },
+                          medium: { bg: 'bg-blue-500', icon: Target, label: 'Medium' },
+                          low: { bg: 'bg-green-500', icon: Clock, label: 'Low' },
+                          none: { bg: 'bg-gray-400', icon: Clock, label: 'None' }
+                        }[priority]
+                        const IconComponent = config.icon
+                        const isSelected = myPriority === priority || (!myPriority && priority === 'none')
+                        return (
+                          <button
+                            key={priority}
+                            onClick={() => {
+                              handleAssetPriorityChange(priority)
+                              setShowAssetPriorityDropdown(false)
+                            }}
+                            className={`w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${config.bg} text-white flex items-center gap-1.5 mb-1 last:mb-0 ${
+                              isSelected ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
+                            }`}
+                          >
+                            <IconComponent className="w-3 h-3" />
+                            <span>{config.label}</span>
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 </>
               )}
             </div>
+
+            {/* Others' priorities indicator */}
+            {otherPriorities.length > 0 && (
+              <div
+                className="px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 cursor-default bg-gray-100 text-gray-600 border border-gray-200"
+                title={otherPriorities.map(p => {
+                  const name = p.user ? `${p.user.first_name || ''} ${p.user.last_name || ''}`.trim() || 'Unknown' : 'Unknown'
+                  const priorityLabel = p.priority === 'critical' ? 'Critical' : p.priority === 'high' ? 'High' : p.priority === 'medium' ? 'Medium' : p.priority === 'low' ? 'Low' : 'None'
+                  return `${name}: ${priorityLabel}`
+                }).join('\n')}
+              >
+                <Users className="w-3 h-3" />
+                <span>{otherPriorities.length} other{otherPriorities.length !== 1 ? 's' : ''}</span>
+              </div>
+            )}
           </div>
 
           {/* Workflow Selector */}
@@ -2495,64 +2496,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
             {/* Right side: View mode buttons and Customize */}
             <div className="flex items-center gap-2">
-              {/* View mode buttons */}
-              <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-                <button
-                  onClick={() => setThesisViewMode('all')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'all'
-                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="All sections"
-                >
-                  <Layers className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('summary')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'summary'
-                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="AI summary"
-                >
-                  <Sparkles className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('history')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'history'
-                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="History timeline"
-                >
-                  <History className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('references')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors relative',
-                    thesisViewMode === 'references'
-                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="Key references"
-                >
-                  <Link2 className="w-4 h-4" />
-                  {thesisReferences.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                      {thesisReferences.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* Visibility control - only show when viewing own view */}
+              {/* Visibility control - only show when viewing own view (placed first so view buttons don't shift) */}
               {researchViewFilter === user?.id && (
                 <div className="relative" ref={visibilityRef}>
                   <button
@@ -2679,6 +2623,73 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <span className="hidden sm:inline">Customize</span>
                 </button>
               )}
+
+              {/* View mode buttons */}
+              <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+                <button
+                  onClick={() => setThesisViewMode('all')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors',
+                    thesisViewMode === 'all'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="All sections"
+                >
+                  <Layers className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('summary')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors',
+                    thesisViewMode === 'summary'
+                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="AI summary"
+                >
+                  <Sparkles className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('history')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors',
+                    thesisViewMode === 'history'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="History timeline"
+                >
+                  <History className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('references')}
+                  className={clsx(
+                    'p-1.5 rounded-md transition-colors relative',
+                    thesisViewMode === 'references'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="Key references"
+                >
+                  <Link2 className="w-4 h-4" />
+                  {userKeyReferences.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                      {userKeyReferences.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Export Case Button */}
+              <button
+                onClick={() => setShowCaseBuilder(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                title="Export investment case as PDF"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Export</span>
+              </button>
             </div>
           </div>
         </div>
@@ -2690,8 +2701,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
-            {/* Show loading skeleton while layout data loads */}
-            {layoutLoading ? (
+            {/* Show loading skeleton while layout or contributions load */}
+            {(layoutLoading || (isAggregatedView && contributionsLoading)) ? (
               <div className="space-y-4">
                 {[1, 2, 3].map(i => (
                   <Card key={i} padding="none">
@@ -2724,316 +2735,80 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 />
               </Card>
             ) : thesisViewMode === 'references' ? (
-              /* References View - shows supporting documents instead of full layout */
+              /* References View - per-user curated key references */
               <Card padding="md">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Supporting Documentation</h4>
-                      <p className="text-xs text-gray-500">Key documents, models, and links that support this thesis</p>
-                    </div>
-                    {addRefType === 'none' && (
-                      <button
-                        onClick={() => setAddRefType('note')}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Add Reference Panel */}
-                  {addRefType !== 'none' && (
-                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-800/50">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => setAddRefType('note')}
-                            className={clsx(
-                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                              addRefType === 'note'
-                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
-                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                            )}
-                          >
-                            <FileText className="w-3 h-3" /> Note
-                          </button>
-                          <button
-                            onClick={() => setAddRefType('file')}
-                            className={clsx(
-                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                              addRefType === 'file'
-                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400'
-                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                            )}
-                          >
-                            <File className="w-3 h-3" /> File
-                          </button>
-                          <button
-                            onClick={() => setAddRefType('model')}
-                            className={clsx(
-                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                              addRefType === 'model'
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                            )}
-                          >
-                            <FileSpreadsheet className="w-3 h-3" /> Model
-                          </button>
-                          <button
-                            onClick={() => setAddRefType('link')}
-                            className={clsx(
-                              'px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1',
-                              addRefType === 'link'
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
-                                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-                            )}
-                          >
-                            <ExternalLink className="w-3 h-3" /> URL
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => setAddRefType('none')}
-                          className="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* Notes selection */}
-                        {addRefType === 'note' && (
-                          <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {assetNotes.length === 0 ? (
-                              <p className="text-xs text-gray-400 text-center py-2">No notes for this asset yet</p>
-                            ) : (
-                              assetNotes.map(note => {
-                                const isLinked = thesisReferences.some(r => r.type === 'note' && r.id === note.id)
-                                return (
-                                  <button
-                                    key={note.id}
-                                    onClick={() => !isLinked && addThesisRef({ type: 'note', id: note.id, title: note.title })}
-                                    disabled={isLinked}
-                                    className={clsx(
-                                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors',
-                                      isLinked
-                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700/50'
-                                        : 'hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                                    )}
-                                  >
-                                    <FileText className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                    <span className="truncate">{note.title}</span>
-                                    {isLinked && <Check className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
-                                  </button>
-                                )
-                              })
-                            )}
-                          </div>
-                        )}
-
-                        {/* Files selection */}
-                        {addRefType === 'file' && (
-                          <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {assetFiles.length === 0 ? (
-                              <p className="text-xs text-gray-400 text-center py-2">No files for this asset yet</p>
-                            ) : (
-                              assetFiles.map(file => {
-                                const isLinked = thesisReferences.some(r => r.type === 'file' && r.id === file.id)
-                                return (
-                                  <button
-                                    key={file.id}
-                                    onClick={() => !isLinked && addThesisRef({ type: 'file', id: file.id, title: file.name })}
-                                    disabled={isLinked}
-                                    className={clsx(
-                                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors',
-                                      isLinked
-                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700/50'
-                                        : 'hover:bg-purple-50 dark:hover:bg-purple-900/20'
-                                    )}
-                                  >
-                                    <File className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                                    <span className="truncate">{file.name}</span>
-                                    {isLinked && <Check className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
-                                  </button>
-                                )
-                              })
-                            )}
-                          </div>
-                        )}
-
-                        {/* Models selection */}
-                        {addRefType === 'model' && (
-                          <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {assetModels.length === 0 ? (
-                              <p className="text-xs text-gray-400 text-center py-2">No models for this asset yet</p>
-                            ) : (
-                              assetModels.map(model => {
-                                const isLinked = thesisReferences.some(r => r.type === 'model' && r.id === model.id)
-                                return (
-                                  <button
-                                    key={model.id}
-                                    onClick={() => !isLinked && addThesisRef({ type: 'model', id: model.id, title: model.name })}
-                                    disabled={isLinked}
-                                    className={clsx(
-                                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors',
-                                      isLinked
-                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700/50'
-                                        : 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
-                                    )}
-                                  >
-                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                    <span className="truncate">{model.name} v{model.version}</span>
-                                    {isLinked && <Check className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
-                                  </button>
-                                )
-                              })
-                            )}
-                          </div>
-                        )}
-
-                        {/* URL input */}
-                        {addRefType === 'link' && (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              placeholder="Title"
-                              value={linkTitle}
-                              onChange={(e) => setLinkTitle(e.target.value)}
-                              className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                            />
-                            <input
-                              type="url"
-                              placeholder="https://..."
-                              value={linkUrl}
-                              onChange={(e) => setLinkUrl(e.target.value)}
-                              className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                            />
-                            <button
-                              onClick={() => {
-                                if (linkUrl && linkTitle) {
-                                  addThesisRef({ type: 'link', url: linkUrl, title: linkTitle })
-                                  setLinkUrl('')
-                                  setLinkTitle('')
-                                  setAddRefType('none')
-                                }
-                              }}
-                              disabled={!linkUrl || !linkTitle}
-                              className="w-full px-2 py-1.5 text-xs bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded transition-colors"
-                            >
-                              Add URL
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* References Grid */}
-                    {(assetModels.length > 0 || thesisReferences.length > 0) ? (
-                      <div className="flex flex-wrap gap-2">
-                        {assetModels.length > 0 && (
-                          <div
-                            onClick={() => console.log('Open model:', assetModels[0].id)}
-                            title={assetModels[0].name}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-                          >
-                            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            <div className="min-w-0">
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
-                                {assetModels[0].name}
-                              </span>
-                              <span className="text-[10px] text-gray-500">v{assetModels[0].version} · {new Date(assetModels[0].updated_at).toLocaleDateString()}</span>
-                            </div>
-                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-200 dark:bg-emerald-800 rounded text-emerald-700 dark:text-emerald-300 font-semibold shrink-0">
-                              LATEST
-                            </span>
-                          </div>
-                        )}
-                        {thesisReferences.map((ref, index) => (
-                          <div
-                            key={index}
-                            title={ref.title}
-                            className={clsx(
-                              'flex items-center gap-2 px-3 py-2 rounded-lg group cursor-pointer transition-colors',
-                              ref.type === 'note' && 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40',
-                              ref.type === 'file' && 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40',
-                              ref.type === 'model' && 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40',
-                              ref.type === 'link' && 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40'
-                            )}
-                            onClick={() => {
-                              if (ref.type === 'link' && ref.url) {
-                                window.open(ref.url, '_blank', 'noopener,noreferrer')
-                              } else if (ref.type === 'note' && ref.id) {
-                                onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
-                              } else if (ref.type === 'file' && ref.id) {
-                                onNavigate?.({ id: `note-${ref.id}`, title: ref.title, type: 'note', data: { noteId: ref.id } })
-                              } else if (ref.type === 'model' && ref.id) {
-                                console.log('Open model:', ref.id)
-                              }
-                            }}
-                          >
-                            {ref.type === 'note' && <FileText className="w-4 h-4 text-amber-500 shrink-0" />}
-                            {ref.type === 'file' && <File className="w-4 h-4 text-purple-500 shrink-0" />}
-                            {ref.type === 'model' && <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />}
-                            {ref.type === 'link' && <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />}
-                            <div className="min-w-0">
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[140px]">
-                                {ref.title}
-                              </span>
-                              <span className="text-[10px] text-gray-500 capitalize">{ref.type} · {ref.addedAt ? new Date(ref.addedAt).toLocaleDateString() : ''}</span>
-                            </div>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); removeThesisRef(index) }}
-                              className="p-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-400 text-center py-4">
-                        No supporting documents yet. Click Add to link notes, files, or URLs.
-                      </p>
-                    )}
-                </div>
+                <ThesisContainer
+                  assetId={asset.id}
+                  viewFilter={researchViewFilter}
+                  viewMode="references"
+                />
               </Card>
             ) : isAggregatedView ? (
               /* Aggregated "All" View - clean flat list of fields with content */
-              <div className="space-y-3">
-                {displayedFieldsBySection.flatMap(section => {
-                  if (section.section_is_hidden) return []
+              allAssetContributions.length === 0 ? (
+                /* Empty state when no team contributions exist */
+                <Card padding="none">
+                  <div className="flex flex-col items-center justify-center py-16 px-6">
+                    <div className="relative mb-6">
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center">
+                        <Target className="w-10 h-10 text-primary-400" />
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-100">
+                        <Users className="w-4 h-4 text-gray-400" />
+                      </div>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No team research yet</h3>
+                    <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
+                      No one has shared their investment thesis on this asset yet. Switch to your personal view to start documenting your research.
+                    </p>
+                    {user && (
+                      <button
+                        onClick={() => setResearchViewFilter(user.id)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                      >
+                        <Target className="w-4 h-4" />
+                        Start Your Research
+                      </button>
+                    )}
+                  </div>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {displayedFieldsBySection.flatMap(section => {
+                    if (section.section_is_hidden) return []
 
-                  return section.fields
-                    .filter(f => f.is_visible)
-                    .map(field => {
-                      const fieldType = field.field_type
+                    return section.fields
+                      .filter(f => f.is_visible)
+                      .map(field => {
+                        const fieldType = field.field_type
 
-                      // Skip non-contribution field types in aggregated view
-                      // (they don't have the hideWhenEmpty logic)
-                      if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'documents', 'rating', 'estimates', 'price_target'].includes(fieldType)) {
-                        return null
-                      }
+                        // Skip non-contribution field types in aggregated view
+                        // (they don't have the hideWhenEmpty logic)
+                        if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'documents', 'rating', 'estimates', 'price_target'].includes(fieldType)) {
+                          return null
+                        }
 
-                      // Contribution-based fields (rich_text, etc.)
-                      return (
-                        <ContributionSection
-                          key={field.field_id}
-                          assetId={asset.id}
-                          section={field.field_slug}
-                          title={field.field_name}
-                          activeTab={researchViewFilter}
-                          defaultVisibility={sharedThesisVisibility}
-                          hideViewModeButtons={true}
-                          hideVisibility={true}
-                          sharedVisibility={sharedThesisVisibility}
-                          sharedTargetIds={sharedThesisTargetIds}
-                          hideWhenEmpty={true}
-                          flatMode={false}
-                        />
-                      )
-                    })
-                })}
-              </div>
+                        // Contribution-based fields (rich_text, etc.)
+                        return (
+                          <ContributionSection
+                            key={field.field_id}
+                            assetId={asset.id}
+                            section={field.field_slug}
+                            title={field.field_name}
+                            activeTab={researchViewFilter}
+                            defaultVisibility={sharedThesisVisibility}
+                            hideViewModeButtons={true}
+                            hideVisibility={true}
+                            sharedVisibility={sharedThesisVisibility}
+                            sharedTargetIds={sharedThesisTargetIds}
+                            hideWhenEmpty={true}
+                            flatMode={false}
+                          />
+                        )
+                      })
+                  })}
+                </div>
+              )
             ) : (
               /* Individual User "All" View - shows full layout with all sections */
               displayedFieldsBySection.map(section => {
@@ -3402,6 +3177,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               viewFilter={researchViewFilter}
               currentUserId={user?.id}
             />
+
+            {/* Investment Case Builder Modal */}
+            {showCaseBuilder && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                  <div className="p-6">
+                    <InvestmentCaseBuilder
+                      assetId={asset.id}
+                      symbol={asset.symbol || asset.name}
+                      companyName={asset.name}
+                      currentPrice={currentQuote?.price}
+                      onClose={() => setShowCaseBuilder(false)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
