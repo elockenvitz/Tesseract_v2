@@ -20,7 +20,6 @@ import {
   Filter
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { Select } from '../ui/Select'
 import { NoDataAvailable } from '../common/EmptyState'
@@ -117,6 +116,8 @@ export function ProjectActivityFeed({
       case 'deliverable_uncompleted':
       case 'deliverable_deleted':
         return ListX
+      case 'deliverable_updated':
+        return Edit
       case 'comment_added':
       case 'comment_updated':
       case 'comment_deleted':
@@ -147,6 +148,8 @@ export function ProjectActivityFeed({
         return 'text-success-600 bg-success-100'
       case 'deliverable_uncompleted':
         return 'text-warning-600 bg-warning-100'
+      case 'deliverable_updated':
+        return 'text-blue-600 bg-blue-100'
       case 'status_changed':
       case 'priority_changed':
       case 'due_date_changed':
@@ -180,10 +183,12 @@ export function ProjectActivityFeed({
         return `${actorName} changed due date from ${oldDate} to ${newDate}`
 
       case 'assignment_added':
-        return `${actorName} assigned this project as ${activity.metadata?.role || 'contributor'}`
+        const assigneeName = activity.metadata?.assigned_to_name || 'someone'
+        return `${actorName} added ${assigneeName} as ${activity.metadata?.role || 'collaborator'}`
 
       case 'assignment_removed':
-        return `${actorName} was removed from this project`
+        const removedName = activity.metadata?.assigned_to_name || 'a team member'
+        return `${actorName} removed ${removedName} from the project`
 
       case 'deliverable_added':
         return `${actorName} added deliverable "${activity.metadata?.title}"`
@@ -196,6 +201,9 @@ export function ProjectActivityFeed({
 
       case 'deliverable_deleted':
         return `${actorName} deleted deliverable "${activity.metadata?.title}"`
+
+      case 'deliverable_updated':
+        return `${actorName} updated deliverable from "${activity.old_value}" to "${activity.new_value}"`
 
       case 'comment_added':
         return `${actorName} added a comment`
@@ -219,86 +227,82 @@ export function ProjectActivityFeed({
 
   if (isLoading) {
     return (
-      <Card>
-        <div className="p-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Activity</h3>
-          <div className="animate-pulse space-y-3">
-            <div className="h-12 bg-gray-200 rounded"></div>
-            <div className="h-12 bg-gray-200 rounded"></div>
-            <div className="h-12 bg-gray-200 rounded"></div>
-          </div>
+      <div className="h-full px-2 py-2">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Activity</h3>
+        <div className="animate-pulse space-y-2">
+          <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded"></div>
+          <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded"></div>
+          <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded"></div>
         </div>
-      </Card>
+      </div>
     )
   }
 
   return (
-    <Card>
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Activity</h3>
-          {filteredActivities.length > 0 && (
-            <Badge variant="default">{filteredActivities.length}</Badge>
-          )}
-        </div>
-
-        {/* Filters */}
-        {showFilters && activities && activities.length > 5 && (
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <Select
-              value={activityTypeFilter}
-              onChange={(e) => setActivityTypeFilter(e.target.value as 'all' | ProjectActivityType)}
-              options={[
-                { value: 'all', label: 'All Activity' },
-                { value: 'status_changed', label: 'Status Changes' },
-                { value: 'priority_changed', label: 'Priority Changes' },
-                { value: 'assignment_added', label: 'Assignments' },
-                { value: 'deliverable_completed', label: 'Completed Tasks' },
-                { value: 'comment_added', label: 'Comments' }
-              ]}
-            />
-            <Select
-              value={actorFilter}
-              onChange={(e) => setActorFilter(e.target.value)}
-              options={[
-                { value: 'all', label: 'All Users' },
-                ...actors.map(actor => ({
-                  value: actor.id,
-                  label: `${actor.first_name || ''} ${actor.last_name || ''}`.trim() || actor.email
-                }))
-              ]}
-            />
-          </div>
+    <div className="h-full flex flex-col px-2 py-2">
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white">Activity</h3>
+        {filteredActivities.length > 0 && (
+          <Badge variant="default">{filteredActivities.length}</Badge>
         )}
-
-        {/* Activity List */}
-        <div className="space-y-3">
-          {filteredActivities.length > 0 ? (
-            filteredActivities.map(activity => {
-              const Icon = getActivityIcon(activity.activity_type)
-              const colorClass = getActivityColor(activity.activity_type)
-
-              return (
-                <div key={activity.id} className="flex items-start space-x-3">
-                  <div className={`p-2 rounded-lg flex-shrink-0 ${colorClass}`}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 dark:text-white">
-                      {getActivityDescription(activity)}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
-                    </p>
-                  </div>
-                </div>
-              )
-            })
-          ) : (
-            <NoDataAvailable message="No activity yet" compact />
-          )}
-        </div>
       </div>
-    </Card>
+
+      {/* Filters */}
+      {showFilters && activities && activities.length > 5 && (
+        <div className="grid grid-cols-2 gap-2 mb-2 flex-shrink-0">
+          <Select
+            value={activityTypeFilter}
+            onChange={(e) => setActivityTypeFilter(e.target.value as 'all' | ProjectActivityType)}
+            options={[
+              { value: 'all', label: 'All Activity' },
+              { value: 'status_changed', label: 'Status Changes' },
+              { value: 'priority_changed', label: 'Priority Changes' },
+              { value: 'assignment_added', label: 'Assignments' },
+              { value: 'deliverable_completed', label: 'Completed Tasks' },
+              { value: 'comment_added', label: 'Comments' }
+            ]}
+          />
+          <Select
+            value={actorFilter}
+            onChange={(e) => setActorFilter(e.target.value)}
+            options={[
+              { value: 'all', label: 'All Users' },
+              ...actors.map(actor => ({
+                value: actor.id,
+                label: `${actor.first_name || ''} ${actor.last_name || ''}`.trim() || actor.email
+              }))
+            ]}
+          />
+        </div>
+      )}
+
+      {/* Activity List */}
+      <div className="flex-1 overflow-y-auto space-y-2">
+        {filteredActivities.length > 0 ? (
+          filteredActivities.map(activity => {
+            const Icon = getActivityIcon(activity.activity_type)
+            const colorClass = getActivityColor(activity.activity_type)
+
+            return (
+              <div key={activity.id} className="flex items-start space-x-3">
+                <div className={`p-2 rounded-lg flex-shrink-0 ${colorClass}`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-900 dark:text-white">
+                    {getActivityDescription(activity)}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
+                  </p>
+                </div>
+              </div>
+            )
+          })
+        ) : (
+          <NoDataAvailable message="No activity yet" compact />
+        )}
+      </div>
+    </div>
   )
 }

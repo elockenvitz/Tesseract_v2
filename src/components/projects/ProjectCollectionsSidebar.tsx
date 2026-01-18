@@ -17,7 +17,8 @@ import {
   Filter,
   ChevronDown,
   ChevronRight,
-  Users
+  Users,
+  Building2
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -32,6 +33,8 @@ interface CollectionFilters {
   statuses?: ProjectStatus[]
   priorities?: ProjectPriority[]
   tagIds?: string[]
+  userIds?: string[]
+  orgGroupId?: string
 }
 
 interface Collection {
@@ -67,6 +70,11 @@ export function ProjectCollectionsSidebar({
   const [tagsExpanded, setTagsExpanded] = useState(true)
   const [filteredExpanded, setFilteredExpanded] = useState(true)
   const [teamsExpanded, setTeamsExpanded] = useState(true)
+  const [orgGroupsExpanded, setOrgGroupsExpanded] = useState(true)
+  const [orgDivisionsExpanded, setOrgDivisionsExpanded] = useState(false)
+  const [orgDepartmentsExpanded, setOrgDepartmentsExpanded] = useState(false)
+  const [orgTeamsExpanded, setOrgTeamsExpanded] = useState(true)
+  const [orgPortfoliosExpanded, setOrgPortfoliosExpanded] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingCollectionForModal, setEditingCollectionForModal] = useState<any>(null)
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false)
@@ -85,7 +93,7 @@ export function ProjectCollectionsSidebar({
     { value: 'completed', label: 'Completed', icon: CheckCircle, color: 'text-green-500' }
   ]
 
-  // Fetch teams
+  // Fetch teams (project-specific teams created by user)
   const { data: allTeams } = useQuery({
     queryKey: ['project-teams', user?.id],
     queryFn: async () => {
@@ -99,6 +107,131 @@ export function ProjectCollectionsSidebar({
 
       if (error) throw error
       return data || []
+    },
+    enabled: !!user?.id
+  })
+
+  // Fetch org groups that the current user is a member of (including parent nodes)
+  const { data: orgGroups } = useQuery({
+    queryKey: ['org-chart-groups-user', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      // Fetch all org nodes with their members, settings, and parent info
+      const { data, error } = await supabase
+        .from('org_chart_nodes')
+        .select(`
+          id,
+          name,
+          node_type,
+          parent_id,
+          settings,
+          org_chart_node_members(user_id)
+        `)
+        .order('name')
+
+      if (error) throw error
+      if (!data) return []
+
+      // Also fetch team_memberships for team nodes that use settings.team_id
+      const teamIds = data
+        .filter(n => n.node_type === 'team' && n.settings?.team_id)
+        .map(n => n.settings.team_id)
+
+      let teamMembershipsMap = new Map<string, string[]>()
+      if (teamIds.length > 0) {
+        const { data: teamMemberships } = await supabase
+          .from('team_memberships')
+          .select('team_id, user_id')
+          .in('team_id', teamIds)
+
+        if (teamMemberships) {
+          for (const tm of teamMemberships) {
+            const existing = teamMembershipsMap.get(tm.team_id) || []
+            existing.push(tm.user_id)
+            teamMembershipsMap.set(tm.team_id, existing)
+          }
+        }
+      }
+
+      // Build a map of all nodes
+      const nodeMap = new Map(data.map(n => [n.id, n]))
+
+      // Build a map of parent -> children for descendant lookup
+      const childrenMap = new Map<string, typeof data>()
+      for (const node of data) {
+        if (node.parent_id) {
+          const siblings = childrenMap.get(node.parent_id) || []
+          siblings.push(node)
+          childrenMap.set(node.parent_id, siblings)
+        }
+      }
+
+      // Helper to get all members of a single node (including team_memberships)
+      const getNodeMembers = (node: any): string[] => {
+        const members = new Set<string>(
+          node.org_chart_node_members?.map((m: any) => m.user_id) || []
+        )
+        // For team nodes, also include members from team_memberships
+        if (node.node_type === 'team' && node.settings?.team_id) {
+          const teamMembers = teamMembershipsMap.get(node.settings.team_id) || []
+          for (const userId of teamMembers) {
+            members.add(userId)
+          }
+        }
+        return Array.from(members)
+      }
+
+      // Helper to get all descendant member IDs for a node (including the node itself)
+      const getAllDescendantMembers = (nodeId: string): string[] => {
+        const node = nodeMap.get(nodeId)
+        if (!node) return []
+
+        // Start with this node's members
+        const members = new Set<string>(getNodeMembers(node))
+
+        // Recursively add members from all children
+        const children = childrenMap.get(nodeId) || []
+        for (const child of children) {
+          const childMembers = getAllDescendantMembers(child.id)
+          for (const memberId of childMembers) {
+            members.add(memberId)
+          }
+        }
+
+        return Array.from(members)
+      }
+
+      // Find nodes where user is a direct member (via org_chart_node_members OR team_memberships)
+      const directMemberNodes = data.filter(node => {
+        const nodeMembers = getNodeMembers(node)
+        return nodeMembers.includes(user.id)
+      })
+
+      // Collect all ancestor nodes for each direct membership
+      const userNodeIds = new Set<string>()
+
+      for (const node of directMemberNodes) {
+        // Add the direct membership node
+        userNodeIds.add(node.id)
+
+        // Walk up the parent chain
+        let currentNode = node
+        while (currentNode.parent_id) {
+          userNodeIds.add(currentNode.parent_id)
+          const parentNode = nodeMap.get(currentNode.parent_id)
+          if (!parentNode) break
+          currentNode = parentNode
+        }
+      }
+
+      // Return all nodes the user belongs to (directly or via hierarchy)
+      return data
+        .filter(node => userNodeIds.has(node.id))
+        .map(node => ({
+          ...node,
+          member_ids: getAllDescendantMembers(node.id)
+        }))
     },
     enabled: !!user?.id
   })
@@ -332,7 +465,6 @@ export function ProjectCollectionsSidebar({
                     >
                       <Users className="w-3 h-3 flex-shrink-0" />
                       <span className="flex-1 text-left truncate">{team.name}</span>
-                      <span className="text-xs text-gray-500">{team.member_ids?.length || 0}</span>
                     </button>
                     <button
                       onClick={(e) => {
@@ -350,6 +482,161 @@ export function ProjectCollectionsSidebar({
               ) : (
                 <div className="pl-8 pr-3 py-2 text-xs text-gray-500 dark:text-gray-400 italic">
                   No teams yet
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Org Groups Section */}
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={() => setOrgGroupsExpanded(!orgGroupsExpanded)}
+              className="flex-1 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            >
+              {orgGroupsExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Org Groups</span>
+            </button>
+          </div>
+          {orgGroupsExpanded && (
+            <>
+              {orgGroups && orgGroups.length > 0 ? (
+                <>
+                  {/* Divisions */}
+                  {orgGroups.filter(g => g.node_type === 'division').length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setOrgDivisionsExpanded(!orgDivisionsExpanded)}
+                        className="w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        {orgDivisionsExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        <div className="w-2 h-2 rounded" style={{ backgroundColor: '#ef4444' }} />
+                        <span>Divisions</span>
+                        <span className="ml-auto text-gray-400">({orgGroups.filter(g => g.node_type === 'division').length})</span>
+                      </button>
+                      {orgDivisionsExpanded && orgGroups.filter(g => g.node_type === 'division').map(group => (
+                        <button
+                          key={group.id}
+                          onClick={() => {
+                            onSelectCollection(`org-group-${group.id}`, { orgGroupId: group.id })
+                            onSelectView('active')
+                          }}
+                          className={clsx(
+                            'w-full flex items-center gap-2 pl-12 pr-3 py-1.5 rounded text-sm transition-colors',
+                            activeCollectionId === `org-group-${group.id}`
+                              ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          )}
+                        >
+                          <span className="flex-1 text-left truncate">{group.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Departments */}
+                  {orgGroups.filter(g => g.node_type === 'department').length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setOrgDepartmentsExpanded(!orgDepartmentsExpanded)}
+                        className="w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        {orgDepartmentsExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        <div className="w-2 h-2 rounded" style={{ backgroundColor: '#6366f1' }} />
+                        <span>Departments</span>
+                        <span className="ml-auto text-gray-400">({orgGroups.filter(g => g.node_type === 'department').length})</span>
+                      </button>
+                      {orgDepartmentsExpanded && orgGroups.filter(g => g.node_type === 'department').map(group => (
+                        <button
+                          key={group.id}
+                          onClick={() => {
+                                                        onSelectCollection(`org-group-${group.id}`, { orgGroupId: group.id })
+                            onSelectView('active')
+                          }}
+                          className={clsx(
+                            'w-full flex items-center gap-2 pl-12 pr-3 py-1.5 rounded text-sm transition-colors',
+                            activeCollectionId === `org-group-${group.id}`
+                              ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          )}
+                        >
+                          <span className="flex-1 text-left truncate">{group.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Teams */}
+                  {orgGroups.filter(g => g.node_type === 'team').length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setOrgTeamsExpanded(!orgTeamsExpanded)}
+                        className="w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        {orgTeamsExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        <div className="w-2 h-2 rounded" style={{ backgroundColor: '#22c55e' }} />
+                        <span>Teams</span>
+                        <span className="ml-auto text-gray-400">({orgGroups.filter(g => g.node_type === 'team').length})</span>
+                      </button>
+                      {orgTeamsExpanded && orgGroups.filter(g => g.node_type === 'team').map(group => (
+                        <button
+                          key={group.id}
+                          onClick={() => {
+                                                        onSelectCollection(`org-group-${group.id}`, { orgGroupId: group.id })
+                            onSelectView('active')
+                          }}
+                          className={clsx(
+                            'w-full flex items-center gap-2 pl-12 pr-3 py-1.5 rounded text-sm transition-colors',
+                            activeCollectionId === `org-group-${group.id}`
+                              ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          )}
+                        >
+                          <span className="flex-1 text-left truncate">{group.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Portfolios */}
+                  {orgGroups.filter(g => g.node_type === 'portfolio').length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setOrgPortfoliosExpanded(!orgPortfoliosExpanded)}
+                        className="w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        {orgPortfoliosExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        <div className="w-2 h-2 rounded" style={{ backgroundColor: '#f59e0b' }} />
+                        <span>Portfolios</span>
+                        <span className="ml-auto text-gray-400">({orgGroups.filter(g => g.node_type === 'portfolio').length})</span>
+                      </button>
+                      {orgPortfoliosExpanded && orgGroups.filter(g => g.node_type === 'portfolio').map(group => (
+                        <button
+                          key={group.id}
+                          onClick={() => {
+                                                        onSelectCollection(`org-group-${group.id}`, { orgGroupId: group.id })
+                            onSelectView('active')
+                          }}
+                          className={clsx(
+                            'w-full flex items-center gap-2 pl-12 pr-3 py-1.5 rounded text-sm transition-colors',
+                            activeCollectionId === `org-group-${group.id}`
+                              ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          )}
+                        >
+                          <span className="flex-1 text-left truncate">{group.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="pl-8 pr-3 py-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                  No org groups found
                 </div>
               )}
             </>

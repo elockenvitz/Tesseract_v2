@@ -24,8 +24,28 @@
     }
   }
 
+  @keyframes dropdown-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
   .animate-slide-in-right {
     animation: slide-in-right 0.3s ease-out;
+  }
+
+  .animate-dropdown {
+    animation: dropdown-in 0.15s ease-out;
+  }
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
   }
 
   /* Hide scrollbar but keep scrolling functionality */
@@ -115,4 +135,117 @@
 
 .animate-slide-in-right {
   animation: slide-in-right 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Kanban card animations */
+@keyframes card-lift {
+  from {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  to {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+  }
+}
+
+@keyframes card-settle {
+  0% {
+    transform: scale(1.02);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes success-check {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes blocked-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+}
+
+.kanban-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kanban-card:hover {
+  animation: card-lift 0.2s ease forwards;
+}
+
+.kanban-card-dragging {
+  animation: none;
+  transform: rotate(3deg) scale(1.05);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.kanban-card-dropped {
+  animation: card-settle 0.3s ease forwards;
+}
+
+.animate-success-check {
+  animation: success-check 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.animate-status-pulse {
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+.animate-blocked-pulse {
+  animation: blocked-pulse 2s ease-in-out infinite;
+}
+
+/* Timeline bar hover effect */
+.timeline-bar {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.timeline-bar:hover {
+  transform: scaleY(1.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Dependency link highlight */
+@keyframes dependency-highlight {
+  0% {
+    background-color: rgba(59, 130, 246, 0);
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+  100% {
+    background-color: rgba(59, 130, 246, 0);
+  }
+}
+
+.dependency-added {
+  animation: dependency-highlight 0.6s ease;
 }

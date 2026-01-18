@@ -371,6 +371,7 @@ export function DashboardPage() {
         .from('projects')
         .select(`
           *,
+          creator:users!created_by(id, email, first_name, last_name),
           project_assignments!inner(assigned_to, role)
         `)
         .eq('project_assignments.assigned_to', userId)
@@ -388,7 +389,12 @@ export function DashboardPage() {
             id,
             title,
             status,
-            project_assignments!inner(assigned_to)
+            created_by,
+            priority,
+            due_date,
+            creator:users!created_by(id, email, first_name, last_name),
+            project_assignments!inner(assigned_to, role),
+            project_deliverables(id, title, completed, due_date)
           )
         `)
         .eq('projects.project_assignments.assigned_to', userId)
@@ -502,6 +508,15 @@ export function DashboardPage() {
         result.id = assetData.id
       } else {
         console.error('❌ DashboardPage: Failed to fetch asset by symbol:', error)
+      }
+    }
+
+    // Handle 'page' type results - convert to the actual page type
+    if (result.type === 'page' && result.data?.pageType) {
+      result = {
+        ...result,
+        type: result.data.pageType,
+        id: result.data.pageType // Use pageType as ID for singleton pages
       }
     }
 
@@ -773,6 +788,67 @@ export function DashboardPage() {
         return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
       case 'templates':
         return <TemplatesTab />
+      case 'workflow':
+        // Individual workflow - navigate to workflows page focused on this workflow
+        return <WorkflowsPage initialWorkflowId={activeTab.data?.id} />
+      case 'workflow-template':
+        // Workflow template - navigate to workflows page to create from template
+        return <WorkflowsPage initialTemplateId={activeTab.data?.id} />
+      case 'notebook':
+        // Custom notebook - open the notes editor for this notebook
+        return activeTab.data ? (
+          <NotesListPage
+            onNoteSelect={handleSearchResult}
+            initialNotebookId={activeTab.data.id}
+          />
+        ) : <div>Loading notebook...</div>
+      case 'model-template':
+        // Model template - go to templates tab focused on models
+        return <TemplatesTab initialTab="models" initialTemplateId={activeTab.data?.id} />
+      case 'model-file':
+        // Model file - navigate to the asset's files or to files page
+        if (activeTab.data?.assetId) {
+          // Navigate to the asset tab focused on models/files
+          return <AssetTab
+            asset={{ id: activeTab.data.assetId, symbol: activeTab.data?.assets?.symbol }}
+            onNavigate={handleSearchResult}
+            initialSection="models"
+          />
+        }
+        return <FilesPage onItemSelect={handleSearchResult} initialFileId={activeTab.data?.id} />
+      case 'text-template':
+        // Text template - go to templates tab
+        return <TemplatesTab initialTab="text" initialTemplateId={activeTab.data?.id} />
+      case 'simulation':
+        // Simulation - open in trade lab
+        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} />
+      case 'team':
+        // Team - go to organization page with team view
+        return <OrganizationPage
+          initialTeamId={activeTab.data?.id}
+          onUserClick={(user) => handleSearchResult({
+            id: user.id,
+            title: user.full_name,
+            type: 'user',
+            data: user
+          })}
+        />
+      case 'calendar-event':
+        // Calendar event - open calendar focused on this event
+        return <CalendarPage onItemSelect={handleSearchResult} initialEventId={activeTab.data?.id} />
+      case 'capture':
+        // Capture - navigate to the entity it belongs to, or show in context
+        if (activeTab.data?.entity_type && activeTab.data?.entity_id) {
+          // Navigate to the parent entity
+          handleSearchResult({
+            id: activeTab.data.entity_id,
+            title: activeTab.data.entity_display || 'Entity',
+            type: activeTab.data.entity_type,
+            data: { id: activeTab.data.entity_id, captureId: activeTab.data.id }
+          })
+          return <div>Navigating to capture context...</div>
+        }
+        return <FilesPage onItemSelect={handleSearchResult} />
       default:
         return renderDashboardContent()
     }

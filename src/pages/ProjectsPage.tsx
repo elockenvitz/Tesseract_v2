@@ -8,6 +8,7 @@ import {
   Plus,
   Calendar,
   Users,
+  User,
   ArrowUpDown,
   Clock,
   CheckCircle,
@@ -26,7 +27,10 @@ import {
   FolderKanban,
   Zap,
   ArrowUp,
-  Minus
+  Minus,
+  CalendarRange,
+  Square,
+  CheckSquare
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -43,6 +47,11 @@ import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../
 import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { DeleteProjectModal } from '../components/projects/DeleteProjectModal'
 import { ProjectCollectionsSidebar } from '../components/projects/ProjectCollectionsSidebar'
+import { EnhancedKanbanBoard } from '../components/projects/EnhancedKanbanBoard'
+import { ProjectTimelineView } from '../components/projects/ProjectTimelineView'
+import { MyTasksView } from '../components/projects/MyTasksView'
+import { useAllProjectDependencies } from '../hooks/useProjectDependencies'
+import { DatePicker } from '../components/ui/DatePicker'
 
 interface ProjectsPageProps {
   onProjectSelect?: (project: ProjectWithAssignments) => void
@@ -71,11 +80,14 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
   const [newTagName, setNewTagName] = useState('')
   const [showCollectionsSidebar, setShowCollectionsSidebar] = useState(true)
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
-  const [collectionFilters, setCollectionFilters] = useState<{ statuses?: ProjectStatus[]; tagIds?: string[] } | null>(null)
+  const [collectionFilters, setCollectionFilters] = useState<{ statuses?: ProjectStatus[]; tagIds?: string[]; userIds?: string[]; orgGroupId?: string } | null>(null)
   const [quickStatusFilter, setQuickStatusFilter] = useState<ProjectStatus | null>(null)
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'board' | 'timeline'>('list')
   const [draggedProject, setDraggedProject] = useState<string | null>(null)
   const [draggedOverStatus, setDraggedOverStatus] = useState<ProjectStatus | null>(null)
+
+  // Fetch dependency blocking status for board/timeline views
+  const { blockingStatus } = useAllProjectDependencies()
 
   // Fetch projects user has access to (created or assigned)
   const { data: projects, isLoading } = useQuery({
@@ -87,6 +99,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
         .from('projects')
         .select(`
           *,
+          creator:users!created_by(id, email, first_name, last_name),
           project_assignments(
             id,
             assigned_to,
@@ -97,7 +110,8 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
           project_deliverables(
             id,
             title,
-            completed
+            completed,
+            due_date
           ),
           project_tag_assignments(
             id,
@@ -344,6 +358,87 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
     }
   })
 
+  const updateDueDateMutation = useMutation({
+    mutationFn: async ({ projectId, dueDate }: { projectId: string, dueDate: string | null }) => {
+      const { error } = await supabase
+        .from('projects')
+        .update({ due_date: dueDate })
+        .eq('id', projectId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Toggle deliverable completion mutation
+  const toggleDeliverableMutation = useMutation({
+    mutationFn: async ({ deliverableId, completed }: { deliverableId: string, completed: boolean }) => {
+      const { error } = await supabase
+        .from('project_deliverables')
+        .update({
+          completed: !completed,
+          completed_by: !completed ? user?.id : null,
+          completed_at: !completed ? new Date().toISOString() : null
+        })
+        .eq('id', deliverableId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Update deliverable due date mutation
+  const updateDeliverableDueDateMutation = useMutation({
+    mutationFn: async ({ deliverableId, dueDate }: { deliverableId: string, dueDate: string | null }) => {
+      const { error } = await supabase
+        .from('project_deliverables')
+        .update({ due_date: dueDate })
+        .eq('id', deliverableId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Compute "My Tasks" - incomplete deliverables from assigned projects
+  const myTasks = useMemo(() => {
+    if (!projects || assignmentFilter !== 'assigned') return []
+
+    const tasks: Array<{
+      deliverable: { id: string; title: string; completed: boolean; due_date: string | null }
+      project: ProjectWithAssignments
+    }> = []
+
+    projects.forEach(project => {
+      // Only include projects user is assigned to
+      const isAssigned = project.project_assignments?.some(a => a.assigned_to === user?.id)
+      if (!isAssigned) return
+
+      // Add incomplete deliverables
+      project.project_deliverables?.forEach(d => {
+        if (!d.completed) {
+          tasks.push({ deliverable: d, project })
+        }
+      })
+    })
+
+    // Sort by due date (tasks with due dates first, then by date)
+    return tasks.sort((a, b) => {
+      if (a.deliverable.due_date && !b.deliverable.due_date) return -1
+      if (!a.deliverable.due_date && b.deliverable.due_date) return 1
+      if (a.deliverable.due_date && b.deliverable.due_date) {
+        return new Date(a.deliverable.due_date).getTime() - new Date(b.deliverable.due_date).getTime()
+      }
+      return 0
+    })
+  }, [projects, assignmentFilter, user?.id])
+
   // Filter and sort projects
   const filteredProjects = useMemo(() => {
     if (!projects) return []
@@ -392,6 +487,27 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
           const projectTagIds = project.project_tag_assignments?.map((a: any) => a.tag_id) || []
           const hasAllTags = collectionFilters.tagIds.every(tagId => projectTagIds.includes(tagId))
           if (!hasAllTags) {
+            return false
+          }
+        }
+
+        // Org group filter - filter by explicit org_group_id association
+        if (collectionFilters.orgGroupId) {
+          if (project.org_group_id !== collectionFilters.orgGroupId) {
+            return false
+          }
+        }
+
+        // User filter from collection (teams)
+        if (collectionFilters.userIds && collectionFilters.userIds.length > 0) {
+          const projectMemberIds = project.project_assignments?.map((a: any) => a.assigned_to) || []
+          // Also include the project creator
+          if (project.created_by) {
+            projectMemberIds.push(project.created_by)
+          }
+          // Check if any of the filter userIds match project members
+          const hasMatchingMember = collectionFilters.userIds.some(userId => projectMemberIds.includes(userId))
+          if (!hasMatchingMember) {
             return false
           }
         }
@@ -563,17 +679,25 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                 )}
               </button>
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                <FolderKanban className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">Projects</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Manage one-off initiatives and deliverables
-                </p>
-              </div>
+              <FolderKanban className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Projects</h1>
             </div>
             <div className="flex items-center gap-2">
+              {/* My Tasks Toggle */}
+              <button
+                onClick={() => setAssignmentFilter(assignmentFilter === 'assigned' ? 'all' : 'assigned')}
+                className={clsx(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  assignmentFilter === 'assigned'
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                )}
+                title="Show only projects assigned to me"
+              >
+                <User className="w-4 h-4" />
+                My Tasks
+              </button>
+
               {/* View Mode Toggle */}
               <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 <button
@@ -600,6 +724,18 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 >
                   <LayoutGrid className="w-4 h-4" />
                 </button>
+                <button
+                  onClick={() => setViewMode('timeline')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'timeline'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  )}
+                  title="Timeline view"
+                >
+                  <CalendarRange className="w-4 h-4" />
+                </button>
               </div>
 
               <Button onClick={() => setShowCreateForm(true)} size="sm">
@@ -609,7 +745,8 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
             </div>
           </div>
 
-          {/* Status Quick Filters - Show in both views */}
+          {/* Status Quick Filters - Hide in board view since columns represent status */}
+          {viewMode !== 'board' && (
           <div className="flex items-center gap-2 mb-3">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status:</span>
               <button
@@ -703,8 +840,9 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 Cancelled
               </button>
             </div>
+          )}
 
-          {/* Priority Quick Filters - Show in both views */}
+          {/* Priority Quick Filters - Show in all views */}
           <div className="flex items-center gap-2 mb-3">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Priority:</span>
               <button
@@ -874,199 +1012,36 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
           <div className="p-4">
             <ListSkeleton count={5} />
           </div>
+        ) : assignmentFilter === 'assigned' ? (
+          // My Tasks View - show deliverables
+          <MyTasksView
+            myTasks={myTasks}
+            onToggleDeliverable={(deliverableId, completed) =>
+              toggleDeliverableMutation.mutate({ deliverableId, completed })
+            }
+            onUpdateDueDate={(deliverableId, dueDate) =>
+              updateDeliverableDueDateMutation.mutate({ deliverableId, dueDate })
+            }
+            onProjectSelect={onProjectSelect}
+            getStatusIcon={getStatusIcon}
+            getStatusColor={getStatusColor}
+            getPriorityColor={getPriorityColor}
+          />
         ) : filteredProjects.length > 0 ? (
           viewMode === 'board' ? (
-            // Board View
-            <div className="h-full p-4">
-              <div className="flex gap-4 h-full">
-                {['planning', 'in_progress', 'blocked', 'completed'].map((status) => {
-                  const statusProjects = filteredProjects.filter(p => p.status === status)
-                  const isDropTarget = draggedOverStatus === status
-                  return (
-                    <div
-                      key={status}
-                      className={clsx(
-                        "flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-lg p-3 flex flex-col transition-all",
-                        isDropTarget && 'ring-2 ring-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      )}
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        e.dataTransfer.dropEffect = 'move'
-                        setDraggedOverStatus(status as ProjectStatus)
-                      }}
-                      onDragLeave={(e) => {
-                        // Only clear if we're leaving for a non-child element
-                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                          setDraggedOverStatus(null)
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault()
-                        if (draggedProject) {
-                          updateStatusMutation.mutate({ projectId: draggedProject, status: status as ProjectStatus })
-                        }
-                        setDraggedProject(null)
-                        setDraggedOverStatus(null)
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(status as ProjectStatus)}
-                          <h3 className="font-semibold text-gray-900 dark:text-white capitalize">
-                            {status.replace('_', ' ')}
-                          </h3>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {statusProjects.length}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto space-y-2 min-h-[200px]">
-                        {statusProjects.map((project) => {
-                          const totalDeliverables = project.project_deliverables?.length || 0
-                          const completedDeliverables = project.project_deliverables?.filter(d => d.completed).length || 0
-                          const assignmentCount = project.project_assignments?.length || 0
-                          const isOverdue = project.due_date && new Date(project.due_date) < new Date() && project.status !== 'completed'
-
-                          // Helper function for priority border colors
-                          const getPriorityBorderColor = (priority: ProjectPriority) => {
-                            switch (priority) {
-                              case 'urgent': return 'border-red-500'
-                              case 'high': return 'border-orange-500'
-                              case 'medium': return 'border-yellow-500'
-                              case 'low': return 'border-gray-400'
-                            }
-                          }
-
-                          const getPriorityBgColor = (priority: ProjectPriority) => {
-                            switch (priority) {
-                              case 'urgent': return 'bg-red-500'
-                              case 'high': return 'bg-orange-500'
-                              case 'medium': return 'bg-yellow-500'
-                              case 'low': return 'bg-gray-400'
-                            }
-                          }
-
-                          const getPriorityLabel = (priority: ProjectPriority) => {
-                            switch (priority) {
-                              case 'urgent': return 'Urgent'
-                              case 'high': return 'High'
-                              case 'medium': return 'Med'
-                              case 'low': return 'Low'
-                            }
-                          }
-
-                          return (
-                            <div
-                              key={project.id}
-                              draggable
-                              onDragStart={(e) => {
-                                setDraggedProject(project.id)
-                                e.dataTransfer.effectAllowed = 'move'
-                              }}
-                              onDragEnd={() => {
-                                setDraggedProject(null)
-                                setDraggedOverStatus(null)
-                              }}
-                              className={clsx(
-                                'transition-all duration-150 cursor-move',
-                                draggedProject === project.id && 'scale-105 rotate-3 opacity-80 z-50'
-                              )}
-                              style={{
-                                transform: draggedProject === project.id ? 'translateZ(50px)' : undefined
-                              }}
-                            >
-                              <Card
-                                className={clsx(
-                                  "p-0 hover:shadow-md transition-all cursor-move border-2 h-32 flex",
-                                  getPriorityBorderColor(project.priority),
-                                  draggedProject === project.id && 'shadow-2xl'
-                                )}
-                                onClick={() => onProjectSelect?.({
-                                  id: project.id,
-                                  title: project.title,
-                                  type: 'project',
-                                  data: project
-                                })}
-                              >
-                                {/* Left side - Main content */}
-                                <div className="p-2 flex-1 flex flex-col min-w-0">
-                                  {/* Priority Badge in upper left */}
-                                  <div className="flex items-start gap-2 mb-1">
-                                    <span className={clsx(
-                                      'px-1.5 py-0.5 rounded text-xs font-semibold text-white',
-                                      getPriorityBgColor(project.priority)
-                                    )}>
-                                      {getPriorityLabel(project.priority)}
-                                    </span>
-                                  </div>
-
-                                  {/* Title */}
-                                  <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-1 line-clamp-2 flex-shrink-0">
-                                    {project.title}
-                                  </h4>
-
-                                  {/* Tags - Fixed height container */}
-                                  <div className="h-5 mb-1 flex-shrink-0">
-                                    {project.project_tag_assignments && project.project_tag_assignments.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {project.project_tag_assignments.slice(0, 2).map((assignment: any) => (
-                                          <span
-                                            key={assignment.id}
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
-                                            style={{ backgroundColor: assignment.project_tags.color + '15', color: assignment.project_tags.color }}
-                                          >
-                                            <Tag className="w-2.5 h-2.5" />
-                                            {assignment.project_tags.name}
-                                          </span>
-                                        ))}
-                                        {project.project_tag_assignments.length > 2 && (
-                                          <span className="text-xs text-gray-500">+{project.project_tag_assignments.length - 2}</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Due Date & Deliverables - Push to bottom */}
-                                  <div className="mt-auto flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                                    {project.due_date && (
-                                      <div className={clsx('flex items-center gap-1', isOverdue && 'text-red-600 dark:text-red-400')}>
-                                        <Calendar className="w-3 h-3" />
-                                        <span>{Math.abs(differenceInDays(new Date(project.due_date), new Date()))}d</span>
-                                      </div>
-                                    )}
-                                    {totalDeliverables > 0 && (
-                                      <div className="flex items-center gap-1">
-                                        <CheckCircle className="w-3 h-3" />
-                                        <span>{completedDeliverables}/{totalDeliverables}</span>
-                                      </div>
-                                    )}
-                                    {assignmentCount > 0 && (
-                                      <div className="flex items-center gap-1">
-                                        <Users className="w-3 h-3" />
-                                        <span>{assignmentCount}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Right side - Description */}
-                                {project.description && (
-                                  <div className="p-2 border-l border-gray-200 dark:border-gray-700 w-40 flex-shrink-0">
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-4">
-                                      {project.description}
-                                    </p>
-                                  </div>
-                                )}
-                              </Card>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            // Enhanced Board View with dnd-kit
+            <EnhancedKanbanBoard
+              projects={filteredProjects}
+              onProjectSelect={onProjectSelect}
+              wipLimits={{ in_progress: 5 }}
+            />
+          ) : viewMode === 'timeline' ? (
+            // Timeline/Gantt View
+            <ProjectTimelineView
+              projects={filteredProjects}
+              onProjectSelect={onProjectSelect}
+              blockingStatus={blockingStatus}
+            />
           ) : (
             // List View
             <div className="p-4 space-y-3">
@@ -1365,35 +1340,56 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                         </p>
                       )}
 
+                      {/* Progress Bar & Info Row */}
                       <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                         {totalDeliverables > 0 && (
-                          <div className="flex items-center gap-1">
-                            <CheckCircle className="w-4 h-4" />
-                            <span>{completedDeliverables}/{totalDeliverables} deliverables</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-medium flex-shrink-0 w-8 text-right">
+                              {Math.round((completedDeliverables / totalDeliverables) * 100)}%
+                            </span>
+                            <div className="w-40 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex-shrink-0">
+                              <div
+                                className={clsx(
+                                  'h-full rounded-full transition-all duration-300',
+                                  completedDeliverables === totalDeliverables
+                                    ? 'bg-green-500'
+                                    : completedDeliverables > 0
+                                    ? 'bg-primary-500'
+                                    : 'bg-gray-300 dark:bg-gray-600'
+                                )}
+                                style={{ width: `${(completedDeliverables / totalDeliverables) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-xs flex-shrink-0">{completedDeliverables}/{totalDeliverables}</span>
                           </div>
                         )}
                         {assignmentCount > 0 && (
                           <div className="flex items-center gap-1">
                             <Users className="w-4 h-4" />
-                            <span>{assignmentCount} {assignmentCount === 1 ? 'person' : 'people'}</span>
+                            <span>{assignmentCount}</span>
                           </div>
                         )}
-                        {project.due_date && (
-                          <div className={clsx(
-                            'flex items-center gap-1',
-                            isOverdue && 'text-red-600 dark:text-red-400 font-medium'
-                          )}>
+                        {project.created_by === user?.id ? (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <DatePicker
+                              value={project.due_date}
+                              onChange={(date) => updateDueDateMutation.mutate({ projectId: project.id, dueDate: date })}
+                              placeholder="Set due date"
+                              variant="inline"
+                              showOverdue
+                              isCompleted={project.status === 'completed'}
+                              allowPastDates
+                            />
+                          </div>
+                        ) : project.due_date ? (
+                          <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
                             <Calendar className="w-4 h-4" />
-                            <span>
-                              {format(new Date(project.due_date), 'MMM d, yyyy')}
-                              {' '}
-                              ({Math.abs(differenceInDays(new Date(project.due_date), new Date()))} days {isOverdue ? 'overdue' : 'remaining'})
-                            </span>
+                            <span>{format(new Date(project.due_date), 'MMM d')}</span>
                           </div>
-                        )}
+                        ) : null}
                         <div className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
-                          <span>Created {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
+                          <span>{formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
                         </div>
                       </div>
                     </div>

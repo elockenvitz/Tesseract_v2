@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { X, Plus, Trash2, Search, Check, Users } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { X, Plus, Trash2, Search, Check, Users, Building2 } from 'lucide-react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
+import { clsx } from 'clsx'
 import type { ProjectStatus, ProjectPriority, ProjectContextType, ProjectAssignmentRole } from '../../types/project'
 
 interface CreateProjectModalProps {
@@ -43,11 +44,13 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [contextType, setContextType] = useState<ProjectContextType | ''>('')
   const [contextId, setContextId] = useState<string>('')
   const [contextSearchQuery, setContextSearchQuery] = useState('')
+  const [selectedOrgGroupId, setSelectedOrgGroupId] = useState<string>('')
   const [deliverables, setDeliverables] = useState<DeliverableInput[]>([])
   const [newDeliverable, setNewDeliverable] = useState('')
   const [teamMembers, setTeamMembers] = useState<TeamMemberInput[]>([])
   const [userSearchQuery, setUserSearchQuery] = useState('')
   const [showTeamSection, setShowTeamSection] = useState(false)
+  const [teamTab, setTeamTab] = useState<'users' | 'groups'>('users')
 
   // Fetch all users
   const { data: users } = useQuery({
@@ -61,6 +64,102 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
       return data as User[]
     }
   })
+
+  // Fetch org groups with parent info
+  const { data: orgGroups } = useQuery({
+    queryKey: ['org-groups-for-projects'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, node_type, parent_id')
+        .order('name')
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  // Fetch org group memberships
+  const { data: orgMemberships } = useQuery({
+    queryKey: ['org-memberships-for-projects'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_node_members')
+        .select('user_id, node_id')
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  // Build map of org group -> member user ids (including child nodes)
+  const orgGroupMembers = useMemo(() => {
+    if (!orgGroups || orgGroups.length === 0) return new Map<string, string[]>()
+
+    // Build parent-child map (parent_id -> array of child node ids)
+    const childrenMap = new Map<string, string[]>()
+    for (const node of orgGroups) {
+      if (node.parent_id) {
+        const existing = childrenMap.get(node.parent_id)
+        if (existing) {
+          existing.push(node.id)
+        } else {
+          childrenMap.set(node.parent_id, [node.id])
+        }
+      }
+    }
+
+    // Build direct members map (node_id -> array of user_ids)
+    const directMembersMap = new Map<string, string[]>()
+    for (const m of (orgMemberships || [])) {
+      const existing = directMembersMap.get(m.node_id)
+      if (existing) {
+        existing.push(m.user_id)
+      } else {
+        directMembersMap.set(m.node_id, [m.user_id])
+      }
+    }
+
+    // Recursively get all members including from child nodes
+    const getAllMembers = (nodeId: string): string[] => {
+      const members = new Set<string>()
+
+      // Add direct members of this node
+      const direct = directMembersMap.get(nodeId)
+      if (direct) {
+        for (const userId of direct) {
+          members.add(userId)
+        }
+      }
+
+      // Recursively add members from all child nodes
+      const children = childrenMap.get(nodeId)
+      if (children) {
+        for (const childId of children) {
+          const childMembers = getAllMembers(childId)
+          for (const userId of childMembers) {
+            members.add(userId)
+          }
+        }
+      }
+
+      return Array.from(members)
+    }
+
+    // Build final map with hierarchical members for each node
+    const map = new Map<string, string[]>()
+    for (const node of orgGroups) {
+      map.set(node.id, getAllMembers(node.id))
+    }
+
+    return map
+  }, [orgGroups, orgMemberships])
+
+  // Filter org groups based on search
+  const filteredOrgGroups = useMemo(() => {
+    if (!orgGroups) return []
+    if (!userSearchQuery.trim()) return orgGroups
+    const query = userSearchQuery.toLowerCase()
+    return orgGroups.filter(g => g.name.toLowerCase().includes(query))
+  }, [orgGroups, userSearchQuery])
 
   // Fetch assets when context type is 'asset'
   const { data: assets } = useQuery({
@@ -131,7 +230,8 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
         priority,
         due_date: dueDate || null,
         context_type: contextType || null,
-        context_id: contextId || null
+        context_id: contextId || null,
+        org_group_id: selectedOrgGroupId || null
       })
 
       // Create the project
@@ -145,7 +245,8 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
           priority,
           due_date: dueDate || null,
           context_type: contextType || null,
-          context_id: contextId || null
+          context_id: contextId || null,
+          org_group_id: selectedOrgGroupId || null
         })
         .select()
         .single()
@@ -228,6 +329,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
     setContextType('')
     setContextId('')
     setContextSearchQuery('')
+    setSelectedOrgGroupId('')
     setDeliverables([])
     setNewDeliverable('')
     setTeamMembers([])
@@ -314,6 +416,16 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const handleAddTeamMember = (userId: string, role: ProjectAssignmentRole) => {
     if (!teamMembers.some(tm => tm.userId === userId)) {
       setTeamMembers([...teamMembers, { userId, role }])
+    }
+  }
+
+  const handleAddOrgGroup = (groupId: string, role: ProjectAssignmentRole) => {
+    const memberIds = orgGroupMembers.get(groupId) || []
+    const newMembers = memberIds
+      .filter(id => id !== user?.id && !teamMembers.some(tm => tm.userId === id))
+      .map(id => ({ userId: id, role }))
+    if (newMembers.length > 0) {
+      setTeamMembers([...teamMembers, ...newMembers])
     }
   }
 
@@ -452,7 +564,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 </div>
               </div>
 
-              {/* Due Date and Context Type */}
+              {/* Due Date and Org Group */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -468,22 +580,44 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Context Type
+                    <span className="flex items-center gap-1.5">
+                      <Building2 className="h-4 w-4" />
+                      Org Group
+                    </span>
                   </label>
                   <Select
-                    value={contextType}
-                    onChange={(e) => handleContextTypeChange(e.target.value as ProjectContextType | '')}
+                    value={selectedOrgGroupId}
+                    onChange={(e) => setSelectedOrgGroupId(e.target.value)}
                     disabled={createProjectMutation.isPending}
                     options={[
                       { value: '', label: 'None' },
-                      { value: 'asset', label: 'Asset' },
-                      { value: 'portfolio', label: 'Portfolio' },
-                      { value: 'theme', label: 'Theme' },
-                      { value: 'workflow', label: 'Workflow' },
-                      { value: 'general', label: 'General' }
+                      ...(orgGroups?.map(g => ({
+                        value: g.id,
+                        label: `${g.name} (${g.node_type})`
+                      })) || [])
                     ]}
                   />
                 </div>
+              </div>
+
+              {/* Context Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Context Type
+                </label>
+                <Select
+                  value={contextType}
+                  onChange={(e) => handleContextTypeChange(e.target.value as ProjectContextType | '')}
+                  disabled={createProjectMutation.isPending}
+                  options={[
+                    { value: '', label: 'None' },
+                    { value: 'asset', label: 'Asset' },
+                    { value: 'portfolio', label: 'Portfolio' },
+                    { value: 'theme', label: 'Theme' },
+                    { value: 'workflow', label: 'Workflow' },
+                    { value: 'general', label: 'General' }
+                  ]}
+                />
               </div>
 
               {/* Context Entity Selection */}
@@ -623,13 +757,43 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 {/* Inline Team Member Selector */}
                 {showTeamSection && (
                   <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                    {/* Search */}
-                    <div className="p-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                    {/* Tabs and Search */}
+                    <div className="p-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 space-y-2">
+                      {/* Tabs */}
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setTeamTab('users')}
+                          className={clsx(
+                            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                            teamTab === 'users'
+                              ? 'bg-white dark:bg-gray-800 text-primary-600 shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                          )}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          Users
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTeamTab('groups')}
+                          className={clsx(
+                            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                            teamTab === 'groups'
+                              ? 'bg-white dark:bg-gray-800 text-primary-600 shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                          )}
+                        >
+                          <Building2 className="w-3.5 h-3.5" />
+                          Groups
+                        </button>
+                      </div>
+                      {/* Search */}
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                         <input
                           type="text"
-                          placeholder="Search users..."
+                          placeholder={teamTab === 'users' ? 'Search users...' : 'Search groups...'}
                           value={userSearchQuery}
                           onChange={(e) => setUserSearchQuery(e.target.value)}
                           className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-800 dark:text-white"
@@ -638,53 +802,91 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                     </div>
 
                     {/* User List */}
-                    <div className="max-h-48 overflow-y-auto">
-                      {filteredUsers && filteredUsers.length > 0 ? (
-                        filteredUsers
-                          .filter(u => u.id !== user?.id) // Exclude current user
-                          .map((u) => {
-                            const isAdded = teamMembers.some(tm => tm.userId === u.id)
+                    {teamTab === 'users' && (
+                      <div className="max-h-48 overflow-y-auto">
+                        {filteredUsers && filteredUsers.length > 0 ? (
+                          filteredUsers
+                            .filter(u => u.id !== user?.id)
+                            .map((u) => {
+                              const isAdded = teamMembers.some(tm => tm.userId === u.id)
+                              return (
+                                <label
+                                  key={u.id}
+                                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isAdded}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        handleAddTeamMember(u.id, 'contributor')
+                                      } else {
+                                        handleRemoveTeamMember(u.id)
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                                  />
+                                  <div className="w-7 h-7 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-white text-xs font-semibold">
+                                      {getUserInitials(u)}
+                                    </span>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                      {getUserName(u)}
+                                    </p>
+                                    {u.first_name && u.last_name && (
+                                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                        {u.email}
+                                      </p>
+                                    )}
+                                  </div>
+                                </label>
+                              )
+                            })
+                        ) : (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">No users found</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Groups List */}
+                    {teamTab === 'groups' && (
+                      <div className="max-h-48 overflow-y-auto">
+                        {filteredOrgGroups && filteredOrgGroups.length > 0 ? (
+                          filteredOrgGroups.map((group) => {
+                            const memberCount = orgGroupMembers.get(group.id)?.length || 0
                             return (
-                              <label
-                                key={u.id}
-                                className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                              <button
+                                key={group.id}
+                                type="button"
+                                onClick={() => handleAddOrgGroup(group.id, 'contributor')}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={isAdded}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      handleAddTeamMember(u.id, 'contributor')
-                                    } else {
-                                      handleRemoveTeamMember(u.id)
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                                />
-                                <div className="w-7 h-7 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                                  <span className="text-white text-xs font-semibold">
-                                    {getUserInitials(u)}
-                                  </span>
+                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                                  <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                    {getUserName(u)}
+                                    {group.name}
                                   </p>
-                                  {u.first_name && u.last_name && (
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                      {u.email}
-                                    </p>
-                                  )}
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {group.node_type} · {memberCount} member{memberCount !== 1 ? 's' : ''}
+                                  </p>
                                 </div>
-                              </label>
+                                <Plus className="w-4 h-4 text-gray-400" />
+                              </button>
                             )
                           })
-                      ) : (
-                        <div className="px-4 py-6 text-center">
-                          <p className="text-sm text-gray-500 dark:text-gray-400">No users found</p>
-                        </div>
-                      )}
-                    </div>
+                        ) : (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">No groups found</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

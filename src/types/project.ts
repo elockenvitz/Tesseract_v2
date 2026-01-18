@@ -1,6 +1,6 @@
 export type ProjectStatus = 'planning' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
 export type ProjectPriority = 'low' | 'medium' | 'high' | 'urgent'
-export type ProjectAssignmentRole = 'owner' | 'contributor' | 'reviewer'
+export type ProjectAssignmentRole = 'owner' | 'lead' | 'collaborator'
 export type ProjectContextType = 'asset' | 'portfolio' | 'theme' | 'workflow' | 'general'
 
 export interface Project {
@@ -16,6 +16,7 @@ export interface Project {
   updated_at: string
   context_type: ProjectContextType | null
   context_id: string | null
+  org_group_id: string | null
 }
 
 export interface ProjectAssignment {
@@ -35,6 +36,8 @@ export interface ProjectDeliverable {
   completed: boolean
   completed_by: string | null
   completed_at: string | null
+  due_date: string | null
+  assigned_to: string | null
   created_at: string
   updated_at: string
   display_order: number
@@ -102,6 +105,12 @@ export interface ProjectWithAssignments extends Project {
   project_tags?: (ProjectTagAssignment & {
     project_tags: ProjectTag
   })[]
+  creator?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  } | null
 }
 
 export interface ProjectWithDetails extends Project {
@@ -145,6 +154,7 @@ export type ProjectActivityType =
   | 'deliverable_completed'
   | 'deliverable_uncompleted'
   | 'deliverable_deleted'
+  | 'deliverable_updated'
   | 'comment_added'
   | 'comment_updated'
   | 'comment_deleted'
@@ -170,4 +180,43 @@ export interface ProjectActivityWithActor extends ProjectActivity {
     first_name: string | null
     last_name: string | null
   } | null
+}
+
+// Dependency types for project pipeline
+export type DependencyType = 'blocks' | 'related'
+
+export interface ProjectDependency {
+  id: string
+  project_id: string
+  depends_on_id: string
+  dependency_type: DependencyType
+  created_by: string | null
+  created_at: string
+}
+
+export interface ProjectDependencyWithDetails extends ProjectDependency {
+  depends_on: {
+    id: string
+    title: string
+    status: ProjectStatus
+    priority: ProjectPriority
+  }
+  project: {
+    id: string
+    title: string
+    status: ProjectStatus
+    priority: ProjectPriority
+  }
+}
+
+// Extended project type with board position and dependencies
+export interface ProjectWithBoardPosition extends Project {
+  board_position: number
+}
+
+export interface ProjectWithDependencies extends ProjectWithAssignments {
+  board_position?: number
+  blocked_by?: ProjectDependencyWithDetails[]
+  blocking?: ProjectDependencyWithDetails[]
+  is_blocked?: boolean
 }

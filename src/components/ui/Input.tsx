@@ -37,7 +37,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
           ref={ref}
           id={inputId}
           className={clsx(
-            'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 shadow-sm transition-colors',
+            'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 shadow-sm transition-colors cursor-text',
             'focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500',
             error && 'border-error-500 focus:border-error-500 focus:ring-error-500',
             (rightAdornment || loading) && 'pr-10', // Add padding to the right if adornment or loading spinner exists
