@@ -79,7 +79,7 @@ export function MessagingSection({
         return []
       }
 
-      // Get distinct contexts with recent messages
+      // Get distinct contexts with recent messages (exclude trade_idea which has its own UI)
       const { data, error } = await supabase
         .from('messages')
         .select(`
@@ -90,6 +90,7 @@ export function MessagingSection({
           is_read,
           user_id
         `)
+        .neq('context_type', 'trade_idea')
         .order('created_at', { ascending: false })
         .limit(100)
 

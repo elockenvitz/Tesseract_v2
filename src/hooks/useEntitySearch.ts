@@ -31,8 +31,6 @@ export function useEntitySearch({
   const { data: results = [], isLoading, error } = useQuery({
     queryKey: ['entity-search', query, types.join(','), limit],
     queryFn: async () => {
-      if (!query.trim()) return []
-
       const searchResults: EntitySearchResult[] = []
       const searchPromises: Promise<void>[] = []
 
@@ -40,11 +38,16 @@ export function useEntitySearch({
       if (types.includes('user')) {
         searchPromises.push(
           (async () => {
-            const { data: users } = await supabase
+            let usersQuery = supabase
               .from('users')
               .select('id, email, first_name, last_name')
-              .or(`email.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
-              .limit(limit)
+
+            // If query is provided, filter by it; otherwise return all users
+            if (query.trim()) {
+              usersQuery = usersQuery.or(`email.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
+            }
+
+            const { data: users } = await usersQuery.limit(limit)
 
             if (users) {
               searchResults.push(...users.map(user => ({
@@ -267,7 +270,7 @@ export function useEntitySearch({
 
       return searchResults
     },
-    enabled: enabled && query.length > 0,
+    enabled: enabled,
     staleTime: 30000 // Cache for 30 seconds
   })
 

@@ -56,6 +56,7 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; ic
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300', icon: XCircle },
   executed: { label: 'Executed', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', icon: PlayCircle },
   cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300', icon: XCircle },
+  deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400', icon: Archive },
 }
 
 const ACTION_CONFIG: Record<TradeAction, { label: string; color: string; icon: React.ElementType }> = {
@@ -91,7 +92,7 @@ export function TradeQueuePage() {
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [activeSection, setActiveSection] = useState<'idea-pipeline' | 'pretrade' | 'post-trade'>('idea-pipeline')
-  const [thirdColumnView, setThirdColumnView] = useState<'approved' | 'rejected' | 'archived'>('approved')
+  const [thirdColumnView, setThirdColumnView] = useState<'approved' | 'rejected' | 'archived' | 'deleted'>('approved')
   const [fullscreenColumn, setFullscreenColumn] = useState<TradeQueueStatus | 'archived' | null>(null)
 
   // Fetch trade queue items
@@ -239,8 +240,9 @@ export function TradeQueuePage() {
 
     return tradeItems
       .filter(item => {
-        // Exclude archived items from main view
+        // Exclude archived and deleted items from main view
         if (archivedStatuses.includes(item.status)) return false
+        if (item.status === 'deleted') return false
         if (filters.status && filters.status !== 'all' && item.status !== filters.status) return false
         if (filters.urgency && filters.urgency !== 'all' && item.urgency !== filters.urgency) return false
         if (filters.action && filters.action !== 'all' && item.action !== filters.action) return false
@@ -274,6 +276,12 @@ export function TradeQueuePage() {
   const archivedItems = useMemo(() => {
     if (!tradeItems) return []
     return tradeItems.filter(item => archivedStatuses.includes(item.status))
+  }, [tradeItems])
+
+  // Deleted items (soft-deleted trade ideas)
+  const deletedItems = useMemo(() => {
+    if (!tradeItems) return []
+    return tradeItems.filter(item => item.status === 'deleted')
   }, [tradeItems])
 
   // Pretrade items - approved items that are linked to simulations
@@ -343,6 +351,7 @@ export function TradeQueuePage() {
       rejected: [],
       executed: [],
       cancelled: [],
+      deleted: [],
     }
 
     filteredItems.forEach(item => {
@@ -363,6 +372,7 @@ export function TradeQueuePage() {
       rejected: [],
       executed: [],
       cancelled: [],
+      deleted: [],
     }
 
     pairTradeGroups.forEach((group, pairTradeId) => {
@@ -694,7 +704,7 @@ export function TradeQueuePage() {
         {/* IDEA PIPELINE SECTION */}
         {activeSection === 'idea-pipeline' && (
           <>
-            {filteredItems.length === 0 ? (
+            {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 ? (
               <EmptyState
                 icon={TrendingUp}
                 title="No trade ideas yet"
@@ -761,7 +771,7 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
-                            onClick={(legId) => setSelectedTradeId(legId)}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
                           />
                         ))}
                         {/* Individual Trade Cards */}
@@ -828,7 +838,7 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
-                            onClick={(legId) => setSelectedTradeId(legId)}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
                           />
                         ))}
                         {/* Individual Trade Cards */}
@@ -861,11 +871,12 @@ export function TradeQueuePage() {
                       {thirdColumnView === 'approved' && <CheckCircle2 className="h-5 w-5 text-gray-500" />}
                       {thirdColumnView === 'rejected' && <XCircle className="h-5 w-5 text-gray-500" />}
                       {thirdColumnView === 'archived' && <Archive className="h-5 w-5 text-gray-500" />}
+                      {thirdColumnView === 'deleted' && <Archive className="h-5 w-5 text-red-500" />}
 
                       {/* Dropdown Toggle */}
                       <div className="relative group">
                         <button className="flex items-center gap-1 font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                          {thirdColumnView === 'approved' ? 'Approved' : thirdColumnView === 'rejected' ? 'Rejected' : 'Archived'}
+                          {thirdColumnView === 'approved' ? 'Approved' : thirdColumnView === 'rejected' ? 'Rejected' : thirdColumnView === 'archived' ? 'Archived' : 'Deleted'}
                           <ChevronDown className="h-4 w-4" />
                         </button>
                         <div className="absolute left-0 top-full mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
@@ -894,13 +905,24 @@ export function TradeQueuePage() {
                           <button
                             onClick={() => setThirdColumnView('archived')}
                             className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-b-lg",
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
                               thirdColumnView === 'archived' && "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400"
                             )}
                           >
                             <Archive className="h-4 w-4" />
                             Archived
                             <Badge variant="secondary" className="text-xs ml-auto">{archivedItems.length}</Badge>
+                          </button>
+                          <button
+                            onClick={() => setThirdColumnView('deleted')}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-b-lg",
+                              thirdColumnView === 'deleted' && "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400"
+                            )}
+                          >
+                            <Archive className="h-4 w-4 text-red-500" />
+                            Deleted
+                            <Badge variant="secondary" className="text-xs ml-auto">{deletedItems.length}</Badge>
                           </button>
                         </div>
                       </div>
@@ -910,7 +932,9 @@ export function TradeQueuePage() {
                           ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
                           : thirdColumnView === 'rejected'
                             ? itemsByStatus.rejected.length + pairTradesByStatus.rejected.length
-                            : archivedItems.length}
+                            : thirdColumnView === 'archived'
+                              ? archivedItems.length
+                              : deletedItems.length}
                       </Badge>
                       <button
                         onClick={() => setFullscreenColumn(fullscreenColumn === 'archived' ? null : 'archived')}
@@ -927,7 +951,7 @@ export function TradeQueuePage() {
                     <div className={clsx(
                       "flex-1 rounded-lg border-2 border-dashed p-2 transition-colors",
                       fullscreenColumn === 'archived' ? "min-h-[400px]" : "min-h-[200px]",
-                      draggedItem && thirdColumnView !== 'archived'
+                      draggedItem && thirdColumnView !== 'archived' && thirdColumnView !== 'deleted'
                         ? "border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/10"
                         : "border-gray-200 dark:border-gray-700"
                     )}>
@@ -947,7 +971,7 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
-                            onClick={(legId) => setSelectedTradeId(legId)}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
                           />
                         ))}
                         {thirdColumnView === 'rejected' && pairTradesByStatus.rejected.map(({ pairTradeId, pairTrade, legs }) => (
@@ -959,7 +983,7 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
-                            onClick={(legId) => setSelectedTradeId(legId)}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
                           />
                         ))}
                         {/* Individual Trade Cards */}
@@ -967,7 +991,9 @@ export function TradeQueuePage() {
                           ? itemsByStatus.approved
                           : thirdColumnView === 'rejected'
                             ? itemsByStatus.rejected
-                            : archivedItems
+                            : thirdColumnView === 'archived'
+                              ? archivedItems
+                              : deletedItems
                         ).map(item => (
                           <TradeQueueCard
                             key={item.id}
@@ -976,7 +1002,7 @@ export function TradeQueuePage() {
                             onDragStart={(e) => handleDragStart(e, item.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
-                            isArchived={thirdColumnView === 'archived'}
+                            isArchived={thirdColumnView === 'archived' || thirdColumnView === 'deleted'}
                           />
                         ))}
                       </div>
@@ -1306,7 +1332,7 @@ interface PairTradeCardProps {
   isDragging: boolean
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: () => void
-  onClick: (legId: string) => void
+  onPairClick: (pairId: string) => void
 }
 
 function PairTradeCard({
@@ -1316,7 +1342,7 @@ function PairTradeCard({
   isDragging,
   onDragStart,
   onDragEnd,
-  onClick
+  onPairClick
 }: PairTradeCardProps) {
   // Sort legs: long first, then short
   const sortedLegs = [...legs].sort((a, b) => {
@@ -1333,6 +1359,7 @@ function PairTradeCard({
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onClick={() => onPairClick(pairTradeId)}
       className={clsx(
         "bg-white dark:bg-gray-800 rounded-lg border-2 shadow-sm transition-all cursor-pointer",
         isDragging && "opacity-50 rotate-2 scale-105",
@@ -1353,10 +1380,7 @@ function PairTradeCard({
         <div className="space-y-2">
           {/* Long Leg */}
           {longLeg && (
-            <div
-              className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-              onClick={() => onClick(longLeg.id)}
-            >
+            <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
               <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
               <span className="text-xs font-medium text-green-700 dark:text-green-300 uppercase">Long</span>
               <span className="font-semibold text-gray-900 dark:text-white">{longLeg.assets?.symbol}</span>
@@ -1372,10 +1396,7 @@ function PairTradeCard({
 
           {/* Short Leg */}
           {shortLeg && (
-            <div
-              className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-              onClick={() => onClick(shortLeg.id)}
-            >
+            <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
               <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
               <span className="text-xs font-medium text-red-700 dark:text-red-300 uppercase">Short</span>
               <span className="font-semibold text-gray-900 dark:text-white">{shortLeg.assets?.symbol}</span>
@@ -1436,6 +1457,7 @@ function TradeQueueCard({
       draggable={!isArchived}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onClick={onClick}
       className={clsx(
         "bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer",
         isDragging && "opacity-50 rotate-2 scale-105",
@@ -1489,7 +1511,7 @@ function TradeQueueCard({
         </div>
 
         {/* Asset info */}
-        <div className="mb-2" onClick={onClick}>
+        <div className="mb-2">
           <div className="font-semibold text-gray-900 dark:text-white">
             {item.assets?.symbol}
           </div>
@@ -1499,7 +1521,7 @@ function TradeQueueCard({
         </div>
 
         {/* Portfolio, Creator, Date */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 text-xs text-gray-500 dark:text-gray-400" onClick={onClick}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 text-xs text-gray-500 dark:text-gray-400">
           {item.portfolios?.name && (
             <span className="flex items-center gap-1">
               <Briefcase className="h-3 w-3" />
@@ -1520,14 +1542,14 @@ function TradeQueueCard({
 
         {/* Sizing - show shares as supplementary info if we have both weight and shares */}
         {item.proposed_weight && item.proposed_shares && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2" onClick={onClick}>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
             {item.proposed_shares.toLocaleString()} shares
           </div>
         )}
 
         {/* Rationale preview */}
         {item.rationale && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2" onClick={onClick}>
+          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">
             {item.rationale}
           </p>
         )}

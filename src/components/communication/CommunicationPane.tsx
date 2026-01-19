@@ -72,7 +72,7 @@ export function CommunicationPane({
       case 'profile':
         return 'Profile'
       case 'thoughts':
-        return 'Quick Thoughts'
+        return 'Quick Ideas'
       default:
         return 'Communication'
     }
@@ -154,7 +154,15 @@ export function CommunicationPane({
         )
       case 'thoughts':
         return (
-          <ThoughtsSection />
+          <ThoughtsSection
+            onOpenDiscussion={(type, id, title) => {
+              // Switch to messages view with the trade idea as context
+              if (onContextChange) {
+                onContextChange(type, id, title)
+              }
+              onViewChange('messages')
+            }}
+          />
         )
       default:
         return (

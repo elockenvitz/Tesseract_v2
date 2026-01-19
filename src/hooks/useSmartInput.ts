@@ -268,37 +268,45 @@ export function useSmartInput({
   const calculateDropdownPosition = useCallback((textarea: HTMLTextAreaElement, triggerPos: number) => {
     const textareaRect = textarea.getBoundingClientRect()
     const computed = getComputedStyle(textarea)
-    const lineHeight = parseInt(computed.lineHeight) || 20
-    const paddingTop = parseInt(computed.paddingTop) || 0
     const paddingLeft = parseInt(computed.paddingLeft) || 0
 
-    // Get text before trigger to count lines and calculate position
-    const textBeforeTrigger = textarea.value.substring(0, triggerPos)
-    const lines = textBeforeTrigger.split('\n')
-    const currentLineNumber = lines.length - 1
-    const currentLineText = lines[lines.length - 1]
+    // Fixed dropdown dimensions for consistent positioning
+    const dropdownHeight = 220 // Header (36px) + content (192px)
+    const dropdownWidth = 288 // w-72 = 18rem = 288px
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
 
-    // Calculate vertical position: textarea top + padding + (line number * line height) - scroll + one line down
-    const top = textareaRect.top + paddingTop + (currentLineNumber * lineHeight) - textarea.scrollTop + lineHeight + 4
+    // Calculate available space above and below the ENTIRE textarea
+    const spaceAboveTextarea = textareaRect.top
+    const spaceBelowTextarea = viewportHeight - textareaRect.bottom
 
-    // Calculate horizontal position based on character position in current line
-    // Create a temporary span to measure text width
-    const measureSpan = document.createElement('span')
-    measureSpan.style.cssText = `
-      position: absolute;
-      visibility: hidden;
-      white-space: pre;
-      font-family: ${computed.fontFamily};
-      font-size: ${computed.fontSize};
-      font-weight: ${computed.fontWeight};
-      letter-spacing: ${computed.letterSpacing};
-    `
-    measureSpan.textContent = currentLineText
-    document.body.appendChild(measureSpan)
-    const textWidth = measureSpan.getBoundingClientRect().width
-    document.body.removeChild(measureSpan)
+    let top: number
+    if (spaceBelowTextarea >= dropdownHeight + 8) {
+      // Enough space below textarea - position below it
+      top = textareaRect.bottom + 4
+    } else if (spaceAboveTextarea >= dropdownHeight + 8) {
+      // Not enough below but enough above - position above textarea
+      top = textareaRect.top - dropdownHeight - 4
+    } else {
+      // Limited space - prefer above to not cover typing
+      top = Math.max(8, textareaRect.top - dropdownHeight - 4)
+    }
 
-    const left = textareaRect.left + paddingLeft + Math.min(textWidth, textareaRect.width - 40)
+    // Ensure top stays within viewport bounds
+    top = Math.max(8, Math.min(top, viewportHeight - dropdownHeight - 8))
+
+    // Calculate horizontal position - align with start of textarea for cleaner look
+    let left = textareaRect.left + paddingLeft
+
+    // If dropdown would go off right edge, move it left
+    if (left + dropdownWidth > viewportWidth - 16) {
+      left = viewportWidth - dropdownWidth - 16
+    }
+
+    // Ensure left is not negative
+    if (left < 8) {
+      left = 8
+    }
 
     return { top, left }
   }, [])

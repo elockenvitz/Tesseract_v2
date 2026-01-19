@@ -1,5 +1,24 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   FolderKanban,
   Calendar,
@@ -34,7 +53,12 @@ import {
   Flag,
   Target,
   Lock,
-  ArrowRight
+  ArrowRight,
+  GripVertical,
+  ArrowUpDown,
+  ListPlus,
+  CircleCheck,
+  Filter
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -43,7 +67,7 @@ import { Input } from '../ui/Input'
 import { TextArea } from '../ui/TextArea'
 import { Select } from '../ui/Select'
 import { supabase } from '../../lib/supabase'
-import { formatDistanceToNow, format } from 'date-fns'
+import { formatDistanceToNow, format, differenceInDays, startOfDay, parseISO } from 'date-fns'
 import { clsx } from 'clsx'
 import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../../types/project'
 import { useAuth } from '../../hooks/useAuth'
@@ -51,12 +75,280 @@ import { ProjectActivityFeed } from '../projects/ProjectActivityFeed'
 import { DependencyManager } from '../projects/DependencyManager'
 import { DatePicker } from '../ui/DatePicker'
 import { useProjectDependencies } from '../../hooks/useProjectDependencies'
+import { MentionInput } from '../ui/MentionInput'
 
 // Project detail tab component
 
 interface ProjectDetailTabProps {
   project: ProjectWithAssignments
   onNavigate?: (tab: { id: string; title: string; type: string; data?: any }) => void
+}
+
+// Sortable deliverable item component
+interface SortableDeliverableProps {
+  deliverable: any
+  priorityNumber: number | null
+  canManageProject: boolean
+  canCompleteDeliverables: boolean
+  onToggle: () => void
+  onDelete: () => void
+  onAssigneeClick: () => void
+  isAssigneeDropdownOpen: boolean
+  teamMembers: any[]
+  onAddAssignee: (userId: string) => void
+  onRemoveAssignee: (userId: string) => void
+  onDueDateChange: (date: string | null) => void
+  projectDueDate: string | null
+  isDragDisabled?: boolean
+  isJustDropped?: boolean
+}
+
+function SortableDeliverableItem({
+  deliverable,
+  priorityNumber,
+  canManageProject,
+  canCompleteDeliverables,
+  onToggle,
+  onDelete,
+  onAssigneeClick,
+  isAssigneeDropdownOpen,
+  teamMembers,
+  onAddAssignee,
+  onRemoveAssignee,
+  onDueDateChange,
+  projectDueDate,
+  isDragDisabled = false,
+  isJustDropped = false
+}: SortableDeliverableProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({
+    id: deliverable.id,
+    disabled: isDragDisabled || deliverable.completed
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition ? 'transform 150ms ease' : undefined,
+    opacity: isDragging ? 0 : 1
+  }
+
+  const assignments = deliverable.deliverable_assignments || []
+  const isOverdue = deliverable.due_date && !deliverable.completed && new Date(deliverable.due_date) < new Date()
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={clsx(
+        'flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 group hover:border-gray-300 dark:hover:border-gray-600 shadow-sm',
+        deliverable.completed && 'bg-gray-50 dark:bg-gray-800/50',
+        isJustDropped && 'animate-drop-pop'
+      )}
+    >
+      {/* Drag handle - only show in priority mode for incomplete items */}
+      {canManageProject && !deliverable.completed && !isDragDisabled && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="flex-shrink-0 p-1 -ml-2 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 touch-none"
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+      )}
+
+      {/* Priority number */}
+      {priorityNumber !== null && (
+        <span className={clsx(
+          'flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center',
+          deliverable.completed
+            ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
+            : 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+        )}>
+          {priorityNumber}
+        </span>
+      )}
+
+      {/* Completion checkbox */}
+      <button
+        onClick={onToggle}
+        disabled={!canCompleteDeliverables}
+        className={clsx(
+          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0',
+          deliverable.completed
+            ? 'bg-primary-500 border-primary-500'
+            : 'border-gray-300 dark:border-gray-600 hover:border-primary-500',
+          !canCompleteDeliverables && 'opacity-50 cursor-not-allowed'
+        )}
+      >
+        {deliverable.completed && (
+          <CheckCircle className="w-3 h-3 text-white" />
+        )}
+      </button>
+
+      {/* Title */}
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <span className={clsx(
+          'text-sm truncate',
+          deliverable.completed
+            ? 'line-through text-gray-400 dark:text-gray-500'
+            : 'text-gray-900 dark:text-white'
+        )}>
+          {deliverable.title}
+        </span>
+        {/* Link indicator for deliverables from comments */}
+        {deliverable.source_comment_id && (
+          <span
+            className="flex-shrink-0 text-gray-400 dark:text-gray-500"
+            title="Created from comment"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Assignees */}
+        {teamMembers && teamMembers.length > 0 && (
+          <div className="relative" data-dropdown>
+            {canManageProject ? (
+              <button
+                onClick={onAssigneeClick}
+                className="flex items-center"
+              >
+                {assignments.length > 0 ? (
+                  <div className="flex gap-1">
+                    {assignments.slice(0, 3).map((assignment: any) => {
+                      const initials = (assignment.user?.first_name?.[0] || '') + (assignment.user?.last_name?.[0] || '') || assignment.user?.email?.[0]?.toUpperCase()
+                      return (
+                        <div
+                          key={assignment.id}
+                          className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-[10px] font-medium flex items-center justify-center"
+                          title={`${assignment.user?.first_name || ''} ${assignment.user?.last_name || ''}`.trim() || assignment.user?.email}
+                        >
+                          {initials}
+                        </div>
+                      )
+                    })}
+                    {assignments.length > 3 && (
+                      <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 text-[10px] font-medium flex items-center justify-center">
+                        +{assignments.length - 3}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </button>
+            ) : (
+              assignments.length > 0 && (
+                <div className="flex gap-1">
+                  {assignments.slice(0, 3).map((assignment: any) => {
+                    const initials = (assignment.user?.first_name?.[0] || '') + (assignment.user?.last_name?.[0] || '') || assignment.user?.email?.[0]?.toUpperCase()
+                    return (
+                      <div
+                        key={assignment.id}
+                        className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-[10px] font-medium flex items-center justify-center"
+                        title={`${assignment.user?.first_name || ''} ${assignment.user?.last_name || ''}`.trim() || assignment.user?.email}
+                      >
+                        {initials}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            )}
+
+            {/* Assignee dropdown */}
+            {canManageProject && isAssigneeDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1 py-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 min-w-[200px]">
+                <div className="px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                  Assign to
+                </div>
+                {teamMembers.map((member: any) => {
+                  const isAssigned = assignments.some((a: any) => a.user_id === member.assigned_to)
+                  const initials = (member.user?.first_name?.[0] || '') + (member.user?.last_name?.[0] || '') || member.user?.email?.[0]?.toUpperCase()
+                  const fullName = `${member.user?.first_name || ''} ${member.user?.last_name || ''}`.trim() || member.user?.email?.split('@')[0]
+                  return (
+                    <button
+                      key={member.assigned_to}
+                      type="button"
+                      onClick={() => {
+                        if (isAssigned) {
+                          onRemoveAssignee(member.assigned_to)
+                        } else {
+                          onAddAssignee(member.assigned_to)
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                    >
+                      <div className={clsx(
+                        'w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0',
+                        isAssigned
+                          ? 'bg-primary-600 border-primary-600'
+                          : 'border-gray-300 dark:border-gray-600'
+                      )}>
+                        {isAssigned && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-[10px] font-medium flex items-center justify-center flex-shrink-0">
+                        {initials}
+                      </span>
+                      <span className={clsx(
+                        'truncate',
+                        isAssigned ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-700 dark:text-gray-300'
+                      )}>
+                        {fullName}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Due date */}
+        {canManageProject ? (
+          <DatePicker
+            value={deliverable.due_date}
+            onChange={onDueDateChange}
+            placeholder="Due"
+            variant="inline"
+            compact
+            maxDate={projectDueDate}
+            projectDueDate={projectDueDate}
+            isCompleted={deliverable.completed}
+          />
+        ) : deliverable.due_date ? (
+          <span className={clsx(
+            'text-xs px-2 py-1 rounded',
+            isOverdue
+              ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20'
+              : 'text-gray-500 dark:text-gray-400'
+          )}>
+            {format(new Date(deliverable.due_date), 'MMM d')}
+          </span>
+        ) : null}
+
+        {/* Delete button */}
+        {canManageProject && (
+          <button
+            onClick={onDelete}
+            className="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps) {
@@ -69,11 +361,29 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   const [openAssigneeDropdown, setOpenAssigneeDropdown] = useState<string | null>(null)
   const [showNewDeliverableAssignees, setShowNewDeliverableAssignees] = useState(false)
   const [newComment, setNewComment] = useState('')
+  const [commentMentions, setCommentMentions] = useState<string[]>([])
+  const [commentReferences, setCommentReferences] = useState<Array<{ type: string; id: string; text: string }>>([])
+  const [reprioritizeType, setReprioritizeType] = useState<'none' | 'project' | 'deliverable'>('none')
+  const [reprioritizeTarget, setReprioritizeTarget] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [replyContent, setReplyContent] = useState('')
+  const [replyMentions, setReplyMentions] = useState<string[]>([])
+  const [replyReferences, setReplyReferences] = useState<Array<{ type: string; id: string; text: string }>>([])
+  const [replyReprioritizeType, setReplyReprioritizeType] = useState<'none' | 'project' | 'deliverable'>('none')
+  const [replyReprioritizeTarget, setReplyReprioritizeTarget] = useState<string | null>(null)
   const [collapsedComments, setCollapsedComments] = useState<Set<string>>(new Set())
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [editCommentContent, setEditCommentContent] = useState('')
+  const [commentFilter, setCommentFilter] = useState<'all' | 'unresolved' | 'mentions' | 'actionable' | 'mine'>('all')
+  const [commentSort, setCommentSort] = useState<'newest' | 'oldest'>('newest')
+  const [convertToDeliverableModal, setConvertToDeliverableModal] = useState<{
+    commentId: string
+    title: string
+    description: string
+    dueDate: string
+    assignees: string[]
+    showAssigneeDropdown: boolean
+  } | null>(null)
   const [editingProject, setEditingProject] = useState(false)
   const [editedTitle, setEditedTitle] = useState(project.title)
   const [editedDescription, setEditedDescription] = useState(project.description || '')
@@ -87,6 +397,10 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   const [pendingRemoveGroupId, setPendingRemoveGroupId] = useState<string | null>(null)
   const [openRoleDropdown, setOpenRoleDropdown] = useState<string | null>(null)
   const [recentlyAddedIds, setRecentlyAddedIds] = useState<Set<string>>(new Set())
+  const [deliverableSortMode, setDeliverableSortMode] = useState<'priority' | 'due_date'>('priority')
+  const [activeDeliverableId, setActiveDeliverableId] = useState<string | null>(null)
+  const [optimisticOrder, setOptimisticOrder] = useState<any[] | null>(null)
+  const [justDroppedId, setJustDroppedId] = useState<string | null>(null)
 
   // Fetch fresh project data to ensure we have the latest creator info
   const { data: freshProject } = useQuery({
@@ -125,7 +439,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
           )
         `)
         .eq('project_id', project.id)
-        .order('created_at', { ascending: false })
+        .order('display_order', { ascending: true })
 
       if (error) throw error
       return data || []
@@ -133,14 +447,14 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   })
 
   // Fetch comments with reactions
-  const { data: comments } = useQuery({
+  const { data: comments, error: commentsError } = useQuery({
     queryKey: ['project-comments', project.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('project_comments')
         .select(`
           *,
-          user:users(id, first_name, last_name, email),
+          user:users!user_id(id, first_name, last_name, email),
           project_comment_reactions(id, user_id, reaction_type)
         `)
         .eq('project_id', project.id)
@@ -151,20 +465,41 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     }
   })
 
+  // Log comments error for debugging
+  if (commentsError) {
+    console.error('Error fetching comments:', commentsError)
+  }
+
   // Organize comments into tree structure
   const commentTree = useMemo(() => {
     if (!comments) return []
+
+    // Apply filter first
+    const filteredComments = comments.filter((comment: any) => {
+      switch (commentFilter) {
+        case 'unresolved':
+          return !comment.resolved_at
+        case 'mentions':
+          return comment.metadata?.mentions?.length > 0
+        case 'actionable':
+          return comment.metadata?.reprioritize || comment.metadata?.mentions?.length > 0
+        case 'mine':
+          return comment.user_id === user?.id
+        default:
+          return true
+      }
+    })
 
     const commentMap = new Map()
     const rootComments: any[] = []
 
     // First pass: create map of all comments
-    comments.forEach((comment: any) => {
+    filteredComments.forEach((comment: any) => {
       commentMap.set(comment.id, { ...comment, replies: [] })
     })
 
     // Second pass: build tree structure
-    comments.forEach((comment: any) => {
+    filteredComments.forEach((comment: any) => {
       const commentWithReplies = commentMap.get(comment.id)
       if (comment.parent_id) {
         const parent = commentMap.get(comment.parent_id)
@@ -176,8 +511,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
       }
     })
 
+    // Sort root comments
+    rootComments.sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime()
+      const dateB = new Date(b.created_at).getTime()
+      return commentSort === 'newest' ? dateB - dateA : dateA - dateB
+    })
+
     return rootComments
-  }, [comments])
+  }, [comments, commentFilter, commentSort, user?.id])
 
   // Fetch team members with user details
   const { data: teamMembers = [] } = useQuery({
@@ -210,6 +552,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     // Check if user is a lead
     const userAssignment = teamMembers.find((m: any) => m.assigned_to === user.id)
     return userAssignment?.role === 'lead'
+  }, [user, projectData.created_by, teamMembers])
+
+  // Check if user can complete deliverables (any team member can)
+  const canCompleteDeliverables = useMemo(() => {
+    if (!user) return false
+    // Project creator can always complete
+    if (projectData.created_by === user.id) return true
+    // Any team member can complete deliverables
+    return teamMembers.some((m: any) => m.assigned_to === user.id)
   }, [user, projectData.created_by, teamMembers])
 
   // Fetch all users for team member search
@@ -749,6 +1100,29 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     }
   })
 
+  // Reorder deliverables mutation
+  const reorderDeliverablesMutation = useMutation({
+    mutationFn: async (updates: { id: string; display_order: number }[]) => {
+      // Batch update all display_orders
+      const promises = updates.map(({ id, display_order }) =>
+        supabase
+          .from('project_deliverables')
+          .update({ display_order })
+          .eq('id', id)
+      )
+      await Promise.all(promises)
+    },
+    onSuccess: async () => {
+      // Refetch data first, then clear optimistic order
+      await queryClient.invalidateQueries({ queryKey: ['project-deliverables', project.id] })
+      setOptimisticOrder(null)
+    },
+    onError: () => {
+      // On error, clear optimistic order to revert to original
+      setOptimisticOrder(null)
+    }
+  })
+
   // Update deliverable due date mutation
   const updateDeliverableDueDateMutation = useMutation({
     mutationFn: async ({ deliverableId, dueDate }: { deliverableId: string, dueDate: string | null }) => {
@@ -805,26 +1179,54 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
       if (!user?.id) throw new Error('Not authenticated')
 
       const content = parentId ? replyContent : newComment
+      const mentions = parentId ? replyMentions : commentMentions
+      const reprioType = parentId ? replyReprioritizeType : reprioritizeType
+      const reprioTarget = parentId ? replyReprioritizeTarget : reprioritizeTarget
+
+      // Build reprioritization prefix if set
+      let finalContent = content
+      if (reprioType !== 'none') {
+        const targetName = reprioType === 'project'
+          ? 'this project'
+          : deliverables?.find(d => d.id === reprioTarget)?.title || 'deliverable'
+        finalContent = `🔄 **Reprioritization Suggestion** for ${targetName}:\n\n${content}`
+      }
 
       const { error } = await supabase
         .from('project_comments')
         .insert({
           project_id: project.id,
           user_id: user.id,
-          content,
-          parent_id: parentId || null
+          content: finalContent,
+          parent_id: parentId || null,
+          metadata: mentions.length > 0 || reprioType !== 'none' ? {
+            mentions,
+            reprioritize: reprioType !== 'none' ? { type: reprioType, target: reprioTarget } : null
+          } : null
         })
 
       if (error) throw error
     },
-    onSuccess: (_, parentId) => {
-      queryClient.invalidateQueries({ queryKey: ['project-comments', project.id] })
+    onSuccess: async (_, parentId) => {
+      // Use refetchQueries to wait for the actual data to be fetched, not just invalidated
+      await queryClient.refetchQueries({ queryKey: ['project-comments', project.id] })
       if (parentId) {
         setReplyContent('')
         setReplyingTo(null)
+        setReplyMentions([])
+        setReplyReferences([])
+        setReplyReprioritizeType('none')
+        setReplyReprioritizeTarget(null)
       } else {
         setNewComment('')
+        setCommentMentions([])
+        setCommentReferences([])
+        setReprioritizeType('none')
+        setReprioritizeTarget(null)
       }
+    },
+    onError: (error) => {
+      console.error('Failed to add comment:', error)
     }
   })
 
@@ -898,6 +1300,102 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     }
   })
 
+  // Toggle comment resolved status
+  const toggleResolvedMutation = useMutation({
+    mutationFn: async ({ commentId, resolved }: { commentId: string; resolved: boolean }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      const { error } = await supabase
+        .from('project_comments')
+        .update({
+          resolved_at: resolved ? new Date().toISOString() : null,
+          resolved_by: resolved ? user.id : null
+        })
+        .eq('id', commentId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-comments', project.id] })
+    },
+    onError: (error) => {
+      console.error('Failed to toggle resolved status:', error)
+    }
+  })
+
+  // Convert comment to deliverable
+  const convertToDeliverableMutation = useMutation({
+    mutationFn: async ({
+      commentId,
+      title,
+      description,
+      dueDate,
+      assignees
+    }: {
+      commentId: string
+      title: string
+      description?: string
+      dueDate?: string
+      assignees?: string[]
+    }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      // Get the next display_order
+      const { data: existingDeliverables } = await supabase
+        .from('project_deliverables')
+        .select('display_order')
+        .eq('project_id', project.id)
+        .order('display_order', { ascending: false })
+        .limit(1)
+
+      const nextOrder = (existingDeliverables?.[0]?.display_order ?? -1) + 1
+
+      const { data: newDeliverable, error } = await supabase
+        .from('project_deliverables')
+        .insert({
+          project_id: project.id,
+          title,
+          description: description || null,
+          due_date: dueDate || null,
+          source_comment_id: commentId,
+          completed: false,
+          display_order: nextOrder
+        })
+        .select('id')
+        .single()
+
+      if (error) throw error
+
+      // Add assignees if any
+      if (assignees && assignees.length > 0 && newDeliverable) {
+        const assignmentRows = assignees.map(userId => ({
+          deliverable_id: newDeliverable.id,
+          user_id: userId
+        }))
+        const { error: assignError } = await supabase
+          .from('deliverable_assignments')
+          .insert(assignmentRows)
+        if (assignError) console.error('Error adding assignees:', assignError)
+      }
+
+      // Mark the comment as resolved after converting
+      await supabase
+        .from('project_comments')
+        .update({
+          resolved_at: new Date().toISOString(),
+          resolved_by: user.id
+        })
+        .eq('id', commentId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-comments', project.id] })
+      queryClient.invalidateQueries({ queryKey: ['project-deliverables', project.id] })
+    },
+    onError: (error) => {
+      console.error('Failed to convert comment to deliverable:', error)
+    }
+  })
+
   const getStatusIcon = (status: ProjectStatus) => {
     switch (status) {
       case 'planning':
@@ -946,8 +1444,108 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   const completedDeliverables = deliverables?.filter(d => d.completed).length || 0
   const completionPercentage = totalDeliverables > 0 ? (completedDeliverables / totalDeliverables) * 100 : 0
 
+  // DnD sensors for deliverable reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 4
+      }
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates
+    })
+  )
+
+  // Sort deliverables: incomplete first (by priority or due date), then completed at bottom
+  const baseSortedDeliverables = useMemo(() => {
+    if (!deliverables) return []
+
+    const incomplete = deliverables.filter(d => !d.completed)
+    const completed = deliverables.filter(d => d.completed)
+
+    // Sort incomplete based on mode
+    if (deliverableSortMode === 'due_date') {
+      incomplete.sort((a, b) => {
+        // Items without due date go to end
+        if (!a.due_date && !b.due_date) return (a.display_order || 0) - (b.display_order || 0)
+        if (!a.due_date) return 1
+        if (!b.due_date) return -1
+        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
+      })
+    } else {
+      // Priority mode - sort by display_order
+      incomplete.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+    }
+
+    // Completed items sorted by completion time (most recent first) or display_order
+    completed.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+
+    return [...incomplete, ...completed]
+  }, [deliverables, deliverableSortMode])
+
+  // Use optimistic order during drag, otherwise use base sorted order
+  const sortedDeliverables = optimisticOrder || baseSortedDeliverables
+
+  // Get the active deliverable for drag overlay
+  const activeDeliverable = useMemo(() => {
+    if (!activeDeliverableId) return null
+    return sortedDeliverables.find(d => d.id === activeDeliverableId) || null
+  }, [activeDeliverableId, sortedDeliverables])
+
+  // Handle drag start
+  const handleDeliverableDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDeliverableId(event.active.id as string)
+    // Initialize optimistic order on drag start
+    setOptimisticOrder(baseSortedDeliverables)
+  }, [baseSortedDeliverables])
+
+  // Handle drag over for real-time reordering
+  const handleDeliverableDragOver = useCallback((event: any) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    setOptimisticOrder(currentOrder => {
+      const list = currentOrder || baseSortedDeliverables
+      const oldIndex = list.findIndex(d => d.id === active.id)
+      const newIndex = list.findIndex(d => d.id === over.id)
+
+      if (oldIndex === -1 || newIndex === -1) return list
+
+      // Don't allow dragging completed items or into completed section
+      if (list[oldIndex]?.completed || list[newIndex]?.completed) return list
+
+      return arrayMove(list, oldIndex, newIndex)
+    })
+  }, [baseSortedDeliverables])
+
+  // Handle drag end for deliverable reordering
+  const handleDeliverableDragEnd = useCallback((event: DragEndEvent) => {
+    const { active } = event
+    setActiveDeliverableId(null)
+
+    // Trigger drop animation
+    setJustDroppedId(active.id as string)
+    setTimeout(() => setJustDroppedId(null), 300)
+
+    // Use the current optimistic order for persistence
+    if (optimisticOrder) {
+      const incompleteItems = optimisticOrder.filter(d => !d.completed)
+
+      // Generate new display_order values
+      const updates = incompleteItems.map((item, index) => ({
+        id: item.id,
+        display_order: index
+      }))
+
+      reorderDeliverablesMutation.mutate(updates)
+    } else {
+      // No change, clear any state
+      setOptimisticOrder(null)
+    }
+  }, [optimisticOrder, reorderDeliverablesMutation])
+
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="px-6 py-4">
@@ -1322,24 +1920,25 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
           activeTab === 'activity' ? 'p-2' : 'p-6'
         )}>
           {activeTab === 'overview' && (() => {
-            // Calculate upcoming and overdue tasks
-            const now = new Date()
+            // Calculate upcoming and overdue tasks using startOfDay for consistency
+            const today = startOfDay(new Date())
             const upcomingTasks = deliverables?.filter(d => {
               if (d.completed || !d.due_date) return false
-              const dueDate = new Date(d.due_date)
-              const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+              const dueDate = startOfDay(parseISO(d.due_date))
+              const daysUntilDue = differenceInDays(dueDate, today)
               return daysUntilDue >= 0 && daysUntilDue <= 7
             }).sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime()) || []
 
             const overdueTasks = deliverables?.filter(d => {
               if (d.completed || !d.due_date) return false
-              return new Date(d.due_date) < now
+              const dueDate = startOfDay(parseISO(d.due_date))
+              return differenceInDays(dueDate, today) < 0
             }).sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime()) || []
 
             // Calculate days until project due date
-            const projectDueDate = project.due_date ? new Date(project.due_date) : null
+            const projectDueDate = project.due_date ? startOfDay(parseISO(project.due_date)) : null
             const daysUntilProjectDue = projectDueDate
-              ? Math.ceil((projectDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+              ? differenceInDays(projectDueDate, today)
               : null
 
             return (
@@ -1729,208 +2328,149 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
               </div>
               )}
 
-              {/* Deliverables List */}
-              <div className="space-y-3">
-                {deliverables?.map((deliverable) => {
-                  const assignments = deliverable.deliverable_assignments || []
-                  const assignedUserIds = assignments.map((a: any) => a.user_id)
-
-                  return (
-                    <div
-                      key={deliverable.id}
-                      className="flex items-center gap-4 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 group hover:border-gray-300 dark:hover:border-gray-600 shadow-sm"
-                    >
+              {/* Sort Toggle */}
+              {sortedDeliverables.length > 0 && (
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <ArrowUpDown className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Sort by:</span>
+                    <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                       <button
-                        onClick={() => toggleDeliverableMutation.mutate({
-                          id: deliverable.id,
-                          completed: deliverable.completed
-                        })}
+                        onClick={() => setDeliverableSortMode('priority')}
                         className={clsx(
-                          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0',
-                          deliverable.completed
-                            ? 'bg-primary-500 border-primary-500'
-                            : 'border-gray-300 dark:border-gray-600 hover:border-primary-500'
+                          'px-3 py-1.5 text-xs font-medium transition-colors',
+                          deliverableSortMode === 'priority'
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                         )}
                       >
-                        {deliverable.completed && (
-                          <CheckCircle className="w-3 h-3 text-white" />
-                        )}
+                        Priority
                       </button>
+                      <button
+                        onClick={() => setDeliverableSortMode('due_date')}
+                        className={clsx(
+                          'px-3 py-1.5 text-xs font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
+                          deliverableSortMode === 'due_date'
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        )}
+                      >
+                        Due Date
+                      </button>
+                    </div>
+                  </div>
+                  {deliverableSortMode === 'priority' && canManageProject && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      Drag to reorder
+                    </span>
+                  )}
+                </div>
+              )}
 
-                      <span className={clsx(
-                        'flex-1 text-sm',
-                        deliverable.completed
-                          ? 'line-through text-gray-400 dark:text-gray-500'
-                          : 'text-gray-900 dark:text-white'
-                      )}>
-                        {deliverable.title}
-                      </span>
+              {/* Deliverables List */}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDeliverableDragStart}
+                onDragOver={handleDeliverableDragOver}
+                onDragEnd={handleDeliverableDragEnd}
+              >
+                <SortableContext
+                  items={sortedDeliverables.map(d => d.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-2 overflow-x-clip">
+                    {sortedDeliverables.map((deliverable, index) => {
+                      // Calculate priority number (only for incomplete items)
+                      const incompleteItems = sortedDeliverables.filter(d => !d.completed)
+                      const priorityNumber = deliverable.completed
+                        ? null
+                        : incompleteItems.findIndex(d => d.id === deliverable.id) + 1
 
-                      <div className="flex items-center gap-2">
-                        {/* Assignees - only show if there are team members */}
-                        {teamMembers && teamMembers.length > 0 && (
-                          <div className="relative" data-dropdown>
-                            {/* Stacked avatars or assign button - click to open dropdown (managers only) */}
-                            {canManageProject ? (
-                              <button
-                                onClick={() => setOpenAssigneeDropdown(openAssigneeDropdown === deliverable.id ? null : deliverable.id)}
-                                className="flex items-center"
-                              >
-                                {assignments.length > 0 ? (
-                                  <div className="flex gap-1">
-                                    {assignments.slice(0, 3).map((assignment: any) => {
-                                      const initials = (assignment.user?.first_name?.[0] || '') + (assignment.user?.last_name?.[0] || '') || assignment.user?.email?.[0]?.toUpperCase()
-                                      return (
-                                        <div
-                                          key={assignment.id}
-                                          className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-[10px] font-medium flex items-center justify-center"
-                                          title={`${assignment.user?.first_name || ''} ${assignment.user?.last_name || ''}`.trim() || assignment.user?.email}
-                                        >
-                                          {initials}
-                                        </div>
-                                      )
-                                    })}
-                                    {assignments.length > 3 && (
-                                      <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 text-[10px] font-medium flex items-center justify-center">
-                                        +{assignments.length - 3}
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                                    <UserPlus className="w-3.5 h-3.5" />
-                                  </div>
-                                )}
-                              </button>
-                            ) : (
-                              // Read-only view for non-managers
-                              assignments.length > 0 && (
-                                <div className="flex gap-1">
-                                  {assignments.slice(0, 3).map((assignment: any) => {
-                                    const initials = (assignment.user?.first_name?.[0] || '') + (assignment.user?.last_name?.[0] || '') || assignment.user?.email?.[0]?.toUpperCase()
-                                    return (
-                                      <div
-                                        key={assignment.id}
-                                        className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-[10px] font-medium flex items-center justify-center"
-                                        title={`${assignment.user?.first_name || ''} ${assignment.user?.last_name || ''}`.trim() || assignment.user?.email}
-                                      >
-                                        {initials}
-                                      </div>
-                                    )
-                                  })}
-                                  {assignments.length > 3 && (
-                                    <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 text-[10px] font-medium flex items-center justify-center">
-                                      +{assignments.length - 3}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            )}
-                            {/* Dropdown on click with checkboxes - managers only */}
-                            {canManageProject && openAssigneeDropdown === deliverable.id && (
-                              <div className="absolute right-0 top-full mt-1 py-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 min-w-[200px]">
-                                <div className="px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                                  Assign to
-                                </div>
-                                {teamMembers.map((member: any) => {
-                                  const isAssigned = assignedUserIds.includes(member.assigned_to)
-                                  const initials = (member.user?.first_name?.[0] || '') + (member.user?.last_name?.[0] || '') || member.user?.email?.[0]?.toUpperCase()
-                                  const fullName = `${member.user?.first_name || ''} ${member.user?.last_name || ''}`.trim() || member.user?.email?.split('@')[0]
-                                  return (
-                                    <button
-                                      key={member.assigned_to}
-                                      onClick={() => {
-                                        if (isAssigned) {
-                                          removeDeliverableAssigneeMutation.mutate({
-                                            deliverableId: deliverable.id,
-                                            userId: member.assigned_to
-                                          })
-                                        } else {
-                                          addDeliverableAssigneeMutation.mutate({
-                                            deliverableId: deliverable.id,
-                                            userId: member.assigned_to
-                                          })
-                                        }
-                                      }}
-                                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
-                                    >
-                                      <div className={clsx(
-                                        'w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0',
-                                        isAssigned
-                                          ? 'bg-primary-600 border-primary-600'
-                                          : 'border-gray-300 dark:border-gray-600'
-                                      )}>
-                                        {isAssigned && <Check className="w-3 h-3 text-white" />}
-                                      </div>
-                                      <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-[10px] font-medium flex items-center justify-center flex-shrink-0">
-                                        {initials}
-                                      </span>
-                                      <span className={clsx(
-                                        'truncate',
-                                        isAssigned ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-700 dark:text-gray-300'
-                                      )}>
-                                        {fullName}
-                                      </span>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            )}
+                      return (
+                        <SortableDeliverableItem
+                          key={deliverable.id}
+                          deliverable={deliverable}
+                          priorityNumber={priorityNumber}
+                          canManageProject={canManageProject}
+                          canCompleteDeliverables={canCompleteDeliverables}
+                          onToggle={() => toggleDeliverableMutation.mutate({
+                            id: deliverable.id,
+                            completed: deliverable.completed
+                          })}
+                          onDelete={() => {
+                            if (window.confirm('Delete this deliverable?')) {
+                              deleteDeliverableMutation.mutate(deliverable.id)
+                            }
+                          }}
+                          onAssigneeClick={() => setOpenAssigneeDropdown(
+                            openAssigneeDropdown === deliverable.id ? null : deliverable.id
+                          )}
+                          isAssigneeDropdownOpen={openAssigneeDropdown === deliverable.id}
+                          teamMembers={teamMembers || []}
+                          onAddAssignee={(userId) => addDeliverableAssigneeMutation.mutate({
+                            deliverableId: deliverable.id,
+                            userId
+                          })}
+                          onRemoveAssignee={(userId) => removeDeliverableAssigneeMutation.mutate({
+                            deliverableId: deliverable.id,
+                            userId
+                          })}
+                          onDueDateChange={(date) => updateDeliverableDueDateMutation.mutate({
+                            deliverableId: deliverable.id,
+                            dueDate: date
+                          })}
+                          projectDueDate={project.due_date}
+                          isDragDisabled={deliverableSortMode === 'due_date'}
+                          isJustDropped={justDroppedId === deliverable.id}
+                        />
+                      )
+                    })}
+
+                    {/* Completed section divider */}
+                    {sortedDeliverables.some(d => d.completed) && sortedDeliverables.some(d => !d.completed) && (
+                      <div className="flex items-center gap-3 py-2">
+                        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                        <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                          Completed ({sortedDeliverables.filter(d => d.completed).length})
+                        </span>
+                        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                      </div>
+                    )}
+                  </div>
+                </SortableContext>
+
+                {/* Drag overlay for smooth visual feedback */}
+                <DragOverlay>
+                  {activeDeliverable ? (
+                    <div className="bg-white dark:bg-gray-800 border border-blue-400 rounded-lg shadow-xl p-3 opacity-95">
+                      <div className="flex items-center gap-3">
+                        <GripVertical className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                        {!activeDeliverable.completed && (
+                          <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center font-medium flex-shrink-0">
+                            {sortedDeliverables.filter(d => !d.completed).findIndex(d => d.id === activeDeliverable.id) + 1}
                           </div>
                         )}
-
-                        {/* Due date - editable for managers, read-only for others */}
-                        {canManageProject ? (
-                          <DatePicker
-                            value={deliverable.due_date}
-                            onChange={(date) => updateDeliverableDueDateMutation.mutate({ deliverableId: deliverable.id, dueDate: date })}
-                            placeholder="Due"
-                            variant="inline"
-                            compact
-                            showOverdue
-                            isCompleted={deliverable.completed}
-                            maxDate={project.due_date}
-                            projectDueDate={project.due_date}
-                          />
-                        ) : deliverable.due_date ? (
-                          <span className={clsx(
-                            'text-xs flex items-center gap-1',
-                            !deliverable.completed && new Date(deliverable.due_date) < new Date()
-                              ? 'text-red-600 dark:text-red-400'
-                              : 'text-gray-500 dark:text-gray-400'
-                          )}>
-                            <Calendar className="w-3 h-3" />
-                            {format(new Date(deliverable.due_date), 'MMM d')}
-                          </span>
-                        ) : null}
-
-                        {/* Delete button - managers only */}
-                        {canManageProject && (
-                          <button
-                            onClick={() => {
-                              if (window.confirm('Delete this deliverable?')) {
-                                deleteDeliverableMutation.mutate(deliverable.id)
-                              }
-                            }}
-                            className="p-1 rounded text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <span className={clsx(
+                          "font-medium truncate",
+                          activeDeliverable.completed && "line-through text-gray-400"
+                        )}>
+                          {activeDeliverable.title}
+                        </span>
                       </div>
                     </div>
-                  )
-                })}
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
 
-                {(!deliverables || deliverables.length === 0) && (
-                  <div className="text-center py-12">
-                    <CheckCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500 dark:text-gray-400">
-                      No deliverables yet. Add your first one above.
-                    </p>
-                  </div>
-                )}
-              </div>
+              {(!sortedDeliverables || sortedDeliverables.length === 0) && (
+                <div className="text-center py-12">
+                  <CheckCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No deliverables yet. Add your first one above.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -2376,28 +2916,132 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
           {activeTab === 'comments' && (
             <div>
               {/* New Comment Form */}
-              <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <div className="flex gap-2">
-                  <TextArea
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    placeholder="Add a comment..."
-                    rows={1}
-                    className="flex-1 !py-2 resize-none"
-                  />
+              <div className="mb-3">
+                <div className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <MentionInput
+                      value={newComment}
+                      onChange={(value, mentions, refs) => {
+                        setNewComment(value)
+                        setCommentMentions(mentions)
+                        setCommentReferences(refs)
+                      }}
+                      placeholder="Add a comment..."
+                      rows={1}
+                      className="!py-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      hideHelper
+                    />
+                  </div>
                   <Button
                     onClick={() => addCommentMutation.mutate()}
                     disabled={!newComment.trim()}
                     size="sm"
-                    className="self-end"
                   >
                     Post
                   </Button>
                 </div>
+                {/* Reprioritize option */}
+                <div className="flex items-center gap-2">
+                  {reprioritizeType === 'none' ? (
+                    <button
+                      onClick={() => setReprioritizeType('project')}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      Suggest Reprioritization
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs text-gray-500">Reprioritize:</span>
+                      <button
+                        onClick={() => {
+                          setReprioritizeType('project')
+                          setReprioritizeTarget(null)
+                        }}
+                        className={clsx(
+                          'px-2 py-0.5 text-xs rounded-full transition-colors',
+                          reprioritizeType === 'project'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        )}
+                      >
+                        Project
+                      </button>
+                      {deliverables?.filter(d => !d.completed).slice(0, 3).map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => {
+                            setReprioritizeType('deliverable')
+                            setReprioritizeTarget(d.id)
+                          }}
+                          className={clsx(
+                            'px-2 py-0.5 text-xs rounded-full transition-colors max-w-[100px] truncate',
+                            reprioritizeType === 'deliverable' && reprioritizeTarget === d.id
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          )}
+                          title={d.title}
+                        >
+                          {d.title}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setReprioritizeType('none')
+                          setReprioritizeTarget(null)
+                        }}
+                        className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Filter and sort controls */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1">
+                  {[
+                    { value: 'all', label: 'All' },
+                    { value: 'unresolved', label: 'Open' },
+                    { value: 'mentions', label: 'Mentions' },
+                    { value: 'mine', label: 'Mine' },
+                  ].map(filter => (
+                    <button
+                      key={filter.value}
+                      onClick={() => setCommentFilter(filter.value as typeof commentFilter)}
+                      className={clsx(
+                        'px-2 py-1 text-xs rounded transition-colors',
+                        commentFilter === filter.value
+                          ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white font-medium'
+                          : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      )}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setCommentSort(commentSort === 'newest' ? 'oldest' : 'newest')}
+                  className="text-xs text-gray-500 hover:text-gray-700"
+                >
+                  {commentSort === 'newest' ? 'Newest first' : 'Oldest first'}
+                </button>
               </div>
 
               {/* Comments Thread */}
-              <div className="space-y-0">
+              {commentsError && (
+                <div className="text-center py-6 text-red-500 text-sm">
+                  Error loading comments. Please refresh.
+                </div>
+              )}
+              {!commentsError && commentTree.length === 0 && (
+                <div className="text-center py-6 text-gray-500 text-sm">
+                  {commentFilter === 'all' ? 'No comments yet' : 'No matching comments'}
+                </div>
+              )}
+              <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {commentTree.map((comment: any) => {
                   const renderComment = (comment: any, depth: number = 0) => {
                     const reactions = comment.project_comment_reactions || []
@@ -2409,6 +3053,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     const hasReplies = comment.replies && comment.replies.length > 0
                     const isOwner = comment.user_id === user?.id
                     const isEditing = editingCommentId === comment.id
+                    const isResolved = !!comment.resolved_at
+                    // A comment is "actionable" if it has reprioritization metadata or mentions
+                    const isActionable = !!(comment.metadata?.reprioritize || comment.metadata?.mentions?.length)
                     const initials = ((comment.user?.first_name?.[0] || '') + (comment.user?.last_name?.[0] || '')) || comment.user?.email?.[0]?.toUpperCase() || '?'
                     const displayName = comment.user?.first_name && comment.user?.last_name
                       ? `${comment.user.first_name} ${comment.user.last_name}`
@@ -2427,78 +3074,82 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     }
 
                     return (
-                      <div key={comment.id} className={clsx(depth > 0 && 'ml-6 pl-4 border-l-2 border-gray-200 dark:border-gray-700')}>
-                        <div className="py-2">
-                          {/* Comment Header */}
-                          <div className="flex items-center gap-2 mb-1">
-                            {hasReplies && (
-                              <button
-                                onClick={() => {
-                                  const newCollapsed = new Set(collapsedComments)
-                                  if (isCollapsed) {
-                                    newCollapsed.delete(comment.id)
-                                  } else {
-                                    newCollapsed.add(comment.id)
-                                  }
-                                  setCollapsedComments(newCollapsed)
-                                }}
-                                className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                              >
-                                <ChevronRight className={clsx(
-                                  'w-4 h-4 text-gray-400 transition-transform',
-                                  !isCollapsed && 'rotate-90'
-                                )} />
-                              </button>
-                            )}
-                            <div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
-                              <span className="text-[10px] font-medium text-primary-600 dark:text-primary-400">
-                                {initials}
-                              </span>
-                            </div>
-                            <span className="text-sm font-medium text-gray-900 dark:text-white">
-                              {displayName}
+                      <div key={comment.id} className={clsx(
+                        'py-2 border-b border-gray-100 dark:border-gray-800',
+                        depth > 0 && 'ml-8 border-l-2 border-l-gray-200 dark:border-l-gray-700 pl-3'
+                      )}>
+                        {/* Comment Header */}
+                        <div className="flex items-center gap-2 mb-1">
+                          {hasReplies && (
+                            <button
+                              onClick={() => {
+                                const newCollapsed = new Set(collapsedComments)
+                                if (isCollapsed) {
+                                  newCollapsed.delete(comment.id)
+                                } else {
+                                  newCollapsed.add(comment.id)
+                                }
+                                setCollapsedComments(newCollapsed)
+                              }}
+                              className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                            >
+                              <ChevronRight className={clsx(
+                                'w-4 h-4 text-gray-400 transition-transform',
+                                !isCollapsed && 'rotate-90'
+                              )} />
+                            </button>
+                          )}
+                          <div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                            <span className="text-[10px] font-medium text-primary-600 dark:text-primary-400">
+                              {initials}
                             </span>
-                            <span className="text-xs text-gray-400">•</span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {comment.created_at ? formatDistanceToNow(new Date(comment.created_at), { addSuffix: true }) : ''}
-                            </span>
-                            {comment.updated_at && comment.updated_at !== comment.created_at && (
-                              <span className="text-xs text-gray-400 italic">(edited)</span>
-                            )}
                           </div>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {displayName}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {comment.created_at ? formatDistanceToNow(new Date(comment.created_at), { addSuffix: true }) : ''}
+                          </span>
+                          {isResolved && (
+                            <span className="flex items-center gap-1 text-xs text-green-600">
+                              <CircleCheck className="w-3.5 h-3.5" />
+                              Resolved
+                            </span>
+                          )}
+                        </div>
 
-                          {/* Comment Content */}
-                          {!isCollapsed && (
-                            <>
-                              <div className="ml-8 mb-2">
-                                {isEditing ? (
-                                  <div className="space-y-2">
-                                    <TextArea
-                                      value={editCommentContent}
-                                      onChange={(e) => setEditCommentContent(e.target.value)}
-                                      rows={2}
-                                      className="text-sm"
-                                    />
-                                    <div className="flex items-center gap-2">
-                                      <Button
-                                        size="sm"
-                                        onClick={() => editCommentMutation.mutate({ commentId: comment.id, content: editCommentContent })}
-                                        disabled={!editCommentContent.trim()}
-                                      >
-                                        Save
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setEditingCommentId(null)
-                                          setEditCommentContent('')
-                                        }}
-                                      >
-                                        Cancel
-                                      </Button>
-                                    </div>
+                        {/* Comment Content */}
+                        {!isCollapsed && (
+                          <>
+                            <div className={clsx(hasReplies ? 'ml-10' : 'ml-8')}>
+                              {isEditing ? (
+                                <div className="space-y-2">
+                                  <TextArea
+                                    value={editCommentContent}
+                                    onChange={(e) => setEditCommentContent(e.target.value)}
+                                    rows={2}
+                                    className="text-sm"
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => editCommentMutation.mutate({ commentId: comment.id, content: editCommentContent })}
+                                      disabled={!editCommentContent.trim()}
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setEditingCommentId(null)
+                                        setEditCommentContent('')
+                                      }}
+                                    >
+                                      Cancel
+                                    </Button>
                                   </div>
+                                </div>
                                 ) : (
                                   <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                                     {renderContent(comment.content)}
@@ -2508,44 +3159,26 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
                               {/* Comment Actions */}
                               {!isEditing && (
-                                <div className="ml-8 flex items-center gap-1 flex-wrap">
-                                  {/* Like Button */}
+                                <div className={clsx('mt-2 flex items-center gap-3', hasReplies ? 'ml-10' : 'ml-8')}>
+                                  {/* Like */}
                                   <button
                                     onClick={() => toggleReactionMutation.mutate({ commentId: comment.id, reactionType: 'like' })}
                                     className={clsx(
-                                      'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
-                                      userLiked
-                                        ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
-                                        : 'text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                      'flex items-center gap-1 text-xs transition-colors',
+                                      userLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'
                                     )}
                                   >
                                     <Heart className={clsx('w-3.5 h-3.5', userLiked && 'fill-current')} />
-                                    {likes.length > 0 && <span>{likes.length}</span>}
-                                    {likes.length === 0 && 'Like'}
+                                    {likes.length > 0 ? likes.length : 'Like'}
                                   </button>
 
-                                  {/* Acknowledge Button */}
-                                  <button
-                                    onClick={() => toggleReactionMutation.mutate({ commentId: comment.id, reactionType: 'acknowledge' })}
-                                    className={clsx(
-                                      'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
-                                      userAcknowledged
-                                        ? 'text-green-600 bg-green-50 dark:bg-green-900/20'
-                                        : 'text-gray-500 hover:text-green-600 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                    )}
-                                  >
-                                    <CheckCheck className="w-3.5 h-3.5" />
-                                    {acknowledges.length > 0 && <span>{acknowledges.length}</span>}
-                                    {acknowledges.length === 0 && 'Acknowledge'}
-                                  </button>
-
-                                  {/* Reply Button */}
+                                  {/* Reply */}
                                   <button
                                     onClick={() => {
                                       setReplyingTo(replyingTo === comment.id ? null : comment.id)
                                       setReplyContent('')
                                     }}
-                                    className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
                                   >
                                     <Reply className="w-3.5 h-3.5" />
                                     Reply
@@ -2558,9 +3191,8 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                         setEditingCommentId(comment.id)
                                         setEditCommentContent(comment.content)
                                       }}
-                                      className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                                     >
-                                      <Pencil className="w-3.5 h-3.5" />
                                       Edit
                                     </button>
                                   )}
@@ -2573,10 +3205,46 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                           deleteCommentMutation.mutate(comment.id)
                                         }
                                       }}
-                                      className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                      className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
                                       Delete
+                                    </button>
+                                  )}
+
+                                  {/* Resolve (only for actionable) */}
+                                  {(isActionable || isResolved) && (
+                                    <button
+                                      onClick={() => toggleResolvedMutation.mutate({ commentId: comment.id, resolved: !isResolved })}
+                                      disabled={toggleResolvedMutation.isPending}
+                                      className={clsx(
+                                        'text-xs transition-colors',
+                                        isResolved ? 'text-green-600' : 'text-gray-400 hover:text-green-600'
+                                      )}
+                                    >
+                                      {isResolved ? 'Unresolve' : 'Resolve'}
+                                    </button>
+                                  )}
+
+                                  {/* To Task */}
+                                  {!isResolved && (
+                                    <button
+                                      onClick={() => {
+                                        const lines = comment.content.split('\n')
+                                        const title = lines[0].replace(/^\*\*.*?\*\*\s*/, '').replace(/^🔄\s*/, '').slice(0, 100) || 'New Deliverable'
+                                        const description = lines.slice(1).join('\n').trim()
+                                        setConvertToDeliverableModal({
+                                          commentId: comment.id,
+                                          title,
+                                          description,
+                                          dueDate: '',
+                                          assignees: [],
+                                          showAssigneeDropdown: false
+                                        })
+                                      }}
+                                      disabled={convertToDeliverableMutation.isPending}
+                                      className="text-xs text-gray-400 hover:text-primary-600 transition-colors"
+                                    >
+                                      + Task
                                     </button>
                                   )}
                                 </div>
@@ -2584,38 +3252,39 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
                               {/* Reply Form */}
                               {replyingTo === comment.id && (
-                                <div className="ml-8 mt-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                                  <TextArea
-                                    value={replyContent}
-                                    onChange={(e) => setReplyContent(e.target.value)}
-                                    placeholder={`Reply to ${displayName}...`}
-                                    rows={2}
-                                    className="mb-2"
-                                  />
-                                  <div className="flex items-center gap-2 justify-end">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => {
-                                        setReplyingTo(null)
-                                        setReplyContent('')
-                                      }}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      onClick={() => addCommentMutation.mutate(comment.id)}
-                                      disabled={!replyContent.trim()}
-                                    >
-                                      Reply
-                                    </Button>
+                                <div className={clsx('mt-2', hasReplies ? 'ml-10' : 'ml-8')}>
+                                  <div className="flex gap-2">
+                                    <TextArea
+                                      value={replyContent}
+                                      onChange={(e) => setReplyContent(e.target.value)}
+                                      placeholder={`Reply to ${displayName}...`}
+                                      rows={1}
+                                      className="flex-1 text-sm"
+                                    />
+                                    <div className="flex flex-col gap-1">
+                                      <Button
+                                        size="sm"
+                                        onClick={() => addCommentMutation.mutate(comment.id)}
+                                        disabled={!replyContent.trim()}
+                                      >
+                                        Reply
+                                      </Button>
+                                      <button
+                                        onClick={() => {
+                                          setReplyingTo(null)
+                                          setReplyContent('')
+                                        }}
+                                        className="text-xs text-gray-400 hover:text-gray-600"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               )}
 
                               {/* Nested Replies */}
-                              {hasReplies && (
+                              {hasReplies && !isCollapsed && (
                                 <div className="mt-2">
                                   {comment.replies.map((reply: any) => renderComment(reply, depth + 1))}
                                 </div>
@@ -2625,11 +3294,10 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
                           {/* Collapsed indicator */}
                           {isCollapsed && hasReplies && (
-                            <div className="ml-8 text-xs text-gray-500 dark:text-gray-400">
+                            <div className={clsx('text-xs text-gray-400 mt-1', hasReplies ? 'ml-10' : 'ml-8')}>
                               {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'} hidden
                             </div>
                           )}
-                        </div>
                       </div>
                     )
                   }
@@ -2722,6 +3390,244 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             </div>
           </div>
         </>
+      )}
+
+      {/* Convert to Deliverable Modal */}
+      {convertToDeliverableModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={() => setConvertToDeliverableModal(null)}
+          />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all">
+              <div className="p-6">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <ListPlus className="w-5 h-5 text-primary-600" />
+                    Create Deliverable
+                  </h3>
+                  <button
+                    onClick={() => setConvertToDeliverableModal(null)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Create a new deliverable from this comment. The comment will be marked as resolved.
+                </p>
+
+                {/* Form */}
+                <div className="space-y-4">
+                  {/* Title */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Title <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      value={convertToDeliverableModal.title}
+                      onChange={(e) => setConvertToDeliverableModal({
+                        ...convertToDeliverableModal,
+                        title: e.target.value
+                      })}
+                      placeholder="Deliverable title"
+                    />
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Description
+                    </label>
+                    <TextArea
+                      value={convertToDeliverableModal.description}
+                      onChange={(e) => setConvertToDeliverableModal({
+                        ...convertToDeliverableModal,
+                        description: e.target.value
+                      })}
+                      placeholder="Optional description"
+                      rows={3}
+                    />
+                  </div>
+
+                  {/* Due Date */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Due Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={convertToDeliverableModal.dueDate}
+                      onChange={(e) => setConvertToDeliverableModal({
+                        ...convertToDeliverableModal,
+                        dueDate: e.target.value
+                      })}
+                    />
+                  </div>
+
+                  {/* Assignees - Multi-select */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Assignees
+                    </label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setConvertToDeliverableModal({
+                          ...convertToDeliverableModal,
+                          showAssigneeDropdown: !convertToDeliverableModal.showAssigneeDropdown
+                        })}
+                        className={clsx(
+                          'w-full h-10 flex items-center justify-between px-3 rounded-lg border text-left text-sm transition-colors',
+                          convertToDeliverableModal.assignees.length > 0
+                            ? 'border-primary-300 dark:border-primary-600 bg-primary-50 dark:bg-primary-900/20'
+                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500'
+                        )}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          {convertToDeliverableModal.assignees.length > 0 ? (
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex -space-x-1">
+                                {convertToDeliverableModal.assignees.slice(0, 3).map((userId, idx) => {
+                                  const member = teamMembers?.find((m: any) => m.assigned_to === userId)
+                                  const memberUser = member?.user
+                                  const initials = (memberUser?.first_name?.[0] || '') + (memberUser?.last_name?.[0] || '') || memberUser?.email?.[0]?.toUpperCase() || '?'
+                                  return (
+                                    <span
+                                      key={userId}
+                                      className="w-5 h-5 rounded-full bg-primary-200 dark:bg-primary-700 border border-white dark:border-gray-700 text-[9px] font-medium text-primary-700 dark:text-primary-200 flex items-center justify-center"
+                                      style={{ zIndex: 3 - idx }}
+                                    >
+                                      {initials}
+                                    </span>
+                                  )
+                                })}
+                                {convertToDeliverableModal.assignees.length > 3 && (
+                                  <span className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-600 border border-white dark:border-gray-700 text-[9px] font-medium text-gray-600 dark:text-gray-300 flex items-center justify-center">
+                                    +{convertToDeliverableModal.assignees.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-gray-700 dark:text-gray-300 truncate">
+                                {convertToDeliverableModal.assignees.length} selected
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-500 dark:text-gray-400">Select assignees...</span>
+                          )}
+                        </div>
+                        <ChevronDown className={clsx(
+                          'w-4 h-4 text-gray-400 transition-transform flex-shrink-0',
+                          convertToDeliverableModal.showAssigneeDropdown && 'rotate-180'
+                        )} />
+                      </button>
+
+                      {/* Dropdown with click-away backdrop */}
+                      {convertToDeliverableModal.showAssigneeDropdown && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => setConvertToDeliverableModal({
+                              ...convertToDeliverableModal,
+                              showAssigneeDropdown: false
+                            })}
+                          />
+                          <div className="absolute left-0 right-0 top-full mt-1 py-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 max-h-48 overflow-y-auto">
+                          {teamMembers && teamMembers.length > 0 ? (
+                            teamMembers.map((member: any) => {
+                              const isSelected = convertToDeliverableModal.assignees.includes(member.assigned_to)
+                              const memberUser = member.user
+                              const initials = (memberUser?.first_name?.[0] || '') + (memberUser?.last_name?.[0] || '') || memberUser?.email?.[0]?.toUpperCase() || '?'
+                              const fullName = `${memberUser?.first_name || ''} ${memberUser?.last_name || ''}`.trim() || memberUser?.email?.split('@')[0] || 'Unknown'
+                              return (
+                                <button
+                                  key={member.assigned_to}
+                                  type="button"
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      setConvertToDeliverableModal({
+                                        ...convertToDeliverableModal,
+                                        assignees: convertToDeliverableModal.assignees.filter(id => id !== member.assigned_to)
+                                      })
+                                    } else {
+                                      setConvertToDeliverableModal({
+                                        ...convertToDeliverableModal,
+                                        assignees: [...convertToDeliverableModal.assignees, member.assigned_to]
+                                      })
+                                    }
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                >
+                                  <div className={clsx(
+                                    'w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0',
+                                    isSelected
+                                      ? 'bg-primary-600 border-primary-600'
+                                      : 'border-gray-300 dark:border-gray-600'
+                                  )}>
+                                    {isSelected && <Check className="w-3 h-3 text-white" />}
+                                  </div>
+                                  <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-[10px] font-medium flex items-center justify-center flex-shrink-0">
+                                    {initials}
+                                  </span>
+                                  <span className={clsx(
+                                    'truncate',
+                                    isSelected ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-700 dark:text-gray-300'
+                                  )}>
+                                    {fullName}
+                                  </span>
+                                </button>
+                              )
+                            })
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              No team members available
+                            </div>
+                          )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 mt-6">
+                  <Button
+                    variant="outline"
+                    onClick={() => setConvertToDeliverableModal(null)}
+                    className="flex-1"
+                    disabled={convertToDeliverableMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (convertToDeliverableModal.title.trim()) {
+                        convertToDeliverableMutation.mutate({
+                          commentId: convertToDeliverableModal.commentId,
+                          title: convertToDeliverableModal.title.trim(),
+                          description: convertToDeliverableModal.description.trim() || undefined,
+                          dueDate: convertToDeliverableModal.dueDate || undefined,
+                          assignees: convertToDeliverableModal.assignees.length > 0 ? convertToDeliverableModal.assignees : undefined
+                        })
+                        setConvertToDeliverableModal(null)
+                      }
+                    }}
+                    className="flex-1"
+                    disabled={!convertToDeliverableModal.title.trim() || convertToDeliverableMutation.isPending}
+                    loading={convertToDeliverableMutation.isPending}
+                  >
+                    Create Deliverable
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

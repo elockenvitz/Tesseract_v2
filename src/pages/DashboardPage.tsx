@@ -25,7 +25,7 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { NoDataAvailable } from '../components/common/EmptyState'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, differenceInDays, startOfDay, parseISO } from 'date-fns'
 import { ProfilePage } from './ProfilePage'
 import { SettingsPage } from './SettingsPage'
 import { IdeaGeneratorPage} from './IdeaGeneratorPage'
@@ -857,9 +857,9 @@ export function DashboardPage() {
   // Helper functions for dashboard
   const getUrgencyColor = (dueDate: string | null, priority?: string) => {
     if (!dueDate) return priority === 'urgent' ? 'error' : priority === 'high' ? 'warning' : 'default'
-    const now = new Date()
-    const due = new Date(dueDate)
-    const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const today = startOfDay(new Date())
+    const due = startOfDay(parseISO(dueDate))
+    const diffDays = differenceInDays(due, today)
     if (diffDays < 0) return 'error' // Overdue
     if (diffDays === 0) return 'error' // Due today
     if (diffDays <= 2) return 'warning' // Due soon
@@ -868,9 +868,9 @@ export function DashboardPage() {
 
   const formatDueDate = (dueDate: string | null) => {
     if (!dueDate) return null
-    const now = new Date()
-    const due = new Date(dueDate)
-    const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const today = startOfDay(new Date())
+    const due = startOfDay(parseISO(dueDate))
+    const diffDays = differenceInDays(due, today)
     if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`
     if (diffDays === 0) return 'Due today'
     if (diffDays === 1) return 'Due tomorrow'
