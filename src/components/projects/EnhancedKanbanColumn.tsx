@@ -71,8 +71,6 @@ export function EnhancedKanbanColumn({
 
   const config = statusConfig[status]
   const StatusIcon = config.icon
-  const isOverWipLimit = wipLimit !== undefined && projects.length > wipLimit
-  const isAtWipLimit = wipLimit !== undefined && projects.length === wipLimit
 
   // Sort projects by board_position
   const sortedProjects = [...projects].sort((a, b) =>
@@ -100,26 +98,12 @@ export function EnhancedKanbanColumn({
             <h3 className={clsx('font-semibold', config.textColor)}>
               {config.label}
             </h3>
-            <span className={clsx(
-              'text-xs px-2 py-0.5 rounded-full font-medium',
-              isOverWipLimit
-                ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
-                : isAtWipLimit
-                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300'
-                : 'bg-white/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400'
-            )}>
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-white/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400">
               {projects.length}
-              {wipLimit !== undefined && `/${wipLimit}`}
             </span>
           </div>
         </div>
 
-        {/* WIP Limit Warning */}
-        {isOverWipLimit && (
-          <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-            Over WIP limit! Consider completing tasks before adding more.
-          </p>
-        )}
       </div>
 
       {/* Cards Container */}

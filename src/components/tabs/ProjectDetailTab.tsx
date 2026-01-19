@@ -562,8 +562,22 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     }
   })
 
-  // Local state for due date (to show immediate feedback since project prop may not update)
+  // Local state for due date, status, priority (to show immediate feedback since project prop may not update)
   const [localDueDate, setLocalDueDate] = useState(project.due_date)
+  const [localStatus, setLocalStatus] = useState(project.status)
+  const [localPriority, setLocalPriority] = useState(project.priority)
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
+  const [showBlockedReasonModal, setShowBlockedReasonModal] = useState(false)
+  const [blockedReasonInput, setBlockedReasonInput] = useState(project.blocked_reason || '')
+
+  // Sync local state when project prop changes
+  useEffect(() => {
+    setLocalDueDate(project.due_date)
+    setLocalStatus(project.status)
+    setLocalPriority(project.priority)
+    setBlockedReasonInput(project.blocked_reason || '')
+  }, [project.due_date, project.status, project.priority, project.blocked_reason])
 
   // Update project due date inline
   const updateProjectDueDateMutation = useMutation({
@@ -591,6 +605,73 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
       console.error('Due date mutation failed:', error)
       // Revert on error
       setLocalDueDate(project.due_date)
+    }
+  })
+
+  // Update project status inline
+  const updateProjectStatusMutation = useMutation({
+    mutationFn: async ({ status, blockedReason }: { status: ProjectStatus; blockedReason?: string | null }) => {
+      const updateData: { status: ProjectStatus; blocked_reason?: string | null } = { status }
+
+      // Only update blocked_reason if status is blocked, otherwise clear it
+      if (status === 'blocked') {
+        updateData.blocked_reason = blockedReason || null
+      } else {
+        updateData.blocked_reason = null
+      }
+
+      const { data, error } = await supabase
+        .from('projects')
+        .update(updateData)
+        .eq('id', project.id)
+        .select()
+
+      if (error) {
+        console.error('Error updating status:', error)
+        throw error
+      }
+      return data
+    },
+    onMutate: ({ status }) => {
+      setLocalStatus(status)
+      setShowStatusDropdown(false)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['project-detail', project.id] })
+    },
+    onError: (error) => {
+      console.error('Status mutation failed:', error)
+      setLocalStatus(project.status)
+    }
+  })
+
+  // Update project priority inline
+  const updateProjectPriorityMutation = useMutation({
+    mutationFn: async (priority: ProjectPriority) => {
+      const { data, error } = await supabase
+        .from('projects')
+        .update({ priority })
+        .eq('id', project.id)
+        .select()
+
+      if (error) {
+        console.error('Error updating priority:', error)
+        throw error
+      }
+      return data
+    },
+    onMutate: (priority) => {
+      setLocalPriority(priority)
+      setShowPriorityDropdown(false)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['project-detail', project.id] })
+    },
+    onError: (error) => {
+      console.error('Priority mutation failed:', error)
+      setLocalPriority(project.priority)
     }
   })
 
@@ -950,9 +1031,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             <>
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center">
-                    <FolderKanban className="w-5 h-5 text-white" />
-                  </div>
+                  <FolderKanban className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.title}</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -969,15 +1048,121 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
               </div>
 
               <div className="flex items-center gap-3 mb-4">
-                {project.status && (
-                  <Badge className={clsx('flex items-center gap-1', getStatusColor(project.status))}>
-                    {getStatusIcon(project.status)}
-                    <span className="capitalize">{project.status.replace('_', ' ')}</span>
+                {/* Status - clickable dropdown for managers */}
+                {canManageProject ? (
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowStatusDropdown(!showStatusDropdown)
+                        setShowPriorityDropdown(false)
+                      }}
+                      className={clsx(
+                        'flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium transition-colors hover:ring-2 hover:ring-offset-1',
+                        isBlocked
+                          ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:ring-red-300'
+                          : getStatusColor(localStatus) + ' hover:ring-primary-300'
+                      )}
+                    >
+                      {isBlocked ? (
+                        <>
+                          <Lock className="w-4 h-4" />
+                          <span>Blocked</span>
+                        </>
+                      ) : (
+                        <>
+                          {getStatusIcon(localStatus)}
+                          <span className="capitalize">{localStatus.replace('_', ' ')}</span>
+                        </>
+                      )}
+                      <ChevronDown className="w-3 h-3 ml-1" />
+                    </button>
+                    {showStatusDropdown && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setShowStatusDropdown(false)} />
+                        <div className="absolute left-0 top-full mt-1 py-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 min-w-[140px]">
+                          {(['planning', 'in_progress', 'blocked', 'completed', 'cancelled'] as ProjectStatus[]).map(status => (
+                            <button
+                              key={status}
+                              onClick={() => {
+                                if (status === 'blocked') {
+                                  setShowStatusDropdown(false)
+                                  setBlockedReasonInput(projectData.blocked_reason || '')
+                                  setShowBlockedReasonModal(true)
+                                } else {
+                                  updateProjectStatusMutation.mutate({ status })
+                                }
+                              }}
+                              className={clsx(
+                                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
+                                localStatus === status && 'bg-gray-50 dark:bg-gray-700/50'
+                              )}
+                            >
+                              {getStatusIcon(status)}
+                              <span className="capitalize">{status.replace('_', ' ')}</span>
+                              {localStatus === status && <Check className="w-4 h-4 ml-auto text-primary-500" />}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : isBlocked ? (
+                  <Badge className="flex items-center gap-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                    <Lock className="w-4 h-4" />
+                    <span>Blocked</span>
+                  </Badge>
+                ) : localStatus && (
+                  <Badge className={clsx('flex items-center gap-1', getStatusColor(localStatus))}>
+                    {getStatusIcon(localStatus)}
+                    <span className="capitalize">{localStatus.replace('_', ' ')}</span>
                   </Badge>
                 )}
-                {project.priority && (
-                  <Badge className={getPriorityColor(project.priority)}>
-                    <span className="capitalize">{project.priority}</span>
+
+                {/* Priority - clickable dropdown for managers */}
+                {canManageProject ? (
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowPriorityDropdown(!showPriorityDropdown)
+                        setShowStatusDropdown(false)
+                      }}
+                      className={clsx(
+                        'flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium transition-colors hover:ring-2 hover:ring-offset-1 hover:ring-primary-300',
+                        getPriorityColor(localPriority)
+                      )}
+                    >
+                      <span className="capitalize">{localPriority}</span>
+                      <ChevronDown className="w-3 h-3 ml-1" />
+                    </button>
+                    {showPriorityDropdown && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setShowPriorityDropdown(false)} />
+                        <div className="absolute left-0 top-full mt-1 py-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 min-w-[120px]">
+                          {(['low', 'medium', 'high', 'urgent'] as ProjectPriority[]).map(priority => (
+                            <button
+                              key={priority}
+                              onClick={() => updateProjectPriorityMutation.mutate(priority)}
+                              className={clsx(
+                                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
+                                localPriority === priority && 'bg-gray-50 dark:bg-gray-700/50'
+                              )}
+                            >
+                              <span className={clsx('w-2 h-2 rounded-full',
+                                priority === 'urgent' ? 'bg-red-500' :
+                                priority === 'high' ? 'bg-orange-500' :
+                                priority === 'medium' ? 'bg-yellow-500' : 'bg-gray-400'
+                              )} />
+                              <span className="capitalize">{priority}</span>
+                              {localPriority === priority && <Check className="w-4 h-4 ml-auto text-primary-500" />}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : localPriority && (
+                  <Badge className={getPriorityColor(localPriority)}>
+                    <span className="capitalize">{localPriority}</span>
                   </Badge>
                 )}
                 {canManageProject ? (
@@ -1028,6 +1213,78 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             </>
           )}
         </div>
+
+        {/* Dependency Status Banners */}
+        {!editingProject && (isBlocked || localStatus === 'blocked' || (blocking && blocking.length > 0)) && (
+          <div className="px-6 py-3 space-y-2 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700">
+            {/* Manually blocked with reason */}
+            {localStatus === 'blocked' && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <Lock className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-red-800 dark:text-red-200">
+                    This project is blocked
+                  </p>
+                  {projectData.blocked_reason && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {projectData.blocked_reason}
+                    </p>
+                  )}
+                </div>
+                {canManageProject && (
+                  <button
+                    onClick={() => {
+                      setBlockedReasonInput(projectData.blocked_reason || '')
+                      setShowBlockedReasonModal(true)
+                    }}
+                    className="px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-900/60 rounded-lg transition-colors flex-shrink-0"
+                  >
+                    Edit Reason
+                  </button>
+                )}
+              </div>
+            )}
+            {/* Blocked by dependencies (only show if not manually blocked to avoid duplicate banners) */}
+            {isBlocked && localStatus !== 'blocked' && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <Lock className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-red-800 dark:text-red-200">
+                    This project is blocked by dependencies
+                  </p>
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    Waiting on {blockedBy?.length || 0} item{(blockedBy?.length || 0) !== 1 ? 's' : ''} to be completed before this can proceed.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('dependencies')}
+                  className="px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-900/60 rounded-lg transition-colors flex-shrink-0"
+                >
+                  View Dependencies
+                </button>
+              </div>
+            )}
+            {blocking && blocking.length > 0 && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <ArrowRight className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-amber-800 dark:text-amber-200">
+                    This project is blocking others
+                  </p>
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    {blocking.length} project{blocking.length !== 1 ? 's are' : ' is'} waiting for this to be completed.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('dependencies')}
+                  className="px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-900/60 rounded-lg transition-colors flex-shrink-0"
+                >
+                  View Dependencies
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tabs */}
         {!editingProject && (
@@ -1087,107 +1344,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
             return (
             <div className="space-y-6">
-              {/* Top Row: Status, Progress, Due Date */}
-              <div className="grid grid-cols-3 gap-4">
-                {/* Status Card */}
-                <Card className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</span>
-                    {canManageProject && (
-                      <button
-                        onClick={() => setEditingProject(true)}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <Badge className={clsx('flex items-center gap-1.5 w-fit text-sm', getStatusColor(project.status))}>
-                    {getStatusIcon(project.status)}
-                    <span className="capitalize">{project.status.replace('_', ' ')}</span>
-                  </Badge>
-                  {isBlocked && (
-                    <div className="flex items-center gap-1.5 mt-2 text-xs text-red-600 dark:text-red-400">
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Blocked by {blockedBy?.length || 0} project{(blockedBy?.length || 0) !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                </Card>
-
-                {/* Progress Card */}
-                <Card className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Progress</span>
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {Math.round(completionPercentage)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-2">
-                    <div
-                      className={clsx(
-                        'h-2.5 rounded-full transition-all duration-300',
-                        completionPercentage === 100 ? 'bg-green-500' : 'bg-primary-500'
-                      )}
-                      style={{ width: `${completionPercentage}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                    <span>{completedDeliverables} of {totalDeliverables} tasks</span>
-                    {totalDeliverables > 0 && completedDeliverables === totalDeliverables && (
-                      <span className="text-green-600 dark:text-green-400 font-medium">Complete!</span>
-                    )}
-                  </div>
-                </Card>
-
-                {/* Due Date Card */}
-                <Card className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Due Date</span>
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                  </div>
-                  {project.due_date ? (
-                    <>
-                      <div className={clsx(
-                        'text-sm font-semibold',
-                        isOverdue ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'
-                      )}>
-                        {format(new Date(project.due_date), 'MMM d, yyyy')}
-                      </div>
-                      <div className={clsx(
-                        'text-xs mt-1',
-                        isOverdue ? 'text-red-500' : daysUntilProjectDue !== null && daysUntilProjectDue <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
-                      )}>
-                        {isOverdue ? (
-                          <span className="flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            Overdue by {Math.abs(daysUntilProjectDue!)} day{Math.abs(daysUntilProjectDue!) !== 1 ? 's' : ''}
-                          </span>
-                        ) : daysUntilProjectDue === 0 ? (
-                          'Due today'
-                        ) : daysUntilProjectDue === 1 ? (
-                          'Due tomorrow'
-                        ) : (
-                          `${daysUntilProjectDue} days remaining`
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-sm text-gray-500 dark:text-gray-400">No due date set</div>
-                  )}
-                </Card>
-              </div>
-
-              {/* Description */}
-              {project.description && (
-                <Card className="p-4">
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Description</h3>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                    {project.description}
-                  </p>
-                </Card>
-              )}
-
-              {/* Middle Row: Overdue Tasks, Upcoming Tasks */}
+              {/* Overdue Tasks, Upcoming Tasks */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Overdue Tasks */}
                 <Card className="p-4">
@@ -1312,6 +1469,31 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 dark:text-gray-400">No team members</p>
+                  )}
+
+                  {/* Associated Groups */}
+                  {projectOrgGroups && projectOrgGroups.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Groups</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {projectOrgGroups.slice(0, 3).map((assoc: any) => (
+                          <Badge
+                            key={assoc.id}
+                            className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 text-xs"
+                          >
+                            {assoc.org_group?.name || 'Unknown'}
+                          </Badge>
+                        ))}
+                        {projectOrgGroups.length > 3 && (
+                          <Badge className="bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 text-xs">
+                            +{projectOrgGroups.length - 3}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </Card>
 
@@ -2480,6 +2662,66 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             <ProjectActivityFeed projectId={project.id} />
           )}
         </div>
+      )}
+
+      {/* Blocked Reason Modal */}
+      {showBlockedReasonModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-40"
+            onClick={() => setShowBlockedReasonModal(false)}
+          />
+          <div className="fixed inset-x-4 top-[20%] max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl z-50">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Mark as Blocked
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Describe why this project is blocked
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-4">
+              <TextArea
+                value={blockedReasonInput}
+                onChange={(e) => setBlockedReasonInput(e.target.value)}
+                placeholder="e.g., Waiting for client approval, Budget review pending, Dependency on external team..."
+                rows={3}
+                autoFocus
+              />
+            </div>
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowBlockedReasonModal(false)
+                  setBlockedReasonInput(projectData.blocked_reason || '')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  updateProjectStatusMutation.mutate({
+                    status: 'blocked',
+                    blockedReason: blockedReasonInput.trim() || null
+                  })
+                  setShowBlockedReasonModal(false)
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Mark as Blocked
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

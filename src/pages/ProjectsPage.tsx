@@ -704,7 +704,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   onClick={() => setViewMode('list')}
                   className={clsx(
                     'p-1.5 rounded transition-colors',
-                    viewMode === 'list'
+                    viewMode === 'list' && assignmentFilter !== 'assigned'
                       ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                       : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                   )}
@@ -713,10 +713,16 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <LayoutList className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setViewMode('board')}
+                  onClick={() => {
+                    setViewMode('board')
+                    // Exit My Tasks view when switching to board
+                    if (assignmentFilter === 'assigned') {
+                      setAssignmentFilter('all')
+                    }
+                  }}
                   className={clsx(
                     'p-1.5 rounded transition-colors',
-                    viewMode === 'board'
+                    viewMode === 'board' && assignmentFilter !== 'assigned'
                       ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                       : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                   )}
@@ -725,10 +731,16 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <LayoutGrid className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setViewMode('timeline')}
+                  onClick={() => {
+                    setViewMode('timeline')
+                    // Exit My Tasks view when switching to timeline
+                    if (assignmentFilter === 'assigned') {
+                      setAssignmentFilter('all')
+                    }
+                  }}
                   className={clsx(
                     'p-1.5 rounded transition-colors',
-                    viewMode === 'timeline'
+                    viewMode === 'timeline' && assignmentFilter !== 'assigned'
                       ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                       : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                   )}

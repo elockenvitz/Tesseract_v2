@@ -12,7 +12,12 @@ import {
   AlertCircle,
   Search,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  FolderKanban,
+  CheckSquare,
+  Square,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -29,6 +34,16 @@ interface DependencyManagerProps {
   onNavigate?: (tab: { id: string; title: string; type: string; data?: any }) => void
 }
 
+type SelectionItem = {
+  type: 'project' | 'deliverable'
+  id: string
+  title: string
+  projectTitle?: string // For deliverables, the parent project title
+  status?: ProjectStatus
+  priority?: ProjectPriority
+  completed?: boolean
+}
+
 export function DependencyManager({ project, onNavigate }: DependencyManagerProps) {
   const { user } = useAuth()
   const {
@@ -36,7 +51,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
     blocking,
     related,
     isBlocked,
-    addDependency,
+    addMultipleDependencies,
     removeDependency,
     isAddingDependency,
     isRemovingDependency
@@ -45,6 +60,8 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
   const [showAddModal, setShowAddModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [dependencyType, setDependencyType] = useState<'blocks' | 'related'>('blocks')
+  const [selectedItems, setSelectedItems] = useState<SelectionItem[]>([])
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
 
   // Fetch all projects for search
   const { data: allProjects } = useQuery({
@@ -65,22 +82,132 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
     enabled: showAddModal && !!user?.id
   })
 
-  // Filter projects for search, excluding already linked ones
+  // Fetch all deliverables for search
+  const { data: allDeliverables } = useQuery({
+    queryKey: ['deliverables-for-dependencies', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      const { data, error } = await supabase
+        .from('project_deliverables')
+        .select(`
+          id,
+          title,
+          completed,
+          project:project_id(
+            id,
+            title
+          )
+        `)
+        .neq('project_id', project.id)
+        .order('title')
+
+      if (error) throw error
+      return (data || []).map((d: any) => ({
+        id: d.id,
+        title: d.title,
+        completed: d.completed,
+        projectId: d.project?.id,
+        projectTitle: d.project?.title
+      }))
+    },
+    enabled: showAddModal && !!user?.id
+  })
+
+  // Get already linked IDs
+  const linkedProjectIds = useMemo(() => {
+    return new Set([
+      ...blockedBy.filter(d => d.depends_on_id).map(d => d.depends_on_id!),
+      ...blocking.map(d => d.project_id),
+      ...related.filter(d => d.depends_on_id).map(d => d.depends_on_id!)
+    ])
+  }, [blockedBy, blocking, related])
+
+  const linkedDeliverableIds = useMemo(() => {
+    return new Set([
+      ...blockedBy.filter(d => d.depends_on_deliverable_id).map(d => d.depends_on_deliverable_id!),
+      ...related.filter(d => d.depends_on_deliverable_id).map(d => d.depends_on_deliverable_id!)
+    ])
+  }, [blockedBy, related])
+
+  // Filter projects for search
   const filteredProjects = useMemo(() => {
     if (!allProjects) return []
 
-    const linkedIds = new Set([
-      ...blockedBy.map(d => d.depends_on_id),
-      ...blocking.map(d => d.project_id),
-      ...related.map(d => d.depends_on_id)
-    ])
-
     return allProjects.filter(p => {
-      if (linkedIds.has(p.id)) return false
+      if (linkedProjectIds.has(p.id)) return false
       if (!searchQuery) return true
       return p.title.toLowerCase().includes(searchQuery.toLowerCase())
     })
-  }, [allProjects, blockedBy, blocking, related, searchQuery])
+  }, [allProjects, linkedProjectIds, searchQuery])
+
+  // Filter deliverables for search
+  const filteredDeliverables = useMemo(() => {
+    if (!allDeliverables) return []
+
+    return allDeliverables.filter((d: any) => {
+      if (linkedDeliverableIds.has(d.id)) return false
+      if (!searchQuery) return true
+      return d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.projectTitle?.toLowerCase().includes(searchQuery.toLowerCase())
+    })
+  }, [allDeliverables, linkedDeliverableIds, searchQuery])
+
+  // Group deliverables by project
+  const deliverablesGroupedByProject = useMemo(() => {
+    const grouped = new Map<string, { projectId: string; projectTitle: string; deliverables: any[] }>()
+
+    filteredDeliverables.forEach((d: any) => {
+      if (!d.projectId) return
+
+      if (!grouped.has(d.projectId)) {
+        grouped.set(d.projectId, {
+          projectId: d.projectId,
+          projectTitle: d.projectTitle,
+          deliverables: []
+        })
+      }
+      grouped.get(d.projectId)!.deliverables.push(d)
+    })
+
+    return grouped
+  }, [filteredDeliverables])
+
+  // Check if project has available deliverables
+  const projectHasDeliverables = (projectId: string) => {
+    return deliverablesGroupedByProject.has(projectId)
+  }
+
+  // Get deliverables for a project
+  const getProjectDeliverables = (projectId: string) => {
+    return deliverablesGroupedByProject.get(projectId)?.deliverables || []
+  }
+
+  // Toggle project expansion
+  const toggleProjectExpanded = (projectId: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev)
+      if (next.has(projectId)) {
+        next.delete(projectId)
+      } else {
+        next.add(projectId)
+      }
+      return next
+    })
+  }
+
+  // Check if all deliverables in a project are selected
+  const areAllDeliverablesSelected = (projectId: string) => {
+    const deliverables = getProjectDeliverables(projectId)
+    if (deliverables.length === 0) return false
+    return deliverables.every((d: any) => isSelected('deliverable', d.id))
+  }
+
+  // Check if some deliverables in a project are selected
+  const areSomeDeliverablesSelected = (projectId: string) => {
+    const deliverables = getProjectDeliverables(projectId)
+    return deliverables.some((d: any) => isSelected('deliverable', d.id)) && !areAllDeliverablesSelected(projectId)
+  }
 
   const getStatusIcon = (status: ProjectStatus) => {
     switch (status) {
@@ -111,36 +238,152 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
     }
   }
 
-  const handleAddDependency = (dependsOnId: string) => {
-    addDependency({ dependsOnId, dependencyType })
+  const toggleSelection = (item: SelectionItem) => {
+    setSelectedItems(prev => {
+      const exists = prev.find(i => i.type === item.type && i.id === item.id)
+      if (exists) {
+        return prev.filter(i => !(i.type === item.type && i.id === item.id))
+      }
+      return [...prev, item]
+    })
+  }
+
+  const isSelected = (type: 'project' | 'deliverable', id: string) => {
+    return selectedItems.some(i => i.type === type && i.id === id)
+  }
+
+  const handleAddDependencies = () => {
+    if (selectedItems.length === 0) return
+
+    addMultipleDependencies({
+      dependencies: selectedItems.map(item => ({
+        type: item.type,
+        id: item.id
+      })),
+      dependencyType
+    })
+
     setShowAddModal(false)
     setSearchQuery('')
+    setSelectedItems([])
+    setExpandedProjects(new Set())
   }
 
   const isOwner = project.created_by === user?.id
 
+  // Helper to render dependency item
+  const renderDependencyItem = (dep: any, isBlocker: boolean = true) => {
+    const isProject = !!dep.depends_on
+    const isDeliverable = !!dep.depends_on_deliverable
+    const isComplete = isProject
+      ? dep.depends_on?.status === 'completed'
+      : dep.depends_on_deliverable?.completed
+
+    return (
+      <div
+        key={dep.id}
+        className={clsx(
+          'flex items-center justify-between p-3 rounded-lg border transition-colors',
+          isBlocker
+            ? isComplete
+              ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/10'
+              : 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10'
+            : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'
+        )}
+      >
+        <div
+          className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80"
+          onClick={() => {
+            if (isProject) {
+              onNavigate?.({
+                id: dep.depends_on?.id || '',
+                title: dep.depends_on?.title || '',
+                type: 'project',
+                data: dep.depends_on
+              })
+            } else if (isDeliverable) {
+              onNavigate?.({
+                id: dep.depends_on_deliverable?.project?.id || '',
+                title: dep.depends_on_deliverable?.project?.title || '',
+                type: 'project',
+                data: { id: dep.depends_on_deliverable?.project?.id }
+              })
+            }
+          }}
+        >
+          {isProject ? (
+            <>
+              {getStatusIcon(dep.depends_on?.status as ProjectStatus)}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <FolderKanban className="w-3.5 h-3.5 text-gray-400" />
+                  <p className="font-medium text-gray-900 dark:text-white truncate">
+                    {dep.depends_on?.title}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge className={clsx('text-xs', getStatusColor(dep.depends_on?.status as ProjectStatus))}>
+                    {dep.depends_on?.status?.replace('_', ' ')}
+                  </Badge>
+                  <Badge className={clsx('text-xs', getPriorityColor(dep.depends_on?.priority as ProjectPriority))}>
+                    {dep.depends_on?.priority}
+                  </Badge>
+                </div>
+              </div>
+            </>
+          ) : isDeliverable ? (
+            <>
+              {dep.depends_on_deliverable?.completed ? (
+                <CheckCircle className="w-4 h-4 text-green-500" />
+              ) : (
+                <Circle className="w-4 h-4 text-gray-400" />
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <CheckSquare className="w-3.5 h-3.5 text-gray-400" />
+                  <p className="font-medium text-gray-900 dark:text-white truncate">
+                    {dep.depends_on_deliverable?.title}
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  from {dep.depends_on_deliverable?.project?.title}
+                </p>
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {isBlocker && (
+            isComplete ? (
+              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+            ) : (
+              <Lock className="w-4 h-4 text-red-500" />
+            )
+          )}
+          {isOwner && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation()
+                removeDependency(dep.id)
+              }}
+              className={clsx(
+                isBlocker && !isComplete ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : 'text-gray-500 hover:text-red-600'
+              )}
+              disabled={isRemovingDependency}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      {/* Status Banner */}
-      {isBlocked && (
-        <Card className={clsx(
-          'p-4 border-l-4 border-l-red-500',
-          'bg-red-50 dark:bg-red-900/20'
-        )}>
-          <div className="flex items-center gap-3">
-            <Lock className="w-5 h-5 text-red-600 dark:text-red-400" />
-            <div>
-              <h4 className="font-medium text-red-800 dark:text-red-200">
-                This project is blocked
-              </h4>
-              <p className="text-sm text-red-600 dark:text-red-400">
-                Complete the blocking dependencies below to unblock this project.
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
-
       {/* Blocked By Section */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
@@ -151,6 +394,9 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
             </h3>
             <span className="text-sm text-gray-500">
               ({blockedBy.length})
+            </span>
+            <span className="text-sm text-gray-400 dark:text-gray-500">
+              — Projects or deliverables that must be completed first
             </span>
           </div>
           {isOwner && (
@@ -170,64 +416,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
 
         {blockedBy.length > 0 ? (
           <div className="space-y-3">
-            {blockedBy.map(dep => (
-              <div
-                key={dep.id}
-                className={clsx(
-                  'flex items-center justify-between p-3 rounded-lg border transition-colors',
-                  dep.depends_on?.status === 'completed'
-                    ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/10'
-                    : 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10'
-                )}
-              >
-                <div
-                  className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80"
-                  onClick={() => onNavigate?.({
-                    id: dep.depends_on?.id || '',
-                    title: dep.depends_on?.title || '',
-                    type: 'project',
-                    data: dep.depends_on
-                  })}
-                >
-                  {getStatusIcon(dep.depends_on?.status as ProjectStatus)}
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900 dark:text-white truncate">
-                      {dep.depends_on?.title}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge className={clsx('text-xs', getStatusColor(dep.depends_on?.status as ProjectStatus))}>
-                        {dep.depends_on?.status?.replace('_', ' ')}
-                      </Badge>
-                      <Badge className={clsx('text-xs', getPriorityColor(dep.depends_on?.priority as ProjectPriority))}>
-                        {dep.depends_on?.priority}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
-                {dep.depends_on?.status === 'completed' ? (
-                  <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-red-500" />
-                    {isOwner && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removeDependency(dep.id)
-                        }}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        disabled={isRemovingDependency}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            {blockedBy.map(dep => renderDependencyItem(dep, true))}
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -247,6 +436,9 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
           </h3>
           <span className="text-sm text-gray-500">
             ({blocking.length})
+          </span>
+          <span className="text-sm text-gray-400 dark:text-gray-500">
+            — Projects waiting on this one
           </span>
         </div>
 
@@ -301,10 +493,13 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
           <div className="flex items-center gap-2">
             <Link2 className="w-5 h-5 text-blue-500" />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Related Projects
+              Related
             </h3>
             <span className="text-sm text-gray-500">
               ({related.length})
+            </span>
+            <span className="text-sm text-gray-400 dark:text-gray-500">
+              — Non-blocking links for reference
             </span>
           </div>
           {isOwner && (
@@ -317,62 +512,20 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
               }}
             >
               <Plus className="w-4 h-4 mr-2" />
-              Link Project
+              Link Item
             </Button>
           )}
         </div>
 
         {related.length > 0 ? (
           <div className="space-y-3">
-            {related.map(dep => (
-              <div
-                key={dep.id}
-                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
-              >
-                <div
-                  className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80"
-                  onClick={() => onNavigate?.({
-                    id: dep.depends_on?.id || '',
-                    title: dep.depends_on?.title || '',
-                    type: 'project',
-                    data: dep.depends_on
-                  })}
-                >
-                  {getStatusIcon(dep.depends_on?.status as ProjectStatus)}
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900 dark:text-white truncate">
-                      {dep.depends_on?.title}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge className={clsx('text-xs', getStatusColor(dep.depends_on?.status as ProjectStatus))}>
-                        {dep.depends_on?.status?.replace('_', ' ')}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
-                {isOwner && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeDependency(dep.id)
-                    }}
-                    className="text-gray-500 hover:text-red-600"
-                    disabled={isRemovingDependency}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
+            {related.map(dep => renderDependencyItem(dep, false))}
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             <Link2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
-            <p>No related projects</p>
-            <p className="text-sm">Link related projects for easy reference.</p>
+            <p>No related items</p>
+            <p className="text-sm">Link related projects or deliverables for easy reference.</p>
           </div>
         )}
       </Card>
@@ -382,18 +535,26 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
         <>
           <div
             className="fixed inset-0 bg-black/50 z-40"
-            onClick={() => setShowAddModal(false)}
+            onClick={() => {
+              setShowAddModal(false)
+              setSelectedItems([])
+              setExpandedProjects(new Set())
+            }}
           />
           <div className="fixed inset-x-4 top-[10%] max-w-lg mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl z-50 max-h-[80vh] flex flex-col">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {dependencyType === 'blocks' ? 'Add Blocking Dependency' : 'Link Related Project'}
+                  {dependencyType === 'blocks' ? 'Add Blocking Dependencies' : 'Link Related Items'}
                 </h3>
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setShowAddModal(false)
+                    setSelectedItems([])
+                    setExpandedProjects(new Set())
+                  }}
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -401,8 +562,8 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
 
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 {dependencyType === 'blocks'
-                  ? 'Select a project that must be completed before this one can proceed.'
-                  : 'Select a project to link as related (non-blocking).'}
+                  ? 'Select projects or deliverables that must be completed before this project can proceed.'
+                  : 'Select projects or deliverables to link as related (non-blocking).'}
               </p>
 
               <div className="relative">
@@ -410,48 +571,285 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search projects..."
+                  placeholder="Search projects and deliverables..."
                   className="pl-10"
                   autoFocus
                 />
               </div>
+
+              {/* Selected Items Summary */}
+              {selectedItems.length > 0 && (
+                <div className="mt-4 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
+                      {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={() => setSelectedItems([])}
+                      className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedItems.slice(0, 3).map(item => (
+                      <Badge key={`${item.type}-${item.id}`} variant="default" className="text-xs">
+                        {item.type === 'project' ? <FolderKanban className="w-3 h-3 mr-1" /> : <CheckSquare className="w-3 h-3 mr-1" />}
+                        {item.title.length > 20 ? item.title.slice(0, 20) + '...' : item.title}
+                      </Badge>
+                    ))}
+                    {selectedItems.length > 3 && (
+                      <Badge variant="default" className="text-xs">
+                        +{selectedItems.length - 3} more
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              {filteredProjects.length > 0 ? (
+              {filteredProjects.length > 0 || deliverablesGroupedByProject.size > 0 ? (
                 <div className="space-y-2">
-                  {filteredProjects.map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleAddDependency(p.id)}
-                      disabled={isAddingDependency}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors text-left"
-                    >
-                      {getStatusIcon(p.status as ProjectStatus)}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-white truncate">
-                          {p.title}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge className={clsx('text-xs', getStatusColor(p.status as ProjectStatus))}>
-                            {p.status?.replace('_', ' ')}
-                          </Badge>
-                          <Badge className={clsx('text-xs', getPriorityColor(p.priority as ProjectPriority))}>
-                            {p.priority}
-                          </Badge>
+                  {/* Render projects that are in filteredProjects */}
+                  {filteredProjects.map(p => {
+                    const hasDeliverables = projectHasDeliverables(p.id)
+                    const isExpanded = expandedProjects.has(p.id)
+                    const projectDeliverables = getProjectDeliverables(p.id)
+
+                    return (
+                      <div key={p.id}>
+                        {/* Project Row */}
+                        <div
+                          className={clsx(
+                            'w-full flex items-center gap-2 p-3 rounded-lg border transition-colors',
+                            isSelected('project', p.id)
+                              ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                          )}
+                        >
+                          {/* Expand/Collapse Button */}
+                          {hasDeliverables ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleProjectExpanded(p.id)
+                              }}
+                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-gray-500" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                              )}
+                            </button>
+                          ) : (
+                            <div className="w-6" /> // Spacer for alignment
+                          )}
+
+                          {/* Project Selection */}
+                          <button
+                            onClick={() => toggleSelection({
+                              type: 'project',
+                              id: p.id,
+                              title: p.title,
+                              status: p.status as ProjectStatus,
+                              priority: p.priority as ProjectPriority
+                            })}
+                            className="flex items-center gap-3 flex-1 text-left"
+                          >
+                            {isSelected('project', p.id) ? (
+                              <CheckSquare className="w-5 h-5 text-primary-600" />
+                            ) : areSomeDeliverablesSelected(p.id) ? (
+                              <div className="w-5 h-5 border-2 border-primary-400 bg-primary-100 dark:bg-primary-900/30 rounded flex items-center justify-center">
+                                <div className="w-2 h-0.5 bg-primary-500" />
+                              </div>
+                            ) : (
+                              <Square className="w-5 h-5 text-gray-400" />
+                            )}
+                            {getStatusIcon(p.status as ProjectStatus)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <FolderKanban className="w-3.5 h-3.5 text-gray-400" />
+                                <p className="font-medium text-gray-900 dark:text-white truncate">
+                                  {p.title}
+                                </p>
+                                {hasDeliverables && (
+                                  <span className="text-xs text-gray-400">
+                                    ({projectDeliverables.length} deliverable{projectDeliverables.length !== 1 ? 's' : ''})
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge className={clsx('text-xs', getStatusColor(p.status as ProjectStatus))}>
+                                  {p.status?.replace('_', ' ')}
+                                </Badge>
+                                <Badge className={clsx('text-xs', getPriorityColor(p.priority as ProjectPriority))}>
+                                  {p.priority}
+                                </Badge>
+                              </div>
+                            </div>
+                          </button>
                         </div>
+
+                        {/* Expanded Deliverables */}
+                        {isExpanded && hasDeliverables && (
+                          <div className="ml-8 mt-1 space-y-1">
+                            {projectDeliverables.map((d: any) => (
+                              <button
+                                key={d.id}
+                                onClick={() => toggleSelection({
+                                  type: 'deliverable',
+                                  id: d.id,
+                                  title: d.title,
+                                  projectTitle: d.projectTitle,
+                                  completed: d.completed
+                                })}
+                                className={clsx(
+                                  'w-full flex items-center gap-3 p-2.5 rounded-lg border transition-colors text-left',
+                                  isSelected('deliverable', d.id)
+                                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                    : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                )}
+                              >
+                                {isSelected('deliverable', d.id) ? (
+                                  <CheckSquare className="w-4 h-4 text-primary-600" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-gray-400" />
+                                )}
+                                {d.completed ? (
+                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                                ) : (
+                                  <Circle className="w-4 h-4 text-gray-400" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <CheckSquare className="w-3 h-3 text-gray-400" />
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                      {d.title}
+                                    </p>
+                                  </div>
+                                </div>
+                                {d.completed && (
+                                  <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                                    Done
+                                  </Badge>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <Plus className="w-4 h-4 text-gray-400" />
-                    </button>
-                  ))}
+                    )
+                  })}
+
+                  {/* Render projects that only have deliverables (not in filteredProjects) */}
+                  {Array.from(deliverablesGroupedByProject.entries())
+                    .filter(([projectId]) => !filteredProjects.find(p => p.id === projectId))
+                    .map(([projectId, group]) => {
+                      const isExpanded = expandedProjects.has(projectId)
+
+                      return (
+                        <div key={projectId}>
+                          {/* Project Header (not selectable, just expandable) */}
+                          <div
+                            className="w-full flex items-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+                          >
+                            <button
+                              onClick={() => toggleProjectExpanded(projectId)}
+                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-gray-500" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                              )}
+                            </button>
+                            <FolderKanban className="w-4 h-4 text-gray-400" />
+                            <span className="flex-1 font-medium text-gray-700 dark:text-gray-300 truncate">
+                              {group.projectTitle}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {group.deliverables.length} deliverable{group.deliverables.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+
+                          {/* Expanded Deliverables */}
+                          {isExpanded && (
+                            <div className="ml-8 mt-1 space-y-1">
+                              {group.deliverables.map((d: any) => (
+                                <button
+                                  key={d.id}
+                                  onClick={() => toggleSelection({
+                                    type: 'deliverable',
+                                    id: d.id,
+                                    title: d.title,
+                                    projectTitle: d.projectTitle,
+                                    completed: d.completed
+                                  })}
+                                  className={clsx(
+                                    'w-full flex items-center gap-3 p-2.5 rounded-lg border transition-colors text-left',
+                                    isSelected('deliverable', d.id)
+                                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                      : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                  )}
+                                >
+                                  {isSelected('deliverable', d.id) ? (
+                                    <CheckSquare className="w-4 h-4 text-primary-600" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-gray-400" />
+                                  )}
+                                  {d.completed ? (
+                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                  ) : (
+                                    <Circle className="w-4 h-4 text-gray-400" />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <CheckSquare className="w-3 h-3 text-gray-400" />
+                                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                        {d.title}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {d.completed && (
+                                    <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                                      Done
+                                    </Badge>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   {searchQuery
-                    ? 'No projects match your search'
-                    : 'No available projects to link'}
+                    ? 'No projects or deliverables match your search'
+                    : 'No available projects or deliverables to link'}
                 </div>
               )}
+            </div>
+
+            {/* Footer with Add Button */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+              <Button
+                onClick={handleAddDependencies}
+                disabled={selectedItems.length === 0 || isAddingDependency}
+                className="w-full"
+              >
+                {isAddingDependency ? (
+                  'Adding...'
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add {selectedItems.length} {selectedItems.length === 1 ? 'Dependency' : 'Dependencies'}
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         </>

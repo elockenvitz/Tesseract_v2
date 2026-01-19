@@ -34,7 +34,7 @@ import { useContributions, type ContributionVisibility } from '../../hooks/useCo
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
 import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
-import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
+import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection, FirmConsensusPanel, PriceTargetsSummary } from '../outcomes'
 import { UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder } from '../research'
 import {
   ChecklistField,
@@ -444,7 +444,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     return [...new Set(thesisContributions.map(t => t.created_by).filter(Boolean))]
   }, [thesisContributions])
 
-  const { data: contributorProfiles } = useQuery({
+  const { data: contributorProfiles, isLoading: isLoadingContributorProfiles } = useQuery({
     queryKey: ['contributor-profiles', contributorIds],
     queryFn: async () => {
       if (contributorIds.length === 0) return []
@@ -515,7 +515,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
 
   // Fetch ALL contributions for this asset (for unified summary view)
-  const { contributions: allAssetContributions, isLoading: contributionsLoading } = useContributions({ assetId: asset.id })
+  const { contributions: allAssetContributions, isLoading: contributionsLoading, isFetching: contributionsFetching } = useContributions({ assetId: asset.id })
 
   // Legacy: Fetch specific section contributions for visibility initialization (deprecated - will be removed)
   const userThesisContributions = allAssetContributions.filter(c => c.section === 'thesis')
@@ -706,6 +706,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
 
     // Add thesis contributors who aren't already in the list
+    // Skip adding entries with "Unknown" name while contributor profiles are still loading
     thesisContributions?.forEach((t: any) => {
       if (t.created_by && !uniqueAnalysts.has(t.created_by)) {
         const profile = contributorProfiles?.find(p => p.id === t.created_by)
@@ -723,7 +724,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           }
         }
         if (!fullName) {
-          fullName = profile?.email?.split('@')[0] || 'Unknown'
+          fullName = profile?.email?.split('@')[0]
+        }
+
+        // Don't add entries without a name while still loading profiles
+        if (!fullName && isLoadingContributorProfiles) {
+          return // Skip this entry, it will be added once profiles load
+        }
+
+        // Final fallback only after loading is complete
+        if (!fullName) {
+          fullName = 'Unknown'
         }
 
         uniqueAnalysts.set(t.created_by, {
@@ -753,7 +764,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       // Among contributors, sort alphabetically
       return a.name.localeCompare(b.name)
     })
-  }, [coverage, thesisContributions, contributorProfiles, user])
+  }, [coverage, thesisContributions, contributorProfiles, isLoadingContributorProfiles, user])
 
   const { data: priceTargets } = useQuery({
     queryKey: ['price-targets', asset.id],
@@ -2701,8 +2712,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
-            {/* Show loading skeleton while layout or contributions load */}
-            {(layoutLoading || (isAggregatedView && contributionsLoading)) ? (
+            {/* Show loading skeleton while layout or contributions load/fetch */}
+            {(layoutLoading || (isAggregatedView && (contributionsLoading || contributionsFetching))) ? (
               <div className="space-y-4">
                 {[1, 2, 3].map(i => (
                   <Card key={i} padding="none">
@@ -2774,6 +2785,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </Card>
               ) : (
                 <div className="space-y-3">
+                  {/* Aggregated Price Targets (Bull/Bear/Base) - only shows when data exists */}
+                  <PriceTargetsSummary
+                    assetId={asset.id}
+                    currentPrice={currentQuote?.price}
+                  />
+
+                  {/* Aggregated Forecasts Summary - shows ratings, estimates when data exists */}
+                  <FirmConsensusPanel assetId={asset.id} />
+
+                  {/* Contribution-based fields (rich_text sections with content) */}
                   {displayedFieldsBySection.flatMap(section => {
                     if (section.section_is_hidden) return []
 
@@ -2783,7 +2804,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         const fieldType = field.field_type
 
                         // Skip non-contribution field types in aggregated view
-                        // (they don't have the hideWhenEmpty logic)
+                        // (handled by dedicated summary components above)
                         if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'documents', 'rating', 'estimates', 'price_target'].includes(fieldType)) {
                           return null
                         }
@@ -2840,10 +2861,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} className="space-y-2">
-                                  <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                   {field.field_description && (
-                                    <p className="text-xs text-gray-500">{field.field_description}</p>
+                                    <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                   )}
                                   <OutcomesContainer
                                     assetId={asset.id}
@@ -2859,14 +2880,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} className="space-y-2">
-                                  <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                   {field.field_description && (
-                                    <p className="text-xs text-gray-500">{field.field_description}</p>
+                                    <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                   )}
                                   <AnalystRatingsSection
                                     assetId={asset.id}
-                                    isEditable={true}
+                                    isEditable={isViewingOwnThesisTab}
                                   />
                                 </div>
                               )
@@ -2875,14 +2896,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="space-y-2">
-                                  <h4 className="text-sm font-medium text-gray-700">{field.field_name}</h4>
+                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                   {field.field_description && (
-                                    <p className="text-xs text-gray-500">{field.field_description}</p>
+                                    <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
                                   )}
                                   <AnalystEstimatesSection
                                     assetId={asset.id}
-                                    isEditable={true}
+                                    isEditable={isViewingOwnThesisTab}
                                   />
                                 </div>
                               )
@@ -3077,7 +3098,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 )}
                                 <AnalystRatingsSection
                                   assetId={asset.id}
-                                  isEditable={true}
+                                  isEditable={isViewingOwnThesisTab}
                                 />
                               </div>
                             )
@@ -3093,7 +3114,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 )}
                                 <AnalystEstimatesSection
                                   assetId={asset.id}
-                                  isEditable={true}
+                                  isEditable={isViewingOwnThesisTab}
                                 />
                               </div>
                             )

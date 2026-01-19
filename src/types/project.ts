@@ -17,6 +17,7 @@ export interface Project {
   context_type: ProjectContextType | null
   context_id: string | null
   org_group_id: string | null
+  blocked_reason: string | null
 }
 
 export interface ProjectAssignment {
@@ -188,7 +189,8 @@ export type DependencyType = 'blocks' | 'related'
 export interface ProjectDependency {
   id: string
   project_id: string
-  depends_on_id: string
+  depends_on_id: string | null
+  depends_on_deliverable_id: string | null
   dependency_type: DependencyType
   created_by: string | null
   created_at: string
@@ -200,7 +202,17 @@ export interface ProjectDependencyWithDetails extends ProjectDependency {
     title: string
     status: ProjectStatus
     priority: ProjectPriority
-  }
+  } | null
+  depends_on_deliverable: {
+    id: string
+    title: string
+    completed: boolean
+    due_date: string | null
+    project: {
+      id: string
+      title: string
+    }
+  } | null
   project: {
     id: string
     title: string

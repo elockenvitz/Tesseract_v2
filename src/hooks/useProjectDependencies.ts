@@ -26,6 +26,16 @@ export function useProjectDependencies({ projectId }: UseProjectDependenciesOpti
             title,
             status,
             priority
+          ),
+          depends_on_deliverable:depends_on_deliverable_id(
+            id,
+            title,
+            completed,
+            due_date,
+            project:project_id(
+              id,
+              title
+            )
           )
         `)
         .eq('project_id', projectId)
@@ -78,6 +88,16 @@ export function useProjectDependencies({ projectId }: UseProjectDependenciesOpti
             title,
             status,
             priority
+          ),
+          depends_on_deliverable:depends_on_deliverable_id(
+            id,
+            title,
+            completed,
+            due_date,
+            project:project_id(
+              id,
+              title
+            )
           )
         `)
         .eq('project_id', projectId)
@@ -89,27 +109,39 @@ export function useProjectDependencies({ projectId }: UseProjectDependenciesOpti
     enabled: !!projectId
   })
 
-  // Check if project is blocked (has incomplete blocking dependencies)
-  const isBlocked = blockedBy?.some(dep =>
-    dep.depends_on?.status !== 'completed' && dep.depends_on?.status !== 'cancelled'
-  ) ?? false
+  // Check if project is blocked (has incomplete blocking dependencies - either projects or deliverables)
+  const isBlocked = blockedBy?.some(dep => {
+    // Check project dependency
+    if (dep.depends_on) {
+      return dep.depends_on.status !== 'completed' && dep.depends_on.status !== 'cancelled'
+    }
+    // Check deliverable dependency
+    if (dep.depends_on_deliverable) {
+      return !dep.depends_on_deliverable.completed
+    }
+    return false
+  }) ?? false
 
-  // Add dependency mutation
+  // Add single dependency mutation (for backwards compatibility)
   const addDependencyMutation = useMutation({
     mutationFn: async ({
       dependsOnId,
+      dependsOnDeliverableId,
       dependencyType = 'blocks'
     }: {
-      dependsOnId: string
+      dependsOnId?: string
+      dependsOnDeliverableId?: string
       dependencyType?: DependencyType
     }) => {
       if (!projectId) throw new Error('Project ID is required')
+      if (!dependsOnId && !dependsOnDeliverableId) throw new Error('Either dependsOnId or dependsOnDeliverableId is required')
 
       const { data, error } = await supabase
         .from('project_dependencies')
         .insert({
           project_id: projectId,
-          depends_on_id: dependsOnId,
+          depends_on_id: dependsOnId || null,
+          depends_on_deliverable_id: dependsOnDeliverableId || null,
           dependency_type: dependencyType,
           created_by: user?.id
         })
@@ -118,6 +150,40 @@ export function useProjectDependencies({ projectId }: UseProjectDependenciesOpti
 
       if (error) throw error
       return data as ProjectDependency
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-dependencies'] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    }
+  })
+
+  // Add multiple dependencies at once
+  const addMultipleDependenciesMutation = useMutation({
+    mutationFn: async ({
+      dependencies,
+      dependencyType = 'blocks'
+    }: {
+      dependencies: Array<{ type: 'project' | 'deliverable'; id: string }>
+      dependencyType?: DependencyType
+    }) => {
+      if (!projectId) throw new Error('Project ID is required')
+      if (dependencies.length === 0) throw new Error('At least one dependency is required')
+
+      const inserts = dependencies.map(dep => ({
+        project_id: projectId,
+        depends_on_id: dep.type === 'project' ? dep.id : null,
+        depends_on_deliverable_id: dep.type === 'deliverable' ? dep.id : null,
+        dependency_type: dependencyType,
+        created_by: user?.id
+      }))
+
+      const { data, error } = await supabase
+        .from('project_dependencies')
+        .insert(inserts)
+        .select()
+
+      if (error) throw error
+      return data as ProjectDependency[]
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-dependencies'] })
@@ -148,8 +214,9 @@ export function useProjectDependencies({ projectId }: UseProjectDependenciesOpti
     isBlocked,
     isLoading: loadingBlockedBy || loadingBlocking || loadingRelated,
     addDependency: addDependencyMutation.mutate,
+    addMultipleDependencies: addMultipleDependenciesMutation.mutate,
     removeDependency: removeDependencyMutation.mutate,
-    isAddingDependency: addDependencyMutation.isPending,
+    isAddingDependency: addDependencyMutation.isPending || addMultipleDependenciesMutation.isPending,
     isRemovingDependency: removeDependencyMutation.isPending
   }
 }
@@ -169,6 +236,16 @@ export function useAllProjectDependencies() {
             status,
             priority
           ),
+          depends_on_deliverable:depends_on_deliverable_id(
+            id,
+            title,
+            completed,
+            due_date,
+            project:project_id(
+              id,
+              title
+            )
+          ),
           project:project_id(
             id,
             title,
@@ -187,18 +264,29 @@ export function useAllProjectDependencies() {
   const blockingStatus = new Map<string, { isBlocked: boolean; blockedBy: string[]; blocking: string[] }>()
 
   allDependencies?.forEach(dep => {
-    // Mark the project as blocked if dependency is not completed
-    if (dep.depends_on?.status !== 'completed' && dep.depends_on?.status !== 'cancelled') {
+    // Check if this dependency is incomplete (project not completed or deliverable not completed)
+    const isIncomplete = dep.depends_on
+      ? dep.depends_on.status !== 'completed' && dep.depends_on.status !== 'cancelled'
+      : dep.depends_on_deliverable
+        ? !dep.depends_on_deliverable.completed
+        : false
+
+    // Mark the project as blocked if dependency is incomplete
+    if (isIncomplete) {
       const current = blockingStatus.get(dep.project_id) || { isBlocked: false, blockedBy: [], blocking: [] }
       current.isBlocked = true
-      current.blockedBy.push(dep.depends_on_id)
+      if (dep.depends_on_id) {
+        current.blockedBy.push(dep.depends_on_id)
+      }
       blockingStatus.set(dep.project_id, current)
     }
 
-    // Mark the dependency project as blocking others
-    const depProject = blockingStatus.get(dep.depends_on_id) || { isBlocked: false, blockedBy: [], blocking: [] }
-    depProject.blocking.push(dep.project_id)
-    blockingStatus.set(dep.depends_on_id, depProject)
+    // Mark the dependency project as blocking others (only for project dependencies)
+    if (dep.depends_on_id) {
+      const depProject = blockingStatus.get(dep.depends_on_id) || { isBlocked: false, blockedBy: [], blocking: [] }
+      depProject.blocking.push(dep.project_id)
+      blockingStatus.set(dep.depends_on_id, depProject)
+    }
   })
 
   return {
