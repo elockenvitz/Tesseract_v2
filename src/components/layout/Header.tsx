@@ -146,6 +146,7 @@ export function Header({
   }, [user?.id, refetchDirectMessages])
 
   // Check for unread context messages (messages table only)
+  // Excludes trade_idea which has its own UI in TradeQueuePage
   const { data: hasUnreadContextMessages } = useQuery({
     queryKey: ['unread-context-messages', user?.id],
     queryFn: async () => {
@@ -155,6 +156,7 @@ export function Header({
         .from('messages')
         .select('id')
         .neq('user_id', user.id)
+        .neq('context_type', 'trade_idea') // trade_idea has its own UI
         .eq('is_read', false)
         .limit(1)
 

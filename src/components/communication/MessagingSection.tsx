@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Send, Users, Settings, Quote, X, ChevronDown, Search, Filter, Calendar, User, Pin, Reply, MoreVertical, ArrowLeft, Eye } from 'lucide-react'
+import { MessageCircle, Send, Users, Settings, Quote, X, ChevronDown, Search, Filter, Calendar, User, Pin, Reply, MoreVertical, ArrowLeft, Eye, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -512,30 +512,37 @@ export function MessagingSection({
     }
   }, [citedContent])
 
+  // Track which contexts we've already marked as read to prevent duplicate calls
+  const markedAsReadContextRef = useRef<string | null>(null)
+
   // Mark unread messages as read when viewing this conversation
   useEffect(() => {
-    if (!messages || messages.length === 0 || !user?.id) return
+    if (!messages || messages.length === 0 || !user?.id || !contextType || !contextId) return
+
+    const contextKey = `${contextType}:${contextId}`
+
+    // Skip if we've already marked this context as read
+    if (markedAsReadContextRef.current === contextKey) return
 
     const unreadMessages = messages.filter(
       message => !message.is_read && message.user_id !== user.id
     )
 
-    console.log('📖 Checking for unread messages in context:', contextType, contextId, '- found:', unreadMessages.length, 'total:', messages.length)
-    if (unreadMessages.length > 0) {
-      console.log('📬 Unread message IDs:', unreadMessages.map(m => ({ id: m.id, content: m.content.substring(0, 50), user_id: m.user_id, is_read: m.is_read })))
-      console.log('📬 Current user can update these? Check RLS policies if 0 messages updated')
-    }
-
     if (unreadMessages.length > 0) {
       // Use a timeout to mark as read after a brief delay to ensure user has seen them
       const timer = setTimeout(() => {
-        console.log('✅ Marking', unreadMessages.length, 'messages as read')
+        markedAsReadContextRef.current = contextKey
         markMessagesAsReadMutation.mutate(unreadMessages.map(m => m.id))
-      }, 1000)
+      }, 500)
 
       return () => clearTimeout(timer)
     }
-  }, [messages, user?.id])
+  }, [contextType, contextId, messages, user?.id])
+
+  // Reset the marked as read ref when context changes
+  useEffect(() => {
+    markedAsReadContextRef.current = null
+  }, [contextType, contextId])
 
   console.log('📍 MessagingSection render - contextType:', contextType, 'contextId:', contextId)
 
@@ -709,30 +716,46 @@ export function MessagingSection({
               ))}
             </div>
           ) : filteredMessages.length > 0 ? (
-            <div className="p-4 space-y-0.5">
+            <div className="p-4">
               {filteredMessages.map((message, index) => {
                 const prevMessage = index > 0 ? filteredMessages[index - 1] : null
                 const isSameUser = prevMessage && prevMessage.user_id === message.user_id
                 const showUserInfo = !isSameUser
                 const isSelected = selectedMessageId === message.id
+                const isOwnMessage = message.user_id === user?.id
 
                 return (
                   <div key={message.id} className="group">
                     {showUserInfo ? (
                       <div
-                        className="flex items-start space-x-3 mt-3 first:mt-0 cursor-pointer"
+                        className={clsx(
+                          "flex items-start space-x-3 mt-4 first:mt-0 cursor-pointer rounded-lg p-2 -mx-2 transition-colors",
+                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                        )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
-                        <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-primary-600 text-xs font-semibold">
+                        <div className={clsx(
+                          "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                          isOwnMessage ? "bg-primary-100" : "bg-gray-200"
+                        )}>
+                          <span className={clsx(
+                            "text-xs font-semibold",
+                            isOwnMessage ? "text-primary-600" : "text-gray-600"
+                          )}>
                             {getUserInitials(message.user)}
                           </span>
                         </div>
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2 mb-1">
-                            <span className="text-xs font-medium text-gray-900">
+                            <span className={clsx(
+                              "text-sm font-semibold",
+                              isOwnMessage ? "text-primary-700" : "text-gray-900"
+                            )}>
                               {getUserDisplayName(message.user)}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {formatMessageTime(message.created_at)}
                             </span>
                             {message.is_pinned && (
                               <Pin className="h-3 w-3 text-warning-500" />
@@ -746,38 +769,34 @@ export function MessagingSection({
 
                           {/* Reply indicator */}
                           {message.reply_to && (
-                            <div className="text-xs text-gray-500 mb-1 flex items-center">
-                              <Reply className="h-3 w-3 mr-1" />
-                              Replying to message
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                              <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
+                              <span className="text-gray-500">Replying to previous message</span>
                             </div>
                           )}
 
                           {/* Cited content */}
                           {message.cited_content && (
-                            <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
-                              <p className="text-xs text-gray-600 italic">
+                            <div className="p-2.5 bg-blue-50 border-l-4 border-primary-500 rounded-r mb-2">
+                              <p className="text-xs text-gray-600 italic leading-relaxed">
                                 {message.cited_content.substring(0, 100)}...
                               </p>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {/* Message Actions */}
                           {isSelected && (
-                            <div className="flex items-center space-x-2 mt-2">
-                              <span className="text-xs text-gray-500">
-                                {formatMessageTime(message.created_at)}
-                              </span>
-                              <span className="text-gray-300">•</span>
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleReply(message.id)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
                               >
                                 Reply
                               </button>
@@ -786,7 +805,7 @@ export function MessagingSection({
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -796,45 +815,47 @@ export function MessagingSection({
                       </div>
                     ) : (
                       <div
-                        className="flex items-start hover:bg-gray-50 -mx-2 px-2 py-0.5 rounded cursor-pointer"
+                        className={clsx(
+                          "flex items-start rounded-lg px-2 -mx-2 -mt-0.5 cursor-pointer transition-colors",
+                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                        )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
-                        <div className="w-6 h-6 flex-shrink-0 mr-3"></div>
+                        <div className="w-8 h-8 flex-shrink-0 mr-3"></div>
                         <div className="flex-1 min-w-0">
                           {/* Reply indicator */}
                           {message.reply_to && (
-                            <div className="text-xs text-gray-500 mb-1 flex items-center">
-                              <Reply className="h-3 w-3 mr-1" />
-                              Replying to message
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                              <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
+                              <span className="text-gray-500">Replying to previous message</span>
                             </div>
                           )}
 
                           {/* Cited content */}
                           {message.cited_content && (
-                            <div className="p-2 bg-gray-50 border-l-4 border-primary-500 rounded-r mb-2">
-                              <p className="text-xs text-gray-600 italic">
+                            <div className="p-2.5 bg-blue-50 border-l-4 border-primary-500 rounded-r mb-2">
+                              <p className="text-xs text-gray-600 italic leading-relaxed">
                                 {message.cited_content.substring(0, 100)}...
                               </p>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {/* Message Actions */}
                           {isSelected && (
-                            <div className="flex items-center space-x-2 mt-2">
-                              <span className="text-xs text-gray-500">
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+                              <span className="text-xs text-gray-400">
                                 {formatMessageTime(message.created_at)}
                               </span>
-                              <span className="text-gray-300">•</span>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleReply(message.id)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
                               >
                                 Reply
                               </button>
@@ -843,7 +864,7 @@ export function MessagingSection({
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -892,8 +913,36 @@ export function MessagingSection({
           </div>
         )}
 
+        {/* Smart Input Info */}
+        {contextType && contextId && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <div className="group relative">
+              <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-50">
+                <div className="font-medium mb-2">Smart Input Features:</div>
+                <ul className="space-y-1.5">
+                  <li><span className="text-primary-400 font-medium">@</span> Mention a team member</li>
+                  <li><span className="text-green-400 font-medium">$</span> Reference an asset (e.g. $AAPL)</li>
+                  <li><span className="text-purple-400 font-medium">#</span> Link to themes, portfolios, or notes</li>
+                  <li><span className="text-orange-400 font-medium">.template</span> Insert a template</li>
+                  <li><span className="text-cyan-400 font-medium">.AI</span> Generate with AI</li>
+                </ul>
+                <div className="absolute bottom-0 left-3 transform translate-y-full">
+                  <div className="border-4 border-transparent border-t-gray-900"></div>
+                </div>
+              </div>
+            </div>
+            <span className="text-xs text-gray-400">Use @ # $ . for smart features</span>
+          </div>
+        )}
+
         <div className="flex space-x-2">
-          <div className="flex-1">
+          <div className={clsx(
+            "flex-1 rounded-lg bg-white transition-all",
+            contextType && contextId
+              ? "ring-1 ring-gray-300 focus-within:ring-2 focus-within:ring-primary-500 cursor-text"
+              : "ring-1 ring-gray-200 bg-gray-100 cursor-not-allowed"
+          )}>
             <UniversalSmartInput
               ref={smartInputRef}
               value={messageContent}
@@ -904,10 +953,10 @@ export function MessagingSection({
               onKeyDown={handleKeyDown}
               placeholder={
                 contextType && contextId
-                  ? `Message about ${contextTitle}... Use @mention, #reference, .template, .AI`
+                  ? `Message about ${contextTitle}...`
                   : "Select a context to start messaging..."
               }
-              textareaClassName="text-sm"
+              textareaClassName="text-sm border-0 focus:ring-0 focus:outline-none p-3 cursor-text"
               rows={3}
               minHeight="80px"
               disabled={!contextType || !contextId}
@@ -922,13 +971,13 @@ export function MessagingSection({
             onClick={handleSendMessage}
             disabled={!messageContent.trim() || !contextType || !contextId || sendMessageMutation.isPending}
             size="sm"
-            className="self-end"
+            className="self-end h-10 w-10 p-0 flex items-center justify-center"
           >
             <Send className="h-4 w-4" />
           </Button>
         </div>
 
-        {!contextType || !contextId && (
+        {(!contextType || !contextId) && (
           <p className="text-xs text-gray-500 mt-2">
             Open an asset, portfolio, or theme tab to start a discussion
           </p>

@@ -264,7 +264,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
     const hasStyledContent = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)/.test(value)
 
     return (
-      <div className={clsx('relative', className)}>
+      <div className={clsx('relative cursor-text', className)}>
         {/* AI Prompt Mode Indicator */}
         {isAIPromptMode && (
           <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-1.5 bg-purple-50 border-b border-purple-200 rounded-t-lg z-10">
@@ -380,7 +380,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
             disabled={disabled || isAILoading}
             rows={rows}
             className={clsx(
-              'w-full resize-none',
+              'w-full resize-none cursor-text',
               'disabled:bg-gray-100 disabled:cursor-not-allowed',
               // Only apply default border/focus styles if no custom textareaClassName is provided
               !textareaClassName && 'p-3 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent',
@@ -399,7 +399,8 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
               // Make textarea text transparent when overlay is active so styled content shows through
               color: (isAIPromptMode || hasStyledContent) ? 'transparent' : undefined,
               background: isAIPromptMode ? 'transparent' : undefined,
-              caretColor: isAIPromptMode ? '#9333ea' : hasStyledContent ? '#111827' : undefined,
+              // Always set caret color to ensure it's visible
+              caretColor: isAIPromptMode ? '#9333ea' : '#111827',
             }}
           />
         </div>

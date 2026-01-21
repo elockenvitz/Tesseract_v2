@@ -13,12 +13,15 @@ import {
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useAllProjectDependencies } from '../../hooks/useProjectDependencies'
 import { EnhancedKanbanColumn } from './EnhancedKanbanColumn'
 import { EnhancedKanbanCardOverlay } from './EnhancedKanbanCard'
 import type { ProjectWithAssignments, ProjectStatus } from '../../types/project'
+
+const WIP_LIMIT = 10
 
 interface EnhancedKanbanBoardProps {
   projects: (ProjectWithAssignments & { board_position?: number })[]
@@ -31,13 +34,14 @@ const BOARD_STATUSES: ProjectStatus[] = ['planning', 'in_progress', 'blocked', '
 export function EnhancedKanbanBoard({
   projects,
   onProjectSelect,
-  wipLimits = { in_progress: 5 }
+  wipLimits = { in_progress: WIP_LIMIT }
 }: EnhancedKanbanBoardProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { blockingStatus } = useAllProjectDependencies()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -253,6 +257,26 @@ export function EnhancedKanbanBoard({
 
   const activeBlockingStatus = activeProject ? blockingStatus.get(activeProject.id) : undefined
 
+  // Check for columns exceeding WIP limit
+  const overLimitColumns = useMemo(() => {
+    return BOARD_STATUSES.filter(status =>
+      projectsByStatus[status].length > WIP_LIMIT
+    ).map(status => ({
+      status,
+      count: projectsByStatus[status].length
+    }))
+  }, [projectsByStatus])
+
+  const showWipBanner = overLimitColumns.length > 0 && !bannerDismissed
+
+  const statusLabels: Record<ProjectStatus, string> = {
+    planning: 'Planning',
+    in_progress: 'In Progress',
+    blocked: 'Blocked',
+    completed: 'Completed',
+    cancelled: 'Cancelled'
+  }
+
   return (
     <DndContext
       sensors={sensors}
@@ -262,8 +286,35 @@ export function EnhancedKanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="h-full p-4">
-        <div className="flex gap-4 h-full overflow-x-auto pb-4">
+      <div className="h-full p-4 flex flex-col">
+        {/* WIP Limit Banner */}
+        {showWipBanner && (
+          <div className="mb-4 flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <span className="font-medium">Work in progress limit exceeded:</span>{' '}
+                {overLimitColumns.map((col, i) => (
+                  <span key={col.status}>
+                    {i > 0 && ', '}
+                    <span className="font-semibold">{statusLabels[col.status]}</span>
+                    {' '}has {col.count} items (limit: {WIP_LIMIT})
+                  </span>
+                ))}
+                . Consider completing some items before starting new ones.
+              </p>
+            </div>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="p-1 hover:bg-amber-100 dark:hover:bg-amber-800/30 rounded transition-colors flex-shrink-0"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
           {BOARD_STATUSES.map(status => (
             <EnhancedKanbanColumn
               key={status}
@@ -271,7 +322,7 @@ export function EnhancedKanbanBoard({
               projects={projectsByStatus[status]}
               onProjectSelect={onProjectSelect}
               blockingStatus={blockingStatus}
-              wipLimit={wipLimits[status]}
+              wipLimit={WIP_LIMIT}
             />
           ))}
         </div>

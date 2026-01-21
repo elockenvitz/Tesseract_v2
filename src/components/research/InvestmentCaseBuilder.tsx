@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
-import { useUserResearchLayout, type AccessibleField } from '../../hooks/useResearchFields'
+import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
 import { useContributions } from '../../hooks/useContributions'
 import { useInvestmentCaseTemplates } from '../../hooks/useInvestmentCaseTemplates'
 import { InvestmentCaseTemplateSelector } from '../investment-case-templates'
@@ -69,7 +69,8 @@ export function InvestmentCaseBuilder({
   currentPrice,
   onClose
 }: InvestmentCaseBuilderProps) {
-  const { sections, fields, isLoading } = useUserResearchLayout()
+  // Use the user's actual layout preferences for this asset
+  const { displayedFieldsBySection, isLoading } = useUserAssetPagePreferences(assetId)
   const { contributions } = useContributions(assetId)
   const { recordUsage, getLogoUrl, defaultTemplate } = useInvestmentCaseTemplates()
 
@@ -101,43 +102,51 @@ export function InvestmentCaseBuilder({
     }
   }, [selectedTemplate?.branding_config.logoPath, getLogoUrl])
 
-  // Build section configurations from user's accessible fields
+  // Build section configurations from user's layout (only visible fields)
   const [sectionConfigs, setSectionConfigs] = useState<SectionConfig[]>(() =>
-    sections.map((ls, index) => ({
-      id: ls.section.id,
-      name: ls.section.name,
-      enabled: true,
-      order: index,
-      fields: ls.fields.map(af => ({
-        id: af.field.id,
-        name: af.field.name,
-        slug: af.field.slug,
+    displayedFieldsBySection
+      .filter(section => section.fields.some(f => f.is_visible))
+      .map((section, index) => ({
+        id: section.section_id,
+        name: section.section_name,
         enabled: true,
-        fieldType: af.field.field_type
+        order: index,
+        fields: section.fields
+          .filter(f => f.is_visible)
+          .map(f => ({
+            id: f.field_id,
+            name: f.field_name,
+            slug: f.field_slug,
+            enabled: true,
+            fieldType: f.field_type
+          }))
       }))
-    }))
   )
 
-  // Update configs when sections load
+  // Update configs when layout loads
   useMemo(() => {
-    if (sections.length > 0 && sectionConfigs.length === 0) {
+    if (displayedFieldsBySection.length > 0 && sectionConfigs.length === 0) {
       setSectionConfigs(
-        sections.map((ls, index) => ({
-          id: ls.section.id,
-          name: ls.section.name,
-          enabled: true,
-          order: index,
-          fields: ls.fields.map(af => ({
-            id: af.field.id,
-            name: af.field.name,
-            slug: af.field.slug,
+        displayedFieldsBySection
+          .filter(section => section.fields.some(f => f.is_visible))
+          .map((section, index) => ({
+            id: section.section_id,
+            name: section.section_name,
             enabled: true,
-            fieldType: af.field.field_type
+            order: index,
+            fields: section.fields
+              .filter(f => f.is_visible)
+              .map(f => ({
+                id: f.field_id,
+                name: f.field_name,
+                slug: f.field_slug,
+                enabled: true,
+                fieldType: f.field_type
+              }))
           }))
-        }))
       )
     }
-  }, [sections])
+  }, [displayedFieldsBySection])
 
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => {

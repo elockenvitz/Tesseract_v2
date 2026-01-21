@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft, Pin, Reply } from 'lucide-react'
+import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft, Pin, Reply, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -323,12 +323,21 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     previousMessagesLengthRef.current = 0
   }, [selectedConversationId])
 
+  // Track which conversations we've already marked as read to prevent duplicate calls
+  const markedAsReadRef = useRef<Set<string>>(new Set())
+
   // Mark conversation as read when viewing messages
   useEffect(() => {
     if (!selectedConversationId || !user?.id) return
 
+    // Skip if we've already marked this conversation as read in this session
+    if (markedAsReadRef.current.has(selectedConversationId)) return
+
     const markAsRead = async () => {
       try {
+        // Mark that we're processing this conversation
+        markedAsReadRef.current.add(selectedConversationId)
+
         // Use RPC function to bypass RLS recursion issue
         const { error } = await supabase.rpc('mark_conversation_read', {
           p_conversation_id: selectedConversationId,
@@ -337,6 +346,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
         if (error) {
           console.error('Error updating last_read_at:', error)
+          // Remove from set so we can retry
+          markedAsReadRef.current.delete(selectedConversationId)
+          return
         }
 
         // Invalidate and refetch the unread direct messages query to update the red dot immediately
@@ -346,13 +358,14 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
       } catch (error) {
         console.error('Error marking conversation as read:', error)
+        markedAsReadRef.current.delete(selectedConversationId)
       }
     }
 
     // Mark as read after a short delay to ensure user has seen the messages
-    const timer = setTimeout(markAsRead, 1000)
+    const timer = setTimeout(markAsRead, 500)
     return () => clearTimeout(timer)
-  }, [selectedConversationId, user?.id, messages])
+  }, [selectedConversationId, user?.id, queryClient])
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -709,42 +722,42 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                   <div
                     key={conversation.id}
                     onClick={() => setSelectedConversationId(conversation.id)}
-                    className="p-4 rounded-lg cursor-pointer transition-colors hover:bg-gray-50 mb-2"
+                    className="px-3 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
                   >
                     <div className="flex items-center space-x-3">
                       <div className="relative">
                         {conversation.is_group ? (
-                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center">
-                            <Users className="h-6 w-6 text-white" />
+                          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center">
+                            <Users className="h-5 w-5 text-white" />
                           </div>
                         ) : (
-                          <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center">
-                            <span className="text-white font-semibold">
+                          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center">
+                            <span className="text-white font-semibold text-sm">
                               {getUserInitials(conversation.participants?.find(p => p.user_id !== user?.id)?.user)}
                             </span>
                           </div>
                         )}
                         {(conversation.unread_count ?? 0) > 0 && (
-                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-error-500 rounded-full flex items-center justify-center">
-                            <span className="text-white text-xs font-bold">
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-error-500 rounded-full flex items-center justify-center">
+                            <span className="text-white text-[10px] font-bold">
                               {conversation.unread_count! > 9 ? '9+' : conversation.unread_count}
                             </span>
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <h4 className="font-semibold text-gray-900 truncate">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-sm text-gray-900 truncate">
                             {getConversationTitle(conversation)}
                           </h4>
                           {conversation.last_message && (
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-400 ml-2">
                               {formatDistanceToNow(new Date(conversation.last_message.created_at), { addSuffix: true })}
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 truncate">
+                        <p className="text-xs text-gray-500 truncate">
                           {getConversationSubtitle(conversation)}
                         </p>
                       </div>
@@ -995,30 +1008,46 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               ))}
             </div>
           ) : messages && messages.length > 0 ? (
-            <div className="p-4 space-y-0.5">
+            <div className="p-4">
               {messages.map((message, index) => {
                 const prevMessage = index > 0 ? messages[index - 1] : null
                 const isSameUser = prevMessage && prevMessage.user_id === message.user_id
                 const showUserInfo = !isSameUser
                 const isSelected = selectedMessageId === message.id
+                const isOwnMessage = message.user_id === user?.id
 
                 return (
                   <div key={message.id} className="group">
                     {showUserInfo ? (
                       <div
-                        className="flex items-start space-x-3 mt-3 first:mt-0 cursor-pointer"
+                        className={clsx(
+                          "flex items-start space-x-3 mt-4 first:mt-0 cursor-pointer rounded-lg p-2 -mx-2 transition-colors",
+                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                        )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
-                        <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-primary-600 text-xs font-semibold">
+                        <div className={clsx(
+                          "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                          isOwnMessage ? "bg-primary-100" : "bg-gray-200"
+                        )}>
+                          <span className={clsx(
+                            "text-xs font-semibold",
+                            isOwnMessage ? "text-primary-600" : "text-gray-600"
+                          )}>
                             {getUserInitials(message.user)}
                           </span>
                         </div>
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2 mb-1">
-                            <span className="text-xs font-medium text-gray-900">
+                            <span className={clsx(
+                              "text-sm font-semibold",
+                              isOwnMessage ? "text-primary-700" : "text-gray-900"
+                            )}>
                               {getUserDisplayName(message.user)}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {formatMessageTime(message.created_at)}
                             </span>
                             {message.is_pinned && (
                               <Pin className="h-3 w-3 text-warning-500" />
@@ -1030,34 +1059,30 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
                           {/* Reply indicator */}
                           {message.replied_message && (
-                            <div className="text-xs text-gray-500 mb-1 flex items-center p-2 bg-gray-50 rounded">
-                              <Reply className="h-3 w-3 mr-1" />
-                              <span className="font-medium mr-1">
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                              <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
+                              <span className="font-medium mr-1 text-gray-600">
                                 {getUserDisplayName(message.replied_message.user)}:
                               </span>
-                              <span className="truncate">
+                              <span className="truncate text-gray-500">
                                 {message.replied_message.content.substring(0, 50)}
                                 {message.replied_message.content.length > 50 ? '...' : ''}
                               </span>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {isSelected && (
-                            <div className="flex items-center space-x-2 mt-2">
-                              <span className="text-xs text-gray-500">
-                                {formatMessageTime(message.created_at)}
-                              </span>
-                              <span className="text-gray-300">•</span>
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleReply(message)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
                               >
                                 Reply
                               </button>
@@ -1066,7 +1091,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -1076,41 +1101,43 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                       </div>
                     ) : (
                       <div
-                        className="flex items-start hover:bg-gray-50 -mx-2 px-2 py-0.5 rounded cursor-pointer"
+                        className={clsx(
+                          "flex items-start rounded-lg px-2 -mx-2 -mt-0.5 cursor-pointer transition-colors",
+                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                        )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
-                        <div className="w-6 h-6 flex-shrink-0 mr-3"></div>
+                        <div className="w-8 h-8 flex-shrink-0 mr-3"></div>
                         <div className="flex-1 min-w-0">
                           {/* Reply indicator */}
                           {message.replied_message && (
-                            <div className="text-xs text-gray-500 mb-1 flex items-center p-2 bg-gray-50 rounded">
-                              <Reply className="h-3 w-3 mr-1" />
-                              <span className="font-medium mr-1">
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                              <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
+                              <span className="font-medium mr-1 text-gray-600">
                                 {getUserDisplayName(message.replied_message.user)}:
                               </span>
-                              <span className="truncate">
+                              <span className="truncate text-gray-500">
                                 {message.replied_message.content.substring(0, 50)}
                                 {message.replied_message.content.length > 50 ? '...' : ''}
                               </span>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {isSelected && (
-                            <div className="flex items-center space-x-2 mt-2">
-                              <span className="text-xs text-gray-500">
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+                              <span className="text-xs text-gray-400">
                                 {formatMessageTime(message.created_at)}
                               </span>
-                              <span className="text-gray-300">•</span>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleReply(message)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
                               >
                                 Reply
                               </button>
@@ -1119,7 +1146,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -1144,7 +1171,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       </div>
 
       {/* Message Input - Pinned to bottom */}
-      <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 z-10 relative">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 z-10 relative">
         {/* Reply indicator */}
         {replyingTo && (
           <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1168,8 +1195,29 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
           </div>
         )}
 
+        {/* Smart Input Info */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <div className="group relative">
+            <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
+            <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-50">
+              <div className="font-medium mb-2">Smart Input Features:</div>
+              <ul className="space-y-1.5">
+                <li><span className="text-primary-400 font-medium">@</span> Mention a team member</li>
+                <li><span className="text-green-400 font-medium">$</span> Reference an asset (e.g. $AAPL)</li>
+                <li><span className="text-purple-400 font-medium">#</span> Link to themes, portfolios, or notes</li>
+                <li><span className="text-orange-400 font-medium">.template</span> Insert a template</li>
+                <li><span className="text-cyan-400 font-medium">.AI</span> Generate with AI</li>
+              </ul>
+              <div className="absolute bottom-0 left-3 transform translate-y-full">
+                <div className="border-4 border-transparent border-t-gray-900"></div>
+              </div>
+            </div>
+          </div>
+          <span className="text-xs text-gray-400">Use @ # $ . for smart features</span>
+        </div>
+
         <div className="flex space-x-2">
-          <div className="flex-1">
+          <div className="flex-1 rounded-lg bg-white ring-1 ring-gray-300 focus-within:ring-2 focus-within:ring-primary-500 transition-all cursor-text">
             <UniversalSmartInput
               ref={smartInputRef}
               value={messageContent}
@@ -1178,8 +1226,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 setInputMetadata(metadata)
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message... Use @mention, #reference, .template, .AI"
-              textareaClassName="text-sm"
+              placeholder="Type a message..."
+              textareaClassName="text-sm border-0 focus:ring-0 focus:outline-none p-3 cursor-text"
               rows={2}
               minHeight="60px"
               enableMentions={true}
@@ -1193,7 +1241,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
             onClick={handleSendMessage}
             disabled={!messageContent.trim() || sendMessageMutation.isPending}
             size="sm"
-            className="self-end"
+            className="self-end h-10 w-10 p-0 flex items-center justify-center"
           >
             <Send className="h-4 w-4" />
           </Button>

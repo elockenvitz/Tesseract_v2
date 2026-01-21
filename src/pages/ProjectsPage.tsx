@@ -1045,7 +1045,6 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
             <EnhancedKanbanBoard
               projects={filteredProjects}
               onProjectSelect={onProjectSelect}
-              wipLimits={{ in_progress: 5 }}
             />
           ) : viewMode === 'timeline' ? (
             // Timeline/Gantt View
