@@ -524,12 +524,20 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                       </div>
                     )}
                   </div>
-                  {list.collaborators && list.collaborators.length > 0 && (
-                    <Badge variant="primary" size="sm">
-                      <Share2 className="h-3 w-3 mr-1" />
-                      Shared
-                    </Badge>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {list.list_type === 'collaborative' && (
+                      <Badge variant="secondary" size="sm">
+                        <UserPlus className="h-3 w-3 mr-1" />
+                        Collaborative
+                      </Badge>
+                    )}
+                    {list.collaborators && list.collaborators.length > 0 && (
+                      <Badge variant="primary" size="sm">
+                        <Share2 className="h-3 w-3 mr-1" />
+                        Shared
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="flex items-center text-xs text-gray-500">

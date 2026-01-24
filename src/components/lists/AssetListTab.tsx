@@ -4,10 +4,11 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   List, TrendingUp, TrendingDown, Plus, Search, Calendar, User, Users, Share2, Trash2,
   MoreVertical, Target, FileText, Star, ChevronRight, CheckSquare, Square, X, Loader2,
-  UserPlus, Copy, Link, Mail, Bell, Edit3
+  UserPlus, Copy, Link, Mail, Bell, Edit3, MessageSquarePlus, Minus, Check
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useListPermissions, useListSuggestions } from '../../hooks/lists'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -16,6 +17,10 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { DensityToggle } from '../table/DensityToggle'
 import { DENSITY_CONFIG } from '../../contexts/TableContext'
 import { useMarketData } from '../../hooks/useMarketData'
+import { ListUserFilter } from './ListUserFilter'
+import { SuggestAssetModal } from './SuggestAssetModal'
+import { PendingSuggestionsPanel } from './PendingSuggestionsPanel'
+import { SuggestionBadge } from './SuggestionBadge'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { createPortal } from 'react-dom'
@@ -81,9 +86,16 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
   })
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set())
-  const [showAddAssetModal, setShowAddAssetModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string | 'all'>('all')
+  const [showSuggestModal, setShowSuggestModal] = useState<{
+    isOpen: boolean
+    type: 'add' | 'remove'
+    asset?: { id: string; symbol: string; company_name: string }
+    targetUser?: { id: string; email: string; first_name: string | null; last_name: string | null }
+  }>({ isOpen: false, type: 'add' })
+  const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false)
 
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -144,7 +156,7 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
         .from('asset_list_collaborations')
         .select(`
           *,
-          user:users!asset_list_collaborations_user_id_fkey(email, first_name, last_name)
+          user:users!asset_list_collaborations_user_id_fkey(id, email, first_name, last_name)
         `)
         .eq('list_id', list.id)
         .order('created_at', { ascending: false })
@@ -153,6 +165,67 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
       return data || []
     }
   })
+
+  // Permission hook for collaborative lists
+  const permissions = useListPermissions({
+    list: list,
+    collaborators: collaborators?.map(c => ({
+      user_id: c.user_id,
+      permission: c.permission
+    })) || []
+  })
+
+  // Suggestions hook for collaborative lists
+  const {
+    incomingCount,
+    pendingSuggestions
+  } = useListSuggestions({
+    listId: list.id,
+    enabled: permissions.listType === 'collaborative'
+  })
+
+  // Get all unique users who have items in this list
+  const listUsers = useMemo(() => {
+    if (!listItems) return []
+
+    const userMap = new Map<string, { id: string; email: string; first_name: string | null; last_name: string | null }>()
+
+    // Add the list owner
+    if (list.created_by) {
+      userMap.set(list.created_by, {
+        id: list.created_by,
+        email: list.owner_email || '',
+        first_name: list.owner_first_name || null,
+        last_name: list.owner_last_name || null
+      })
+    }
+
+    // Add users who added items
+    listItems.forEach(item => {
+      if (item.added_by && item.added_by_user && !userMap.has(item.added_by)) {
+        userMap.set(item.added_by, {
+          id: item.added_by,
+          email: item.added_by_user.email,
+          first_name: item.added_by_user.first_name || null,
+          last_name: item.added_by_user.last_name || null
+        })
+      }
+    })
+
+    // Add collaborators
+    collaborators?.forEach(c => {
+      if (c.user && !userMap.has(c.user_id)) {
+        userMap.set(c.user_id, {
+          id: c.user_id,
+          email: c.user.email,
+          first_name: c.user.first_name || null,
+          last_name: c.user.last_name || null
+        })
+      }
+    })
+
+    return Array.from(userMap.values())
+  }, [listItems, collaborators, list])
 
   // Remove asset from list mutation
   const removeFromListMutation = useMutation({
@@ -171,19 +244,47 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
     }
   })
 
-  // Filter items based on search
+  // Filter items based on search and user filter
   const filteredItems = useMemo(() => {
     if (!listItems) return []
-    if (!searchQuery) return listItems
 
-    const query = searchQuery.toLowerCase()
-    return listItems.filter(item =>
-      item.assets?.symbol.toLowerCase().includes(query) ||
-      item.assets?.company_name.toLowerCase().includes(query) ||
-      (item.notes && item.notes.toLowerCase().includes(query)) ||
-      (item.assets?.sector && item.assets.sector.toLowerCase().includes(query))
-    )
-  }, [listItems, searchQuery])
+    let items = listItems
+
+    // Apply user filter (for collaborative lists)
+    if (permissions.listType === 'collaborative' && selectedUserFilter !== 'all') {
+      items = items.filter(item => item.added_by === selectedUserFilter)
+    }
+
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      items = items.filter(item =>
+        item.assets?.symbol.toLowerCase().includes(query) ||
+        item.assets?.company_name.toLowerCase().includes(query) ||
+        (item.notes && item.notes.toLowerCase().includes(query)) ||
+        (item.assets?.sector && item.assets.sector.toLowerCase().includes(query))
+      )
+    }
+
+    return items
+  }, [listItems, searchQuery, selectedUserFilter, permissions.listType])
+
+  // Group items by user for collaborative lists
+  const itemsByUser = useMemo(() => {
+    if (permissions.listType !== 'collaborative' || !listItems) return null
+
+    const groups: Record<string, ListItem[]> = {}
+
+    listItems.forEach(item => {
+      const userId = item.added_by || 'unknown'
+      if (!groups[userId]) {
+        groups[userId] = []
+      }
+      groups[userId].push(item)
+    })
+
+    return groups
+  }, [listItems, permissions.listType])
 
   // Virtual scrolling
   const rowVirtualizer = useVirtualizer({
@@ -282,6 +383,12 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-gray-900">{list.name}</h1>
               {list.is_default && <Star className="h-4 w-4 text-yellow-500" />}
+              {permissions.listType === 'collaborative' && (
+                <Badge variant="secondary" size="sm">
+                  <UserPlus className="h-3 w-3 mr-1" />
+                  Collaborative
+                </Badge>
+              )}
               {collaborators && collaborators.length > 0 && (
                 <Badge variant="secondary" size="sm">
                   <Share2 className="h-3 w-3 mr-1" />
@@ -297,6 +404,13 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
 
         {/* Action buttons in upper right */}
         <div className="flex items-center gap-2">
+          {/* Suggestions badge for collaborative lists */}
+          {permissions.listType === 'collaborative' && incomingCount > 0 && (
+            <SuggestionBadge
+              count={incomingCount}
+              onClick={() => setShowSuggestionsPanel(true)}
+            />
+          )}
           <DensityToggle />
           <Button
             variant="secondary"
@@ -306,14 +420,21 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
             <Share2 className="h-4 w-4 mr-1.5" />
             Share
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowAddAssetModal(true)}
-          >
-            <Plus className="h-4 w-4 mr-1.5" />
-            Add Asset
-          </Button>
+          <InlineAssetAdder
+            listId={list.id}
+            existingAssetIds={listItems?.map(item => item.asset_id) || []}
+          />
+          {/* Suggest Add button for collaborative lists */}
+          {permissions.listType === 'collaborative' && permissions.canSuggestChanges && listUsers.length > 1 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowSuggestModal({ isOpen: true, type: 'add' })}
+            >
+              <MessageSquarePlus className="h-4 w-4 mr-1.5" />
+              Suggest Add
+            </Button>
+          )}
         </div>
       </div>
 
@@ -343,6 +464,17 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
             className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
+
+        {/* User filter for collaborative lists */}
+        {permissions.listType === 'collaborative' && listUsers.length > 1 && (
+          <ListUserFilter
+            users={listUsers}
+            currentUserId={user?.id || ''}
+            selectedUserId={selectedUserFilter}
+            onChange={setSelectedUserFilter}
+          />
+        )}
+
         {filteredItems.length > 0 && (
           <button
             onClick={() => {
@@ -655,18 +787,52 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                           )
                         })}
 
-                        {/* Row actions */}
+                        {/* Row actions - permission based */}
                         <div className="flex items-center gap-1 px-2 opacity-0 hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRemoveFromList(item.id, asset.symbol)
-                            }}
-                            className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
-                            title="Remove from list"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {/* For mutual lists or own items in collaborative lists - show delete */}
+                          {permissions.canRemoveItem(item) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemoveFromList(item.id, asset.symbol)
+                              }}
+                              className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                              title="Remove from list"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {/* For collaborative lists and other users' items - show suggest remove */}
+                          {permissions.listType === 'collaborative' &&
+                           permissions.canSuggestChanges &&
+                           item.added_by !== user?.id &&
+                           item.added_by_user && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setShowSuggestModal({
+                                  isOpen: true,
+                                  type: 'remove',
+                                  asset: {
+                                    id: asset.id,
+                                    symbol: asset.symbol,
+                                    company_name: asset.company_name
+                                  },
+                                  targetUser: {
+                                    id: item.added_by!,
+                                    email: item.added_by_user.email,
+                                    first_name: item.added_by_user.first_name || null,
+                                    last_name: item.added_by_user.last_name || null
+                                  }
+                                })
+                              }}
+                              className="p-1.5 rounded hover:bg-amber-100 text-gray-400 hover:text-amber-600 transition-colors"
+                              title="Suggest removing"
+                            >
+                              <MessageSquarePlus className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -741,10 +907,10 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
               }
             </p>
             {listItems?.length === 0 && (
-              <Button variant="primary" onClick={() => setShowAddAssetModal(true)}>
-                <Plus className="h-4 w-4 mr-1.5" />
-                Add Asset
-              </Button>
+              <InlineAssetAdder
+                listId={list.id}
+                existingAssetIds={[]}
+              />
             )}
           </div>
         )}
@@ -763,16 +929,6 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
         isLoading={removeFromListMutation.isPending}
       />
 
-      {/* Add Asset Modal */}
-      {showAddAssetModal && createPortal(
-        <AddAssetToListModal
-          listId={list.id}
-          listName={list.name}
-          onClose={() => setShowAddAssetModal(false)}
-        />,
-        document.body
-      )}
-
       {/* Share Modal */}
       {showShareModal && createPortal(
         <ShareListModal
@@ -782,11 +938,240 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
         />,
         document.body
       )}
+
+      {/* Suggest Asset Modal for collaborative lists */}
+      {showSuggestModal.isOpen && createPortal(
+        <SuggestAssetModal
+          listId={list.id}
+          listName={list.name}
+          suggestionType={showSuggestModal.type}
+          preselectedAsset={showSuggestModal.asset}
+          preselectedTargetUser={showSuggestModal.targetUser}
+          listUsers={listUsers}
+          onClose={() => setShowSuggestModal({ isOpen: false, type: 'add' })}
+        />,
+        document.body
+      )}
+
+      {/* Pending Suggestions Panel for collaborative lists */}
+      {showSuggestionsPanel && createPortal(
+        <PendingSuggestionsPanel
+          listId={list.id}
+          isOpen={showSuggestionsPanel}
+          onClose={() => setShowSuggestionsPanel(false)}
+        />,
+        document.body
+      )}
     </div>
   )
 }
 
-// Add Asset to List Modal
+// Inline Asset Adder - replaces modal flow
+function InlineAssetAdder({
+  listId,
+  existingAssetIds
+}: {
+  listId: string
+  existingAssetIds: string[]
+}) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set())
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  // Debounce search
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 200)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsExpanded(false)
+        setSearchQuery('')
+      }
+    }
+    if (isExpanded) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isExpanded])
+
+  // Focus input when expanded
+  useEffect(() => {
+    if (isExpanded && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [isExpanded])
+
+  // Search for assets
+  const { data: searchResults, isFetching: isSearching } = useQuery({
+    queryKey: ['inline-asset-search', debouncedQuery, listId],
+    queryFn: async () => {
+      if (!debouncedQuery.trim() || debouncedQuery.length < 1) return []
+
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector')
+        .or(`symbol.ilike.%${debouncedQuery}%,company_name.ilike.%${debouncedQuery}%`)
+        .limit(8)
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: debouncedQuery.length >= 1
+  })
+
+  // Filter out already-added assets
+  const filteredResults = useMemo(() => {
+    if (!searchResults) return []
+    const existingSet = new Set(existingAssetIds)
+    return searchResults.filter(a => !existingSet.has(a.id))
+  }, [searchResults, existingAssetIds])
+
+  // Add mutation
+  const addMutation = useMutation({
+    mutationFn: async (assetId: string) => {
+      const { error } = await supabase
+        .from('asset_list_items')
+        .insert({
+          list_id: listId,
+          asset_id: assetId,
+          added_by: user?.id
+        })
+      if (error) throw error
+      return assetId
+    },
+    onSuccess: (assetId) => {
+      queryClient.invalidateQueries({ queryKey: ['asset-list-items', listId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
+      // Show "Added" feedback
+      setRecentlyAdded(prev => new Set(prev).add(assetId))
+      setTimeout(() => {
+        setRecentlyAdded(prev => {
+          const next = new Set(prev)
+          next.delete(assetId)
+          return next
+        })
+      }, 1500)
+    }
+  })
+
+  const handleAdd = (asset: any) => {
+    if (recentlyAdded.has(asset.id) || addMutation.isPending) return
+    addMutation.mutate(asset.id)
+  }
+
+  if (!isExpanded) {
+    return (
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={() => setIsExpanded(true)}
+      >
+        <Plus className="h-4 w-4 mr-1.5" />
+        Add Asset
+      </Button>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="flex items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Type to add asset..."
+            className="w-56 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setIsExpanded(false)
+                setSearchQuery('')
+              }
+            }}
+          />
+          {isSearching && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin" />
+          )}
+        </div>
+        <button
+          onClick={() => {
+            setIsExpanded(false)
+            setSearchQuery('')
+          }}
+          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Dropdown results */}
+      {searchQuery.length >= 1 && (
+        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+          {isSearching && debouncedQuery !== searchQuery ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+            </div>
+          ) : filteredResults.length > 0 ? (
+            <div className="max-h-64 overflow-y-auto">
+              {filteredResults.map((asset) => {
+                const isAdding = addMutation.isPending && addMutation.variables === asset.id
+                const justAdded = recentlyAdded.has(asset.id)
+
+                return (
+                  <button
+                    key={asset.id}
+                    onClick={() => handleAdd(asset)}
+                    disabled={isAdding || justAdded}
+                    className={clsx(
+                      'w-full px-3 py-2 text-left flex items-center justify-between transition-colors',
+                      justAdded
+                        ? 'bg-green-50'
+                        : 'hover:bg-gray-50'
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-900 truncate">{asset.symbol}</p>
+                      <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
+                    </div>
+                    <div className="ml-2 flex-shrink-0">
+                      {justAdded ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
+                          <Check className="h-3.5 w-3.5" />
+                          Added
+                        </span>
+                      ) : isAdding ? (
+                        <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4 text-gray-400" />
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : debouncedQuery.length >= 1 && !isSearching ? (
+            <div className="px-3 py-6 text-center text-sm text-gray-500">
+              No assets found
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Add Asset to List Modal (legacy - kept for reference)
 function AddAssetToListModal({
   listId,
   listName,

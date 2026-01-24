@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, Plus, Search, X, Users, Share2, MoreVertical, Edit3, Trash2, Star } from 'lucide-react'
+import { List, Plus, Search, X, Users, Share2, MoreVertical, Edit3, Trash2, Star, UserPlus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../ui/Card'
@@ -8,6 +8,7 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { Input } from '../ui/Input'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { ListTypeSelector, ListType } from './ListTypeSelector'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 
@@ -25,6 +26,7 @@ interface AssetList {
   description: string | null
   color: string | null
   is_default: boolean | null
+  list_type: 'mutual' | 'collaborative'
   created_at: string | null
   updated_at: string | null
   created_by: string | null
@@ -54,6 +56,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const [newListName, setNewListName] = useState('')
   const [newListDescription, setNewListDescription] = useState('')
   const [newListColor, setNewListColor] = useState('#3b82f6')
+  const [newListType, setNewListType] = useState<ListType>('mutual')
   const [showListMenu, setShowListMenu] = useState<string | null>(null)
   const [editingListId, setEditingListId] = useState<string | null>(null)
   const [addedToLists, setAddedToLists] = useState<Set<string>>(new Set())
@@ -149,13 +152,14 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
 
   // Create list mutation
   const createListMutation = useMutation({
-    mutationFn: async ({ name, description, color }: { name: string; description: string; color: string }) => {
+    mutationFn: async ({ name, description, color, list_type }: { name: string; description: string; color: string; list_type: ListType }) => {
       const { error } = await supabase
         .from('asset_lists')
         .insert([{
           name,
           description,
           color,
+          list_type,
           created_by: user?.id
         }])
 
@@ -167,6 +171,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       setNewListName('')
       setNewListDescription('')
       setNewListColor('#3b82f6')
+      setNewListType('mutual')
     }
   })
 
@@ -263,11 +268,12 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
 
   const handleCreateList = () => {
     if (!newListName.trim()) return
-    
+
     createListMutation.mutate({
       name: newListName.trim(),
       description: newListDescription.trim(),
-      color: newListColor
+      color: newListColor,
+      list_type: newListType
     })
   }
 
@@ -413,6 +419,11 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       </div>
                     </div>
 
+                    <ListTypeSelector
+                      value={newListType}
+                      onChange={setNewListType}
+                    />
+
                     <div className="flex space-x-3">
                       <Button
                         variant="outline"
@@ -421,6 +432,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                           setNewListName('')
                           setNewListDescription('')
                           setNewListColor('#3b82f6')
+                          setNewListType('mutual')
                         }}
                         className="flex-1"
                       >
@@ -519,6 +531,12 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                       {list.is_default && (
                                         <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
                                       )}
+                                      {list.list_type === 'collaborative' && (
+                                        <Badge variant="secondary" size="sm" className="flex-shrink-0">
+                                          <UserPlus className="h-3 w-3 mr-1" />
+                                          Collab
+                                        </Badge>
+                                      )}
                                     </div>
                                     {list.description && (
                                       <p className="text-sm text-gray-600 truncate" title={list.description}>
@@ -590,6 +608,12 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                       </h4>
                                       {list.is_default && (
                                         <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                                      )}
+                                      {list.list_type === 'collaborative' && (
+                                        <Badge variant="secondary" size="sm" className="flex-shrink-0">
+                                          <UserPlus className="h-3 w-3 mr-1" />
+                                          Collab
+                                        </Badge>
                                       )}
                                     </div>
                                     {list.description && (
@@ -670,6 +694,12 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                               </h4>
                               {list.is_default && (
                                 <Star className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                              )}
+                              {list.list_type === 'collaborative' && (
+                                <Badge variant="secondary" size="sm" className="flex-shrink-0">
+                                  <UserPlus className="h-3 w-3 mr-1" />
+                                  Collab
+                                </Badge>
                               )}
                             </div>
                             {list.description && (

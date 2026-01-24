@@ -16,6 +16,13 @@ interface Attachment {
   size: number
 }
 
+interface ChartAttachment {
+  dataUrl: string
+  symbol?: string
+  timeframe?: string
+  annotationCount?: number
+}
+
 type IdeaType = 'thought' | 'trade_idea' | 'research_idea' | 'thesis'
 type Sentiment = 'bullish' | 'bearish' | 'neutral' | 'curious' | 'concerned' | 'excited' | null
 type SourceType = 'news_article' | 'headline' | 'research' | 'earnings' | 'price_move' | 'social_media' | 'conversation' | 'idea' | 'general' | 'other'
@@ -47,6 +54,7 @@ interface QuickThoughtCaptureProps {
   compact?: boolean
   autoFocus?: boolean
   placeholder?: string
+  chartAttachment?: ChartAttachment
 }
 
 const ideaTypeOptions: { value: IdeaType; label: string; icon: typeof Lightbulb; color: string; description: string }[] = [
@@ -91,13 +99,15 @@ export function QuickThoughtCapture({
   initialIdeaType = 'thought',
   compact = false,
   autoFocus = false,
-  placeholder = "What's on your mind? Capture a quick thought..."
+  placeholder = "What's on your mind? Capture a quick thought...",
+  chartAttachment: initialChartAttachment
 }: QuickThoughtCaptureProps) {
   const [content, setContent] = useState(initialContent)
   const [ideaType, setIdeaType] = useState<IdeaType>(initialIdeaType)
   const [sentiment, setSentiment] = useState<Sentiment>(null)
   const [sourceType, setSourceType] = useState<SourceType>('general')
   const [sourceUrl, setSourceUrl] = useState(initialSourceUrl)
+  const [chartAttachment, setChartAttachment] = useState<ChartAttachment | undefined>(initialChartAttachment)
   const [sourceTitle, setSourceTitle] = useState(initialSourceTitle)
   const [visibility, setVisibility] = useState<'private' | 'public' | 'organization' | 'team' | 'portfolio'>('private')
   const [selectedOrgNodeId, setSelectedOrgNodeId] = useState<string | null>(null)
@@ -205,6 +215,12 @@ export function QuickThoughtCapture({
           date_type: dateType,
           revisit_date: dateValue || null,
           attachments: attachments.length > 0 ? attachments : null,
+          chart_snapshot: chartAttachment ? {
+            dataUrl: chartAttachment.dataUrl,
+            symbol: chartAttachment.symbol,
+            timeframe: chartAttachment.timeframe,
+            annotationCount: chartAttachment.annotationCount
+          } : null,
         })
         .select()
         .single()
@@ -224,6 +240,7 @@ export function QuickThoughtCapture({
       setDateValue('')
       setTags([])
       setAttachments([])
+      setChartAttachment(undefined)
       setShowAdvanced(false)
       setVisibility('private')
       setSelectedOrgNodeId(null)
@@ -415,6 +432,43 @@ export function QuickThoughtCapture({
           )
         })}
       </div>
+
+      {/* Chart attachment preview */}
+      {chartAttachment && (
+        <div className="mb-3 p-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <div className="relative flex-shrink-0">
+              <img
+                src={chartAttachment.dataUrl}
+                alt={`Chart for ${chartAttachment.symbol || 'asset'}`}
+                className="w-24 h-16 object-cover rounded border border-indigo-200"
+              />
+              {chartAttachment.annotationCount && chartAttachment.annotationCount > 0 && (
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-indigo-500 text-white text-[10px] font-medium rounded-full">
+                  +{chartAttachment.annotationCount}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-indigo-700">
+                Chart attached {chartAttachment.symbol && `for $${chartAttachment.symbol}`}
+              </p>
+              {chartAttachment.timeframe && (
+                <p className="text-[10px] text-indigo-500">
+                  {chartAttachment.timeframe} timeframe
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setChartAttachment(undefined)}
+              className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 rounded"
+              title="Remove chart"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main input */}
       <div className="relative">

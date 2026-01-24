@@ -1,6 +1,6 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, Bell, Users, FileText, List, Trash2 } from 'lucide-react'
+import { X, Check, Bell, Users, FileText, List, Trash2, MessageSquarePlus, CheckCircle, XCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -15,11 +15,24 @@ interface NotificationPanelProps {
 
 interface Notification {
   id: string
-  type: 'list_shared' | 'note_shared' | 'system'
+  type: 'list_shared' | 'note_shared' | 'system' | 'list_suggestion_received' | 'list_suggestion_accepted' | 'list_suggestion_rejected'
   title: string
   message: string
   related_id?: string
   related_type?: string
+  context_type?: string
+  context_id?: string
+  context_data?: {
+    suggestion_id?: string
+    asset_id?: string
+    asset_symbol?: string
+    list_name?: string
+    suggestion_type?: string
+    suggested_by?: string
+    notes?: string
+    status?: string
+    response_notes?: string
+  }
   is_read: boolean
   dismissed: boolean
   created_at: string
@@ -118,6 +131,27 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
       markAsReadMutation.mutate(notification.id)
     }
 
+    // Handle list suggestion notifications
+    if (
+      ['list_suggestion_received', 'list_suggestion_accepted', 'list_suggestion_rejected'].includes(notification.type) &&
+      notification.context_type === 'list' &&
+      notification.context_id &&
+      onNavigate
+    ) {
+      // Navigate to the list with suggestions panel open
+      onNavigate({
+        id: notification.context_id,
+        title: notification.context_data?.list_name || 'List',
+        type: 'list',
+        data: {
+          id: notification.context_id,
+          openSuggestions: notification.type === 'list_suggestion_received'
+        }
+      })
+      onClose()
+      return
+    }
+
     // Handle task assignment notifications
     if (notification.type === 'task_assigned' && (notification.context_type === 'task' || notification.context_type === 'workflow') && onNavigate) {
       onNavigate({
@@ -166,6 +200,12 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
         return <List className="h-5 w-5 text-primary-600" />
       case 'note_shared':
         return <FileText className="h-5 w-5 text-success-600" />
+      case 'list_suggestion_received':
+        return <MessageSquarePlus className="h-5 w-5 text-amber-600" />
+      case 'list_suggestion_accepted':
+        return <CheckCircle className="h-5 w-5 text-success-600" />
+      case 'list_suggestion_rejected':
+        return <XCircle className="h-5 w-5 text-error-600" />
       default:
         return <Bell className="h-5 w-5 text-gray-600" />
     }

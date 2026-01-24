@@ -126,6 +126,8 @@ interface AssetTableViewProps {
   bulkActionLabel?: string
   /** Icon for bulk action button */
   bulkActionIcon?: React.ReactNode
+  /** Hide the entire toolbar (search, filters, view toggles) - useful for embedded tables */
+  hideToolbar?: boolean
 }
 
 // ============================================================================
@@ -143,7 +145,8 @@ export function AssetTableView({
   storageKey = 'assetsTableColumns',
   onBulkAction,
   bulkActionLabel = 'Bulk Action',
-  bulkActionIcon = <Trash2 className="h-4 w-4 mr-1" />
+  bulkActionIcon = <Trash2 className="h-4 w-4 mr-1" />,
+  hideToolbar = false
 }: AssetTableViewProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -690,6 +693,7 @@ export function AssetTableView({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
+      {!hideToolbar && (
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="text-sm text-gray-600">
           {filteredAssets.length} of {assets.length} assets
@@ -835,8 +839,10 @@ export function AssetTableView({
           {viewMode === 'table' && <DensityToggle />}
         </div>
       </div>
+      )}
 
       {/* Search */}
+      {!hideToolbar && (
       <div className="relative flex-1">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
         <input
@@ -850,9 +856,10 @@ export function AssetTableView({
           </button>
         )}
       </div>
+      )}
 
       {/* Active Filters */}
-      {activeFilters.length > 0 && (
+      {!hideToolbar && activeFilters.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-gray-500">Active filters:</span>
           {activeFilters.map((filter, idx) => (
@@ -866,7 +873,7 @@ export function AssetTableView({
       )}
 
       {/* Selection Actions */}
-      {selectionMode && selectedAssetIds.size > 0 && (
+      {!hideToolbar && selectionMode && selectedAssetIds.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg">
           <span className="text-sm font-medium text-blue-700">{selectedAssetIds.size} selected</span>
           {onBulkAction && (

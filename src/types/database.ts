@@ -197,6 +197,7 @@ export interface Database {
           description: string | null
           color: string | null
           is_default: boolean | null
+          list_type: 'mutual' | 'collaborative'
           created_at: string | null
           updated_at: string | null
           created_by: string | null
@@ -207,6 +208,7 @@ export interface Database {
           description?: string | null
           color?: string | null
           is_default?: boolean | null
+          list_type?: 'mutual' | 'collaborative'
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
@@ -217,9 +219,51 @@ export interface Database {
           description?: string | null
           color?: string | null
           is_default?: boolean | null
+          list_type?: 'mutual' | 'collaborative'
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
+        }
+      }
+      asset_list_suggestions: {
+        Row: {
+          id: string
+          list_id: string
+          asset_id: string
+          suggestion_type: 'add' | 'remove'
+          suggested_by: string
+          target_user_id: string
+          status: 'pending' | 'accepted' | 'rejected'
+          notes: string | null
+          created_at: string | null
+          responded_at: string | null
+          response_notes: string | null
+        }
+        Insert: {
+          id?: string
+          list_id: string
+          asset_id: string
+          suggestion_type: 'add' | 'remove'
+          suggested_by: string
+          target_user_id: string
+          status?: 'pending' | 'accepted' | 'rejected'
+          notes?: string | null
+          created_at?: string | null
+          responded_at?: string | null
+          response_notes?: string | null
+        }
+        Update: {
+          id?: string
+          list_id?: string
+          asset_id?: string
+          suggestion_type?: 'add' | 'remove'
+          suggested_by?: string
+          target_user_id?: string
+          status?: 'pending' | 'accepted' | 'rejected'
+          notes?: string | null
+          created_at?: string | null
+          responded_at?: string | null
+          response_notes?: string | null
         }
       }
       asset_list_items: {
@@ -768,7 +812,10 @@ export interface Database {
       theme_type: 'sector' | 'geography' | 'strategy' | 'macro' | 'general'
       collaboration_permission: 'read' | 'write' | 'admin'
       notebook_type: 'asset' | 'theme' | 'portfolio' | 'custom'
-      notification_type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change'
+      notification_type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'list_suggestion_received' | 'list_suggestion_accepted' | 'list_suggestion_rejected'
+      list_type: 'mutual' | 'collaborative'
+      suggestion_type: 'add' | 'remove'
+      suggestion_status: 'pending' | 'accepted' | 'rejected'
     }
     CompositeTypes: {
       [_ in never]: never

@@ -783,7 +783,7 @@ export function DashboardPage() {
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':
-        return <ChartingPage onItemSelect={handleSearchResult} />
+        return <ChartingPage onItemSelect={handleSearchResult} initialSymbol={activeTab.data?.symbol} />
       case 'user':
         return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
       case 'templates':

@@ -99,6 +99,7 @@ function createAnnotation(type: AnnotationType, time: number, price: number): An
 
 interface ChartingPageProps {
   onItemSelect?: (item: any) => void
+  initialSymbol?: string
 }
 
 type ViewMode = 'single' | 'grid'
@@ -227,9 +228,12 @@ function getDefaultChartingState(): {
   }
 }
 
-export function ChartingPage({ onItemSelect }: ChartingPageProps) {
+export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps) {
   // Always start with fresh default state
   const [initialState] = useState(() => getDefaultChartingState())
+
+  // Track symbols that have been added via initialSymbol to avoid duplicates
+  const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
 
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
@@ -274,6 +278,71 @@ export function ChartingPage({ onItemSelect }: ChartingPageProps) {
   const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0])
   const [customInterval, setCustomInterval] = useState<CustomDateRange['interval']>('1d')
 
+  // Handle initial symbol - add it as a panel when provided
+  useEffect(() => {
+    if (!initialSymbol || addedSymbols.has(initialSymbol)) return
+
+    // Mark this symbol as added to prevent duplicates
+    setAddedSymbols(prev => new Set(prev).add(initialSymbol))
+
+    // Fetch asset data to get company name
+    const fetchAssetAndAddPanel = async () => {
+      let companyName = ''
+      try {
+        const { data } = await supabase
+          .from('assets')
+          .select('company_name')
+          .eq('symbol', initialSymbol)
+          .single()
+        if (data) {
+          companyName = data.company_name || ''
+        }
+      } catch (error) {
+        console.warn('Could not fetch asset data for symbol:', initialSymbol)
+      }
+
+      setPanels(currentPanels => {
+        // Check if this symbol is already in a panel
+        const existingPanel = currentPanels.find(p => p.symbol === initialSymbol)
+        if (existingPanel) {
+          // Just activate the existing panel
+          setActivePanel(existingPanel.id)
+          return currentPanels
+        }
+
+        // Check if the first panel is empty (no symbol set)
+        const firstPanel = currentPanels[0]
+        if (firstPanel && !firstPanel.symbol) {
+          // Update the empty first panel with this symbol
+          setActivePanel(firstPanel.id)
+          return currentPanels.map(p =>
+            p.id === firstPanel.id
+              ? { ...p, symbol: initialSymbol, companyName }
+              : p
+          )
+        } else {
+          // Add a new panel
+          const newId = String(Date.now())
+          setActivePanel(newId)
+          return [...currentPanels, {
+            id: newId,
+            symbol: initialSymbol,
+            companyName,
+            chartType: 'line' as ChartType,
+            timeFrame: '1M' as TimeFrame,
+            indicators: [],
+            metric: 'price' as MetricType,
+            annotations: [],
+            compareSymbols: [],
+            displayMode: 'absolute' as DisplayMode,
+            indexBase: DEFAULT_INDEX_BASE
+          }]
+        }
+      })
+    }
+
+    fetchAssetAndAddPanel()
+  }, [initialSymbol, addedSymbols])
 
   // Search assets
   const { data: searchResults = [] } = useQuery({
