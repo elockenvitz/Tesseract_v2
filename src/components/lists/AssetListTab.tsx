@@ -2,13 +2,29 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   List, TrendingUp, TrendingDown, Plus, Search, Calendar, User, Users, Share2, Trash2,
   MoreVertical, Target, FileText, Star, ChevronRight, CheckSquare, Square, X, Loader2,
-  UserPlus, Copy, Link, Mail, Bell, Edit3, MessageSquarePlus, Minus, Check
+  UserPlus, Copy, Link, Mail, Bell, Edit3, MessageSquarePlus, Minus, Check, GripVertical,
+  FolderOpen
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { useListPermissions, useListSuggestions } from '../../hooks/lists'
+import { useListPermissions, useListSuggestions, useListReorder, backfillSortOrder, useListGroups } from '../../hooks/lists'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -21,6 +37,8 @@ import { ListUserFilter } from './ListUserFilter'
 import { SuggestAssetModal } from './SuggestAssetModal'
 import { PendingSuggestionsPanel } from './PendingSuggestionsPanel'
 import { SuggestionBadge } from './SuggestionBadge'
+import { MultiTickerInput } from './MultiTickerInput'
+import { AssetGroupSection, AddGroupButton } from './AssetGroupSection'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { createPortal } from 'react-dom'
@@ -36,6 +54,8 @@ interface ListItem {
   added_at: string
   added_by: string | null
   notes: string | null
+  sort_order: number | null
+  group_id: string | null
   assets: {
     id: string
     symbol: string
@@ -64,6 +84,7 @@ interface ColumnConfig {
 }
 
 const LIST_COLUMNS: ColumnConfig[] = [
+  { id: 'drag', label: '', visible: true, width: 28, minWidth: 28 },
   { id: 'select', label: '', visible: true, width: 32, minWidth: 32 },
   { id: 'asset', label: 'Asset', visible: true, width: 200, minWidth: 150 },
   { id: 'price', label: 'Price', visible: true, width: 100, minWidth: 80 },
@@ -72,6 +93,50 @@ const LIST_COLUMNS: ColumnConfig[] = [
   { id: 'notes', label: 'Notes', visible: true, width: 180, minWidth: 100 },
   { id: 'added', label: 'Added', visible: true, width: 130, minWidth: 100 }
 ]
+
+// Sortable row component for virtual list
+interface SortableVirtualRowProps {
+  id: string
+  virtualStart: number
+  virtualSize: number
+  children: (props: { dragHandleProps: Record<string, any>; isDragging: boolean }) => React.ReactNode
+  className?: string
+}
+
+function SortableVirtualRow({ id, virtualStart, virtualSize, children, className }: SortableVirtualRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id })
+
+  // Combine virtual positioning with sortable transform
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: virtualSize,
+    // Apply virtualizer's translateY, then sortable's transform on top
+    transform: transform
+      ? `translateY(${virtualStart}px) translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : `translateY(${virtualStart}px)`,
+    transition,
+    opacity: isDragging ? 0.8 : 1,
+    zIndex: isDragging ? 100 : 'auto',
+    backgroundColor: isDragging ? 'white' : undefined,
+    boxShadow: isDragging ? '0 4px 12px rgba(0,0,0,0.15)' : undefined
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className={className}>
+      {children({ dragHandleProps: { ...listeners, ...attributes }, isDragging })}
+    </div>
+  )
+}
 
 export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
@@ -96,6 +161,7 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
     targetUser?: { id: string; email: string; first_name: string | null; last_name: string | null }
   }>({ isOpen: false, type: 'add' })
   const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false)
+  const [openGroupMenu, setOpenGroupMenu] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -141,10 +207,19 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
           added_by_user:users!added_by(email, first_name, last_name)
         `)
         .eq('list_id', list.id)
+        .order('sort_order', { ascending: true, nullsFirst: false })
         .order('added_at', { ascending: false })
 
       if (error) throw error
-      return data as ListItem[]
+
+      // Backfill sort_order for items that have null values
+      const items = data as ListItem[]
+      const needsBackfill = items.some(i => i.sort_order === null)
+      if (needsBackfill && items.length > 0) {
+        await backfillSortOrder(items)
+      }
+
+      return items
     }
   })
 
@@ -183,6 +258,102 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
     listId: list.id,
     enabled: permissions.listType === 'collaborative'
   })
+
+  // Groups hook
+  const {
+    groups,
+    isLoading: groupsLoading,
+    createGroup,
+    updateGroup,
+    deleteGroup,
+    moveItemToGroup,
+    toggleGroupCollapse,
+    isGroupCollapsed,
+    isCreating: isCreatingGroup
+  } = useListGroups({ listId: list.id })
+
+  // Organize items by group
+  const itemsByGroup = useMemo(() => {
+    if (!listItems) return { ungrouped: [], grouped: new Map() }
+
+    const ungrouped: ListItem[] = []
+    const grouped = new Map<string, ListItem[]>()
+
+    // Initialize groups
+    groups.forEach(g => grouped.set(g.id, []))
+
+    // Distribute items
+    listItems.forEach(item => {
+      if (item.group_id && grouped.has(item.group_id)) {
+        grouped.get(item.group_id)!.push(item)
+      } else {
+        ungrouped.push(item)
+      }
+    })
+
+    // Sort items within each group by sort_order
+    ungrouped.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    grouped.forEach((items, groupId) => {
+      items.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    })
+
+    return { ungrouped, grouped }
+  }, [listItems, groups])
+
+  // Drag-and-drop reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8 // 8px movement before drag starts
+      }
+    }),
+    useSensor(KeyboardSensor)
+  )
+
+  const { handleReorder, isReordering } = useListReorder({
+    listId: list.id,
+    items: listItems || []
+  })
+
+  // Handle drag end event
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const activeId = active.id as string
+    const overId = over.id as string
+
+    // Check if dropping on a group header (to move item into group)
+    if (overId.startsWith('group-drop-')) {
+      const groupId = overId.replace('group-drop-', '')
+      const item = listItems?.find(i => i.id === activeId)
+      if (item && item.group_id !== groupId) {
+        moveItemToGroup({ itemId: activeId, groupId })
+      }
+      return
+    }
+
+    // Check if dropping on "ungrouped" area
+    if (overId === 'ungrouped-drop') {
+      const item = listItems?.find(i => i.id === activeId)
+      if (item && item.group_id !== null) {
+        moveItemToGroup({ itemId: activeId, groupId: null })
+      }
+      return
+    }
+
+    // Regular reordering between items
+    const sortedItems = [...(listItems || [])].sort((a, b) =>
+      (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    )
+
+    const oldIndex = sortedItems.findIndex(item => item.id === activeId)
+    const newIndex = sortedItems.findIndex(item => item.id === overId)
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      handleReorder(oldIndex, newIndex)
+    }
+  }
 
   // Get all unique users who have items in this list
   const listUsers = useMemo(() => {
@@ -287,13 +458,14 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
   }, [listItems, permissions.listType])
 
   // Virtual scrolling
+  const expandedRowHeight = 32 // Compact inline expanded content
   const rowVirtualizer = useVirtualizer({
     count: filteredItems.length,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: useCallback((index) => {
       const item = filteredItems[index]
       if (item && expandedRows.has(item.id)) {
-        return densityRowHeight + 200
+        return densityRowHeight + expandedRowHeight
       }
       return densityRowHeight
     }, [filteredItems, expandedRows, densityRowHeight]),
@@ -371,216 +543,184 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
   }
 
   return (
-    <div className="space-y-4">
-      {/* List Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+    <div className="h-full flex flex-col">
+      {/* Compact Header Bar */}
+      <div className="flex items-center justify-between py-2 flex-shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
           <div
-            className="w-4 h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0"
+            className="w-3 h-3 rounded-full flex-shrink-0"
             style={{ backgroundColor: list.color || '#3b82f6' }}
           />
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-gray-900">{list.name}</h1>
-              {list.is_default && <Star className="h-4 w-4 text-yellow-500" />}
-              {permissions.listType === 'collaborative' && (
-                <Badge variant="secondary" size="sm">
-                  <UserPlus className="h-3 w-3 mr-1" />
-                  Collaborative
-                </Badge>
-              )}
-              {collaborators && collaborators.length > 0 && (
-                <Badge variant="secondary" size="sm">
-                  <Share2 className="h-3 w-3 mr-1" />
-                  Shared
-                </Badge>
-              )}
-            </div>
-            {list.description && (
-              <p className="text-sm text-gray-500 mt-0.5">{list.description}</p>
-            )}
-          </div>
+          <h1 className="text-lg font-semibold text-gray-900 truncate">{list.name}</h1>
+          {list.is_default && <Star className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0" />}
+          <span className="text-sm text-gray-500 flex-shrink-0">{listItems?.length || 0} assets</span>
+          {permissions.listType === 'collaborative' && (
+            <Badge variant="secondary" size="sm" className="flex-shrink-0">
+              <UserPlus className="h-3 w-3 mr-1" />
+              Collaborative
+            </Badge>
+          )}
+          {collaborators && collaborators.length > 0 && (
+            <Badge variant="secondary" size="sm" className="flex-shrink-0">
+              <Share2 className="h-3 w-3 mr-1" />
+              {collaborators.length}
+            </Badge>
+          )}
         </div>
 
-        {/* Action buttons in upper right */}
-        <div className="flex items-center gap-2">
-          {/* Suggestions badge for collaborative lists */}
+        {/* Actions */}
+        <div className="flex items-center gap-2 flex-shrink-0">
           {permissions.listType === 'collaborative' && incomingCount > 0 && (
             <SuggestionBadge
               count={incomingCount}
               onClick={() => setShowSuggestionsPanel(true)}
             />
           )}
+
+          {/* Search inline */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-40 pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          {/* User filter for collaborative lists */}
+          {permissions.listType === 'collaborative' && listUsers.length > 1 && (
+            <ListUserFilter
+              users={listUsers}
+              currentUserId={user?.id || ''}
+              selectedUserId={selectedUserFilter}
+              onChange={setSelectedUserFilter}
+            />
+          )}
+
           <DensityToggle />
+
+          {filteredItems.length > 0 && (
+            <button
+              onClick={() => {
+                setSelectionMode(!selectionMode)
+                if (selectionMode) setSelectedItemIds(new Set())
+              }}
+              className={clsx(
+                'px-2.5 py-1.5 text-xs rounded-md border transition-colors',
+                selectionMode
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              )}
+            >
+              {selectionMode ? 'Cancel' : 'Select'}
+            </button>
+          )}
+
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
             onClick={() => setShowShareModal(true)}
           >
-            <Share2 className="h-4 w-4 mr-1.5" />
-            Share
+            <Share2 className="h-3.5 w-3.5" />
           </Button>
-          <InlineAssetAdder
+          <MultiTickerInput
             listId={list.id}
             existingAssetIds={listItems?.map(item => item.asset_id) || []}
           />
-          {/* Suggest Add button for collaborative lists */}
           {permissions.listType === 'collaborative' && permissions.canSuggestChanges && listUsers.length > 1 && (
             <Button
-              variant="secondary"
+              variant="outline"
               size="sm"
               onClick={() => setShowSuggestModal({ isOpen: true, type: 'add' })}
             >
-              <MessageSquarePlus className="h-4 w-4 mr-1.5" />
-              Suggest Add
+              <MessageSquarePlus className="h-3.5 w-3.5" />
             </Button>
           )}
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="flex items-center gap-6 text-sm">
-        <div className="flex items-center gap-1.5">
-          <span className="text-gray-500">Assets:</span>
-          <span className="font-semibold text-gray-900">{listItems?.length || 0}</span>
-        </div>
-        {collaborators && collaborators.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-gray-500">Collaborators:</span>
-            <span className="font-semibold text-gray-900">{collaborators.length}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Search and filters bar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search assets in this list..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        {/* User filter for collaborative lists */}
-        {permissions.listType === 'collaborative' && listUsers.length > 1 && (
-          <ListUserFilter
-            users={listUsers}
-            currentUserId={user?.id || ''}
-            selectedUserId={selectedUserFilter}
-            onChange={setSelectedUserFilter}
-          />
-        )}
-
-        {filteredItems.length > 0 && (
-          <button
-            onClick={() => {
-              setSelectionMode(!selectionMode)
-              if (selectionMode) setSelectedItemIds(new Set())
-            }}
-            className={clsx(
-              'px-3 py-2 text-sm rounded-lg border transition-colors',
-              selectionMode
-                ? 'bg-blue-50 border-blue-200 text-blue-700'
-                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-            )}
-          >
-            {selectionMode ? 'Cancel Selection' : 'Select'}
-          </button>
-        )}
-      </div>
-
-      {/* Bulk actions bar */}
+      {/* Bulk actions bar - only when needed */}
       {selectionMode && selectedItemIds.size > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg">
-          <span className="text-sm font-medium text-blue-700">
+        <div className="flex items-center gap-3 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-md mb-2 flex-shrink-0">
+          <span className="text-xs font-medium text-blue-700">
             {selectedItemIds.size} selected
           </span>
-          <div className="flex items-center gap-2 ml-auto">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                // Handle bulk remove
-                selectedItemIds.forEach(id => {
-                  removeFromListMutation.mutate(id)
-                })
-                setSelectedItemIds(new Set())
-              }}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Remove
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="ml-auto text-xs py-1"
+            onClick={() => {
+              selectedItemIds.forEach(id => {
+                removeFromListMutation.mutate(id)
+              })
+              setSelectedItemIds(new Set())
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            Remove
+          </Button>
         </div>
       )}
 
-      {/* Table */}
-      <Card padding="none" className="overflow-hidden">
+      {/* Table - fills remaining space */}
+      <Card padding="none" className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {isLoading ? (
-          <div className="p-6">
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-gray-200 rounded-lg"></div>
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-16"></div>
-                      <div className="h-3 bg-gray-200 rounded w-12"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
           </div>
-        ) : filteredItems.length > 0 ? (
-          <div className="overflow-x-auto">
-            {/* Table Header */}
-            <div
-              className="flex items-center border-b border-gray-200 bg-gray-50/80 sticky top-0 z-10"
-              style={{ minWidth: totalTableWidth }}
-            >
-              {visibleColumns.map((col) => (
-                <div
-                  key={col.id}
-                  className={clsx(
-                    'flex items-center',
-                    densityConfig.padding,
-                    'text-xs font-medium text-gray-500 uppercase tracking-wider'
-                  )}
-                  style={{ width: col.width, minWidth: col.minWidth }}
-                >
-                  {col.id === 'select' ? (
-                    <button
-                      onClick={toggleSelectAll}
-                      className="p-0.5 rounded hover:bg-gray-200 transition-colors"
-                    >
-                      {selectedItemIds.size === filteredItems.length ? (
-                        <CheckSquare className="h-4 w-4 text-blue-600" />
-                      ) : (
-                        <Square className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  ) : (
-                    col.label
-                  )}
-                </div>
-              ))}
-            </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* Table area with horizontal scroll */}
+            <div className="flex-1 min-h-0 overflow-x-auto flex flex-col">
+              {/* Table Header */}
+              <div
+                className="flex items-center border-b border-gray-200 bg-gray-50 sticky top-0 z-10 flex-shrink-0"
+                style={{ minWidth: totalTableWidth }}
+              >
+                {visibleColumns.map((col) => (
+                  <div
+                    key={col.id}
+                    className={clsx(
+                      'flex items-center py-2',
+                      density === 'ultra' ? 'px-2' : 'px-3',
+                      'text-[10px] font-semibold text-gray-400 uppercase tracking-wide'
+                    )}
+                    style={{ width: col.width, minWidth: col.minWidth }}
+                  >
+                    {col.id === 'select' ? (
+                      <button
+                        onClick={toggleSelectAll}
+                        className="p-0.5 rounded hover:bg-gray-200 transition-colors"
+                      >
+                        {selectedItemIds.size === filteredItems.length ? (
+                          <CheckSquare className="h-3.5 w-3.5 text-blue-600" />
+                        ) : (
+                          <Square className="h-3.5 w-3.5 text-gray-400" />
+                        )}
+                      </button>
+                    ) : (
+                      col.label
+                    )}
+                  </div>
+                ))}
+              </div>
 
-            {/* Virtual scrolling container */}
-            <div
-              ref={tableContainerRef}
-              className="overflow-y-auto"
-              style={{ height: Math.min(filteredItems.length * densityRowHeight + 100, 600) }}
-            >
+              {/* Virtual scrolling container - fills remaining height */}
+              <div
+                ref={tableContainerRef}
+                className="flex-1 overflow-y-auto"
+              >
+              <SortableContext
+                items={filteredItems.map(item => item.id)}
+                strategy={verticalListSortingStrategy}
+              >
               <div
                 style={{
                   height: `${rowVirtualizer.getTotalSize()}px`,
@@ -596,17 +736,18 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                   if (!asset) return null
 
                   return (
-                    <div
+                    <SortableVirtualRow
                       key={item.id}
+                      id={item.id}
+                      virtualStart={virtualRow.start}
+                      virtualSize={virtualRow.size}
                       className={clsx(
-                        'absolute top-0 left-0 w-full border-b border-gray-100 hover:bg-gray-50 transition-colors',
-                        selectedItemIds.has(item.id) && 'bg-blue-50 hover:bg-blue-100'
+                        'border-b border-gray-50 hover:bg-blue-50/30 transition-colors',
+                        selectedItemIds.has(item.id) && 'bg-blue-50/50 hover:bg-blue-50/70'
                       )}
-                      style={{
-                        height: virtualRow.size,
-                        transform: `translateY(${virtualRow.start}px)`
-                      }}
                     >
+                      {({ dragHandleProps, isDragging }) => (
+                      <>
                       {/* Main Row */}
                       <div
                         className="flex items-center cursor-pointer"
@@ -627,6 +768,20 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                               )}
                               style={{ width: col.width, minWidth: col.minWidth }}
                             >
+                              {/* Drag handle column */}
+                              {col.id === 'drag' && (
+                                <button
+                                  {...dragHandleProps}
+                                  className={clsx(
+                                    'touch-none cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-200 transition-colors',
+                                    isDragging ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <GripVertical className={density === 'ultra' ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                                </button>
+                              )}
+
                               {/* Select column */}
                               {col.id === 'select' && (
                                 <button
@@ -644,45 +799,58 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                               {/* Asset column */}
                               {col.id === 'asset' && (
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        toggleRowExpansion(item.id)
-                                      }}
-                                      className="p-0.5 rounded hover:bg-gray-200 transition-colors"
-                                    >
-                                      <ChevronRight className={clsx(
-                                        'h-4 w-4 text-gray-400 transition-transform',
-                                        isExpanded && 'rotate-90'
-                                      )} />
-                                    </button>
-                                    <div className="min-w-0">
+                                  <div className={clsx(
+                                    'flex items-center',
+                                    density === 'ultra' ? 'gap-1' : 'gap-1.5'
+                                  )}>
+                                    {/* Expand chevron - hidden in ultra mode for cleaner view */}
+                                    {density !== 'ultra' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          toggleRowExpansion(item.id)
+                                        }}
+                                        className="p-0.5 rounded hover:bg-gray-200 transition-colors flex-shrink-0"
+                                      >
+                                        <ChevronRight className={clsx(
+                                          'h-3.5 w-3.5 text-gray-400 transition-transform',
+                                          isExpanded && 'rotate-90'
+                                        )} />
+                                      </button>
+                                    )}
+                                    {/* Group color indicator */}
+                                    {item.group_id && (() => {
+                                      const itemGroup = groups.find(g => g.id === item.group_id)
+                                      return itemGroup ? (
+                                        <div
+                                          className="w-2 h-2 rounded-full flex-shrink-0"
+                                          style={{ backgroundColor: itemGroup.color }}
+                                          title={itemGroup.name}
+                                        />
+                                      ) : null
+                                    })()}
+                                    <div className="min-w-0 flex-1">
                                       {density === 'comfortable' ? (
                                         <>
                                           <p className="text-sm font-semibold text-gray-900 truncate">
                                             {asset.symbol}
                                           </p>
-                                          <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>
+                                          <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
                                         </>
                                       ) : (
-                                        <div className="flex items-center gap-1.5">
-                                          <p className={clsx(
+                                        <div className="flex items-center gap-1">
+                                          <span className={clsx(
                                             'font-semibold text-gray-900',
                                             density === 'ultra' ? 'text-xs' : 'text-sm'
                                           )}>
                                             {asset.symbol}
-                                          </p>
+                                          </span>
                                           <span className={clsx(
-                                            'text-gray-400',
-                                            density === 'ultra' ? 'text-xs' : 'text-sm'
-                                          )}>·</span>
-                                          <p className={clsx(
-                                            'text-gray-600 truncate',
-                                            density === 'ultra' ? 'text-xs' : 'text-sm'
+                                            'text-gray-400 truncate',
+                                            density === 'ultra' ? 'text-[10px]' : 'text-xs'
                                           )}>
                                             {asset.company_name}
-                                          </p>
+                                          </span>
                                         </div>
                                       )}
                                     </div>
@@ -699,10 +867,7 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                                   const changePercent = quote?.changePercent
 
                                   if (!displayPrice) {
-                                    return <span className={clsx(
-                                      'text-gray-400',
-                                      density === 'ultra' ? 'text-xs' : 'text-sm'
-                                    )}>—</span>
+                                    return <span className="text-gray-300 text-xs">—</span>
                                   }
 
                                   if (density === 'comfortable') {
@@ -713,10 +878,9 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                                         </p>
                                         {changePercent !== undefined && (
                                           <p className={clsx(
-                                            'text-xs font-medium flex items-center',
+                                            'text-[11px] font-medium',
                                             changePercent >= 0 ? 'text-green-600' : 'text-red-600'
                                           )}>
-                                            {changePercent >= 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
                                             {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
                                           </p>
                                         )}
@@ -724,21 +888,22 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                                     )
                                   }
 
+                                  // Compact and ultra - single line
                                   return (
-                                    <div className="flex items-center gap-1.5">
-                                      <p className={clsx(
-                                        'font-medium text-gray-900',
-                                        density === 'ultra' ? 'text-xs' : 'text-sm'
+                                    <div className="flex items-baseline gap-1">
+                                      <span className={clsx(
+                                        'font-medium text-gray-900 tabular-nums',
+                                        density === 'ultra' ? 'text-[11px]' : 'text-xs'
                                       )}>
-                                        ${Number(displayPrice).toFixed(2)}
-                                      </p>
+                                        {Number(displayPrice).toFixed(2)}
+                                      </span>
                                       {changePercent !== undefined && (
                                         <span className={clsx(
-                                          'font-medium',
-                                          density === 'ultra' ? 'text-xs' : 'text-xs',
+                                          'font-medium tabular-nums',
+                                          density === 'ultra' ? 'text-[10px]' : 'text-[11px]',
                                           changePercent >= 0 ? 'text-green-600' : 'text-red-600'
                                         )}>
-                                          {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
+                                          {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%
                                         </span>
                                       )}
                                     </div>
@@ -788,7 +953,70 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                         })}
 
                         {/* Row actions - permission based */}
-                        <div className="flex items-center gap-1 px-2 opacity-0 hover:opacity-100 transition-opacity">
+                        <div className={clsx(
+                          'flex items-center gap-0.5 px-1 transition-opacity',
+                          density === 'ultra' ? 'opacity-60 hover:opacity-100' : 'opacity-0 hover:opacity-100'
+                        )}>
+                          {/* Move to Group dropdown */}
+                          {groups.length > 0 && (
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setOpenGroupMenu(openGroupMenu === item.id ? null : item.id)
+                                }}
+                                className={clsx(
+                                  'rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors',
+                                  density === 'ultra' ? 'p-0.5' : 'p-1',
+                                  openGroupMenu === item.id && 'bg-blue-100 text-blue-600'
+                                )}
+                                title="Move to group"
+                              >
+                                <FolderOpen className={density === 'ultra' ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+                              </button>
+                              {openGroupMenu === item.id && (
+                                <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                                  {item.group_id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        moveItemToGroup({ itemId: item.id, groupId: null })
+                                        setOpenGroupMenu(null)
+                                      }}
+                                      className="w-full px-3 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+                                    >
+                                      <X className="h-3 w-3" />
+                                      Remove from group
+                                    </button>
+                                  )}
+                                  {groups.map(group => (
+                                    <button
+                                      key={group.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        moveItemToGroup({ itemId: item.id, groupId: group.id })
+                                        setOpenGroupMenu(null)
+                                      }}
+                                      className={clsx(
+                                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center gap-2',
+                                        item.group_id === group.id ? 'text-blue-600 font-medium' : 'text-gray-700'
+                                      )}
+                                    >
+                                      <div
+                                        className="w-2 h-2 rounded-full"
+                                        style={{ backgroundColor: group.color }}
+                                      />
+                                      {group.name}
+                                      {item.group_id === group.id && (
+                                        <Check className="h-3 w-3 ml-auto" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* For mutual lists or own items in collaborative lists - show delete */}
                           {permissions.canRemoveItem(item) && (
                             <button
@@ -796,10 +1024,13 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                                 e.stopPropagation()
                                 handleRemoveFromList(item.id, asset.symbol)
                               }}
-                              className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                              className={clsx(
+                                'rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors',
+                                density === 'ultra' ? 'p-0.5' : 'p-1'
+                              )}
                               title="Remove from list"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className={density === 'ultra' ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
                             </button>
                           )}
 
@@ -827,92 +1058,119 @@ export function AssetListTab({ list, onAssetSelect }: AssetListTabProps) {
                                   }
                                 })
                               }}
-                              className="p-1.5 rounded hover:bg-amber-100 text-gray-400 hover:text-amber-600 transition-colors"
+                              className={clsx(
+                                'rounded hover:bg-amber-100 text-gray-400 hover:text-amber-600 transition-colors',
+                                density === 'ultra' ? 'p-0.5' : 'p-1'
+                              )}
                               title="Suggest removing"
                             >
-                              <MessageSquarePlus className="h-4 w-4" />
+                              <MessageSquarePlus className={density === 'ultra' ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
                             </button>
                           )}
                         </div>
                       </div>
 
-                      {/* Expanded Row Content */}
+                      {/* Expanded Row Content - Compact inline style */}
                       {isExpanded && (
-                        <div className="px-6 py-4 bg-gradient-to-b from-gray-50 to-white border-t border-gray-100">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Asset Details</h4>
-                              <div className="space-y-1 text-sm">
-                                {asset.sector && (
-                                  <div className="flex gap-2">
-                                    <span className="text-gray-500">Sector:</span>
-                                    <span className="text-gray-900">{asset.sector}</span>
-                                  </div>
-                                )}
-                                {asset.process_stage && (
-                                  <div className="flex gap-2">
-                                    <span className="text-gray-500">Stage:</span>
-                                    <span className="text-gray-900">{asset.process_stage}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">List Info</h4>
-                              <div className="space-y-1 text-sm">
-                                <div className="flex gap-2">
-                                  <span className="text-gray-500">Added by:</span>
-                                  <span className="text-gray-900">
-                                    {item.added_by === user?.id ? 'You' : getUserDisplayName(item.added_by_user)}
-                                  </span>
-                                </div>
-                                {item.notes && (
-                                  <div className="flex gap-2">
-                                    <span className="text-gray-500">Notes:</span>
-                                    <span className="text-gray-900 italic">{item.notes}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="mt-4 pt-3 border-t border-gray-100 flex gap-2">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => handleAssetClick(asset)}
-                            >
-                              View Asset Details
-                            </Button>
-                          </div>
+                        <div className="px-4 py-2 bg-gray-50/50 border-t border-gray-100 flex items-center gap-6 text-xs">
+                          {asset.sector && (
+                            <span className="text-gray-500">
+                              Sector: <span className="text-gray-700 font-medium">{asset.sector}</span>
+                            </span>
+                          )}
+                          {asset.process_stage && (
+                            <span className="text-gray-500">
+                              Stage: <span className="text-gray-700 font-medium">{asset.process_stage}</span>
+                            </span>
+                          )}
+                          <span className="text-gray-500">
+                            Added by: <span className="text-gray-700 font-medium">
+                              {item.added_by === user?.id ? 'You' : getUserDisplayName(item.added_by_user)}
+                            </span>
+                          </span>
+                          {item.notes && (
+                            <span className="text-gray-500 truncate max-w-xs">
+                              Note: <span className="text-gray-700 italic">{item.notes}</span>
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAssetClick(asset)
+                            }}
+                            className="ml-auto text-blue-600 hover:text-blue-700 font-medium hover:underline"
+                          >
+                            View Details →
+                          </button>
                         </div>
                       )}
-                    </div>
+                      </>
+                      )}
+                    </SortableVirtualRow>
                   )
                 })}
               </div>
+              </SortableContext>
+
+              {/* Empty state message */}
+              {filteredItems.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <List className="h-8 w-8 text-gray-300 mb-2" />
+                  <p className="text-sm text-gray-500">
+                    {listItems?.length === 0 ? 'No assets yet - type below to add' : 'No matches found'}
+                  </p>
+                </div>
+              )}
             </div>
-          </div>
-        ) : (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <List className="h-8 w-8 text-gray-400" />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {listItems?.length === 0 ? 'No assets in this list yet' : 'No assets match your search'}
-            </h3>
-            <p className="text-gray-500 mb-4">
-              {listItems?.length === 0
-                ? 'Start adding assets to organize your investment ideas.'
-                : 'Try adjusting your search criteria.'
-              }
-            </p>
-            {listItems?.length === 0 && (
-              <InlineAssetAdder
-                listId={list.id}
-                existingAssetIds={[]}
-              />
+            {/* End of horizontal scroll area */}
+
+            {/* Inline Add Row - OUTSIDE scroll containers, always visible at bottom */}
+            <InlineTickerRow
+              listId={list.id}
+              existingAssetIds={listItems?.map(item => item.asset_id) || []}
+            />
+
+            {/* Groups Bar */}
+            {(groups.length > 0 || permissions.canAddItem) && (
+              <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50 px-3 py-2">
+                {groups.length > 0 && (
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-xs text-gray-500 font-medium">Groups:</span>
+                    {groups.map(group => {
+                      const count = itemsByGroup.grouped.get(group.id)?.length || 0
+                      return (
+                        <button
+                          key={group.id}
+                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-white border border-gray-200 hover:border-gray-300 transition-colors"
+                          title={`${group.name} (${count} items)`}
+                        >
+                          <div
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: group.color }}
+                          />
+                          <span className="text-gray-700">{group.name}</span>
+                          <span className="text-gray-400">({count})</span>
+                        </button>
+                      )
+                    })}
+                    {itemsByGroup.ungrouped.length > 0 && (
+                      <span className="text-xs text-gray-400">
+                        + {itemsByGroup.ungrouped.length} ungrouped
+                      </span>
+                    )}
+                  </div>
+                )}
+                {permissions.canAddItem && (
+                  <AddGroupButton
+                    onAdd={(name) => createGroup({ name })}
+                    isLoading={isCreatingGroup}
+                  />
+                )}
+              </div>
             )}
           </div>
+          </DndContext>
         )}
       </Card>
 
@@ -1505,6 +1763,151 @@ function ShareListModal({
           </Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Inline Ticker Row - type directly in the table to add assets
+function InlineTickerRow({
+  listId,
+  existingAssetIds
+}: {
+  listId: string
+  existingAssetIds: string[]
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [isValidating, setIsValidating] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  // Parse tickers from input
+  const parseTickers = (input: string): string[] => {
+    return input
+      .toUpperCase()
+      .split(/[,\s;]+/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0 && /^[A-Z0-9.]+$/.test(t))
+  }
+
+  // Add assets mutation
+  const addMutation = useMutation({
+    mutationFn: async (assetIds: string[]) => {
+      const insertData = assetIds.map(assetId => ({
+        list_id: listId,
+        asset_id: assetId,
+        added_by: user?.id
+      }))
+
+      const { error } = await supabase
+        .from('asset_list_items')
+        .insert(insertData)
+
+      if (error) throw error
+      return assetIds.length
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ['asset-list-items', listId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
+      setInputValue('')
+      setFeedback({ type: 'success', message: `Added ${count} asset${count !== 1 ? 's' : ''}` })
+      setTimeout(() => setFeedback(null), 2000)
+    },
+    onError: (error) => {
+      setFeedback({ type: 'error', message: 'Failed to add assets' })
+      setTimeout(() => setFeedback(null), 3000)
+    }
+  })
+
+  const handleSubmit = async () => {
+    const tickers = parseTickers(inputValue)
+    if (tickers.length === 0) return
+
+    setIsValidating(true)
+    setFeedback(null)
+
+    try {
+      // Validate tickers against database
+      const { data: assets, error } = await supabase
+        .from('assets')
+        .select('id, symbol')
+        .in('symbol', tickers)
+
+      if (error) throw error
+
+      const existingSet = new Set(existingAssetIds)
+      const validAssets = (assets || []).filter(a => !existingSet.has(a.id))
+      const foundSymbols = new Set((assets || []).map(a => a.symbol))
+      const notFoundTickers = tickers.filter(t => !foundSymbols.has(t))
+      const duplicateTickers = (assets || []).filter(a => existingSet.has(a.id)).map(a => a.symbol)
+
+      if (validAssets.length > 0) {
+        addMutation.mutate(validAssets.map(a => a.id))
+      }
+
+      // Show feedback for issues
+      if (notFoundTickers.length > 0 || duplicateTickers.length > 0) {
+        const messages: string[] = []
+        if (notFoundTickers.length > 0) {
+          messages.push(`Not found: ${notFoundTickers.join(', ')}`)
+        }
+        if (duplicateTickers.length > 0) {
+          messages.push(`Already in list: ${duplicateTickers.join(', ')}`)
+        }
+        if (validAssets.length === 0) {
+          setFeedback({ type: 'error', message: messages.join('. ') })
+          setTimeout(() => setFeedback(null), 3000)
+        }
+      }
+    } catch (error) {
+      setFeedback({ type: 'error', message: 'Error validating tickers' })
+      setTimeout(() => setFeedback(null), 3000)
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && inputValue.trim()) {
+      e.preventDefault()
+      handleSubmit()
+    }
+  }
+
+  // Always render - this is the inline add row at the bottom of the table
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-t border-gray-200"
+      style={{ minHeight: '48px' }}
+    >
+      <Plus className="h-5 w-5 text-gray-400 flex-shrink-0" />
+      <input
+        ref={inputRef}
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => {
+          if (inputValue.trim()) {
+            handleSubmit()
+          }
+        }}
+        placeholder="Type tickers to add (AAPL, MSFT, GOOGL) and press Enter..."
+        className="flex-1 bg-transparent border-none outline-none text-gray-600 placeholder:text-gray-400 text-sm"
+        disabled={isValidating || addMutation.isPending}
+      />
+      {(isValidating || addMutation.isPending) && (
+        <Loader2 className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
+      )}
+      {feedback && (
+        <span className={clsx(
+          'text-xs font-medium flex-shrink-0',
+          feedback.type === 'success' ? 'text-green-600' : 'text-red-600'
+        )}>
+          {feedback.message}
+        </span>
+      )}
     </div>
   )
 }

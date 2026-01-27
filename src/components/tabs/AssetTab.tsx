@@ -1027,11 +1027,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         return []
       }
 
+      // Also fetch parent workflows to check if they're archived
+      const parentIds = [...new Set(allBranches?.map(b => b.parent_workflow_id).filter(Boolean) || [])]
+      const { data: parentWorkflows } = await supabase
+        .from('workflows')
+        .select('id, archived')
+        .in('id', parentIds.length > 0 ? parentIds : ['none'])
+
+      const archivedParentIds = new Set(
+        parentWorkflows?.filter(p => p.archived).map(p => p.id) || []
+      )
+
       // Filter to only workflows where user has access:
       // 1. User created the workflow (admin)
       // 2. User is a stakeholder on the branch itself
       // 3. User is a stakeholder on the parent template workflow
+      // 4. Parent workflow is not archived
       const accessibleWorkflows = allBranches?.filter(w => {
+        // Skip if parent is archived
+        if (w.parent_workflow_id && archivedParentIds.has(w.parent_workflow_id)) return false
+
         // User is admin (creator) of the workflow
         if (w.created_by === user.id) return true
 

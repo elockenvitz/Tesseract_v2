@@ -149,7 +149,7 @@ export function useUserAssetPriority(assetId: string | undefined) {
   // Check if current user is a covering analyst
   const isCoveringAnalyst = user?.id ? coveringAnalystIds.has(user.id) : false
 
-  // Mutation to set/update priority
+  // Mutation to set/update priority with optimistic updates
   const setPriorityMutation = useMutation({
     mutationFn: async ({
       priority,
@@ -177,7 +177,42 @@ export function useUserAssetPriority(assetId: string | undefined) {
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onMutate: async ({ priority, reason }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['asset-priorities', assetId] })
+
+      // Snapshot the previous value
+      const previousPriorities = queryClient.getQueryData<UserAssetPriority[]>(['asset-priorities', assetId])
+
+      // Optimistically update the cache
+      queryClient.setQueryData<UserAssetPriority[]>(['asset-priorities', assetId], (old = []) => {
+        const existing = old.find(p => p.user_id === user?.id)
+        if (existing) {
+          return old.map(p => p.user_id === user?.id ? { ...p, priority, reason: reason || null, updated_at: new Date().toISOString() } : p)
+        } else {
+          return [...old, {
+            id: 'optimistic-' + Date.now(),
+            asset_id: assetId!,
+            user_id: user!.id,
+            priority,
+            reason: reason || null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }]
+        }
+      })
+
+      return { previousPriorities }
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousPriorities) {
+        queryClient.setQueryData(['asset-priorities', assetId], context.previousPriorities)
+      }
+      console.error('Error setting priority:', err)
+    },
+    onSettled: () => {
+      // Always refetch after error or success
       queryClient.invalidateQueries({ queryKey: ['asset-priorities', assetId] })
     }
   })
@@ -250,6 +285,37 @@ export function useUserAssetPriorities(assetIds: string[]) {
       return data || []
     },
     enabled: !!user?.id && assetIds.length > 0
+  })
+
+  // Create a map for quick lookup
+  const priorityMap = new Map(priorities.map(p => [p.asset_id, p.priority as Priority]))
+
+  return {
+    getPriority: (assetId: string): Priority | null => priorityMap.get(assetId) || null,
+    priorities,
+    isLoading
+  }
+}
+
+/**
+ * Hook to get a specific user's priorities for multiple assets (for tables showing other users' priorities)
+ */
+export function useSpecificUserPriorities(assetIds: string[], userId: string | undefined) {
+  const { data: priorities = [], isLoading } = useQuery({
+    queryKey: ['specific-user-priorities-batch', assetIds.sort().join(','), userId],
+    queryFn: async () => {
+      if (!userId || assetIds.length === 0) return []
+
+      const { data, error } = await supabase
+        .from('user_asset_priorities')
+        .select('asset_id, priority')
+        .eq('user_id', userId)
+        .in('asset_id', assetIds)
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!userId && assetIds.length > 0
   })
 
   // Create a map for quick lookup

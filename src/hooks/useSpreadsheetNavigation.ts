@@ -10,8 +10,8 @@
  * - Space to toggle row selection
  */
 
-import { useEffect, useCallback, useRef } from 'react'
-import { useTableContext, ColumnConfig, CellPosition } from '../contexts/TableContext'
+import { useEffect, useCallback, useRef, useState } from 'react'
+import { useTableContextOptional, ColumnConfig, CellPosition, TableState } from '../contexts/TableContext'
 
 export interface SpreadsheetNavigationOptions {
   columns: ColumnConfig[]
@@ -38,16 +38,101 @@ export function useSpreadsheetNavigation({
   onSelectAll,
   scrollToRow
 }: SpreadsheetNavigationOptions) {
-  const {
-    state,
-    focusCell,
-    navigateCell,
-    startEditing,
-    cancelEditing,
-    commitEdit,
-    selectAll,
-    clearSelection
-  } = useTableContext()
+  // Use optional context - will be null if no TableProvider
+  const tableContext = useTableContextOptional()
+
+  // Local state for when TableProvider is not available
+  const [localState, setLocalState] = useState<{
+    focusedCell: CellPosition | null
+    editingCell: CellPosition | null
+    editValue: string
+    mode: 'normal' | 'editing'
+  }>({
+    focusedCell: null,
+    editingCell: null,
+    editValue: '',
+    mode: 'normal'
+  })
+
+  // Use context state if available, otherwise use local state
+  const state = tableContext?.state || {
+    ...localState,
+    selectionAnchor: null,
+    selectedRowIds: new Set<string>(),
+    density: 'comfortable' as const,
+    activeViewId: null,
+    commandPaletteOpen: false,
+    commandQuery: '',
+    showKeyboardHelp: false
+  }
+
+  // Wrapper functions that use context if available, otherwise local state
+  const focusCell = useCallback((cell: CellPosition | null) => {
+    if (tableContext) {
+      tableContext.focusCell(cell)
+    } else {
+      setLocalState(prev => ({ ...prev, focusedCell: cell, mode: cell ? 'normal' : prev.mode }))
+    }
+  }, [tableContext])
+
+  const navigateCell = useCallback((direction: 'up' | 'down' | 'left' | 'right', cols: ColumnConfig[], rows: number) => {
+    if (tableContext) {
+      tableContext.navigateCell(direction, cols, rows)
+    } else {
+      setLocalState(prev => {
+        if (!prev.focusedCell) return prev
+        const visibleCols = cols.filter(c => c.visible)
+        const currentColIndex = visibleCols.findIndex(c => c.id === prev.focusedCell!.columnId)
+        let newRowIndex = prev.focusedCell.rowIndex
+        let newColIndex = currentColIndex
+
+        switch (direction) {
+          case 'up': newRowIndex = Math.max(0, newRowIndex - 1); break
+          case 'down': newRowIndex = Math.min(rows - 1, newRowIndex + 1); break
+          case 'left': newColIndex = Math.max(0, currentColIndex - 1); break
+          case 'right': newColIndex = Math.min(visibleCols.length - 1, currentColIndex + 1); break
+        }
+
+        return {
+          ...prev,
+          focusedCell: {
+            rowIndex: newRowIndex,
+            columnId: visibleCols[newColIndex]?.id || prev.focusedCell.columnId
+          }
+        }
+      })
+    }
+  }, [tableContext])
+
+  const startEditing = useCallback((cell: CellPosition, initialValue?: string) => {
+    if (tableContext) {
+      tableContext.startEditing(cell, initialValue)
+    } else {
+      setLocalState(prev => ({
+        ...prev,
+        mode: 'editing',
+        editingCell: cell,
+        editValue: initialValue || '',
+        focusedCell: cell
+      }))
+    }
+  }, [tableContext])
+
+  const cancelEditing = useCallback(() => {
+    if (tableContext) {
+      tableContext.cancelEditing()
+    } else {
+      setLocalState(prev => ({ ...prev, mode: 'normal', editingCell: null, editValue: '' }))
+    }
+  }, [tableContext])
+
+  const commitEdit = useCallback(() => {
+    if (tableContext) {
+      tableContext.commitEdit()
+    } else {
+      setLocalState(prev => ({ ...prev, mode: 'normal', editingCell: null, editValue: '' }))
+    }
+  }, [tableContext])
 
   const lastNavigationTime = useRef<number>(0)
 
@@ -110,10 +195,7 @@ export function useSpreadsheetNavigation({
 
           if (state.focusedCell) {
             navigateCell('up', columns, totalRows)
-
-            // Scroll to keep cell visible
-            const newRow = Math.max(0, state.focusedCell.rowIndex - 1)
-            scrollToRow?.(newRow)
+            // Don't auto-scroll on single row navigation - let the UI handle visibility naturally
           } else if (totalRows > 0) {
             // Start at first cell
             focusCell({ rowIndex: 0, columnId: visibleColumns[0]?.id || '' })
@@ -128,10 +210,7 @@ export function useSpreadsheetNavigation({
 
           if (state.focusedCell) {
             navigateCell('down', columns, totalRows)
-
-            // Scroll to keep cell visible
-            const newRow = Math.min(totalRows - 1, state.focusedCell.rowIndex + 1)
-            scrollToRow?.(newRow)
+            // Don't auto-scroll on single row navigation - let the UI handle visibility naturally
           } else if (totalRows > 0) {
             focusCell({ rowIndex: 0, columnId: visibleColumns[0]?.id || '' })
           }
@@ -170,7 +249,8 @@ export function useSpreadsheetNavigation({
         }
         break
 
-      // Enter: Start editing or confirm and move down
+      // Enter: Only handle when in editing mode (commit edit and move down)
+      // Note: Enter for starting edit/expansion is handled by parent component
       case 'Enter':
         if (state.mode === 'editing') {
           e.preventDefault()
@@ -180,19 +260,9 @@ export function useSpreadsheetNavigation({
           // Move down after editing
           if (!e.shiftKey && state.focusedCell) {
             navigateCell('down', columns, totalRows)
-            const newRow = Math.min(totalRows - 1, state.focusedCell.rowIndex + 1)
-            scrollToRow?.(newRow)
-          }
-        } else if (state.focusedCell && !e.shiftKey) {
-          e.preventDefault()
-          const col = visibleColumns.find(c => c.id === state.focusedCell!.columnId)
-
-          if (col && isEditable(col.id)) {
-            const value = getCellValue?.(state.focusedCell.rowIndex, col.id) || ''
-            startEditing(state.focusedCell, value)
-            onStartEdit?.(state.focusedCell, value)
           }
         }
+        // Don't intercept Enter when not editing - let parent handle metric expansion
         break
 
       // F2: Start editing current cell
@@ -209,15 +279,13 @@ export function useSpreadsheetNavigation({
         }
         break
 
-      // Escape: Cancel editing
+      // Escape: Cancel editing (don't clear focus - parent handles expanded rows)
       case 'Escape':
         if (state.mode === 'editing') {
           e.preventDefault()
           cancelEditing()
-        } else if (state.focusedCell) {
-          e.preventDefault()
-          focusCell(null)
         }
+        // Don't clear focus on Escape - let parent component handle collapse of expanded rows
         break
 
       // Space: Toggle row selection

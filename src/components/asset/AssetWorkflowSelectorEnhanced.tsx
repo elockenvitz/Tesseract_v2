@@ -158,12 +158,22 @@ export function AssetWorkflowSelectorEnhanced({
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+        className={`flex items-center space-x-2 px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition-colors text-sm ${
+          mode === 'header' && activeWorkflows.length === 0
+            ? 'bg-blue-50 border-blue-200 hover:bg-blue-100'
+            : 'bg-white border-gray-300'
+        }`}
       >
-        <GitBranch className="w-4 h-4 text-gray-500" />
-        <span className="font-medium text-gray-900">
+        {mode === 'header' && activeWorkflows.length === 0 ? (
+          <Plus className="w-4 h-4 text-blue-600" />
+        ) : (
+          <GitBranch className="w-4 h-4 text-gray-500" />
+        )}
+        <span className={`font-medium ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-900'}`}>
           {mode === 'header'
-            ? `Active Workflows (${activeWorkflows.length})`
+            ? activeWorkflows.length === 0
+              ? 'Add to Workflow'
+              : `Active Workflows (${activeWorkflows.length})`
             : selectedWorkflowData
               ? `${selectedWorkflowData.name}${selectedWorkflowData.branch_suffix ? ` (${selectedWorkflowData.branch_suffix})` : ''}`
               : 'Select Workflow'
@@ -178,7 +188,7 @@ export function AssetWorkflowSelectorEnhanced({
             )}
           </span>
         )}
-        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-500'} transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown */}
@@ -195,52 +205,106 @@ export function AssetWorkflowSelectorEnhanced({
             mode === 'header' ? 'right-0' : 'left-0'
           }`}>
             {mode === 'header' ? (
-              /* Header Mode - Simple Active Only */
-              <div className="p-2">
-                {activeWorkflows.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-gray-500 text-sm">
-                    No active workflows
-                  </div>
-                ) : (
-                  activeWorkflows.map(aw => (
-                    <div
-                      key={aw.id}
-                      className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2"
-                    >
-                      <button
-                        onClick={() => handleSelect(aw.workflow_id)}
-                        className="flex-1 text-left min-w-0"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900 truncate text-sm">
-                            {aw.workflows?.name}
-                            {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
-                          </span>
-                          {aw.workflow_id === selectedWorkflowId && (
-                            <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className="text-xs text-gray-500">
-                            {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
-                          </span>
-                          <span className="text-xs text-gray-500">•</span>
-                          <span className="text-xs text-gray-500">
-                            {calculateProgress(aw)}% complete
-                          </span>
-                        </div>
-                      </button>
-                      {!aw.is_completed && (
-                        <button
-                          onClick={(e) => handleRemove(aw.workflow_id, e)}
-                          className="ml-2 p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                          title="Remove from workflow"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </button>
-                      )}
+              /* Header Mode - Active workflows + Available to add */
+              <div className="divide-y divide-gray-100">
+                {/* Active Workflows Section */}
+                {activeWorkflows.length > 0 && (
+                  <div className="p-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1">
+                      Active Workflows ({activeWorkflows.length})
                     </div>
-                  ))
+                    {activeWorkflows.map(aw => (
+                      <div
+                        key={aw.id}
+                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2"
+                      >
+                        <button
+                          onClick={() => handleSelect(aw.workflow_id)}
+                          className="flex-1 text-left min-w-0"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
+                            <span className="font-medium text-gray-900 truncate text-sm">
+                              {aw.workflows?.name}
+                              {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
+                            </span>
+                            {aw.workflow_id === selectedWorkflowId && (
+                              <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2 mt-1 ml-5">
+                            <span className="text-xs text-gray-500">
+                              {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
+                            </span>
+                            <span className="text-xs text-gray-500">•</span>
+                            <span className="text-xs text-gray-500">
+                              {calculateProgress(aw)}% complete
+                            </span>
+                          </div>
+                        </button>
+                        {!aw.is_completed && (
+                          <button
+                            onClick={(e) => handleRemove(aw.workflow_id, e)}
+                            className="ml-2 p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                            title="Remove from workflow"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Available to Add Section */}
+                {availableWorkflows.length > 0 && (
+                  <div className="p-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1">
+                      Available Workflows ({availableWorkflows.length})
+                    </div>
+                    {availableWorkflows.map(workflow => (
+                      <div
+                        key={workflow.id}
+                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out animate-in fade-in slide-in-from-top-2"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <Plus className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                            <span className="font-medium text-gray-900 truncate text-sm">
+                              {workflow.name}
+                              {workflow.branch_suffix && ` (${workflow.branch_suffix})`}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2 mt-1 ml-5">
+                            <span className="text-xs text-gray-500">
+                              {formatVersion(workflow.template_version_number || 1, null, null)}
+                            </span>
+                            {workflow.description && (
+                              <>
+                                <span className="text-xs text-gray-500">•</span>
+                                <span className="text-xs text-gray-500 truncate max-w-[200px]">
+                                  {workflow.description}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleJoin(workflow.id, e)}
+                          className="ml-2 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {activeWorkflows.length === 0 && availableWorkflows.length === 0 && (
+                  <div className="px-3 py-8 text-center text-gray-500 text-sm">
+                    No workflows available
+                  </div>
                 )}
               </div>
             ) : (

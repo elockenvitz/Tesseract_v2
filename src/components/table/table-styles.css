@@ -1,0 +1,600 @@
+/**
+ * Professional Financial Table Styles
+ * Bloomberg-inspired design for a best-in-class trading experience
+ */
+
+/* ============================================================================
+   Base Table Styles
+   ============================================================================ */
+
+.pro-table {
+  --table-border: #e2e8f0;
+  --table-border-light: #f1f5f9;
+  --table-header-bg: #f8fafc;
+  --table-row-odd: #ffffff;
+  --table-row-even: #f1f5f9;
+  --table-row-hover: #e8ecf0;
+  --table-row-selected: #dbeafe;
+  --table-row-selected-hover: #bfdbfe;
+  --table-focus-ring: #3b82f6;
+  --table-focus-bg: rgba(59, 130, 246, 0.08);
+
+  /* Price colors - professional, not garish */
+  --price-up: #059669;
+  --price-down: #dc2626;
+  --price-up-bg: #ecfdf5;
+  --price-down-bg: #fef2f2;
+
+  /* Priority colors */
+  --priority-high: #dc2626;
+  --priority-medium: #d97706;
+  --priority-low: #059669;
+
+  /* Clean base */
+  font-feature-settings: 'tnum' 1, 'kern' 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================================
+   Header Styles
+   ============================================================================ */
+
+.pro-table-header {
+  @apply sticky top-0 z-20;
+  background: linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%);
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.pro-table-header-cell {
+  @apply relative flex items-center gap-1.5 select-none;
+  @apply text-[11px] font-semibold uppercase tracking-wider;
+  color: #64748b;
+  @apply transition-colors duration-100;
+}
+
+.pro-table-header-cell:hover {
+  color: #334155;
+}
+
+.pro-table-header-cell.sorted {
+  color: #2563eb;
+}
+
+/* Sort indicator */
+.pro-sort-indicator {
+  @apply w-3.5 h-3.5 transition-transform duration-100;
+}
+
+.pro-sort-indicator.asc {
+  transform: rotate(180deg);
+}
+
+/* ============================================================================
+   Row Styles
+   ============================================================================ */
+
+.pro-table-row {
+  @apply transition-colors duration-75;
+  border-bottom: 1px solid var(--table-border-light);
+  background: var(--table-row-odd);
+}
+
+/* Zebra striping */
+.pro-table-row.row-even {
+  background: var(--table-row-even);
+}
+
+.pro-table-row:hover {
+  background: rgba(0, 0, 0, 0.02) !important;
+}
+
+.pro-table-row.row-even:hover {
+  background: rgba(0, 0, 0, 0.03) !important;
+}
+
+.pro-table-row.selected {
+  background: rgba(59, 130, 246, 0.06) !important;
+}
+
+.pro-table-row.selected:hover {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+.pro-table-row.focused {
+  background: rgba(59, 130, 246, 0.03) !important;
+}
+
+.pro-table-row.focused.selected {
+  background: rgba(59, 130, 246, 0.06) !important;
+}
+
+/* Flag highlighting - subtle left border */
+.pro-table-row.flagged {
+  border-left: 3px solid;
+}
+
+.pro-table-row.flag-yellow {
+  border-left-color: #eab308;
+}
+
+.pro-table-row.flag-yellow:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.06) 0%, var(--table-row-odd) 120px);
+}
+
+.pro-table-row.flag-yellow.row-even:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.06) 0%, var(--table-row-even) 120px);
+}
+
+.pro-table-row.flag-red {
+  border-left-color: #ef4444;
+}
+
+.pro-table-row.flag-red:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.06) 0%, var(--table-row-odd) 120px);
+}
+
+.pro-table-row.flag-red.row-even:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.06) 0%, var(--table-row-even) 120px);
+}
+
+.pro-table-row.flag-green {
+  border-left-color: #10b981;
+}
+
+.pro-table-row.flag-green:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.06) 0%, var(--table-row-odd) 120px);
+}
+
+.pro-table-row.flag-green.row-even:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.06) 0%, var(--table-row-even) 120px);
+}
+
+.pro-table-row.flag-blue {
+  border-left-color: #3b82f6;
+}
+
+.pro-table-row.flag-blue:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.06) 0%, var(--table-row-odd) 120px);
+}
+
+.pro-table-row.flag-blue.row-even:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.06) 0%, var(--table-row-even) 120px);
+}
+
+.pro-table-row.flag-purple {
+  border-left-color: #8b5cf6;
+}
+
+.pro-table-row.flag-purple:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.06) 0%, var(--table-row-odd) 120px);
+}
+
+.pro-table-row.flag-purple.row-even:not(:hover):not(.focused) {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.06) 0%, var(--table-row-even) 120px);
+}
+
+/* ============================================================================
+   Cell Styles
+   ============================================================================ */
+
+.pro-table-cell {
+  @apply flex items-center;
+  position: relative;
+}
+
+.pro-table-cell.focused {
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: inset 0 0 0 1.5px rgba(59, 130, 246, 0.5);
+  border-radius: 3px;
+  z-index: 1;
+}
+
+/* Metric detail expansion */
+.pro-metric-detail {
+  @apply absolute left-0 right-0 top-full z-20;
+  @apply bg-white border border-slate-200 rounded-lg shadow-lg;
+  @apply p-3 mt-1;
+  animation: slideDown 0.15s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================================
+   Symbol/Asset Cell
+   ============================================================================ */
+
+.pro-symbol {
+  @apply font-bold text-gray-900 tracking-tight;
+}
+
+.pro-company-name {
+  @apply text-gray-500 truncate;
+}
+
+/* ============================================================================
+   Price Cell - The Star of the Show
+   ============================================================================ */
+
+.pro-price {
+  @apply font-mono font-semibold text-gray-900 tabular-nums tracking-tight;
+}
+
+.pro-price-change {
+  @apply font-mono text-xs font-medium tabular-nums;
+  @apply inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded;
+}
+
+.pro-price-change.up {
+  color: var(--price-up);
+  background: var(--price-up-bg);
+}
+
+.pro-price-change.down {
+  color: var(--price-down);
+  background: var(--price-down-bg);
+}
+
+.pro-price-change.neutral {
+  @apply text-gray-500 bg-gray-100;
+}
+
+/* Price flash animation */
+@keyframes price-flash-up {
+  0% { background-color: transparent; }
+  20% { background-color: rgba(5, 150, 105, 0.2); }
+  100% { background-color: transparent; }
+}
+
+@keyframes price-flash-down {
+  0% { background-color: transparent; }
+  20% { background-color: rgba(220, 38, 38, 0.2); }
+  100% { background-color: transparent; }
+}
+
+.pro-price.flash-up {
+  animation: price-flash-up 0.8s ease-out;
+}
+
+.pro-price.flash-down {
+  animation: price-flash-down 0.8s ease-out;
+}
+
+/* ============================================================================
+   Priority Badge
+   ============================================================================ */
+
+.pro-priority {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium;
+  @apply transition-all duration-150;
+}
+
+.pro-priority.high {
+  @apply bg-red-50 text-red-700 border border-red-200;
+}
+
+.pro-priority.medium {
+  @apply bg-amber-50 text-amber-700 border border-amber-200;
+}
+
+.pro-priority.low {
+  @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
+}
+
+.pro-priority.none {
+  @apply bg-gray-50 text-gray-500 border border-gray-200;
+}
+
+/* ============================================================================
+   Coverage/Analyst Cell
+   ============================================================================ */
+
+.pro-analyst {
+  @apply text-sm text-gray-900;
+}
+
+.pro-analyst-team {
+  @apply text-xs text-gray-500;
+}
+
+.pro-analyst-count {
+  @apply text-xs font-medium text-blue-600 bg-blue-50 px-1.5 rounded-full;
+}
+
+/* ============================================================================
+   Workflow Badge
+   ============================================================================ */
+
+.pro-workflow-badge {
+  @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium;
+  @apply bg-indigo-50 text-indigo-700 border border-indigo-100;
+  @apply transition-all duration-150 cursor-pointer;
+}
+
+.pro-workflow-badge:hover {
+  @apply bg-indigo-100 border-indigo-200;
+}
+
+.pro-workflow-dot {
+  @apply w-1.5 h-1.5 rounded-full;
+}
+
+/* ============================================================================
+   Date/Time Cell
+   ============================================================================ */
+
+.pro-timestamp {
+  @apply text-xs text-gray-500 font-medium tabular-nums;
+}
+
+.pro-timestamp.recent {
+  @apply text-blue-600;
+}
+
+.pro-timestamp.stale {
+  @apply text-amber-600;
+}
+
+/* ============================================================================
+   Empty State
+   ============================================================================ */
+
+.pro-empty-cell {
+  @apply text-gray-300;
+}
+
+/* ============================================================================
+   Actions
+   ============================================================================ */
+
+.pro-row-actions {
+  @apply flex items-center gap-1 opacity-0 transition-opacity duration-100;
+}
+
+.pro-table-row:hover .pro-row-actions {
+  @apply opacity-100;
+}
+
+.pro-action-btn {
+  @apply p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100;
+  @apply transition-all duration-100;
+}
+
+/* ============================================================================
+   Expanded Row
+   ============================================================================ */
+
+.pro-expanded-row {
+  @apply bg-gradient-to-b from-slate-50 to-white;
+  @apply border-t border-gray-200;
+}
+
+.pro-expanded-section-title {
+  @apply text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2;
+}
+
+/* ============================================================================
+   Density Variations
+   ============================================================================ */
+
+/* Comfortable */
+.pro-table.density-comfortable .pro-table-row {
+  @apply h-16;
+}
+
+.pro-table.density-comfortable .pro-symbol {
+  @apply text-sm;
+}
+
+.pro-table.density-comfortable .pro-price {
+  @apply text-sm;
+}
+
+/* Compact */
+.pro-table.density-compact .pro-table-row {
+  @apply h-11;
+}
+
+.pro-table.density-compact .pro-symbol {
+  @apply text-sm;
+}
+
+.pro-table.density-compact .pro-price {
+  @apply text-sm;
+}
+
+/* Ultra */
+.pro-table.density-ultra .pro-table-row {
+  @apply h-8;
+}
+
+.pro-table.density-ultra .pro-symbol {
+  @apply text-xs;
+}
+
+.pro-table.density-ultra .pro-price {
+  @apply text-xs;
+}
+
+.pro-table.density-ultra .pro-price-change {
+  @apply text-[10px] px-1 py-0;
+}
+
+/* Micro - Bloomberg-style maximum density trader view */
+.pro-table.density-micro {
+  --micro-row-border: rgba(0, 0, 0, 0.04);
+  --micro-text-primary: #1a1a1a;
+  --micro-text-secondary: #6b7280;
+  --micro-up: #16a34a;
+  --micro-down: #dc2626;
+}
+
+.pro-table.density-micro .pro-table-row {
+  @apply h-[22px];
+  border-bottom: 1px solid var(--micro-row-border);
+  font-feature-settings: 'tnum' 1, 'kern' 1;
+}
+
+.pro-table.density-micro .pro-table-row:hover {
+  background: rgba(59, 130, 246, 0.04) !important;
+}
+
+.pro-table.density-micro .pro-table-row.selected {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+.pro-table.density-micro .pro-symbol {
+  @apply text-[11px] font-semibold tracking-tight;
+  color: var(--micro-text-primary);
+}
+
+.pro-table.density-micro .pro-company-name {
+  @apply text-[10px] truncate;
+  color: var(--micro-text-secondary);
+}
+
+.pro-table.density-micro .pro-price {
+  @apply text-[11px] font-mono font-medium tabular-nums;
+  color: var(--micro-text-primary);
+  letter-spacing: -0.02em;
+}
+
+.pro-table.density-micro .pro-price-change {
+  @apply text-[10px] font-mono font-semibold tabular-nums;
+  @apply px-1 py-0 rounded-sm;
+  letter-spacing: -0.02em;
+}
+
+.pro-table.density-micro .pro-price-change.up {
+  color: var(--micro-up);
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.pro-table.density-micro .pro-price-change.down {
+  color: var(--micro-down);
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.pro-table.density-micro .pro-price-change.neutral {
+  @apply text-gray-500 bg-transparent;
+}
+
+.pro-table.density-micro .pro-priority {
+  @apply text-[9px] font-medium px-1.5 py-0 rounded-sm;
+  line-height: 16px;
+}
+
+.pro-table.density-micro .pro-workflow-badge {
+  @apply text-[9px] px-1 py-0 gap-1;
+  line-height: 16px;
+}
+
+.pro-table.density-micro .pro-workflow-dot {
+  @apply w-1 h-1;
+}
+
+.pro-table.density-micro .pro-analyst {
+  @apply text-[10px];
+}
+
+.pro-table.density-micro .pro-analyst-count {
+  @apply text-[9px] px-1;
+}
+
+.pro-table.density-micro .pro-timestamp {
+  @apply text-[10px] font-mono tabular-nums;
+}
+
+.pro-table.density-micro .pro-empty-cell {
+  @apply text-[10px] text-gray-300;
+}
+
+/* Micro header - tighter and more minimal */
+.pro-table.density-micro .pro-table-header-cell {
+  @apply text-[9px] py-1;
+  letter-spacing: 0.04em;
+}
+
+/* Smaller secondary text in micro */
+.pro-table.density-micro .pro-table-cell [class*="text-gray-400"],
+.pro-table.density-micro .pro-table-cell [class*="text-gray-500"] {
+  font-size: 9px;
+}
+
+/* ============================================================================
+   Scrollbar Styling
+   ============================================================================ */
+
+/* Ensure instant scrolling - no smooth scroll animation */
+.pro-table-container {
+  scroll-behavior: auto !important;
+}
+
+.pro-table-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pro-table-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.pro-table-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.pro-table-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ============================================================================
+   Selection Checkbox
+   ============================================================================ */
+
+.pro-checkbox {
+  @apply w-4 h-4 rounded border-2 border-gray-300;
+  @apply flex items-center justify-center;
+  @apply transition-all duration-100 cursor-pointer;
+}
+
+.pro-checkbox:hover {
+  @apply border-gray-400;
+}
+
+.pro-checkbox.checked {
+  @apply bg-blue-600 border-blue-600;
+}
+
+/* ============================================================================
+   Keyboard Focus Indicator
+   ============================================================================ */
+
+.pro-focus-indicator {
+  @apply absolute -inset-px rounded pointer-events-none;
+  @apply ring-2 ring-blue-500 ring-offset-1;
+}
+
+/* ============================================================================
+   Wrap Text Mode - Override fixed density heights for dynamic row sizing
+   ============================================================================ */
+
+.pro-table-row.wrap-enabled {
+  height: auto !important;
+}
+
+/* Expanded rows should use inline height, not density height */
+.pro-table-row.expanded {
+  height: auto !important;
+}
+

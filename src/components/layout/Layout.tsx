@@ -345,13 +345,13 @@ export function Layout({
         onTabsReorder={onTabsReorder}
         onFocusSearch={onFocusSearch}
       />
-      <main className="flex-1 h-[calc(100vh-8rem)]">
+      <main className="flex-1 h-[calc(100vh-8rem)] overflow-hidden">
         {(() => {
           const activeTab = tabs.find(tab => tab.id === activeTabId)
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
           return (
             <div className={clsx(
-              "relative h-full",
+              "relative h-full flex flex-col overflow-hidden",
               // Only transition margin for comm pane, not padding
               "transition-[margin] duration-300",
               !isFullWidth && "px-4 sm:px-6 lg:px-8 py-6",

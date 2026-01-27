@@ -17,7 +17,7 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect, R
 
 export type InteractionMode = 'normal' | 'editing' | 'command' | 'selecting' | 'gesturing'
 
-export type DensityMode = 'comfortable' | 'compact' | 'ultra'
+export type DensityMode = 'comfortable' | 'compact' | 'ultra' | 'micro'
 
 export interface CellPosition {
   rowIndex: number
@@ -85,7 +85,8 @@ export const DENSITY_CONFIG = {
     gap: 'gap-3',
     showSecondaryInfo: true,
     showAvatars: true,
-    iconSize: 'w-5 h-5'
+    iconSize: 'w-5 h-5',
+    widthScale: 1.0
   },
   compact: {
     rowHeight: 44,
@@ -94,7 +95,8 @@ export const DENSITY_CONFIG = {
     gap: 'gap-2',
     showSecondaryInfo: true,
     showAvatars: false,
-    iconSize: 'w-4 h-4'
+    iconSize: 'w-4 h-4',
+    widthScale: 0.9
   },
   ultra: {
     rowHeight: 32,
@@ -103,7 +105,18 @@ export const DENSITY_CONFIG = {
     gap: 'gap-1',
     showSecondaryInfo: false,
     showAvatars: false,
-    iconSize: 'w-3.5 h-3.5'
+    iconSize: 'w-3.5 h-3.5',
+    widthScale: 0.75
+  },
+  micro: {
+    rowHeight: 22,
+    padding: 'px-1 py-0',
+    fontSize: 'text-[11px]',
+    gap: 'gap-0.5',
+    showSecondaryInfo: false,
+    showAvatars: false,
+    iconSize: 'w-2.5 h-2.5',
+    widthScale: 0.6
   }
 } as const
 
