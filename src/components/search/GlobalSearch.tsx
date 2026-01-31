@@ -27,6 +27,7 @@ const STATIC_PAGES = [
   { id: 'prioritizer', title: 'Prioritizer', type: 'page' as const, subtitle: 'Asset prioritization', keywords: ['ranking', 'priority', 'scoring'] },
   { id: 'idea-generator', title: 'Idea Generator', type: 'page' as const, subtitle: 'Investment ideas', keywords: ['ideas', 'opportunities', 'screening'] },
   { id: 'outcomes', title: 'Outcomes', type: 'page' as const, subtitle: 'Decisions and results', keywords: ['decisions', 'execution', 'results', 'approved', 'trades'] },
+  { id: 'attention', title: 'Attention Center', type: 'page' as const, subtitle: 'Alerts and items needing attention', keywords: ['alerts', 'flags', 'urgent', 'review', 'notifications', 'all priorities', 'priorities'] },
   { id: 'files', title: 'Files', type: 'page' as const, subtitle: 'File management', keywords: ['documents', 'uploads', 'models'] },
   { id: 'templates', title: 'Templates', type: 'page' as const, subtitle: 'Model and text templates', keywords: ['models', 'spreadsheets'] },
   { id: 'organization', title: 'Organization', type: 'page' as const, subtitle: 'Team and settings', keywords: ['team', 'settings', 'users', 'members'] },
