@@ -1,164 +1,202 @@
 import { useState } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, ChevronUp, ChevronDown } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft } from 'lucide-react'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
-import { ThoughtsFeed } from '../thoughts/ThoughtsFeed'
-import { TradeIdeaDiscussion } from '../thoughts/TradeIdeaDiscussion'
+import { useToast } from '../common/Toast'
+import type { CapturedContext } from '../thoughts/ContextSelector'
 
 interface ThoughtsSectionProps {
-  onAssetClick?: (assetId: string, symbol: string) => void
-  onOpenDiscussion?: (contextType: string, contextId: string, contextTitle: string) => void
+  onClose?: () => void
+  // Auto-detected context from current location
+  initialContextType?: string
+  initialContextId?: string
+  initialContextTitle?: string
 }
 
 type CaptureMode = 'collapsed' | 'idea' | 'trade_idea'
+type IdeaType = 'thought' | 'research_idea' | 'thesis'
 
-interface ActiveDiscussion {
-  tradeId: string
-  tradeTitle: string
-}
-
-export function ThoughtsSection({ onAssetClick, onOpenDiscussion }: ThoughtsSectionProps) {
-  const [filter, setFilter] = useState<'all' | 'thoughts' | 'trades' | 'pinned'>('all')
+export function ThoughtsSection({
+  onClose,
+  initialContextType,
+  initialContextId,
+  initialContextTitle
+}: ThoughtsSectionProps) {
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
-  const [isCaptureCollapsed, setIsCaptureCollapsed] = useState(false)
-  const [activeDiscussion, setActiveDiscussion] = useState<ActiveDiscussion | null>(null)
+  const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
+  const { success } = useToast()
 
-  const handleCaptureSuccess = () => {
-    setCaptureMode('collapsed')
+  // Captured context - locked when opening capture mode
+  const [capturedContext, setCapturedContext] = useState<CapturedContext | null>(null)
+
+  // When opening capture mode, capture the current context
+  const handleOpenCapture = (mode: 'idea' | 'trade_idea') => {
+    // Capture context at the moment of opening
+    if (initialContextType && initialContextId) {
+      setCapturedContext({
+        type: initialContextType,
+        id: initialContextId,
+        title: initialContextTitle
+      })
+    } else {
+      setCapturedContext(null)
+    }
+    setCaptureMode(mode)
   }
 
-  // Handle opening discussion from feed
-  const handleOpenDiscussion = (contextType: string, contextId: string, contextTitle: string) => {
-    if (contextType === 'trade_idea') {
-      // Open in-pane discussion view
-      setActiveDiscussion({ tradeId: contextId, tradeTitle: contextTitle })
-    } else if (onOpenDiscussion) {
-      // Fall back to external handler for other types
-      onOpenDiscussion(contextType, contextId, contextTitle)
+  // Get toast message based on idea type
+  const getToastMessage = (ideaType: IdeaType): { message: string; description?: string } => {
+    switch (ideaType) {
+      case 'thesis':
+        return { message: 'Thesis captured.' }
+      case 'research_idea':
+        return { message: 'Research note saved.' }
+      default:
+        return { message: 'Thought captured.' }
     }
   }
 
-  // If viewing a discussion, show the discussion component
-  if (activeDiscussion) {
-    return (
-      <TradeIdeaDiscussion
-        tradeId={activeDiscussion.tradeId}
-        tradeTitle={activeDiscussion.tradeTitle}
-        onBack={() => setActiveDiscussion(null)}
-      />
-    )
+  // Clear context when capture is cancelled or completed
+  const handleCaptureSuccess = (ideaType?: IdeaType) => {
+    const toastInfo = getToastMessage(ideaType || currentIdeaType)
+    success(toastInfo.message, toastInfo.description)
+
+    setCaptureMode('collapsed')
+    setCapturedContext(null)
+
+    // Close the pane after a brief delay to let the user see the button state change
+    setTimeout(() => {
+      onClose?.()
+    }, 100)
+  }
+
+  const handleTradeIdeaSuccess = () => {
+    success('Trade idea added.', 'Decision queued in Priorities.')
+
+    setCaptureMode('collapsed')
+    setCapturedContext(null)
+
+    // Close the pane after a brief delay
+    setTimeout(() => {
+      onClose?.()
+    }, 100)
+  }
+
+  const handleCaptureCancel = () => {
+    setCaptureMode('collapsed')
+    setCapturedContext(null)
+  }
+
+  // Allow user to change context
+  const handleContextChange = (newContext: CapturedContext | null) => {
+    setCapturedContext(newContext)
+  }
+
+  // Track idea type changes from the capture form
+  const handleIdeaTypeChange = (ideaType: IdeaType) => {
+    setCurrentIdeaType(ideaType)
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Capture Section - hidden with CSS to preserve state */}
-      <div className={`p-3 border-b border-gray-200 ${isCaptureCollapsed ? 'hidden' : ''}`}>
-        {/* Collapsed state - show two buttons */}
+      {/* Purpose statement - only show when no mode selected */}
+      {captureMode === 'collapsed' && (
+        <div className="px-3 pt-1 pb-2">
+          <p className="text-xs text-gray-400">
+            Capture ideas the moment they occur.
+          </p>
+        </div>
+      )}
+
+      {/* Capture Section */}
+      <div className="flex-1 px-3 pb-3 overflow-y-auto">
+        {/* Mode selector - show two buttons */}
         {captureMode === 'collapsed' && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCaptureMode('idea')}
-              className="flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-blue-700 transition-all shadow-sm"
-            >
-              <Lightbulb className="h-4 w-4" />
-              <span>Thought</span>
-            </button>
-            <button
-              onClick={() => setCaptureMode('trade_idea')}
-              className="flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
-            >
-              <TrendingUp className="h-4 w-4" />
-              <span>Trade Idea</span>
-            </button>
-          </div>
+          <>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleOpenCapture('idea')}
+                className="flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-blue-700 transition-all shadow-sm"
+              >
+                <Lightbulb className="h-4 w-4" />
+                <span>Thought</span>
+              </button>
+              <button
+                onClick={() => handleOpenCapture('trade_idea')}
+                className="flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span>Trade Idea</span>
+              </button>
+            </div>
+
+            {/* Guided empty state */}
+            <div className="mt-8 text-center">
+              <p className="text-sm font-medium text-gray-600">
+                What do you want to capture?
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                Choose Thought or Trade Idea to save it without leaving your workflow.
+              </p>
+            </div>
+          </>
         )}
 
-        {/* Expanded state - show capture form for quick ideas */}
+        {/* Capture form for quick ideas (Thought / Research / Thesis) */}
         {captureMode === 'idea' && (
           <div>
             <button
-              onClick={() => setCaptureMode('collapsed')}
+              onClick={handleCaptureCancel}
               className="flex items-center gap-1.5 mb-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               <span>Back</span>
             </button>
+
+            {/* Mode-specific guidance */}
+            <p className="mb-3 text-xs text-gray-400">
+              Jot down an observation, question, or thesis — no structure required.
+            </p>
+
             <QuickThoughtCapture
               compact={true}
               autoFocus={true}
               placeholder="Capture a quick thought..."
               onSuccess={handleCaptureSuccess}
-              onCancel={() => setCaptureMode('collapsed')}
+              onCancel={handleCaptureCancel}
+              capturedContext={capturedContext}
+              onContextChange={handleContextChange}
+              onIdeaTypeChange={handleIdeaTypeChange}
             />
           </div>
         )}
 
-        {/* Expanded state - show capture form for trade ideas */}
+        {/* Capture form for trade ideas */}
         {captureMode === 'trade_idea' && (
           <div>
             <button
-              onClick={() => setCaptureMode('collapsed')}
+              onClick={handleCaptureCancel}
               className="flex items-center gap-1.5 mb-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               <span>Back</span>
             </button>
+
+            {/* Mode-specific guidance */}
+            <p className="mb-3 text-xs text-gray-400">
+              Capture a potential trade to review or decide on later.
+            </p>
+
             <QuickTradeIdeaCapture
               compact={true}
               autoFocus={true}
-              onSuccess={handleCaptureSuccess}
-              onCancel={() => setCaptureMode('collapsed')}
+              onSuccess={handleTradeIdeaSuccess}
+              onCancel={handleCaptureCancel}
+              capturedContext={capturedContext}
+              onContextChange={handleContextChange}
             />
           </div>
         )}
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="px-4 py-2 border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            {([
-              { key: 'all', label: 'All' },
-              { key: 'thoughts', label: 'Thoughts' },
-              { key: 'trades', label: 'Trades' },
-              { key: 'pinned', label: 'Pinned' },
-            ] as const).map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setFilter(key)}
-                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-                  filter === key
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setIsCaptureCollapsed(!isCaptureCollapsed)}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-            title={isCaptureCollapsed ? 'Show capture buttons' : 'Hide capture buttons'}
-          >
-            {isCaptureCollapsed ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronUp className="h-4 w-4" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Thoughts Feed */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <ThoughtsFeed
-          limit={20}
-          showHeader={false}
-          filter={filter}
-          onAssetClick={onAssetClick}
-          onOpenDiscussion={handleOpenDiscussion}
-        />
       </div>
     </div>
   )

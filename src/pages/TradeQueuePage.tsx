@@ -27,7 +27,12 @@ import {
   User,
   Calendar,
   Briefcase,
-  Link2
+  Link2,
+  Scale,
+  Wrench,
+  MoreVertical,
+  Trash2,
+  Circle
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -50,11 +55,12 @@ import type {
 import { clsx } from 'clsx'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
-  idea: { label: 'Idea', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', icon: AlertCircle },
-  discussing: { label: 'Discussing', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', icon: MessageSquare },
+  idea: { label: 'Ideas', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', icon: Lightbulb },
+  discussing: { label: 'Working On', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', icon: Wrench },
+  simulating: { label: 'Simulating', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', icon: FlaskConical },
+  deciding: { label: 'Deciding', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', icon: Scale },
   approved: { label: 'Approved', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle2 },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300', icon: XCircle },
-  executed: { label: 'Executed', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', icon: PlayCircle },
   cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300', icon: XCircle },
   deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400', icon: Archive },
 }
@@ -92,8 +98,10 @@ export function TradeQueuePage() {
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [activeSection, setActiveSection] = useState<'idea-pipeline' | 'pretrade' | 'post-trade'>('idea-pipeline')
-  const [thirdColumnView, setThirdColumnView] = useState<'approved' | 'rejected' | 'archived' | 'deleted'>('approved')
+  const [fourthColumnView, setFourthColumnView] = useState<'deciding' | 'approved' | 'rejected' | 'archived' | 'deleted'>('deciding')
   const [fullscreenColumn, setFullscreenColumn] = useState<TradeQueueStatus | 'archived' | null>(null)
+  const [showDeletedConfirm, setShowDeletedConfirm] = useState(false)
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false)
 
   // Fetch trade queue items
   const { data: tradeItems, isLoading, error } = useQuery({
@@ -347,9 +355,10 @@ export function TradeQueuePage() {
     const groups: Record<TradeQueueStatus, TradeQueueItemWithDetails[]> = {
       idea: [],
       discussing: [],
+      simulating: [],
+      deciding: [],
       approved: [],
       rejected: [],
-      executed: [],
       cancelled: [],
       deleted: [],
     }
@@ -368,9 +377,10 @@ export function TradeQueuePage() {
     const groups: Record<TradeQueueStatus, Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>> = {
       idea: [],
       discussing: [],
+      simulating: [],
+      deciding: [],
       approved: [],
       rejected: [],
-      executed: [],
       cancelled: [],
       deleted: [],
     }
@@ -591,7 +601,7 @@ export function TradeQueuePage() {
             <FlaskConical className="h-4 w-4" />
             Pretrade
             <Badge variant="secondary" className="text-xs ml-1">
-              {itemsByStatus.approved.length}
+              {itemsByStatus.simulating.length}
             </Badge>
           </button>
           <button
@@ -718,12 +728,12 @@ export function TradeQueuePage() {
               />
             ) : (
               <>
-                {/* Kanban Grid - shows either 3 columns or 1 fullscreen column */}
+                {/* Kanban Grid - shows either 4 columns or 1 fullscreen column */}
                 <div className={clsx(
                   "gap-4",
-                  fullscreenColumn ? "grid grid-cols-1" : "grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3"
+                  fullscreenColumn ? "grid grid-cols-1" : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4"
                 )}>
-                  {/* Idea Column */}
+                  {/* Ideas Column */}
                   {(!fullscreenColumn || fullscreenColumn === 'idea') && (
                   <div
                     className="flex flex-col"
@@ -731,8 +741,8 @@ export function TradeQueuePage() {
                     onDrop={(e) => handleDrop(e, 'idea')}
                   >
                     <div className="flex items-center gap-2 mb-3 px-2">
-                      <AlertCircle className="h-5 w-5 text-gray-500" />
-                      <h2 className="font-semibold text-gray-900 dark:text-white">Idea</h2>
+                      <Lightbulb className="h-5 w-5 text-blue-500" />
+                      <h2 className="font-semibold text-gray-900 dark:text-white">Ideas</h2>
                       <Badge variant="default" className="ml-auto">
                         {itemsByStatus.idea.length + pairTradesByStatus.idea.length}
                       </Badge>
@@ -790,7 +800,7 @@ export function TradeQueuePage() {
                   </div>
                   )}
 
-                  {/* Discussing Column */}
+                  {/* Working On Column */}
                   {(!fullscreenColumn || fullscreenColumn === 'discussing') && (
                   <div
                     className="flex flex-col"
@@ -798,8 +808,8 @@ export function TradeQueuePage() {
                     onDrop={(e) => handleDrop(e, 'discussing')}
                   >
                     <div className="flex items-center gap-2 mb-3 px-2">
-                      <MessageSquare className="h-5 w-5 text-gray-500" />
-                      <h2 className="font-semibold text-gray-900 dark:text-white">Discussing</h2>
+                      <Wrench className="h-5 w-5 text-yellow-500" />
+                      <h2 className="font-semibold text-gray-900 dark:text-white">Working On</h2>
                       <Badge variant="default" className="ml-auto">
                         {itemsByStatus.discussing.length + pairTradesByStatus.discussing.length}
                       </Badge>
@@ -857,91 +867,25 @@ export function TradeQueuePage() {
                   </div>
                   )}
 
-                  {/* Third Column - Toggleable between Approved/Rejected/Archived */}
-                  {(!fullscreenColumn || fullscreenColumn === 'archived') && (
+                  {/* Simulating Column */}
+                  {(!fullscreenColumn || fullscreenColumn === 'simulating') && (
                   <div
                     className="flex flex-col"
                     onDragOver={handleDragOver}
-                    onDrop={(e) => {
-                      if (thirdColumnView === 'approved') handleDrop(e, 'approved')
-                      else if (thirdColumnView === 'rejected') handleDrop(e, 'rejected')
-                    }}
+                    onDrop={(e) => handleDrop(e, 'simulating')}
                   >
                     <div className="flex items-center gap-2 mb-3 px-2">
-                      {thirdColumnView === 'approved' && <CheckCircle2 className="h-5 w-5 text-gray-500" />}
-                      {thirdColumnView === 'rejected' && <XCircle className="h-5 w-5 text-gray-500" />}
-                      {thirdColumnView === 'archived' && <Archive className="h-5 w-5 text-gray-500" />}
-                      {thirdColumnView === 'deleted' && <Archive className="h-5 w-5 text-red-500" />}
-
-                      {/* Dropdown Toggle */}
-                      <div className="relative group">
-                        <button className="flex items-center gap-1 font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                          {thirdColumnView === 'approved' ? 'Approved' : thirdColumnView === 'rejected' ? 'Rejected' : thirdColumnView === 'archived' ? 'Archived' : 'Deleted'}
-                          <ChevronDown className="h-4 w-4" />
-                        </button>
-                        <div className="absolute left-0 top-full mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-                          <button
-                            onClick={() => setThirdColumnView('approved')}
-                            className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-t-lg",
-                              thirdColumnView === 'approved' && "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400"
-                            )}
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            Approved
-                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.approved.length + pairTradesByStatus.approved.length}</Badge>
-                          </button>
-                          <button
-                            onClick={() => setThirdColumnView('rejected')}
-                            className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
-                              thirdColumnView === 'rejected' && "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400"
-                            )}
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Rejected
-                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.rejected.length + pairTradesByStatus.rejected.length}</Badge>
-                          </button>
-                          <button
-                            onClick={() => setThirdColumnView('archived')}
-                            className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
-                              thirdColumnView === 'archived' && "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400"
-                            )}
-                          >
-                            <Archive className="h-4 w-4" />
-                            Archived
-                            <Badge variant="secondary" className="text-xs ml-auto">{archivedItems.length}</Badge>
-                          </button>
-                          <button
-                            onClick={() => setThirdColumnView('deleted')}
-                            className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-b-lg",
-                              thirdColumnView === 'deleted' && "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400"
-                            )}
-                          >
-                            <Archive className="h-4 w-4 text-red-500" />
-                            Deleted
-                            <Badge variant="secondary" className="text-xs ml-auto">{deletedItems.length}</Badge>
-                          </button>
-                        </div>
-                      </div>
-
+                      <FlaskConical className="h-5 w-5 text-purple-500" />
+                      <h2 className="font-semibold text-gray-900 dark:text-white">Simulating</h2>
                       <Badge variant="default" className="ml-auto">
-                        {thirdColumnView === 'approved'
-                          ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
-                          : thirdColumnView === 'rejected'
-                            ? itemsByStatus.rejected.length + pairTradesByStatus.rejected.length
-                            : thirdColumnView === 'archived'
-                              ? archivedItems.length
-                              : deletedItems.length}
+                        {itemsByStatus.simulating.length + pairTradesByStatus.simulating.length}
                       </Badge>
                       <button
-                        onClick={() => setFullscreenColumn(fullscreenColumn === 'archived' ? null : 'archived')}
+                        onClick={() => setFullscreenColumn(fullscreenColumn === 'simulating' ? null : 'simulating')}
                         className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                        title={fullscreenColumn === 'archived' ? "Exit fullscreen" : "Fullscreen"}
+                        title={fullscreenColumn === 'simulating' ? "Exit fullscreen" : "Fullscreen"}
                       >
-                        {fullscreenColumn === 'archived' ? (
+                        {fullscreenColumn === 'simulating' ? (
                           <Minimize2 className="h-4 w-4 text-gray-400" />
                         ) : (
                           <Maximize2 className="h-4 w-4 text-gray-400" />
@@ -950,31 +894,19 @@ export function TradeQueuePage() {
                     </div>
                     <div className={clsx(
                       "flex-1 rounded-lg border-2 border-dashed p-2 transition-colors",
-                      fullscreenColumn === 'archived' ? "min-h-[400px]" : "min-h-[200px]",
-                      draggedItem && thirdColumnView !== 'archived' && thirdColumnView !== 'deleted'
+                      fullscreenColumn === 'simulating' ? "min-h-[400px]" : "min-h-[200px]",
+                      draggedItem
                         ? "border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/10"
                         : "border-gray-200 dark:border-gray-700"
                     )}>
                       <div className={clsx(
                         "gap-2",
-                        fullscreenColumn === 'archived'
+                        fullscreenColumn === 'simulating'
                           ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                           : "space-y-2"
                       )}>
-                        {/* Pair Trade Cards for Approved/Rejected views */}
-                        {thirdColumnView === 'approved' && pairTradesByStatus.approved.map(({ pairTradeId, pairTrade, legs }) => (
-                          <PairTradeCard
-                            key={pairTradeId}
-                            pairTradeId={pairTradeId}
-                            pairTrade={pairTrade}
-                            legs={legs}
-                            isDragging={draggedItem === pairTradeId}
-                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
-                            onDragEnd={handleDragEnd}
-                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
-                          />
-                        ))}
-                        {thirdColumnView === 'rejected' && pairTradesByStatus.rejected.map(({ pairTradeId, pairTrade, legs }) => (
+                        {/* Pair Trade Cards */}
+                        {pairTradesByStatus.simulating.map(({ pairTradeId, pairTrade, legs }) => (
                           <PairTradeCard
                             key={pairTradeId}
                             pairTradeId={pairTradeId}
@@ -987,13 +919,312 @@ export function TradeQueuePage() {
                           />
                         ))}
                         {/* Individual Trade Cards */}
-                        {(thirdColumnView === 'approved'
-                          ? itemsByStatus.approved
-                          : thirdColumnView === 'rejected'
-                            ? itemsByStatus.rejected
-                            : thirdColumnView === 'archived'
-                              ? archivedItems
-                              : deletedItems
+                        {itemsByStatus.simulating.map(item => (
+                          <TradeQueueCard
+                            key={item.id}
+                            item={item}
+                            isDragging={draggedItem === item.id}
+                            onDragStart={(e) => handleDragStart(e, item.id)}
+                            onDragEnd={handleDragEnd}
+                            onClick={() => setSelectedTradeId(item.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  )}
+
+                  {/* Fourth Column - Deciding (Active) + Outcomes (History) */}
+                  {(!fullscreenColumn || fullscreenColumn === 'deciding' || fullscreenColumn === 'archived') && (
+                  <div
+                    className="flex flex-col"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => {
+                      if (fourthColumnView === 'deciding') handleDrop(e, 'deciding')
+                      else if (fourthColumnView === 'rejected') handleDrop(e, 'rejected')
+                    }}
+                  >
+                    <div className={clsx(
+                      "flex items-center gap-2 mb-3 px-2 py-1 rounded-t-lg transition-colors",
+                      fourthColumnView !== 'deciding' && "bg-gray-50 dark:bg-gray-800/50"
+                    )}>
+                      {/* Icon changes based on view */}
+                      {fourthColumnView === 'deciding' && <Scale className="h-5 w-5 text-amber-500" />}
+                      {fourthColumnView === 'approved' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                      {fourthColumnView === 'rejected' && <XCircle className="h-5 w-5 text-gray-400" />}
+                      {fourthColumnView === 'archived' && <Archive className="h-5 w-5 text-gray-400" />}
+                      {fourthColumnView === 'deleted' && <Trash2 className="h-5 w-5 text-gray-400" />}
+
+                      {/* Dropdown Toggle with grouped options */}
+                      <div className="relative group">
+                        <button className={clsx(
+                          "flex items-center gap-1.5 font-semibold transition-colors",
+                          fourthColumnView === 'deciding'
+                            ? "text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400"
+                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                        )}>
+                          {/* Header title changes based on view */}
+                          {fourthColumnView === 'deciding' ? (
+                            <>
+                              Deciding
+                              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
+                                Active
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              {fourthColumnView === 'approved' ? 'Approved' : fourthColumnView === 'rejected' ? 'Rejected' : fourthColumnView === 'archived' ? 'Archived' : 'Deleted'}
+                              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 rounded flex items-center gap-0.5">
+                                <History className="h-2.5 w-2.5" />
+                                History
+                              </span>
+                            </>
+                          )}
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+
+                        {/* Restructured dropdown with groups */}
+                        <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                          {/* Active Stage Group */}
+                          <div className="px-2 pt-2 pb-1">
+                            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                              Stage (Active)
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => setFourthColumnView('deciding')}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
+                              fourthColumnView === 'deciding' && "bg-amber-50 dark:bg-amber-900/20"
+                            )}
+                            title="Active items awaiting a decision"
+                          >
+                            <div className="flex items-center gap-2 flex-1">
+                              {fourthColumnView === 'deciding' && (
+                                <Circle className="h-2 w-2 fill-amber-500 text-amber-500" />
+                              )}
+                              <Scale className={clsx("h-4 w-4", fourthColumnView === 'deciding' ? "text-amber-600" : "text-gray-400")} />
+                              <span className={fourthColumnView === 'deciding' ? "font-medium text-amber-700 dark:text-amber-400" : ""}>Deciding</span>
+                            </div>
+                            <Badge variant="secondary" className="text-xs">{itemsByStatus.deciding.length + pairTradesByStatus.deciding.length}</Badge>
+                          </button>
+
+                          {/* Divider */}
+                          <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+
+                          {/* Outcomes Group */}
+                          <div className="px-2 pt-1 pb-1 flex items-center gap-1">
+                            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                              Outcomes
+                            </span>
+                            <History className="h-3 w-3 text-gray-400" />
+                          </div>
+                          <button
+                            onClick={() => setFourthColumnView('approved')}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
+                              fourthColumnView === 'approved' && "bg-gray-100 dark:bg-gray-700"
+                            )}
+                            title="Trade ideas that were approved"
+                          >
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <span className={fourthColumnView === 'approved' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Approved</span>
+                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.approved.length + pairTradesByStatus.approved.length}</Badge>
+                          </button>
+                          <button
+                            onClick={() => setFourthColumnView('rejected')}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
+                              fourthColumnView === 'rejected' && "bg-gray-100 dark:bg-gray-700"
+                            )}
+                            title="Reviewed and decided against"
+                          >
+                            <XCircle className="h-4 w-4 text-red-400" />
+                            <span className={fourthColumnView === 'rejected' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Rejected</span>
+                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.rejected.length + pairTradesByStatus.rejected.length}</Badge>
+                          </button>
+                          <button
+                            onClick={() => setFourthColumnView('archived')}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-b-lg",
+                              fourthColumnView === 'archived' && "bg-gray-100 dark:bg-gray-700"
+                            )}
+                            title="Not pursuing right now"
+                          >
+                            <Archive className="h-4 w-4 text-gray-400" />
+                            <span className={fourthColumnView === 'archived' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Archived</span>
+                            <Badge variant="secondary" className="text-xs ml-auto">{archivedItems.length}</Badge>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Item count badge */}
+                      <Badge variant="default" className="ml-auto">
+                        {fourthColumnView === 'deciding'
+                          ? itemsByStatus.deciding.length + pairTradesByStatus.deciding.length
+                          : fourthColumnView === 'approved'
+                            ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
+                            : fourthColumnView === 'rejected'
+                              ? itemsByStatus.rejected.length + pairTradesByStatus.rejected.length
+                              : fourthColumnView === 'archived'
+                                ? archivedItems.length
+                                : deletedItems.length}
+                      </Badge>
+
+                      {/* Fullscreen button */}
+                      <button
+                        onClick={() => setFullscreenColumn(fullscreenColumn === 'deciding' ? null : 'deciding')}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        title={fullscreenColumn === 'deciding' ? "Exit fullscreen" : "Fullscreen"}
+                      >
+                        {fullscreenColumn === 'deciding' ? (
+                          <Minimize2 className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <Maximize2 className="h-4 w-4 text-gray-400" />
+                        )}
+                      </button>
+
+                      {/* Overflow menu for Deleted */}
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowOverflowMenu(!showOverflowMenu)}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          title="More options"
+                        >
+                          <MoreVertical className="h-4 w-4 text-gray-400" />
+                        </button>
+                        {showOverflowMenu && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setShowOverflowMenu(false)}
+                            />
+                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20">
+                              <div className="py-1">
+                                <button
+                                  onClick={() => {
+                                    setShowDeletedConfirm(true)
+                                    setShowOverflowMenu(false)
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  View Deleted Items
+                                  <Badge variant="secondary" className="text-xs ml-auto">{deletedItems.length}</Badge>
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className={clsx(
+                      "flex-1 rounded-lg border-2 border-dashed p-2 transition-colors",
+                      (fullscreenColumn === 'deciding' || fullscreenColumn === 'archived') ? "min-h-[400px]" : "min-h-[200px]",
+                      fourthColumnView === 'deleted'
+                        ? "border-red-200 dark:border-red-800/50 bg-red-50/30 dark:bg-red-900/10"
+                        : draggedItem && fourthColumnView !== 'archived'
+                          ? "border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/10"
+                          : "border-gray-200 dark:border-gray-700"
+                    )}>
+                      {/* Outcome history banners */}
+                      {(fourthColumnView === 'approved' || fourthColumnView === 'rejected' || fourthColumnView === 'archived') && (
+                        <div className="mb-3 p-2.5 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <History className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 flex-1">
+                              {fourthColumnView === 'approved'
+                                ? "Viewing approved trade ideas. These were approved from Deciding."
+                                : fourthColumnView === 'rejected'
+                                  ? "Viewing rejected trade ideas. These were reviewed and decided against."
+                                  : "Viewing archived trade ideas. These are not being pursued right now."}
+                            </p>
+                            <button
+                              onClick={() => setFourthColumnView('deciding')}
+                              className="flex-shrink-0 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                            >
+                              Back to Active
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Deleted items warning banner */}
+                      {fourthColumnView === 'deleted' && (
+                        <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <div className="flex items-start gap-3">
+                            <Trash2 className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                                Viewing Deleted Items
+                              </p>
+                              <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                                These items have been removed. Click on an item to restore it if needed.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => setFourthColumnView('deciding')}
+                              className="flex-shrink-0 px-2.5 py-1 text-xs font-medium text-red-700 dark:text-red-300 bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                            >
+                              Back to Deciding
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div className={clsx(
+                        "gap-2",
+                        (fullscreenColumn === 'deciding' || fullscreenColumn === 'archived')
+                          ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                          : "space-y-2"
+                      )}>
+                        {/* Pair Trade Cards for Deciding/Approved/Rejected views */}
+                        {fourthColumnView === 'deciding' && pairTradesByStatus.deciding.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
+                          />
+                        ))}
+                        {/* Approved outcome: trades that were approved */}
+                        {fourthColumnView === 'approved' && pairTradesByStatus.approved.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
+                          />
+                        ))}
+                        {fourthColumnView === 'rejected' && pairTradesByStatus.rejected.map(({ pairTradeId, pairTrade, legs }) => (
+                          <PairTradeCard
+                            key={pairTradeId}
+                            pairTradeId={pairTradeId}
+                            pairTrade={pairTrade}
+                            legs={legs}
+                            isDragging={draggedItem === pairTradeId}
+                            onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
+                            onDragEnd={handleDragEnd}
+                            onPairClick={(pairId) => setSelectedTradeId(pairId)}
+                          />
+                        ))}
+                        {/* Individual Trade Cards */}
+                        {(fourthColumnView === 'deciding'
+                          ? itemsByStatus.deciding
+                          : fourthColumnView === 'approved'
+                            ? itemsByStatus.approved
+                            : fourthColumnView === 'rejected'
+                              ? itemsByStatus.rejected
+                              : fourthColumnView === 'archived'
+                                ? archivedItems
+                                : deletedItems
                         ).map(item => (
                           <TradeQueueCard
                             key={item.id}
@@ -1002,7 +1233,7 @@ export function TradeQueuePage() {
                             onDragStart={(e) => handleDragStart(e, item.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
-                            isArchived={thirdColumnView === 'archived' || thirdColumnView === 'deleted'}
+                            isArchived={fourthColumnView === 'archived' || fourthColumnView === 'deleted'}
                           />
                         ))}
                       </div>
@@ -1018,25 +1249,25 @@ export function TradeQueuePage() {
         {/* PRETRADE SECTION */}
         {activeSection === 'pretrade' && (
           <div className="space-y-6">
-            {/* Approved Trade Ideas Section */}
+            {/* Simulating Trade Ideas Section */}
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Approved Trade Ideas</h2>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Simulating Trade Ideas</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Trade ideas ready for simulation and execution
+                    Trade ideas currently being analyzed in simulations
                   </p>
                 </div>
               </div>
 
-              {itemsByStatus.approved.length === 0 ? (
+              {itemsByStatus.simulating.length === 0 ? (
                 <Card className="p-6 text-center">
-                  <CheckCircle2 className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No approved trade ideas yet</p>
+                  <FlaskConical className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No trade ideas currently simulating</p>
                 </Card>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-                  {itemsByStatus.approved.map(item => (
+                  {itemsByStatus.simulating.map(item => (
                     <TradeQueueCard
                       key={item.id}
                       item={item}
@@ -1319,6 +1550,53 @@ export function TradeQueuePage() {
           tradeId={selectedTradeId}
           onClose={() => setSelectedTradeId(null)}
         />
+      )}
+
+      {/* Deleted Items Confirmation Modal */}
+      {showDeletedConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowDeletedConfirm(false)}
+          />
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  View Deleted Items
+                </h3>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  You're about to view {deletedItems.length} deleted trade idea{deletedItems.length !== 1 ? 's' : ''}.
+                  These items have been removed from the active pipeline.
+                </p>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+                  Deleted items are retained for audit purposes and can be restored if needed.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => setShowDeletedConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setFourthColumnView('deleted')
+                  setShowDeletedConfirm(false)
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                View Deleted
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -6,8 +6,10 @@ import {
   ArrowLeftRight, X
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useInvalidateAttention } from '../../hooks/useAttention'
 import { clsx } from 'clsx'
 import type { TradeAction, TradeUrgency } from '../../types/trading'
+import { ContextSelector, type CapturedContext } from './ContextSelector'
 
 type OrgNodeType = 'division' | 'department' | 'team' | 'portfolio'
 
@@ -30,6 +32,9 @@ interface QuickTradeIdeaCaptureProps {
   onCancel?: () => void
   compact?: boolean
   autoFocus?: boolean
+  // Context from current location
+  capturedContext?: CapturedContext | null
+  onContextChange?: (context: CapturedContext | null) => void
 }
 
 const urgencyOptions: { value: TradeUrgency; label: string; color: string }[] = [
@@ -39,11 +44,16 @@ const urgencyOptions: { value: TradeUrgency; label: string; color: string }[] = 
   { value: 'urgent', label: 'Urgent', color: 'text-red-600 bg-red-50 border-red-200' },
 ]
 
+// Source tracking for soft sync behavior
+type SourceType = 'auto' | 'user' | null
+
 export function QuickTradeIdeaCapture({
   onSuccess,
   onCancel,
   compact = false,
   autoFocus = false,
+  capturedContext,
+  onContextChange
 }: QuickTradeIdeaCaptureProps) {
   // Trade type: single or pair
   const [tradeType, setTradeType] = useState<'single' | 'pair'>('single')
@@ -52,6 +62,12 @@ export function QuickTradeIdeaCapture({
   const [assetSearch, setAssetSearch] = useState('')
   const [selectedAsset, setSelectedAsset] = useState<{ id: string; symbol: string; company_name: string } | null>(null)
   const [showAssetDropdown, setShowAssetDropdown] = useState(false)
+
+  // Source tracking for context and trade asset (for soft sync)
+  const [contextSource, setContextSource] = useState<SourceType>(null)
+  const [tradeAssetSource, setTradeAssetSource] = useState<SourceType>(null)
+  // Track initial auto-set asset ID to detect alignment
+  const [initialAutoAssetId, setInitialAutoAssetId] = useState<string | null>(null)
 
   // Multiple assets for pairs - long side
   const [longAssets, setLongAssets] = useState<{ id: string; symbol: string; company_name: string }[]>([])
@@ -81,9 +97,13 @@ export function QuickTradeIdeaCapture({
   const [selectedCategory, setSelectedCategory] = useState<OrgNodeType | null>(null)
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false)
 
+  // Error state for inline feedback
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
   const searchInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const queryClient = useQueryClient()
+  const invalidateAttention = useInvalidateAttention()
 
   // Search assets - primary
   const { data: assets } = useQuery({
@@ -180,9 +200,45 @@ export function QuickTradeIdeaCapture({
     }
   }, [rationale])
 
+  // Initialize from captured context (auto-populate trade asset from asset context)
+  // This runs once on mount or when capturedContext changes externally
+  useEffect(() => {
+    if (capturedContext?.type === 'asset' && capturedContext.id) {
+      // Mark context as auto-set
+      setContextSource('auto')
+      setInitialAutoAssetId(capturedContext.id)
+
+      // Only auto-populate trade asset if not already set by user
+      if (!selectedAsset && tradeAssetSource !== 'user') {
+        supabase
+          .from('assets')
+          .select('id, symbol, company_name')
+          .eq('id', capturedContext.id)
+          .single()
+          .then(({ data, error }) => {
+            if (!error && data) {
+              setSelectedAsset(data)
+              setTradeAssetSource('auto')
+              // Also prefill first long asset in pair mode if empty
+              if (tradeType === 'pair' && longAssets.length === 0) {
+                setLongAssets([data])
+              }
+            }
+          })
+      }
+    } else if (capturedContext?.type && capturedContext.type !== 'asset') {
+      // Non-asset context (project, portfolio, etc.) - just track it
+      setContextSource('auto')
+    }
+    // Only run when capturedContext changes externally, not on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capturedContext?.type, capturedContext?.id])
 
   const createTradeIdea = useMutation({
     mutationFn: async () => {
+      // Clear any previous error
+      setSubmitError(null)
+
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
@@ -263,6 +319,8 @@ export function QuickTradeIdeaCapture({
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-ideas-feed'] })
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts'] })
+      // Also invalidate attention queries so the Attention Dashboard updates immediately
+      invalidateAttention()
       // Reset form
       setTradeType('single')
       setAssetSearch('')
@@ -279,7 +337,23 @@ export function QuickTradeIdeaCapture({
       setSelectedOrgNodeId(null)
       setSelectedOrgNodeType(null)
       setSelectedOrgNodeName(null)
+      setSubmitError(null)
       onSuccess?.()
+    },
+    onError: (error: Error) => {
+      // Log error for debugging (dev only)
+      if (import.meta.env.DEV) {
+        console.error('Trade idea submission failed:', error)
+      }
+
+      // Show user-friendly error message
+      if (error.message.includes('permission') || error.message.includes('RLS') || error.message.includes('policy')) {
+        setSubmitError("Couldn't save trade idea due to permissions. Please try again or contact admin.")
+      } else if (error.message.includes('Not authenticated')) {
+        setSubmitError("You must be logged in to save a trade idea.")
+      } else {
+        setSubmitError("Failed to save trade idea. Please try again.")
+      }
     },
   })
 
@@ -300,14 +374,36 @@ export function QuickTradeIdeaCapture({
   }
 
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
+    const previousAssetId = selectedAsset?.id
     setSelectedAsset(asset)
     setAssetSearch('')
     setShowAssetDropdown(false)
+
+    // Mark as user-set since user explicitly selected
+    setTradeAssetSource('user')
+
+    // Soft sync: If context was auto-set AND still aligned with the old trade asset,
+    // update context to match the new trade asset
+    if (
+      contextSource === 'auto' &&
+      capturedContext?.type === 'asset' &&
+      capturedContext.id === previousAssetId &&
+      previousAssetId === initialAutoAssetId
+    ) {
+      // Update context to the new asset
+      onContextChange?.({
+        type: 'asset',
+        id: asset.id,
+        title: `${asset.symbol} - ${asset.company_name}`
+      })
+    }
   }
 
   const addLongAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     if (!longAssets.find(a => a.id === asset.id)) {
       setLongAssets([...longAssets, asset])
+      // Mark as user-set since user explicitly added
+      setTradeAssetSource('user')
     }
     setLongSearch('')
     setShowLongDropdown(false)
@@ -315,11 +411,15 @@ export function QuickTradeIdeaCapture({
 
   const removeLongAsset = (assetId: string) => {
     setLongAssets(longAssets.filter(a => a.id !== assetId))
+    // Mark as user-set since user explicitly removed
+    setTradeAssetSource('user')
   }
 
   const addShortAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     if (!shortAssets.find(a => a.id === asset.id)) {
       setShortAssets([...shortAssets, asset])
+      // Mark as user-set since user explicitly added
+      setTradeAssetSource('user')
     }
     setShortSearch('')
     setShowShortDropdown(false)
@@ -327,6 +427,8 @@ export function QuickTradeIdeaCapture({
 
   const removeShortAsset = (assetId: string) => {
     setShortAssets(shortAssets.filter(a => a.id !== assetId))
+    // Mark as user-set since user explicitly removed
+    setTradeAssetSource('user')
   }
 
   const getVisibilityLabel = () => {
@@ -404,6 +506,10 @@ export function QuickTradeIdeaCapture({
             type="button"
             onClick={() => {
               setTradeType('single')
+              // When switching to single mode, prefill from first long asset
+              if (longAssets.length > 0 && !selectedAsset) {
+                setSelectedAsset(longAssets[0])
+              }
               setLongAssets([])
               setShortAssets([])
               setLongSearch('')
@@ -422,6 +528,10 @@ export function QuickTradeIdeaCapture({
             type="button"
             onClick={() => {
               setTradeType('pair')
+              // When switching to pair mode, prefill long leg from current single asset
+              if (selectedAsset && longAssets.length === 0) {
+                setLongAssets([selectedAsset])
+              }
               setSelectedAsset(null)
               setAssetSearch('')
             }}
@@ -436,6 +546,19 @@ export function QuickTradeIdeaCapture({
             Pair
           </button>
         </div>
+      </div>
+
+      {/* Context selector - attach to asset, project, portfolio, etc. */}
+      <div className="mb-3">
+        <ContextSelector
+          value={capturedContext || null}
+          onChange={(ctx) => {
+            // Mark context as user-set when user explicitly changes it
+            setContextSource('user')
+            onContextChange?.(ctx)
+          }}
+          compact={compact}
+        />
       </div>
 
       {/* Asset Search - Single Trade */}
@@ -649,22 +772,28 @@ export function QuickTradeIdeaCapture({
       )}
 
       {/* Urgency */}
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {urgencyOptions.map((option) => {
-          const isSelected = urgency === option.value
-          return (
-            <button
-              key={option.value}
-              onClick={() => setUrgency(option.value)}
-              className={clsx(
-                "px-2 py-1 rounded-full text-xs font-medium border transition-all capitalize",
-                isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
-              )}
-            >
-              {option.label}
-            </button>
-          )
-        })}
+      <div className="mb-3">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Urgency</span>
+          <span className="text-[10px] text-gray-400">· affects priority ranking</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {urgencyOptions.map((option) => {
+            const isSelected = urgency === option.value
+            return (
+              <button
+                key={option.value}
+                onClick={() => setUrgency(option.value)}
+                className={clsx(
+                  "px-2 py-1 rounded-full text-xs font-medium border transition-all capitalize",
+                  isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
+                )}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Rationale */}
@@ -673,7 +802,7 @@ export function QuickTradeIdeaCapture({
         value={rationale}
         onChange={(e) => setRationale(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Why this trade? (optional)"
+        placeholder="Why now? What's the catalyst or risk? (optional)"
         className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 caret-gray-900 min-h-[60px] mb-3"
         rows={2}
       />
@@ -762,9 +891,10 @@ export function QuickTradeIdeaCapture({
       )}
 
       {/* Footer with visibility and submit */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        {/* Visibility selector */}
-        <div className="relative">
+      <div className="pt-3 border-t border-gray-100">
+        <div className="flex items-center justify-between">
+          {/* Visibility selector */}
+          <div className="relative">
           <button
             onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
             className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-2.5 py-1.5 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
@@ -899,43 +1029,58 @@ export function QuickTradeIdeaCapture({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          {onCancel && (
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
             <button
-              onClick={onCancel}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+              onClick={handleSubmit}
+              disabled={
+                (tradeType === 'single' && !selectedAsset) ||
+                (tradeType === 'pair' && (longAssets.length === 0 || shortAssets.length === 0)) ||
+                createTradeIdea.isPending
+              }
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+                (tradeType === 'single' && selectedAsset) || (tradeType === 'pair' && longAssets.length > 0 && shortAssets.length > 0)
+                  ? "bg-green-600 text-white hover:bg-green-700 shadow-sm"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              )}
             >
-              Cancel
+              {createTradeIdea.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+              <span>Add</span>
             </button>
-          )}
-          <button
-            onClick={handleSubmit}
-            disabled={
-              (tradeType === 'single' && !selectedAsset) ||
-              (tradeType === 'pair' && (longAssets.length === 0 || shortAssets.length === 0)) ||
-              createTradeIdea.isPending
-            }
-            className={clsx(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
-              (tradeType === 'single' && selectedAsset) || (tradeType === 'pair' && longAssets.length > 0 && shortAssets.length > 0)
-                ? "bg-green-600 text-white hover:bg-green-700 shadow-sm"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            )}
-          >
-            {createTradeIdea.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5" />
-            )}
-            <span>Add</span>
-          </button>
+          </div>
         </div>
-      </div>
 
-      {/* Keyboard hint */}
-      <div className="text-[10px] text-gray-400 text-right mt-1">
-        Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px]">Cmd+Enter</kbd> to submit
+        {/* Error message */}
+        {submitError && (
+          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-xs text-red-600">{submitError}</p>
+          </div>
+        )}
+
+        {/* Visibility consequence + submission outcome */}
+        <div className="flex items-center justify-between mt-2 text-[10px] text-gray-400">
+          <span>
+            {visibility === 'private'
+              ? 'This will not notify others.'
+              : 'Relevant teammates will see this in What\'s New.'}
+          </span>
+          <span>
+            Creates a decision in Priorities
+          </span>
+        </div>
       </div>
     </div>
   )

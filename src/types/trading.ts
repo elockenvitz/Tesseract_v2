@@ -5,7 +5,7 @@
  */
 
 // Enums matching database types
-export type TradeQueueStatus = 'idea' | 'discussing' | 'approved' | 'rejected' | 'executed' | 'cancelled' | 'deleted'
+export type TradeQueueStatus = 'idea' | 'discussing' | 'simulating' | 'deciding' | 'approved' | 'rejected' | 'executed' | 'cancelled' | 'deleted'
 export type TradeAction = 'buy' | 'sell' | 'trim' | 'add'
 export type SimulationStatus = 'draft' | 'running' | 'completed' | 'archived'
 export type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'

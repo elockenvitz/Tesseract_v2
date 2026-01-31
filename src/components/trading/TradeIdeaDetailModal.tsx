@@ -16,7 +16,10 @@ import {
   Pin,
   Reply,
   MessageCircle,
-  Link2
+  Link2,
+  Scale,
+  FlaskConical,
+  Wrench
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -38,11 +41,12 @@ interface TradeIdeaDetailModalProps {
 }
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> = {
-  idea: { label: 'Idea', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
-  discussing: { label: 'Discussing', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
+  idea: { label: 'Ideas', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  discussing: { label: 'Working On', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
+  simulating: { label: 'Simulating', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
+  deciding: { label: 'Deciding', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
   approved: { label: 'Approved', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
-  executed: { label: 'Executed', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
   cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300' },
   deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' },
 }
@@ -136,8 +140,6 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
       if (status === 'approved') {
         updates.approved_by = user?.id
         updates.approved_at = new Date().toISOString()
-      } else if (status === 'executed') {
-        updates.executed_at = new Date().toISOString()
       }
 
       const { error } = await supabase
@@ -169,8 +171,6 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
       if (status === 'approved') {
         legUpdates.approved_by = user?.id
         legUpdates.approved_at = new Date().toISOString()
-      } else if (status === 'executed') {
-        legUpdates.executed_at = new Date().toISOString()
       }
 
       const { error: legsError } = await supabase
@@ -469,31 +469,45 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                   )}
 
                   {/* Status Actions */}
-                  {pairTrade.status !== 'executed' && pairTrade.status !== 'cancelled' && pairTrade.status !== 'rejected' && (
+                  {pairTrade.status !== 'approved' && pairTrade.status !== 'cancelled' && pairTrade.status !== 'rejected' && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                         Actions
                       </h3>
                       <div className="flex flex-wrap gap-2">
-                        {pairTrade.status !== 'approved' && (
+                        {/* Move to Simulating */}
+                        {(pairTrade.status === 'idea' || pairTrade.status === 'discussing') && (
                           <Button
                             size="sm"
                             variant="secondary"
+                            onClick={() => updatePairTradeStatusMutation.mutate('simulating')}
+                            disabled={updatePairTradeStatusMutation.isPending}
+                          >
+                            <FlaskConical className="h-4 w-4 mr-1" />
+                            Start Simulating
+                          </Button>
+                        )}
+                        {/* Move to Deciding */}
+                        {pairTrade.status === 'simulating' && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => updatePairTradeStatusMutation.mutate('deciding')}
+                            disabled={updatePairTradeStatusMutation.isPending}
+                          >
+                            <Scale className="h-4 w-4 mr-1" />
+                            Move to Deciding
+                          </Button>
+                        )}
+                        {/* Final Approve */}
+                        {pairTrade.status === 'deciding' && (
+                          <Button
+                            size="sm"
                             onClick={() => updatePairTradeStatusMutation.mutate('approved')}
                             disabled={updatePairTradeStatusMutation.isPending}
                           >
                             <CheckCircle2 className="h-4 w-4 mr-1" />
                             Approve
-                          </Button>
-                        )}
-                        {pairTrade.status === 'approved' && (
-                          <Button
-                            size="sm"
-                            onClick={() => updatePairTradeStatusMutation.mutate('executed')}
-                            disabled={updatePairTradeStatusMutation.isPending}
-                          >
-                            <TrendingUp className="h-4 w-4 mr-1" />
-                            Mark Executed
                           </Button>
                         )}
                         {pairTrade.status !== 'rejected' && (
@@ -520,7 +534,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                   )}
 
                   {/* Restore Actions for Archived Pair Trades */}
-                  {(pairTrade.status === 'executed' || pairTrade.status === 'cancelled' || pairTrade.status === 'rejected') && (
+                  {(pairTrade.status === 'approved' || pairTrade.status === 'cancelled' || pairTrade.status === 'rejected') && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                         Restore Pair Trade
@@ -745,34 +759,80 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
               )}
 
               {/* Status Actions */}
-              {trade.status !== 'executed' && trade.status !== 'cancelled' && trade.status !== 'rejected' && (
+              {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && (
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                     Actions
                   </h3>
                   <div className="flex flex-wrap gap-2">
-                    {trade.status !== 'approved' && (
+                    {/* Idea stage: Work on it or Send to Simulation */}
+                    {trade.status === 'idea' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => updateStatusMutation.mutate('discussing')}
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <Wrench className="h-4 w-4 mr-1" />
+                          Work on this
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => updateStatusMutation.mutate('simulating')}
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <FlaskConical className="h-4 w-4 mr-1" />
+                          Send to Simulation
+                        </Button>
+                      </>
+                    )}
+                    {/* Working On stage: Send to Simulation */}
+                    {trade.status === 'discussing' && (
                       <Button
                         size="sm"
-                        variant="secondary"
-                        onClick={() => updateStatusMutation.mutate('approved')}
+                        onClick={() => updateStatusMutation.mutate('simulating')}
                         disabled={updateStatusMutation.isPending}
                       >
-                        <CheckCircle2 className="h-4 w-4 mr-1" />
-                        Approve
+                        <FlaskConical className="h-4 w-4 mr-1" />
+                        Send to Simulation
                       </Button>
                     )}
-                    {trade.status === 'approved' && (
+                    {/* Simulating stage: Escalate to Decision */}
+                    {trade.status === 'simulating' && (
                       <Button
                         size="sm"
-                        onClick={() => updateStatusMutation.mutate('executed')}
+                        onClick={() => updateStatusMutation.mutate('deciding')}
                         disabled={updateStatusMutation.isPending}
                       >
-                        <TrendingUp className="h-4 w-4 mr-1" />
-                        Mark Executed
+                        <Scale className="h-4 w-4 mr-1" />
+                        Escalate to Decision
                       </Button>
                     )}
-                    {trade.status !== 'rejected' && (
+                    {/* Deciding stage: Approve or Back to Simulation */}
+                    {trade.status === 'deciding' && (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => updateStatusMutation.mutate('approved')}
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => updateStatusMutation.mutate('simulating')}
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <FlaskConical className="h-4 w-4 mr-1" />
+                          Back to Simulation
+                        </Button>
+                      </>
+                    )}
+                    {/* Reject available for most active stages */}
+                    {(trade.status === 'idea' || trade.status === 'discussing' || trade.status === 'simulating' || trade.status === 'deciding') && (
                       <Button
                         size="sm"
                         variant="danger"
@@ -783,20 +843,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                         Reject
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => updateStatusMutation.mutate('cancelled')}
-                      disabled={updateStatusMutation.isPending}
-                    >
-                      Archive
-                    </Button>
+                    {/* Archive available for active stages */}
+                    {(trade.status === 'idea' || trade.status === 'discussing' || trade.status === 'simulating' || trade.status === 'deciding') && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => updateStatusMutation.mutate('cancelled')}
+                        disabled={updateStatusMutation.isPending}
+                      >
+                        Archive
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Restore Actions for Archived Items */}
-              {(trade.status === 'executed' || trade.status === 'cancelled' || trade.status === 'rejected') && (
+              {(trade.status === 'approved' || trade.status === 'cancelled' || trade.status === 'rejected') && (
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                     Restore Trade Idea
@@ -812,7 +875,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                       disabled={updateStatusMutation.isPending}
                     >
                       <RotateCcw className="h-4 w-4 mr-1" />
-                      Restore as Idea
+                      Restore to Ideas
                     </Button>
                     <Button
                       size="sm"
@@ -820,8 +883,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                       onClick={() => updateStatusMutation.mutate('discussing')}
                       disabled={updateStatusMutation.isPending}
                     >
-                      <MessageSquare className="h-4 w-4 mr-1" />
-                      Restore as Discussing
+                      <Wrench className="h-4 w-4 mr-1" />
+                      Restore to Working On
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => updateStatusMutation.mutate('approved')}
+                      disabled={updateStatusMutation.isPending}
+                    >
+                      <FlaskConical className="h-4 w-4 mr-1" />
+                      Restore to Simulating
                     </Button>
                   </div>
                 </div>

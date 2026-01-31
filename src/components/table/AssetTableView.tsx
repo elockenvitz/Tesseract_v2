@@ -326,14 +326,14 @@ export function AssetTableView({
     return (saved as DensityMode) || 'comfortable'
   })
 
+  // Listen for density changes via custom event (dispatched by DensityToggle)
   useEffect(() => {
-    const handleStorageChange = () => {
-      const saved = localStorage.getItem('table-density')
-      if (saved && saved !== density) setDensity(saved as DensityMode)
+    const handleDensityChange = (e: CustomEvent<{ density: DensityMode }>) => {
+      setDensity(e.detail.density)
     }
-    const interval = setInterval(handleStorageChange, 200)
-    return () => clearInterval(interval)
-  }, [density])
+    window.addEventListener('density-change', handleDensityChange as EventListener)
+    return () => window.removeEventListener('density-change', handleDensityChange as EventListener)
+  }, [])
 
   const densityConfig = DENSITY_CONFIG[density]
   const densityRowHeight = densityConfig.rowHeight
@@ -1037,10 +1037,13 @@ export function AssetTableView({
     return expandedRowId ? new Set([expandedRowId]) : new Set<string>()
   }, [expandedRowId])
 
-  // Version counter to force virtualizer remount on expansion changes (clears measurement cache)
+  // Version counter to force virtualizer remount on expansion/density changes (clears measurement cache)
   const [virtualizerVersion, setVirtualizerVersion] = useState(0)
   // Track pending scroll after remount
   const pendingScrollIndexRef = useRef<number | null>(null)
+
+  // Force virtualizer remount when density changes
+  const prevDensityRef = useRef(density)
 
   // Virtual scrolling with dynamic measurement for wrap text
   // Key includes version to force remount when collapsing (needed to clear measurement cache)
@@ -1048,6 +1051,12 @@ export function AssetTableView({
   const rowVirtualizer = useVirtualizer({
     count: filteredAssets.length,
     getScrollElement: () => tableContainerRef.current,
+    // Include density and expanded state in item key to invalidate cache when these change
+    getItemKey: useCallback((index: number) => {
+      const asset = filteredAssets[index]
+      const isExpanded = asset?.id === expandedRowId
+      return `${asset?.id}-${density}-${isExpanded ? 'expanded' : 'collapsed'}`
+    }, [filteredAssets, density, expandedRowId]),
     estimateSize: useCallback((index: number) => {
       const asset = filteredAssets[index]
       // Expanded rows always get fixed height
@@ -1069,6 +1078,16 @@ export function AssetTableView({
     } : undefined,
   })
 
+  // Force virtualizer to remeasure when density changes
+  useEffect(() => {
+    if (prevDensityRef.current !== density) {
+      prevDensityRef.current = density
+      // Clear all cached measurements and force re-render
+      rowVirtualizer.measure()
+      setVirtualizerVersion(v => v + 1)
+    }
+  }, [density, rowVirtualizer])
+
   // Track previous expanded row to handle collapse
   const prevExpandedRowIdRef = useRef<string | null>(null)
 
@@ -1084,9 +1103,11 @@ export function AssetTableView({
         const expandedIndex = filteredAssets.findIndex(a => a.id === expandedRowId)
         pendingScrollIndexRef.current = expandedIndex !== -1 ? expandedIndex : null
       }
+      // Force virtualizer to recalculate all positions
+      rowVirtualizer.measure()
       setVirtualizerVersion(v => v + 1)
     }
-  }, [expandedRowId, filteredAssets])
+  }, [expandedRowId, filteredAssets, rowVirtualizer])
 
   // Handle pending scroll after virtualizer remounts
   useEffect(() => {
@@ -2760,7 +2781,7 @@ export function AssetTableView({
                         )}
                         data-row-index={virtualRow.index}
                         style={{
-                          height: isExpanded ? expandedRowHeight : (hasWrapTextColumn ? 'auto' : virtualRow.size),
+                          height: isExpanded ? expandedRowHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
                           minHeight: hasWrapTextColumn && !isExpanded ? densityRowHeight : undefined,
                           transform: `translateY(${virtualRow.start + insertOffset}px)`
                         }}>

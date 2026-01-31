@@ -41,7 +41,8 @@ function useDensityState() {
   const setDensity = (mode: DensityMode) => {
     setStandaloneDensity(mode)
     localStorage.setItem('table-density', mode)
-    window.dispatchEvent(new StorageEvent('storage', { key: 'table-density', newValue: mode }))
+    // Dispatch custom event (StorageEvent only works across tabs, not same window)
+    window.dispatchEvent(new CustomEvent('density-change', { detail: { density: mode } }))
   }
 
   return {

@@ -34,7 +34,7 @@ import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
 // Project widgets removed - content now in Command Center carousel
 import { TradeQueuePage } from './TradeQueuePage'
-import { ReasonsPage } from './ReasonsPage'
+import { OutcomesPage } from './OutcomesPage'
 import { FilesPage } from './FilesPage'
 import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
@@ -47,8 +47,10 @@ import { CalendarPage } from './CalendarPage'
 import { PrioritizerPage } from './PrioritizerPage'
 import { CoveragePage } from './CoveragePage'
 import { OrganizationPage } from './OrganizationPage'
+import { AttentionPage } from './AttentionPage'
 import { ThoughtsFeed } from '../components/thoughts'
-import { ContentSection } from '../components/dashboard/ContentSection'
+import { AttentionDashboard, type QuickCaptureMode } from '../components/attention'
+import type { AttentionItem, AttentionType } from '../types/attention'
 
 // Helper to get initial tab state synchronously (avoids flash on refresh)
 function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
@@ -769,6 +771,8 @@ export function DashboardPage() {
         return <CalendarPage onItemSelect={handleSearchResult} />
       case 'prioritizer':
         return <PrioritizerPage onItemSelect={handleSearchResult} />
+      case 'attention':
+        return <AttentionPage initialFilter={activeTab.data?.filterType} onNavigate={handleSearchResult} />
       case 'coverage':
         return <CoveragePage initialView={activeTab.data?.initialView} />
       case 'organization':
@@ -778,8 +782,8 @@ export function DashboardPage() {
           type: 'user',
           data: user
         })} />
-      case 'reasons':
-        return <ReasonsPage onItemSelect={handleSearchResult} />
+      case 'outcomes':
+        return <OutcomesPage onItemSelect={handleSearchResult} />
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':
@@ -878,9 +882,6 @@ export function DashboardPage() {
     return formatDistanceToNow(due, { addSuffix: true })
   }
 
-  // Carousel state for Command Center
-  const [focusTab, setFocusTab] = useState<'urgent' | 'tasks' | 'projects' | 'deliverables' | 'deadlines' | 'activity' | 'workflows'>('urgent')
-
   // Dropdown menu states
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [showTradeMenu, setShowTradeMenu] = useState(false)
@@ -888,411 +889,9 @@ export function DashboardPage() {
   const [showEfficiencyMenu, setShowEfficiencyMenu] = useState(false)
 
   const renderDashboardContent = () => {
-    // Combine urgent items for Today's Focus
-    const allUrgentItems = [
-      ...(urgentItems?.projects || []).map((p: any) => ({ ...p, itemType: 'project' })),
-      ...(urgentItems?.deliverables || []).map((d: any) => ({ ...d, itemType: 'deliverable' })),
-      ...(urgentItems?.calendarEvents || []).map((e: any) => ({ ...e, itemType: 'event' }))
-    ].sort((a, b) => {
-      const dateA = a.due_date || a.start_date || ''
-      const dateB = b.due_date || b.start_date || ''
-      return new Date(dateA).getTime() - new Date(dateB).getTime()
-    }).slice(0, 8)
-
-    // Tab configuration for the Command Center
-    const focusTabs = [
-      { id: 'urgent' as const, label: 'Urgent', icon: AlertTriangle, color: 'amber', count: allUrgentItems.filter(i => getUrgencyColor(i.due_date || i.start_date, i.priority) === 'error').length, viewAllType: 'prioritizer' as const, viewAllTitle: 'Prioritizer' },
-      { id: 'tasks' as const, label: 'Tasks', icon: Play, color: 'blue', count: myTasks?.length || 0, viewAllType: 'workflows' as const, viewAllTitle: 'Workflows' },
-      { id: 'projects' as const, label: 'Projects', icon: FolderKanban, color: 'violet', count: urgentItems?.projects?.length || 0, viewAllType: 'projects-list' as const, viewAllTitle: 'Projects' },
-      { id: 'deliverables' as const, label: 'Deliverables', icon: Target, color: 'purple', count: urgentItems?.deliverables?.length || 0, viewAllType: 'projects-list' as const, viewAllTitle: 'Projects' },
-      { id: 'deadlines' as const, label: 'Deadlines', icon: Clock, color: 'red', count: urgentItems?.calendarEvents?.length || 0, viewAllType: 'calendar' as const, viewAllTitle: 'Calendar' },
-      { id: 'activity' as const, label: 'Activity', icon: Activity, color: 'green', count: teamActivity?.length || 0, viewAllType: 'projects-list' as const, viewAllTitle: 'Projects' },
-      { id: 'workflows' as const, label: 'Workflows', icon: Orbit, color: 'indigo', count: workflows?.filter(wf => wf.active_assets > 0).length || 0, viewAllType: 'workflows' as const, viewAllTitle: 'Workflows' },
-    ]
-
-    // Get current tab for View All link
-    const currentTab = focusTabs.find(t => t.id === focusTab)
-
-    const renderFocusContent = () => {
-      switch (focusTab) {
-        case 'urgent':
-          return allUrgentItems.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {allUrgentItems.map((item: any, index: number) => {
-                const urgency = getUrgencyColor(item.due_date || item.start_date, item.priority)
-                const dueLabel = formatDueDate(item.due_date || item.start_date)
-                return (
-                  <div
-                    key={`${item.itemType}-${item.id}-${index}`}
-                    onClick={() => {
-                      if (item.itemType === 'project') {
-                        handleSearchResult({ id: item.id, title: item.title, type: 'project', data: item })
-                      } else if (item.itemType === 'deliverable') {
-                        handleSearchResult({ id: item.projects?.id, title: item.projects?.title, type: 'project', data: item.projects })
-                      } else {
-                        handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })
-                      }
-                    }}
-                    className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                      urgency === 'error' ? 'bg-red-50 border border-red-200 hover:border-red-300' :
-                      urgency === 'warning' ? 'bg-amber-50 border border-amber-200 hover:border-amber-300' :
-                      'bg-gray-50 border border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className={`p-1.5 rounded ${
-                        item.itemType === 'project' ? 'bg-violet-100' :
-                        item.itemType === 'deliverable' ? 'bg-blue-100' : 'bg-green-100'
-                      }`}>
-                        {item.itemType === 'project' ? <FolderKanban className="h-3.5 w-3.5 text-violet-600" /> :
-                         item.itemType === 'deliverable' ? <Target className="h-3.5 w-3.5 text-blue-600" /> :
-                         <Calendar className="h-3.5 w-3.5 text-green-600" />}
-                      </div>
-                      {dueLabel && (
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          urgency === 'error' ? 'bg-red-100 text-red-700' :
-                          urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {dueLabel}
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
-                      {item.title || item.name}
-                    </h4>
-                    {item.itemType === 'deliverable' && item.projects?.title && (
-                      <p className="text-xs text-gray-500 mt-1 truncate">{item.projects.title}</p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-green-300" />
-              <p className="font-medium">You're all caught up!</p>
-              <p className="text-sm">No urgent items requiring immediate attention</p>
-            </div>
-          )
-
-        case 'tasks':
-          return myTasks && myTasks.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {myTasks.slice(0, 8).map((task: any) => (
-                <div
-                  key={task.id}
-                  onClick={() => handleSearchResult({
-                    id: task.assets?.id,
-                    title: task.assets?.symbol,
-                    type: 'asset',
-                    data: { ...task.assets, workflow_id: task.workflow_id }
-                  })}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors group"
-                >
-                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                    <div className="w-8 h-8 bg-primary-100 rounded flex items-center justify-center flex-shrink-0">
-                      <TrendingUp className="h-4 w-4 text-primary-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-semibold text-gray-900">{task.assets?.symbol}</span>
-                        <PriorityBadge priority={task.assets?.priority} />
-                      </div>
-                      <p className="text-xs text-gray-500 truncate">{task.assets?.company_name}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <div className="text-right">
-                      <Badge variant="outline" size="sm">{task.workflow_stages?.name}</Badge>
-                      <p className="text-xs text-gray-400 mt-1">{task.workflows?.name}</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Play className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="font-medium">No active tasks</p>
-              <p className="text-sm">Start a workflow to see tasks here</p>
-            </div>
-          )
-
-        case 'deliverables':
-          const deliverableItems = (urgentItems?.deliverables || []).sort((a: any, b: any) => {
-            const dateA = a.due_date || ''
-            const dateB = b.due_date || ''
-            return new Date(dateA).getTime() - new Date(dateB).getTime()
-          })
-
-          return deliverableItems.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {deliverableItems.slice(0, 8).map((item: any, index: number) => {
-                const dueLabel = formatDueDate(item.due_date)
-                const urgency = getUrgencyColor(item.due_date)
-                return (
-                  <div
-                    key={`deliverable-${item.id}-${index}`}
-                    onClick={() => {
-                      if (item.projects) {
-                        handleSearchResult({ id: item.projects.id, title: item.projects.title, type: 'project', data: item.projects })
-                      }
-                    }}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div className={`p-2 rounded-lg flex-shrink-0 ${
-                        item.completed ? 'bg-green-100' :
-                        urgency === 'error' ? 'bg-red-100' : urgency === 'warning' ? 'bg-amber-100' : 'bg-violet-100'
-                      }`}>
-                        {item.completed ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <Target className={`h-4 w-4 ${
-                            urgency === 'error' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-violet-600'
-                          }`} />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 text-sm truncate">{item.title || item.name}</p>
-                        {item.projects?.title && (
-                          <p className="text-xs text-gray-500 truncate">{item.projects.title}</p>
-                        )}
-                      </div>
-                    </div>
-                    {dueLabel && !item.completed && (
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
-                        urgency === 'error' ? 'bg-red-100 text-red-700' :
-                        urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {dueLabel}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Target className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="font-medium">No deliverables</p>
-              <p className="text-sm">Create deliverables in your projects</p>
-            </div>
-          )
-
-        case 'projects':
-          const projectItems = (urgentItems?.projects || []).sort((a: any, b: any) => {
-            const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
-            const priorityDiff = (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3)
-            if (priorityDiff !== 0) return priorityDiff
-            const dateA = a.due_date || ''
-            const dateB = b.due_date || ''
-            return new Date(dateA).getTime() - new Date(dateB).getTime()
-          })
-
-          return projectItems.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {projectItems.slice(0, 8).map((project: any, index: number) => {
-                const dueLabel = formatDueDate(project.due_date)
-                const urgency = getUrgencyColor(project.due_date, project.priority)
-                const statusColors: Record<string, string> = {
-                  planning: 'bg-blue-100 text-blue-700',
-                  in_progress: 'bg-green-100 text-green-700',
-                  blocked: 'bg-red-100 text-red-700',
-                  on_hold: 'bg-gray-100 text-gray-700',
-                  completed: 'bg-emerald-100 text-emerald-700',
-                }
-                return (
-                  <div
-                    key={`project-${project.id}-${index}`}
-                    onClick={() => handleSearchResult({ id: project.id, title: project.title, type: 'project', data: project })}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div className={`p-2 rounded-lg flex-shrink-0 ${
-                        urgency === 'error' ? 'bg-red-100' : urgency === 'warning' ? 'bg-amber-100' : 'bg-violet-100'
-                      }`}>
-                        <FolderKanban className={`h-4 w-4 ${
-                          urgency === 'error' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-violet-600'
-                        }`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 text-sm truncate">{project.title}</p>
-                        <div className="flex items-center space-x-2 mt-0.5">
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${statusColors[project.status] || 'bg-gray-100 text-gray-600'}`}>
-                            {project.status?.replace('_', ' ')}
-                          </span>
-                          {project.priority && (
-                            <PriorityBadge priority={project.priority} size="sm" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {dueLabel && (
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
-                        urgency === 'error' ? 'bg-red-100 text-red-700' :
-                        urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {dueLabel}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <FolderKanban className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="font-medium">No active projects</p>
-              <p className="text-sm">Create a project to get started</p>
-            </div>
-          )
-
-        case 'deadlines':
-          const deadlineItems = (urgentItems?.calendarEvents || []).sort((a: any, b: any) => {
-            const dateA = a.start_date || ''
-            const dateB = b.start_date || ''
-            return new Date(dateA).getTime() - new Date(dateB).getTime()
-          })
-
-          return deadlineItems.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {deadlineItems.slice(0, 8).map((event: any, index: number) => {
-                const eventDate = new Date(event.start_date)
-                const dueLabel = formatDueDate(event.start_date)
-                const urgency = getUrgencyColor(event.start_date)
-                const eventTypeColors: Record<string, { bg: string; icon: string }> = {
-                  deadline: { bg: 'bg-red-100', icon: 'text-red-600' },
-                  meeting: { bg: 'bg-blue-100', icon: 'text-blue-600' },
-                  earnings_call: { bg: 'bg-green-100', icon: 'text-green-600' },
-                  conference: { bg: 'bg-purple-100', icon: 'text-purple-600' },
-                  deliverable: { bg: 'bg-amber-100', icon: 'text-amber-600' },
-                }
-                const colors = eventTypeColors[event.event_type] || { bg: 'bg-gray-100', icon: 'text-gray-600' }
-                return (
-                  <div
-                    key={`deadline-${event.id}-${index}`}
-                    onClick={() => handleSearchResult({ id: 'calendar', title: 'Calendar', type: 'calendar', data: null })}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div className={`p-2 rounded-lg flex-shrink-0 ${colors.bg}`}>
-                        <Clock className={`h-4 w-4 ${colors.icon}`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 text-sm truncate">{event.title}</p>
-                        <p className="text-xs text-gray-500">
-                          {eventDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          {event.start_time && ` at ${event.start_time}`}
-                        </p>
-                      </div>
-                    </div>
-                    {dueLabel && (
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
-                        urgency === 'error' ? 'bg-red-100 text-red-700' :
-                        urgency === 'warning' ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {dueLabel}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Clock className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="font-medium">No upcoming deadlines</p>
-              <p className="text-sm">Add events to your calendar</p>
-            </div>
-          )
-
-        case 'activity':
-          return teamActivity && teamActivity.length > 0 ? (
-            <div className="space-y-2">
-              {teamActivity.slice(0, 8).map((activity: any, index: number) => (
-                <div
-                  key={`activity-${activity.id}-${index}`}
-                  onClick={() => {
-                    if (activity.projects) {
-                      handleSearchResult({ id: activity.projects.id, title: activity.projects.title, type: 'project', data: activity.projects })
-                    }
-                  }}
-                  className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                >
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Activity className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 truncate">{activity.description || activity.action}</p>
-                    <p className="text-xs text-gray-500">
-                      {activity.projects?.title} • {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Activity className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="font-medium">No recent activity</p>
-              <p className="text-sm">Activity will appear here as work progresses</p>
-            </div>
-          )
-
-        case 'workflows':
-          const activeWorkflows = workflows?.filter(wf => wf.active_assets > 0 || wf.usage_count > 0) || []
-          return activeWorkflows.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activeWorkflows.slice(0, 6).map(workflow => {
-                const progress = workflow.usage_count > 0
-                  ? Math.round((workflow.completed_assets / workflow.usage_count) * 100)
-                  : 0
-                return (
-                  <div
-                    key={workflow.id}
-                    onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
-                    className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-gray-900 text-sm">{workflow.name}</span>
-                      <span className="text-xs text-gray-500">{progress}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                      <div
-                        className="bg-indigo-500 h-2 rounded-full transition-all"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>{workflow.active_assets} active</span>
-                      <span>{workflow.completed_assets} done</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Orbit className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="font-medium">No active workflows</p>
-              <p className="text-sm">Create a workflow to track your process</p>
-            </div>
-          )
-
-        default:
-          return null
-      }
-    }
-
     return (
-    <>
-      <div className="space-y-6">
+      <div className="h-full overflow-auto">
+      <div className="space-y-6 p-1">
         {/* Quick Actions Bar */}
         <div className="flex flex-wrap items-center gap-2">
           {/* New Button with Dropdown */}
@@ -1618,235 +1217,127 @@ export function DashboardPage() {
                   </button>
                   <button
                     onClick={() => {
-                      handleSearchResult({ id: 'reasons', title: 'Reasons', type: 'reasons', data: null })
+                      handleSearchResult({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null })
                       setShowTradeMenu(false)
                     }}
                     className="w-full flex items-center space-x-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
                   >
-                    <MessageSquareText className="h-4 w-4 text-indigo-500" />
-                    <span className="text-sm font-medium text-gray-700">Reasons</span>
+                    <Target className="h-4 w-4 text-emerald-500" />
+                    <span className="text-sm font-medium text-gray-700">Outcomes</span>
                   </button>
                 </div>
               </>
             )}
           </div>
 
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Stats */}
-          <div className="flex items-center space-x-4 text-sm text-gray-500">
-            <div className="flex items-center space-x-1">
-              <Activity className="h-4 w-4 text-blue-500" />
-              <span>{myTasks?.length || 0} tasks</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <span>{allUrgentItems.filter(i => getUrgencyColor(i.due_date || i.start_date, i.priority) === 'error').length} urgent</span>
-            </div>
-          </div>
         </div>
 
-        {/* Command Center - Unified Focus Box with Tabs */}
-        <Card className="border-l-4 border-l-amber-500">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                <Zap className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Command Center</h2>
-                <p className="text-sm text-gray-500">Everything that needs your attention</p>
-              </div>
-            </div>
-            {currentTab && (
-              <button
-                onClick={() => handleSearchResult({
-                  id: currentTab.viewAllType,
-                  title: currentTab.viewAllTitle,
-                  type: currentTab.viewAllType as any,
-                  data: null
-                })}
-                className="flex items-center space-x-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
-              >
-                <span>View all {currentTab.viewAllTitle}</span>
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+        {/* Attention Dashboard - 10-Minute Screen */}
+        <AttentionDashboard
+          onNavigate={(item: AttentionItem) => {
+            // Navigate based on source_type and source_id for reliable routing
+            const { source_type, source_id, title, context } = item
 
-          {/* Tab Navigation */}
-          <div className="flex items-center space-x-1 mb-4 bg-gray-100 rounded-lg p-1">
-            {focusTabs.map(tab => {
-              const Icon = tab.icon
-              const isActive = focusTab === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setFocusTab(tab.id)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all flex-1 justify-center ${
-                    isActive
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon className={`h-4 w-4 ${isActive ? `text-${tab.color}-500` : ''}`} />
-                  <span className="hidden md:inline">{tab.label}</span>
-                  {tab.count > 0 && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs font-semibold ${
-                      isActive ? `bg-${tab.color}-100 text-${tab.color}-700` : 'bg-gray-200 text-gray-600'
-                    }`}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Tab Content */}
-          <div className="min-h-[200px]">
-            {renderFocusContent()}
-          </div>
-        </Card>
-
-        {/* Content Section - Full Width */}
-        <ContentSection
-          onAssetClick={(assetId, symbol) => handleSearchResult({
-            id: assetId,
-            title: symbol,
-            type: 'asset',
-            data: { id: assetId, symbol }
-          })}
-          onNoteClick={(noteId, noteType, noteData) => {
-            // Navigate based on note type
-            if (noteType === 'asset' && noteData.assets) {
-              handleSearchResult({
-                id: noteData.assets.id,
-                title: noteData.assets.symbol,
-                type: 'asset',
-                data: noteData.assets
-              })
-            } else if (noteType === 'portfolio' && noteData.portfolios) {
-              handleSearchResult({
-                id: noteData.portfolios.id,
-                title: noteData.portfolios.name,
-                type: 'portfolio',
-                data: noteData.portfolios
-              })
-            } else if (noteType === 'theme' && noteData.themes) {
-              handleSearchResult({
-                id: noteData.themes.id,
-                title: noteData.themes.name,
-                type: 'theme',
-                data: noteData.themes
-              })
+            switch (source_type) {
+              case 'project':
+                handleSearchResult({ id: source_id, title, type: 'project', data: { id: source_id } })
+                break
+              case 'project_deliverable':
+                // Navigate to the parent project
+                handleSearchResult({
+                  id: context?.project_id || source_id,
+                  title: item.subtitle || 'Project',
+                  type: 'project',
+                  data: { id: context?.project_id || source_id }
+                })
+                break
+              case 'trade_queue_item':
+                handleSearchResult({
+                  id: 'trade-queue',
+                  title: 'Trade Queue',
+                  type: 'trade-queue',
+                  data: { selectedTradeId: source_id }
+                })
+                break
+              case 'list_suggestion':
+                handleSearchResult({
+                  id: context?.list_id || source_id,
+                  title: 'List',
+                  type: 'list',
+                  data: { id: context?.list_id || source_id }
+                })
+                break
+              case 'notification':
+                // Navigate based on notification context
+                if (context?.asset_id) {
+                  handleSearchResult({ id: context.asset_id, title, type: 'asset', data: { id: context.asset_id } })
+                } else if (context?.project_id) {
+                  handleSearchResult({ id: context.project_id, title, type: 'project', data: { id: context.project_id } })
+                }
+                break
+              case 'workflow_item':
+                handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })
+                break
+              default:
+                // Fallback: try to navigate based on context or source URL pattern
+                if (context?.asset_id) {
+                  handleSearchResult({ id: context.asset_id, title, type: 'asset', data: { id: context.asset_id } })
+                } else if (context?.project_id) {
+                  handleSearchResult({ id: context.project_id, title, type: 'project', data: { id: context.project_id } })
+                } else {
+                  // Last resort: parse the source_url
+                  const parts = item.source_url.split('/')
+                  const type = parts[1]
+                  const id = parts[2]
+                  handleSearchResult({ id: id || type, title, type: type as any, data: { id } })
+                }
             }
           }}
-          onTradeIdeaClick={(tradeId) => {
+          onQuickCapture={(item: AttentionItem, mode: QuickCaptureMode) => {
+            // Open the thoughts capture pane with context from the attention item
+            // Extract context from the attention item's source
+            let contextType: string | undefined
+            let contextId: string | undefined
+            let contextTitle: string | undefined
+
+            // Map attention source types to context types for thoughts
+            if (item.source_type === 'project' || item.source_type === 'project_deliverable') {
+              contextType = 'project'
+              contextId = item.context?.project_id || item.source_id
+              contextTitle = item.title
+            } else if (item.source_type === 'trade_queue_item') {
+              // Navigate to trade queue for trade items
+              handleSearchResult({ id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', data: { selectedTradeId: item.source_id } })
+              return
+            } else if (item.context?.asset_id) {
+              contextType = 'asset'
+              contextId = item.context.asset_id
+              contextTitle = item.title
+            } else if (item.context?.list_id) {
+              contextType = 'list'
+              contextId = item.context.list_id
+              contextTitle = item.title
+            }
+
+            // Dispatch event to open thoughts capture
+            window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+              detail: { contextType, contextId, contextTitle }
+            }))
+          }}
+          onViewAll={(type: AttentionType) => {
+            // Navigate to the Priorities page filtered by type
             handleSearchResult({
-              id: 'trade-queue',
-              title: 'Trade Queue',
-              type: 'trade-queue',
-              data: { selectedTradeId: tradeId }
+              id: 'attention',
+              title: 'All Priorities',
+              type: 'attention' as any,
+              data: { filterType: type }
             })
           }}
+          maxItemsPerSection={5}
+          showScore={import.meta.env.DEV}
         />
-
-        {/* Analytics Section */}
-        <Card className="border-l-4 border-l-cyan-500">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center">
-                <PieChart className="h-5 w-5 text-cyan-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Analytics</h2>
-                <p className="text-sm text-gray-500">Overview across all applications</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {/* Research Analytics */}
-            <button
-              onClick={() => handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list', data: null })}
-              className="p-4 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors text-left"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <TrendingUp className="h-5 w-5 text-blue-600" />
-                <span className="text-2xl font-bold text-gray-900">{stats?.assets || 0}</span>
-              </div>
-              <p className="text-sm font-medium text-gray-700">Assets</p>
-              <p className="text-xs text-gray-500">Under coverage</p>
-            </button>
-
-            <button
-              onClick={() => handleSearchResult({ id: 'notes-list', title: 'Notes', type: 'notes-list', data: null })}
-              className="p-4 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors text-left"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <FileText className="h-5 w-5 text-indigo-600" />
-                <span className="text-2xl font-bold text-gray-900">{stats?.notes || 0}</span>
-              </div>
-              <p className="text-sm font-medium text-gray-700">Notes</p>
-              <p className="text-xs text-gray-500">Total written</p>
-            </button>
-
-            <button
-              onClick={() => handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list', data: null })}
-              className="p-4 bg-green-50 rounded-xl hover:bg-green-100 transition-colors text-left"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <Target className="h-5 w-5 text-green-600" />
-                <span className="text-2xl font-bold text-gray-900">{stats?.priceTargets || 0}</span>
-              </div>
-              <p className="text-sm font-medium text-gray-700">Price Targets</p>
-              <p className="text-xs text-gray-500">Active targets</p>
-            </button>
-
-            {/* Efficiency Analytics */}
-            <button
-              onClick={() => handleSearchResult({ id: 'projects-list', title: 'All Projects', type: 'projects-list', data: null })}
-              className="p-4 bg-violet-50 rounded-xl hover:bg-violet-100 transition-colors text-left"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <FolderKanban className="h-5 w-5 text-violet-600" />
-                <span className="text-2xl font-bold text-gray-900">{urgentItems?.projects?.length || 0}</span>
-              </div>
-              <p className="text-sm font-medium text-gray-700">Projects</p>
-              <p className="text-xs text-gray-500">Active projects</p>
-            </button>
-
-            <button
-              onClick={() => handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })}
-              className="p-4 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors text-left"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <Orbit className="h-5 w-5 text-purple-600" />
-                <span className="text-2xl font-bold text-gray-900">{workflows?.length || 0}</span>
-              </div>
-              <p className="text-sm font-medium text-gray-700">Workflows</p>
-              <p className="text-xs text-gray-500">Total workflows</p>
-            </button>
-
-            {/* Trade Analytics */}
-            <button
-              onClick={() => handleSearchResult({ id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', data: null })}
-              className="p-4 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors text-left"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <Lightbulb className="h-5 w-5 text-emerald-600" />
-                <span className="text-2xl font-bold text-gray-900">{myTasks?.length || 0}</span>
-              </div>
-              <p className="text-sm font-medium text-gray-700">Active Tasks</p>
-              <p className="text-xs text-gray-500">In workflows</p>
-            </button>
-          </div>
-        </Card>
       </div>
-    </>
+    </div>
   )
   }
 

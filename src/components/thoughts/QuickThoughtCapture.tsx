@@ -7,7 +7,9 @@ import {
   Paperclip, Image, File
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useInvalidateAttention } from '../../hooks/useAttention'
 import { clsx } from 'clsx'
+import { ContextSelector, type CapturedContext } from './ContextSelector'
 
 interface Attachment {
   name: string
@@ -43,8 +45,10 @@ const categoryOptions: { value: OrgNodeType; label: string; icon: typeof Buildin
   { value: 'portfolio', label: 'Portfolios', icon: FolderKanban, color: 'bg-amber-500' },
 ]
 
+type ThoughtIdeaType = 'thought' | 'research_idea' | 'thesis'
+
 interface QuickThoughtCaptureProps {
-  onSuccess?: () => void
+  onSuccess?: (ideaType?: ThoughtIdeaType) => void
   onCancel?: () => void
   initialContent?: string
   initialSourceUrl?: string
@@ -55,6 +59,11 @@ interface QuickThoughtCaptureProps {
   autoFocus?: boolean
   placeholder?: string
   chartAttachment?: ChartAttachment
+  // Context from current location
+  capturedContext?: CapturedContext | null
+  onContextChange?: (context: CapturedContext | null) => void
+  // Notify parent of idea type changes for proper toast messages
+  onIdeaTypeChange?: (ideaType: ThoughtIdeaType) => void
 }
 
 const ideaTypeOptions: { value: IdeaType; label: string; icon: typeof Lightbulb; color: string; description: string }[] = [
@@ -100,7 +109,10 @@ export function QuickThoughtCapture({
   compact = false,
   autoFocus = false,
   placeholder = "What's on your mind? Capture a quick thought...",
-  chartAttachment: initialChartAttachment
+  chartAttachment: initialChartAttachment,
+  capturedContext,
+  onContextChange,
+  onIdeaTypeChange
 }: QuickThoughtCaptureProps) {
   const [content, setContent] = useState(initialContent)
   const [ideaType, setIdeaType] = useState<IdeaType>(initialIdeaType)
@@ -127,6 +139,7 @@ export function QuickThoughtCapture({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
+  const invalidateAttention = useInvalidateAttention()
 
   // Get org chart nodes for visibility options
   const { data: orgChartNodes } = useQuery({
@@ -177,24 +190,30 @@ export function QuickThoughtCapture({
       if (!user) throw new Error('Not authenticated')
 
       // Determine visibility based on selected org node
+      // Use visibility_org_node_id for all org chart selections (unified hierarchy)
       let finalVisibility = visibility
-      let visibilityTeamId = null
-      let visibilityOrgId = null
-      let visibilityPortfolioId = null
+      let visibilityOrgNodeId = null
 
-      if (visibility === 'organization' && selectedOrgNodeId && selectedOrgNodeType) {
-        if (selectedOrgNodeType === 'team') {
-          finalVisibility = 'team'
-          visibilityTeamId = selectedOrgNodeId
-        } else if (selectedOrgNodeType === 'portfolio') {
-          finalVisibility = 'portfolio'
-          visibilityPortfolioId = selectedOrgNodeId
-        } else {
-          // For division/department, store in visibility_org_id
-          finalVisibility = 'organization'
-          visibilityOrgId = selectedOrgNodeId
-        }
+      if (visibility === 'organization' && selectedOrgNodeId) {
+        // Store the org_chart_nodes ID directly - works for all node types
+        finalVisibility = 'organization'
+        visibilityOrgNodeId = selectedOrgNodeId
       }
+
+      // Determine asset_id from initial prop or captured context
+      let assetId = initialAssetId || null
+      if (!assetId && capturedContext?.type === 'asset' && capturedContext.id) {
+        assetId = capturedContext.id
+      }
+
+      // Build context metadata for non-asset contexts
+      const contextMetadata = capturedContext?.type && capturedContext.type !== 'asset' && capturedContext.id
+        ? {
+            context_type: capturedContext.type,
+            context_id: capturedContext.id,
+            context_title: capturedContext.title
+          }
+        : null
 
       const { data, error } = await supabase
         .from('quick_thoughts')
@@ -206,12 +225,10 @@ export function QuickThoughtCapture({
           source_type: sourceType,
           source_url: sourceUrl || null,
           source_title: sourceTitle || null,
-          asset_id: initialAssetId || null,
+          asset_id: assetId,
           tags: tags.length > 0 ? tags : null,
           visibility: finalVisibility,
-          visibility_team_id: visibilityTeamId,
-          visibility_org_id: visibilityOrgId,
-          visibility_portfolio_id: visibilityPortfolioId,
+          visibility_org_node_id: visibilityOrgNodeId,
           date_type: dateType,
           revisit_date: dateValue || null,
           attachments: attachments.length > 0 ? attachments : null,
@@ -221,6 +238,8 @@ export function QuickThoughtCapture({
             timeframe: chartAttachment.timeframe,
             annotationCount: chartAttachment.annotationCount
           } : null,
+          // Store non-asset context metadata
+          ...(contextMetadata && { context_metadata: contextMetadata }),
         })
         .select()
         .single()
@@ -230,6 +249,12 @@ export function QuickThoughtCapture({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts'] })
+      // Also invalidate attention queries so the Attention Dashboard updates immediately
+      invalidateAttention()
+
+      // Capture the current idea type before resetting (for toast message)
+      const capturedIdeaType = ideaType as ThoughtIdeaType
+
       setContent('')
       setIdeaType('thought')
       setSentiment(null)
@@ -248,7 +273,9 @@ export function QuickThoughtCapture({
       setSelectedOrgNodeName(null)
       setVisibilityStep('main')
       setSelectedCategory(null)
-      onSuccess?.()
+
+      // Pass the captured idea type to the success callback
+      onSuccess?.(capturedIdeaType)
     },
   })
 
@@ -412,25 +439,47 @@ export function QuickThoughtCapture({
       compact ? "p-3" : "p-4"
     )}>
       {/* Idea Type - ABOVE text field */}
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {ideaTypeOptions.map((option) => {
-          const Icon = option.icon
-          const isSelected = ideaType === option.value
-          return (
-            <button
-              key={option.value}
-              onClick={() => setIdeaType(option.value)}
-              title={option.description}
-              className={clsx(
-                "flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
-                isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
-              )}
-            >
-              <Icon className="h-3 w-3" />
-              <span>{option.label}</span>
-            </button>
-          )
-        })}
+      <div className="mb-3">
+        <div className="flex flex-wrap gap-1.5">
+          {ideaTypeOptions.map((option) => {
+            const Icon = option.icon
+            const isSelected = ideaType === option.value
+            return (
+              <button
+                key={option.value}
+                onClick={() => {
+                  setIdeaType(option.value)
+                  if (option.value !== 'trade_idea') {
+                    onIdeaTypeChange?.(option.value as ThoughtIdeaType)
+                  }
+                }}
+                title={option.description}
+                className={clsx(
+                  "flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
+                  isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
+                )}
+              >
+                <Icon className="h-3 w-3" />
+                <span>{option.label}</span>
+              </button>
+            )
+          })}
+        </div>
+        {/* Dynamic description based on selected type */}
+        <p className="text-[10px] text-gray-400 mt-1.5 ml-0.5">
+          {ideaType === 'thought' && 'A lightweight idea or observation.'}
+          {ideaType === 'research_idea' && 'Supporting info or evidence to explore.'}
+          {ideaType === 'thesis' && 'A directional view that may require action.'}
+        </p>
+      </div>
+
+      {/* Context selector - attach to asset, project, portfolio, etc. */}
+      <div className="mb-3">
+        <ContextSelector
+          value={capturedContext || null}
+          onChange={(ctx) => onContextChange?.(ctx)}
+          compact={compact}
+        />
       </div>
 
       {/* Chart attachment preview */}
@@ -487,41 +536,21 @@ export function QuickThoughtCapture({
       </div>
 
       {/* Sentiment buttons - BELOW text field */}
-      <div className="flex flex-wrap gap-1.5 mt-2 mb-3">
-        {sentimentOptions.map((option) => {
-          const Icon = option.icon
-          const isSelected = sentiment === option.value
-          return (
-            <button
-              key={option.value}
-              onClick={() => setSentiment(isSelected ? null : option.value)}
-              className={clsx(
-                "flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium border transition-all",
-                isSelected ? option.color : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
-              )}
-            >
-              <Icon className="h-3 w-3" />
-              <span>{option.label}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Date picker - IN MAIN SECTION (not in more options) */}
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex items-center gap-1">
-          {dateTypeOptions.map((option) => {
+      <div className="mt-2 mb-3">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-[10px] text-gray-400">Signal (optional)</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {sentimentOptions.map((option) => {
             const Icon = option.icon
-            const isSelected = dateType === option.value
+            const isSelected = sentiment === option.value
             return (
               <button
                 key={option.value}
-                onClick={() => setDateType(isSelected ? null : option.value)}
+                onClick={() => setSentiment(isSelected ? null : option.value)}
                 className={clsx(
-                  "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all",
-                  isSelected
-                    ? `${option.color} bg-gray-100`
-                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                  "flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium border transition-all",
+                  isSelected ? option.color : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
                 )}
               >
                 <Icon className="h-3 w-3" />
@@ -530,14 +559,44 @@ export function QuickThoughtCapture({
             )
           })}
         </div>
-        {dateType && (
-          <input
-            type="date"
-            value={dateValue}
-            onChange={(e) => setDateValue(e.target.value)}
-            className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-primary-500"
-          />
-        )}
+      </div>
+
+      {/* Date picker - IN MAIN SECTION (not in more options) */}
+      <div className="mb-3">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-[10px] text-gray-400">Time hook · helps resurface this later</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {dateTypeOptions.map((option) => {
+              const Icon = option.icon
+              const isSelected = dateType === option.value
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => setDateType(isSelected ? null : option.value)}
+                  className={clsx(
+                    "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all",
+                    isSelected
+                      ? `${option.color} bg-gray-100`
+                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                  )}
+                >
+                  <Icon className="h-3 w-3" />
+                  <span>{option.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          {dateType && (
+            <input
+              type="date"
+              value={dateValue}
+              onChange={(e) => setDateValue(e.target.value)}
+              className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-primary-500"
+            />
+          )}
+        </div>
       </div>
 
       {/* Advanced options toggle */}
@@ -668,9 +727,10 @@ export function QuickThoughtCapture({
       )}
 
       {/* Footer with visibility and submit */}
-      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-        {/* Visibility selector */}
-        <div className="relative">
+      <div className="pt-2 border-t border-gray-100">
+        <div className="flex items-center justify-between">
+          {/* Visibility selector */}
+          <div className="relative">
           <button
             onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
             className="flex items-center space-x-1.5 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50"
@@ -828,39 +888,47 @@ export function QuickThoughtCapture({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center space-x-2">
-          {onCancel && (
+          {/* Actions */}
+          <div className="flex items-center space-x-2">
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+            )}
             <button
-              onClick={onCancel}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+              onClick={handleSubmit}
+              disabled={!content.trim() || createThought.isPending}
+              className={clsx(
+                "flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                content.trim()
+                  ? "bg-primary-600 text-white hover:bg-primary-700"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              )}
             >
-              Cancel
+              {createThought.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              <span>Capture</span>
             </button>
-          )}
-          <button
-            onClick={handleSubmit}
-            disabled={!content.trim() || createThought.isPending}
-            className={clsx(
-              "flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors",
-              content.trim()
-                ? "bg-primary-600 text-white hover:bg-primary-700"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            )}
-          >
-            {createThought.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-            <span>Capture</span>
-          </button>
+          </div>
         </div>
-      </div>
 
-      {/* Keyboard hint */}
-      <div className="text-[10px] text-gray-400 text-right mt-1">
-        Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px]">Cmd+Enter</kbd> to capture
+        {/* Visibility consequence + submission outcome */}
+        <div className="flex items-center justify-between mt-2 text-[10px] text-gray-400">
+          <span>
+            {visibility === 'private'
+              ? 'Only you will see this.'
+              : 'Relevant teammates will see this in What\'s New.'}
+          </span>
+          <span>
+            May appear in Priorities if relevant
+          </span>
+        </div>
       </div>
     </div>
   )

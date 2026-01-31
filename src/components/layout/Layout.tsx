@@ -222,6 +222,30 @@ export function Layout({
     return () => window.removeEventListener('openDirectMessage', handleOpenDirectMessage as EventListener)
   }, [isCommPaneOpen, toggleCommPane])
 
+  // Listen for custom event to open thoughts capture (from Attention Dashboard)
+  useEffect(() => {
+    const handleOpenThoughtsCapture = (event: CustomEvent) => {
+      const { contextType, contextId, contextTitle } = event.detail || {}
+      console.log('💭 Opening thoughts capture:', { contextType, contextId, contextTitle })
+
+      // Set context if provided
+      if (contextType && contextId) {
+        setCommPaneContext({ contextType, contextId, contextTitle })
+      }
+
+      // Switch to thoughts view
+      setCommPaneView('thoughts')
+
+      // Open the comm pane if not already open
+      if (!isCommPaneOpen) {
+        toggleCommPane()
+      }
+    }
+
+    window.addEventListener('openThoughtsCapture', handleOpenThoughtsCapture as EventListener)
+    return () => window.removeEventListener('openThoughtsCapture', handleOpenThoughtsCapture as EventListener)
+  }, [isCommPaneOpen, toggleCommPane])
+
   // Determine communication context from active tab
   const getCommContext = () => {
     if (!activeTabId) return { contextType: undefined, contextId: undefined, contextTitle: undefined }
@@ -266,8 +290,24 @@ export function Layout({
         contextTitle: activeTab.data.name || activeTab.title
       }
     }
-    
-    // For other tab types (dashboard, lists, etc.), don't provide context
+
+    if (activeTab.type === 'project' && activeTab.data?.id) {
+      return {
+        contextType: 'project' as const,
+        contextId: activeTab.data.id,
+        contextTitle: activeTab.data.title || activeTab.title
+      }
+    }
+
+    if (activeTab.type === 'list' && activeTab.data?.id) {
+      return {
+        contextType: 'list' as const,
+        contextId: activeTab.data.id,
+        contextTitle: activeTab.data.name || activeTab.title
+      }
+    }
+
+    // For other tab types (dashboard, etc.), don't provide context
     return { contextType: undefined, contextId: undefined, contextTitle: undefined }
   }
 

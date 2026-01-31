@@ -914,21 +914,23 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   })
 
   // Local state for due date, status, priority (to show immediate feedback since project prop may not update)
+  // Use projectData which includes freshProject data, with fallbacks for when only id is passed
   const [localDueDate, setLocalDueDate] = useState(project.due_date)
-  const [localStatus, setLocalStatus] = useState(project.status)
+  const [localStatus, setLocalStatus] = useState<ProjectStatus | undefined>(project.status)
   const [localPriority, setLocalPriority] = useState(project.priority)
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
   const [showBlockedReasonModal, setShowBlockedReasonModal] = useState(false)
   const [blockedReasonInput, setBlockedReasonInput] = useState(project.blocked_reason || '')
 
-  // Sync local state when project prop changes
+  // Sync local state when project prop or freshProject changes
   useEffect(() => {
-    setLocalDueDate(project.due_date)
-    setLocalStatus(project.status)
-    setLocalPriority(project.priority)
-    setBlockedReasonInput(project.blocked_reason || '')
-  }, [project.due_date, project.status, project.priority, project.blocked_reason])
+    const data = freshProject || project
+    if (data.due_date !== undefined) setLocalDueDate(data.due_date)
+    if (data.status !== undefined) setLocalStatus(data.status)
+    if (data.priority !== undefined) setLocalPriority(data.priority)
+    setBlockedReasonInput(data.blocked_reason || '')
+  }, [project.due_date, project.status, project.priority, project.blocked_reason, freshProject])
 
   // Update project due date inline
   const updateProjectDueDateMutation = useMutation({
@@ -1614,11 +1616,11 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   variant="outline"
                   onClick={() => {
                     setEditingProject(false)
-                    setEditedTitle(project.title)
-                    setEditedDescription(project.description || '')
-                    setEditedStatus(project.status)
-                    setEditedPriority(project.priority)
-                    setEditedDueDate(project.due_date || '')
+                    setEditedTitle(projectData.title || '')
+                    setEditedDescription(projectData.description || '')
+                    setEditedStatus(projectData.status)
+                    setEditedPriority(projectData.priority)
+                    setEditedDueDate(projectData.due_date || '')
                   }}
                 >
                   Cancel
@@ -1631,9 +1633,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 <div className="flex items-center gap-3">
                   <FolderKanban className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                   <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.title}</h1>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{projectData.title || 'Loading...'}</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {project.created_at ? `Created ${formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}` : 'Recently created'}
+                      {projectData.created_at ? `Created ${formatDistanceToNow(new Date(projectData.created_at), { addSuffix: true })}` : 'Recently created'}
                     </p>
                   </div>
                 </div>
@@ -1658,7 +1660,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         'flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium transition-colors hover:ring-2 hover:ring-offset-1',
                         isBlocked
                           ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:ring-red-300'
-                          : getStatusColor(localStatus) + ' hover:ring-primary-300'
+                          : localStatus ? getStatusColor(localStatus) + ' hover:ring-primary-300' : 'bg-gray-100 text-gray-500'
                       )}
                     >
                       {isBlocked ? (
@@ -1668,8 +1670,8 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         </>
                       ) : (
                         <>
-                          {getStatusIcon(localStatus)}
-                          <span className="capitalize">{localStatus.replace('_', ' ')}</span>
+                          {localStatus && getStatusIcon(localStatus)}
+                          <span className="capitalize">{localStatus?.replace('_', ' ') || 'Loading...'}</span>
                         </>
                       )}
                       <ChevronDown className="w-3 h-3 ml-1" />
@@ -1709,12 +1711,12 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     <Lock className="w-4 h-4" />
                     <span>Blocked</span>
                   </Badge>
-                ) : localStatus && (
+                ) : localStatus ? (
                   <Badge className={clsx('flex items-center gap-1', getStatusColor(localStatus))}>
                     {getStatusIcon(localStatus)}
                     <span className="capitalize">{localStatus.replace('_', ' ')}</span>
                   </Badge>
-                )}
+                ) : null}
 
                 {/* Priority - clickable dropdown for managers */}
                 {canManageProject ? (
@@ -1783,9 +1785,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 ) : null}
               </div>
 
-              {project.description && (
+              {projectData.description && (
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  {project.description}
+                  {projectData.description}
                 </p>
               )}
 
@@ -2194,16 +2196,20 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     <div>
                       <span className="text-xs text-gray-500 dark:text-gray-400">Priority</span>
                       <div className="mt-1">
-                        <Badge className={clsx('text-xs', getPriorityColor(project.priority))}>
-                          <span className="capitalize">{project.priority}</span>
-                        </Badge>
+                        {projectData.priority ? (
+                          <Badge className={clsx('text-xs', getPriorityColor(projectData.priority))}>
+                            <span className="capitalize">{projectData.priority}</span>
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-gray-400">Loading...</span>
+                        )}
                       </div>
                     </div>
                     {/* Created */}
                     <div>
                       <span className="text-xs text-gray-500 dark:text-gray-400">Created</span>
                       <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
-                        {project.created_at ? formatDistanceToNow(new Date(project.created_at), { addSuffix: true }) : 'Unknown'}
+                        {projectData.created_at ? formatDistanceToNow(new Date(projectData.created_at), { addSuffix: true }) : 'Unknown'}
                       </p>
                     </div>
                     {/* Comments */}

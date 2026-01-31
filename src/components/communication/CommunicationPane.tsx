@@ -155,13 +155,10 @@ export function CommunicationPane({
       case 'thoughts':
         return (
           <ThoughtsSection
-            onOpenDiscussion={(type, id, title) => {
-              // Switch to messages view with the trade idea as context
-              if (onContextChange) {
-                onContextChange(type, id, title)
-              }
-              onViewChange('messages')
-            }}
+            initialContextType={contextType}
+            initialContextId={contextId}
+            initialContextTitle={contextTitle}
+            onClose={onToggle}
           />
         )
       default:
