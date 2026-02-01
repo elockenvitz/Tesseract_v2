@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2, MessageSquareText, FolderOpen, LineChart, ChevronDown, Check } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -30,7 +30,7 @@ export interface Tab {
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
   | 'idea-generator' | 'workflows' | 'projects-list' | 'project'
   | 'trade-queue' | 'simulation' | 'trade-lab' | 'tdf' | 'tdf-list' | 'asset-allocation'
-  | 'calendar' | 'prioritizer' | 'coverage' | 'organization' | 'reasons' | 'files' | 'charting'
+  | 'calendar' | 'priorities' | 'coverage' | 'organization' | 'outcomes' | 'files' | 'charting'
   data?: any
   isActive: boolean
   isBlank?: boolean
@@ -51,7 +51,7 @@ interface TabManagerProps {
 const SINGLETON_TYPES = new Set([
   'dashboard', 'idea-generator', 'workflows', 'trade-queue',
   'simulation', 'trade-lab', 'asset-allocation', 'calendar',
-  'prioritizer', 'coverage', 'organization', 'reasons', 'files', 'charting'
+  'priorities', 'coverage', 'organization', 'outcomes', 'files', 'charting'
 ])
 
 // Parent-child type relationships (parent list type -> child item type)
@@ -624,12 +624,40 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
 
   const checkScrollVisibility = () => {
     if (scrollContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current
+      const container = scrollContainerRef.current
+      const { scrollLeft, scrollWidth, clientWidth } = container
       const leftPadding = 16
-      const rightPadding = 60
 
+      // Check if scrolled from the left
       setShowLeftArrow(scrollLeft > leftPadding + 10)
-      setShowRightArrow(scrollLeft < scrollWidth - clientWidth - rightPadding - 10)
+
+      // Check if we can scroll right (are we at or near the end?)
+      const maxScrollLeft = scrollWidth - clientWidth
+      const isAtEnd = maxScrollLeft <= 0 || scrollLeft >= maxScrollLeft - 5
+
+      if (isAtEnd) {
+        // At the end - no right arrow needed
+        setShowRightArrow(false)
+      } else {
+        // Find the last actual tab to check if it's fully visible
+        const tabElements = Array.from(container.children).filter(
+          child => !child.classList.contains('ml-1')
+        ) as HTMLElement[]
+        const lastTab = tabElements[tabElements.length - 1]
+
+        if (lastTab) {
+          // Use getBoundingClientRect for more accurate position detection
+          const containerRect = container.getBoundingClientRect()
+          const tabRect = lastTab.getBoundingClientRect()
+          // When checking, use the plus button width (arrow not visible yet if we need to show it)
+          const fixedControlsWidth = 48 // plus button + some padding
+          const visibleRight = containerRect.right - fixedControlsWidth
+
+          setShowRightArrow(tabRect.right > visibleRight + 4)
+        } else {
+          setShowRightArrow(false)
+        }
+      }
     }
   }
 
@@ -654,10 +682,15 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       const currentScrollLeft = container.scrollLeft
 
       const scrollAmount = containerWidth * 0.75
-      const targetScrollLeft = Math.max(0, currentScrollLeft - scrollAmount)
+      let targetScrollLeft = currentScrollLeft - scrollAmount
+
+      // If we're close to the start, just go all the way to ensure clean snap
+      if (targetScrollLeft <= 50) {
+        targetScrollLeft = 0
+      }
 
       container.scrollTo({
-        left: targetScrollLeft,
+        left: Math.max(0, targetScrollLeft),
         behavior: 'smooth'
       })
 
@@ -666,6 +699,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       }
       scrollTimeoutRef.current = setTimeout(() => {
         setIsScrolling(false)
+        checkScrollVisibility() // Re-check to update arrow visibility
       }, 400)
     }
   }
@@ -677,10 +711,14 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       const containerWidth = container.clientWidth
       const currentScrollLeft = container.scrollLeft
       const maxScrollLeft = container.scrollWidth - containerWidth
-      const rightPadding = 60
 
       const scrollAmount = containerWidth * 0.75
-      const targetScrollLeft = Math.min(currentScrollLeft + scrollAmount, maxScrollLeft - rightPadding)
+      let targetScrollLeft = currentScrollLeft + scrollAmount
+
+      // If we're close to the end, just go all the way to ensure clean snap
+      if (targetScrollLeft >= maxScrollLeft - 50) {
+        targetScrollLeft = maxScrollLeft
+      }
 
       container.scrollTo({
         left: targetScrollLeft,
@@ -692,6 +730,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       }
       scrollTimeoutRef.current = setTimeout(() => {
         setIsScrolling(false)
+        checkScrollVisibility() // Re-check to update arrow visibility
       }, 400)
     }
   }
@@ -699,38 +738,70 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
   const scrollToShowLastTab = () => {
     if (scrollContainerRef.current) {
       const container = scrollContainerRef.current
-      const lastTab = container.children[container.children.length - 1] as HTMLElement
+      // Find all tab elements (exclude the inline + button which has ml-1 class)
+      const tabElements = Array.from(container.children).filter(
+        child => !child.classList.contains('ml-1')
+      ) as HTMLElement[]
+      const lastTab = tabElements[tabElements.length - 1]
 
       if (lastTab) {
-        requestAnimationFrame(() => {
-          const containerRect = container.getBoundingClientRect()
-          const tabRect = lastTab.getBoundingClientRect()
+        // Check if we need to scroll at all
+        const maxScrollLeft = container.scrollWidth - container.clientWidth
 
-          if (tabRect.right > containerRect.right) {
-            const scrollDistance = container.scrollLeft + (tabRect.right - containerRect.right) + 24
+        if (maxScrollLeft > 0) {
+          // There's overflow - scroll to show the last tab
+          // Right controls: arrow (36px) + plus (28px) + padding (8px) = 72px
+          // Left arrow will appear after scrolling: 36px (reduces visible width)
+          // Buffer for close button: 8px
+          const rightControlsWidth = 72
+          const leftArrowWidth = 36
+          const buffer = 8
 
-            container.scrollTo({
-              left: scrollDistance,
-              behavior: 'smooth'
-            })
-          }
-        })
+          // Calculate where we need to scroll to
+          // Account for left arrow appearing and reducing visible area
+          const lastTabRight = lastTab.offsetLeft + lastTab.offsetWidth
+          const effectiveClientWidth = container.clientWidth - leftArrowWidth
+          const targetScrollLeft = lastTabRight - effectiveClientWidth + rightControlsWidth + buffer
+
+          container.scrollTo({
+            left: Math.max(0, targetScrollLeft),
+            behavior: 'smooth'
+          })
+
+          // Re-check scroll visibility after scrolling
+          setTimeout(checkScrollVisibility, 350)
+        }
       }
     }
   }
 
   useEffect(() => {
-    checkScrollVisibility()
-    const handleResize = () => checkScrollVisibility()
+    // Only check visibility if not in the middle of a scroll animation
+    if (!isScrolling) {
+      checkScrollVisibility()
+    }
+    const handleResize = () => {
+      if (!isScrolling) {
+        checkScrollVisibility()
+      }
+    }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [tabs])
+  }, [tabs, isScrolling])
 
   useEffect(() => {
+    // Hide right arrow immediately to prevent flicker when adding new tab
+    setShowRightArrow(false)
+    setIsScrolling(true)
+
     const timer = setTimeout(() => {
       scrollToShowLastTab()
-      checkScrollVisibility()
-    }, 100)
+      // Delay visibility check until after scroll animation
+      setTimeout(() => {
+        setIsScrolling(false)
+        checkScrollVisibility()
+      }, 400)
+    }, 50)
 
     return () => clearTimeout(timer)
   }, [tabs.length])
@@ -771,10 +842,10 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       case 'tdf-list': return <Clock className="h-3.5 w-3.5" />
       case 'asset-allocation': return <PieChart className="h-3.5 w-3.5" />
       case 'calendar': return <Calendar className="h-3.5 w-3.5" />
-      case 'prioritizer': return <ListTodo className="h-3.5 w-3.5" />
+      case 'priorities': return <Target className="h-3.5 w-3.5" />
       case 'coverage': return <Users className="h-3.5 w-3.5" />
       case 'organization': return <Building2 className="h-3.5 w-3.5" />
-      case 'reasons': return <MessageSquareText className="h-3.5 w-3.5" />
+      case 'outcomes': return <Target className="h-3.5 w-3.5" />
       case 'files': return <FolderOpen className="h-3.5 w-3.5" />
       case 'charting': return <LineChart className="h-3.5 w-3.5" />
       case 'dashboard': return <Home className="h-3.5 w-3.5" />
@@ -826,17 +897,24 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
   const dragOverlayTab = getDragOverlayTab()
 
   return (
-    <div className="bg-white border-b border-gray-200 px-2 sticky top-16 z-30">
+    <div className="bg-white border-b border-gray-200 px-2 sticky top-16 z-30 relative">
       <div className="flex items-center">
-        {showLeftArrow && (
+        {/* Left arrow - smoothly expands/collapses */}
+        <div
+          className={clsx(
+            "flex-shrink-0 overflow-hidden transition-all duration-200 ease-in-out",
+            showLeftArrow ? "w-8 mr-1" : "w-0"
+          )}
+        >
           <button
             onClick={scrollLeft}
-            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors mr-1 flex-shrink-0"
+            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
             title="Scroll left"
+            tabIndex={showLeftArrow ? 0 : -1}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-        )}
+        </div>
 
         <DndContext
           sensors={sensors}
@@ -859,7 +937,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',
                 paddingLeft: '8px',
-                paddingRight: '40px'
+                paddingRight: '80px' // Reserve space for arrow + plus button when overflow
               }}
             >
               {consolidatedTabs.map((item) => {
@@ -903,23 +981,33 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
           </DragOverlay>
         </DndContext>
 
-        {showRightArrow && (
-          <button
-            onClick={scrollRight}
-            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors ml-1 flex-shrink-0"
-            title="Scroll right"
+        {/* Right side controls - plus button always visible, arrow expands/collapses */}
+        <div className="absolute right-2 top-0 bottom-0 flex items-center bg-white pl-2">
+          {/* Right arrow - smoothly expands/collapses */}
+          <div
+            className={clsx(
+              "flex-shrink-0 overflow-hidden transition-all duration-200 ease-in-out",
+              showRightArrow ? "w-8 mr-1" : "w-0"
+            )}
           >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        )}
+            <button
+              onClick={scrollRight}
+              className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors bg-white"
+              title="Scroll right"
+              tabIndex={showRightArrow ? 0 : -1}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
 
-        <button
-          onClick={handleNewTabClick}
-          className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors ml-1 flex-shrink-0"
-          title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+          <button
+            onClick={handleNewTabClick}
+            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white"
+            title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   )
