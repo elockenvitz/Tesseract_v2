@@ -144,12 +144,12 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
     }))
   }
 
-  // Filter tabs
+  // Filter tabs matching the four priority sections
   const filterTabs: { id: AttentionType | 'all'; label: string; icon: React.ElementType; count: number }[] = [
     { id: 'all', label: 'All', icon: Filter, count: counts.total },
-    { id: 'action_required', label: 'Actions', icon: CheckCircle, count: counts.action_required },
-    { id: 'decision_required', label: 'Decisions', icon: Scale, count: counts.decision_required },
     { id: 'informational', label: "What's New", icon: Newspaper, count: counts.informational },
+    { id: 'action_required', label: 'To Do', icon: CheckCircle, count: counts.action_required },
+    { id: 'decision_required', label: 'Decisions', icon: Scale, count: counts.decision_required },
     { id: 'alignment', label: 'Team', icon: Users, count: counts.alignment },
   ]
 
