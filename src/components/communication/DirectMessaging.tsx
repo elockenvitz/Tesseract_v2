@@ -326,6 +326,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   // Track which conversations we've already marked as read to prevent duplicate calls
   const markedAsReadRef = useRef<Set<string>>(new Set())
 
+  // Clear markedAsRead status when leaving a conversation so it can be re-marked on next visit
+  useEffect(() => {
+    // When selectedConversationId changes to null (leaving), clear all marked entries
+    // This ensures next visit will mark as read again (catching any new messages)
+    if (!selectedConversationId) {
+      markedAsReadRef.current.clear()
+    }
+  }, [selectedConversationId])
+
   // Mark conversation as read when viewing messages
   useEffect(() => {
     if (!selectedConversationId || !user?.id) return
@@ -351,11 +360,27 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
           return
         }
 
+        // Also mark any mention notifications for this conversation as read
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .update({ is_read: true, read_at: new Date().toISOString() })
+          .eq('user_id', user.id)
+          .eq('context_type', 'conversation')
+          .eq('context_id', selectedConversationId)
+          .eq('is_read', false)
+
+        if (notificationError) {
+          console.error('Error marking mention notifications as read:', notificationError)
+        }
+
         // Invalidate and refetch the unread direct messages query to update the red dot immediately
         await queryClient.invalidateQueries({ queryKey: ['unread-direct-messages', user.id] })
         await queryClient.refetchQueries({ queryKey: ['unread-direct-messages', user.id] })
         // Also invalidate conversations to update unread counts
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        // Invalidate notifications to update the notification badge
+        queryClient.invalidateQueries({ queryKey: ['notifications'] })
+        queryClient.invalidateQueries({ queryKey: ['unread-notifications-count'] })
       } catch (error) {
         console.error('Error marking conversation as read:', error)
         markedAsReadRef.current.delete(selectedConversationId)

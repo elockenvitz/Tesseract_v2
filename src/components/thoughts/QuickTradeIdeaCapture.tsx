@@ -1,15 +1,18 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useLocation } from 'react-router-dom'
 import {
   TrendingUp, TrendingDown, Search, Send, Loader2, ChevronDown,
   Globe, Lock, Users, Building2, ChevronRight, ChevronLeft, Briefcase, FolderKanban,
-  ArrowLeftRight, X
+  ArrowLeftRight, X, CheckCircle, XCircle
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
+import { emitAuditEvent } from '../../lib/audit'
 import { clsx } from 'clsx'
 import type { TradeAction, TradeUrgency } from '../../types/trading'
-import { ContextSelector, type CapturedContext } from './ContextSelector'
+import { inferProvenance, getProvenanceDisplayText, type Provenance } from '../../lib/provenance'
+import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 
 type OrgNodeType = 'division' | 'department' | 'team' | 'portfolio'
 
@@ -32,9 +35,12 @@ interface QuickTradeIdeaCaptureProps {
   onCancel?: () => void
   compact?: boolean
   autoFocus?: boolean
-  // Context from current location
-  capturedContext?: CapturedContext | null
-  onContextChange?: (context: CapturedContext | null) => void
+  // Provenance context (optional overrides for auto-detection)
+  portfolioId?: string
+  portfolioName?: string
+  assetId?: string
+  assetSymbol?: string
+  assetName?: string
 }
 
 const urgencyOptions: { value: TradeUrgency; label: string; color: string }[] = [
@@ -44,17 +50,19 @@ const urgencyOptions: { value: TradeUrgency; label: string; color: string }[] = 
   { value: 'urgent', label: 'Urgent', color: 'text-red-600 bg-red-50 border-red-200' },
 ]
 
-// Source tracking for soft sync behavior
-type SourceType = 'auto' | 'user' | null
-
 export function QuickTradeIdeaCapture({
   onSuccess,
   onCancel,
   compact = false,
   autoFocus = false,
-  capturedContext,
-  onContextChange
+  portfolioId: propPortfolioId,
+  portfolioName: propPortfolioName,
+  assetId: propAssetId,
+  assetSymbol: propAssetSymbol,
+  assetName: propAssetName,
 }: QuickTradeIdeaCaptureProps) {
+  const location = useLocation()
+
   // Trade type: single or pair
   const [tradeType, setTradeType] = useState<'single' | 'pair'>('single')
 
@@ -63,11 +71,8 @@ export function QuickTradeIdeaCapture({
   const [selectedAsset, setSelectedAsset] = useState<{ id: string; symbol: string; company_name: string } | null>(null)
   const [showAssetDropdown, setShowAssetDropdown] = useState(false)
 
-  // Source tracking for context and trade asset (for soft sync)
-  const [contextSource, setContextSource] = useState<SourceType>(null)
-  const [tradeAssetSource, setTradeAssetSource] = useState<SourceType>(null)
-  // Track initial auto-set asset ID to detect alignment
-  const [initialAutoAssetId, setInitialAutoAssetId] = useState<string | null>(null)
+  // Context tags (entity-based)
+  const [contextTags, setContextTags] = useState<ContextTag[]>([])
 
   // Multiple assets for pairs - long side
   const [longAssets, setLongAssets] = useState<{ id: string; symbol: string; company_name: string }[]>([])
@@ -179,6 +184,80 @@ export function QuickTradeIdeaCapture({
     }
   })
 
+  // Get the current asset ID for context lookup (single trade mode)
+  const currentAssetId = tradeType === 'single' ? selectedAsset?.id : null
+
+  // Fetch which portfolios hold the selected asset (for dropdown badges)
+  const { data: portfoliosHoldingAsset } = useQuery({
+    queryKey: ['portfolios-holding-asset-quick', currentAssetId],
+    queryFn: async () => {
+      if (!currentAssetId) return []
+      const { data, error } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id')
+        .eq('asset_id', currentAssetId)
+        .gt('shares', 0)
+
+      if (error) throw error
+      return data?.map(h => h.portfolio_id) || []
+    },
+    enabled: !!currentAssetId && tradeType === 'single',
+  })
+
+  // Fetch detailed holdings for selected portfolios (for context display)
+  const { data: portfolioContextData } = useQuery({
+    queryKey: ['portfolio-context-quick', selectedPortfolioIds, currentAssetId],
+    queryFn: async () => {
+      if (selectedPortfolioIds.length === 0 || !currentAssetId) return []
+
+      // Get holdings for the selected asset in all selected portfolios
+      const { data: assetHoldings, error: assetError } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id, shares, price')
+        .eq('asset_id', currentAssetId)
+        .in('portfolio_id', selectedPortfolioIds)
+
+      if (assetError) throw assetError
+
+      // Get total portfolio values for weight calculation
+      const { data: allHoldings, error: allError } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id, shares, price')
+        .in('portfolio_id', selectedPortfolioIds)
+
+      if (allError) throw allError
+
+      // Calculate totals per portfolio
+      const portfolioTotals: Record<string, number> = {}
+      allHoldings?.forEach(h => {
+        portfolioTotals[h.portfolio_id] = (portfolioTotals[h.portfolio_id] || 0) + (h.shares * h.price)
+      })
+
+      // Build result with context for each portfolio
+      // TODO: Add benchmark weight when benchmark_holdings table is available
+      return selectedPortfolioIds.map(portfolioId => {
+        const holding = assetHoldings?.find(h => h.portfolio_id === portfolioId)
+        const totalValue = portfolioTotals[portfolioId] || 0
+        const marketValue = holding ? holding.shares * holding.price : 0
+        const portfolioWeight = totalValue > 0 ? (marketValue / totalValue) * 100 : 0
+        const benchmarkWeight: number | null = null // TODO: fetch from benchmark_holdings when available
+        const activeWeight = benchmarkWeight !== null ? portfolioWeight - benchmarkWeight : null
+
+        return {
+          portfolioId,
+          isOwned: !!holding && holding.shares > 0,
+          shares: holding?.shares || 0,
+          marketValue,
+          portfolioWeight,
+          benchmarkWeight,
+          activeWeight,
+          totalPortfolioValue: totalValue,
+        }
+      })
+    },
+    enabled: selectedPortfolioIds.length > 0 && !!currentAssetId && tradeType === 'single',
+  })
+
   const nodesByType = {
     division: orgChartNodes?.filter(n => n.node_type === 'division') || [],
     department: orgChartNodes?.filter(n => n.node_type === 'department') || [],
@@ -200,39 +279,33 @@ export function QuickTradeIdeaCapture({
     }
   }, [rationale])
 
-  // Initialize from captured context (auto-populate trade asset from asset context)
-  // This runs once on mount or when capturedContext changes externally
+  // Auto-populate asset from props (if provided)
   useEffect(() => {
-    if (capturedContext?.type === 'asset' && capturedContext.id) {
-      // Mark context as auto-set
-      setContextSource('auto')
-      setInitialAutoAssetId(capturedContext.id)
-
-      // Only auto-populate trade asset if not already set by user
-      if (!selectedAsset && tradeAssetSource !== 'user') {
-        supabase
-          .from('assets')
-          .select('id, symbol, company_name')
-          .eq('id', capturedContext.id)
-          .single()
-          .then(({ data, error }) => {
-            if (!error && data) {
-              setSelectedAsset(data)
-              setTradeAssetSource('auto')
-              // Also prefill first long asset in pair mode if empty
-              if (tradeType === 'pair' && longAssets.length === 0) {
-                setLongAssets([data])
-              }
-            }
-          })
-      }
-    } else if (capturedContext?.type && capturedContext.type !== 'asset') {
-      // Non-asset context (project, portfolio, etc.) - just track it
-      setContextSource('auto')
+    if (propAssetId && propAssetSymbol && !selectedAsset) {
+      setSelectedAsset({
+        id: propAssetId,
+        symbol: propAssetSymbol,
+        company_name: propAssetName || '',
+      })
     }
-    // Only run when capturedContext changes externally, not on every render
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [capturedContext?.type, capturedContext?.id])
+  }, [propAssetId, propAssetSymbol, propAssetName])
+
+  // Compute provenance from current context
+  const provenance = useMemo<Provenance>(() => {
+    return inferProvenance({
+      pathname: location.pathname,
+      assetId: selectedAsset?.id || propAssetId,
+      assetSymbol: selectedAsset?.symbol || propAssetSymbol,
+      assetName: selectedAsset?.company_name || propAssetName,
+      portfolioId: propPortfolioId,
+      portfolioName: propPortfolioName,
+    })
+  }, [location.pathname, selectedAsset, propAssetId, propAssetSymbol, propAssetName, propPortfolioId, propPortfolioName])
+
+  // Get display text for provenance (shown as passive info)
+  const provenanceDisplayText = useMemo(() => {
+    return getProvenanceDisplayText(provenance)
+  }, [provenance])
 
   const createTradeIdea = useMutation({
     mutationFn: async () => {
@@ -250,62 +323,88 @@ export function QuickTradeIdeaCapture({
       }
 
       // If no portfolios selected, create a single idea without portfolio
-      // If multiple portfolios, create one idea per portfolio
-      const portfolioIds = selectedPortfolioIds.length > 0 ? selectedPortfolioIds : [null]
-
       // Generate a pair_id if this is a pairs trade
       const pairId = tradeType === 'pair' ? crypto.randomUUID() : null
 
       // Map visibility to database-compatible value
       const dbVisibility = visibility === 'organization' || visibility === 'portfolio' ? 'team' : visibility
 
+      // Create ONE trade idea (portfolio_id = null, linked to labs via trade_lab_idea_links)
       const inserts: any[] = []
 
-      portfolioIds.forEach(pId => {
-        if (tradeType === 'single' && selectedAsset) {
-          // Single trade
+      if (tradeType === 'single' && selectedAsset) {
+        // Single trade - one idea
+        // Use first selected portfolio as primary portfolio_id (also linked to labs for multi-portfolio)
+        inserts.push({
+          created_by: user.id,
+          portfolio_id: selectedPortfolioIds.length > 0 ? selectedPortfolioIds[0] : null,
+          asset_id: selectedAsset.id,
+          action,
+          urgency,
+          rationale: rationale.trim() || null,
+          stage: 'idea',
+          status: 'idea',
+          pair_id: null,
+          sharing_visibility: dbVisibility,
+          // Provenance
+          origin_type: provenance.origin_type,
+          origin_entity_type: provenance.origin_entity_type,
+          origin_entity_id: provenance.origin_entity_id,
+          origin_route: provenance.origin_route,
+          origin_metadata: provenance.origin_metadata,
+          // Context tags
+          context_tags: contextTags,
+        })
+      } else if (tradeType === 'pair') {
+        // Pairs/basket trade - all longs
+        // Use first selected portfolio as primary portfolio_id
+        const primaryPortfolioId = selectedPortfolioIds.length > 0 ? selectedPortfolioIds[0] : null
+        longAssets.forEach(asset => {
           inserts.push({
             created_by: user.id,
-            portfolio_id: pId,
-            asset_id: selectedAsset.id,
-            action,
+            portfolio_id: primaryPortfolioId,
+            asset_id: asset.id,
+            action: 'buy',
             urgency,
             rationale: rationale.trim() || null,
+            stage: 'idea',
             status: 'idea',
-            pair_id: null,
-            visibility: dbVisibility,
+            pair_id: pairId,
+            sharing_visibility: dbVisibility,
+            // Provenance
+            origin_type: provenance.origin_type,
+            origin_entity_type: provenance.origin_entity_type,
+            origin_entity_id: provenance.origin_entity_id,
+            origin_route: provenance.origin_route,
+            origin_metadata: provenance.origin_metadata,
+            // Context tags
+            context_tags: contextTags,
           })
-        } else if (tradeType === 'pair') {
-          // Pairs/basket trade - all longs
-          longAssets.forEach(asset => {
-            inserts.push({
-              created_by: user.id,
-              portfolio_id: pId,
-              asset_id: asset.id,
-              action: 'buy',
-              urgency,
-              rationale: rationale.trim() || null,
-              status: 'idea',
-              pair_id: pairId,
-              visibility: dbVisibility,
-            })
+        })
+        // Pairs/basket trade - all shorts
+        shortAssets.forEach(asset => {
+          inserts.push({
+            created_by: user.id,
+            portfolio_id: primaryPortfolioId,
+            asset_id: asset.id,
+            action: 'sell',
+            urgency,
+            rationale: rationale.trim() || null,
+            stage: 'idea',
+            status: 'idea',
+            pair_id: pairId,
+            sharing_visibility: dbVisibility,
+            // Provenance
+            origin_type: provenance.origin_type,
+            origin_entity_type: provenance.origin_entity_type,
+            origin_entity_id: provenance.origin_entity_id,
+            origin_route: provenance.origin_route,
+            origin_metadata: provenance.origin_metadata,
+            // Context tags
+            context_tags: contextTags,
           })
-          // Pairs/basket trade - all shorts
-          shortAssets.forEach(asset => {
-            inserts.push({
-              created_by: user.id,
-              portfolio_id: pId,
-              asset_id: asset.id,
-              action: 'sell',
-              urgency,
-              rationale: rationale.trim() || null,
-              status: 'idea',
-              pair_id: pairId,
-              visibility: dbVisibility,
-            })
-          })
-        }
-      })
+        })
+      }
 
       const { data, error } = await supabase
         .from('trade_queue_items')
@@ -313,12 +412,148 @@ export function QuickTradeIdeaCapture({
         .select()
 
       if (error) throw error
+
+      // Auto-link to trade labs for ALL selected portfolios (create labs if needed)
+      if (data && data.length > 0 && selectedPortfolioIds.length > 0) {
+        // Find existing trade labs for selected portfolios
+        const { data: existingLabs } = await supabase
+          .from('trade_labs')
+          .select('id, portfolio_id')
+          .in('portfolio_id', selectedPortfolioIds)
+
+        const existingLabPortfolioIds = new Set(existingLabs?.map(l => l.portfolio_id) || [])
+
+        // Find portfolios that need a lab created
+        const portfoliosNeedingLabs = selectedPortfolioIds.filter(id => !existingLabPortfolioIds.has(id))
+
+        // Create labs for portfolios that don't have one
+        let newLabs: { id: string; portfolio_id: string }[] = []
+        if (portfoliosNeedingLabs.length > 0) {
+          // Get portfolio names for lab naming
+          const { data: portfolioData } = await supabase
+            .from('portfolios')
+            .select('id, name')
+            .in('id', portfoliosNeedingLabs)
+
+          const labInserts = portfolioData?.map(p => ({
+            portfolio_id: p.id,
+            name: `${p.name} Trade Lab`,
+            settings: {},
+            created_by: user.id,
+          })) || []
+
+          if (labInserts.length > 0) {
+            const { data: createdLabs } = await supabase
+              .from('trade_labs')
+              .insert(labInserts)
+              .select('id, portfolio_id')
+
+            newLabs = createdLabs || []
+          }
+        }
+
+        // Combine existing and new labs
+        const allLabs = [...(existingLabs || []), ...newLabs]
+
+        if (allLabs.length > 0) {
+          // Link EACH trade idea to ALL labs
+          const labLinks: { trade_queue_item_id: string; trade_lab_id: string; created_by: string }[] = []
+
+          data.forEach((tradeIdea: any) => {
+            allLabs.forEach(lab => {
+              labLinks.push({
+                trade_queue_item_id: tradeIdea.id,
+                trade_lab_id: lab.id,
+                created_by: user.id,
+              })
+            })
+          })
+
+          if (labLinks.length > 0) {
+            await supabase
+              .from('trade_lab_idea_links')
+              .insert(labLinks)
+
+            // Emit 'attach' audit events for each lab link
+            for (const link of labLinks) {
+              const lab = allLabs.find(l => l.id === link.trade_lab_id)
+              const trade = data.find((t: any) => t.id === link.trade_queue_item_id)
+              if (lab && trade) {
+                await emitAuditEvent({
+                  actor: { id: user.id, type: 'user' },
+                  entity: {
+                    type: 'trade_idea',
+                    id: trade.id,
+                    displayName: `${trade.action?.toUpperCase()} trade idea`,
+                  },
+                  action: { type: 'attach', category: 'relationship' },
+                  state: {
+                    from: null,
+                    to: { trade_lab_id: lab.id },
+                  },
+                  metadata: {
+                    ui_source: 'quick_capture',
+                    trade_lab_id: lab.id,
+                    portfolio_id: lab.portfolio_id,
+                  },
+                  orgId: user.id, // Using user.id as org_id for now
+                })
+              }
+            }
+          }
+        }
+      }
+
+      // Emit 'create' audit events for each trade idea
+      for (const trade of data) {
+        // Get asset symbol for display
+        let assetSymbol = 'Unknown'
+        if (tradeType === 'single' && selectedAsset) {
+          assetSymbol = selectedAsset.symbol
+        } else if (tradeType === 'pair') {
+          const longAsset = longAssets.find(a => a.id === trade.asset_id)
+          const shortAsset = shortAssets.find(a => a.id === trade.asset_id)
+          assetSymbol = longAsset?.symbol || shortAsset?.symbol || 'Unknown'
+        }
+
+        await emitAuditEvent({
+          actor: { id: user.id, type: 'user' },
+          entity: {
+            type: 'trade_idea',
+            id: trade.id,
+            displayName: `${trade.action?.toUpperCase()} ${assetSymbol}`,
+          },
+          action: { type: 'create', category: 'lifecycle' },
+          state: {
+            from: null,
+            to: {
+              stage: 'idea',
+              action: trade.action,
+              urgency: trade.urgency,
+              visibility_tier: 'active',
+            },
+          },
+          changedFields: ['stage', 'action', 'urgency', 'asset_id'],
+          metadata: {
+            ui_source: 'quick_capture',
+            asset_id: trade.asset_id,
+            asset_symbol: assetSymbol,
+            trade_type: tradeType,
+            pair_id: trade.pair_id,
+          },
+          orgId: user.id, // Using user.id as org_id for now
+          assetSymbol,
+        })
+      }
+
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-ideas-feed'] })
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
+      queryClient.invalidateQueries({ queryKey: ['simulations'] })
       // Also invalidate attention queries so the Attention Dashboard updates immediately
       invalidateAttention()
       // Reset form
@@ -332,6 +567,7 @@ export function QuickTradeIdeaCapture({
       setAction('buy')
       setUrgency('medium')
       setRationale('')
+      setContextTags([])
       setSelectedPortfolioIds([])
       setVisibility('private')
       setSelectedOrgNodeId(null)
@@ -374,36 +610,14 @@ export function QuickTradeIdeaCapture({
   }
 
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
-    const previousAssetId = selectedAsset?.id
     setSelectedAsset(asset)
     setAssetSearch('')
     setShowAssetDropdown(false)
-
-    // Mark as user-set since user explicitly selected
-    setTradeAssetSource('user')
-
-    // Soft sync: If context was auto-set AND still aligned with the old trade asset,
-    // update context to match the new trade asset
-    if (
-      contextSource === 'auto' &&
-      capturedContext?.type === 'asset' &&
-      capturedContext.id === previousAssetId &&
-      previousAssetId === initialAutoAssetId
-    ) {
-      // Update context to the new asset
-      onContextChange?.({
-        type: 'asset',
-        id: asset.id,
-        title: `${asset.symbol} - ${asset.company_name}`
-      })
-    }
   }
 
   const addLongAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     if (!longAssets.find(a => a.id === asset.id)) {
       setLongAssets([...longAssets, asset])
-      // Mark as user-set since user explicitly added
-      setTradeAssetSource('user')
     }
     setLongSearch('')
     setShowLongDropdown(false)
@@ -411,15 +625,11 @@ export function QuickTradeIdeaCapture({
 
   const removeLongAsset = (assetId: string) => {
     setLongAssets(longAssets.filter(a => a.id !== assetId))
-    // Mark as user-set since user explicitly removed
-    setTradeAssetSource('user')
   }
 
   const addShortAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     if (!shortAssets.find(a => a.id === asset.id)) {
       setShortAssets([...shortAssets, asset])
-      // Mark as user-set since user explicitly added
-      setTradeAssetSource('user')
     }
     setShortSearch('')
     setShowShortDropdown(false)
@@ -427,13 +637,11 @@ export function QuickTradeIdeaCapture({
 
   const removeShortAsset = (assetId: string) => {
     setShortAssets(shortAssets.filter(a => a.id !== assetId))
-    // Mark as user-set since user explicitly removed
-    setTradeAssetSource('user')
   }
 
   const getVisibilityLabel = () => {
     if (visibility === 'organization' && selectedOrgNodeName) return selectedOrgNodeName
-    if (visibility === 'private') return 'Only me'
+    if (visibility === 'private') return 'Private (not yet shared)'
     if (visibility === 'public') return 'Public'
     return 'Select'
   }
@@ -489,6 +697,7 @@ export function QuickTradeIdeaCapture({
   }
 
   return (
+    <>
     <div className={clsx(
       "bg-white rounded-lg border border-gray-200 shadow-sm",
       compact ? "p-3" : "p-4"
@@ -548,15 +757,12 @@ export function QuickTradeIdeaCapture({
         </div>
       </div>
 
-      {/* Context selector - attach to asset, project, portfolio, etc. */}
+      {/* Context Tags (optional, entity-based) */}
       <div className="mb-3">
-        <ContextSelector
-          value={capturedContext || null}
-          onChange={(ctx) => {
-            // Mark context as user-set when user explicitly changes it
-            setContextSource('user')
-            onContextChange?.(ctx)
-          }}
+        <ContextTagsInput
+          value={contextTags}
+          onChange={setContextTags}
+          placeholder="Link to assets, themes, portfolios..."
           compact={compact}
         />
       </div>
@@ -858,6 +1064,7 @@ export function QuickTradeIdeaCapture({
                 {/* Portfolio options */}
                 {portfolios.map(p => {
                   const isSelected = selectedPortfolioIds.includes(p.id)
+                  const holdsAsset = portfoliosHoldingAsset?.includes(p.id)
                   return (
                     <button
                       key={p.id}
@@ -875,12 +1082,17 @@ export function QuickTradeIdeaCapture({
                       )}
                     >
                       <div className={clsx(
-                        "h-4 w-4 rounded border flex items-center justify-center",
+                        "h-4 w-4 rounded border flex items-center justify-center flex-shrink-0",
                         isSelected ? "bg-primary-500 border-primary-500" : "border-gray-300"
                       )}>
                         {isSelected && <span className="text-white text-xs">✓</span>}
                       </div>
-                      <span className="text-gray-700">{p.name}</span>
+                      <span className="text-gray-700 flex-1">{p.name}</span>
+                      {holdsAsset && (
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                          Held
+                        </span>
+                      )}
                     </button>
                   )
                 })}
@@ -922,8 +1134,8 @@ export function QuickTradeIdeaCapture({
                     >
                       <Lock className="h-4 w-4 text-gray-500" />
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">Only me</div>
-                        <div className="text-xs text-gray-500">Private to you</div>
+                        <div className="text-sm font-medium text-gray-900">Private</div>
+                        <div className="text-xs text-gray-500">Not yet shared</div>
                       </div>
                     </button>
                     <button
@@ -1078,10 +1290,82 @@ export function QuickTradeIdeaCapture({
               : 'Relevant teammates will see this in What\'s New.'}
           </span>
           <span>
-            Creates a decision in Priorities
+            Adds this idea to the Trade Queue
           </span>
         </div>
+
+        {/* Passive provenance display */}
+        {provenanceDisplayText && (
+          <div className="mt-1 text-[10px] text-gray-400 italic">
+            {provenanceDisplayText}
+          </div>
+        )}
       </div>
     </div>
+
+    {/* Portfolio Context - show weight info for selected asset in each portfolio */}
+    {tradeType === 'single' && selectedAsset && selectedPortfolioIds.length > 0 && portfolioContextData && portfolioContextData.length > 0 && (
+      <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="text-xs font-medium text-gray-600 mb-2">Portfolio Context</div>
+        <div className="space-y-2">
+          {portfolioContextData.map(context => {
+            const portfolio = portfolios?.find(p => p.id === context.portfolioId)
+            if (!portfolio) return null
+
+            return (
+              <div
+                key={context.portfolioId}
+                className="p-2 rounded-md bg-white border border-gray-200"
+              >
+                {/* Portfolio name and held badge */}
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-gray-800">{portfolio.name}</span>
+                  <span className={clsx(
+                    "text-[10px] px-1.5 py-0.5 rounded",
+                    context.isOwned
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-500"
+                  )}>
+                    {context.isOwned ? 'Held' : 'Not Held'}
+                  </span>
+                </div>
+
+                {/* Weight info */}
+                <div className="flex items-center gap-4 text-xs">
+                  <div>
+                    <div className="text-gray-400 text-[10px]">Portfolio</div>
+                    <div className="font-medium text-gray-700">{context.portfolioWeight.toFixed(2)}%</div>
+                  </div>
+                  {context.benchmarkWeight !== null && (
+                    <>
+                      <div>
+                        <div className="text-gray-400 text-[10px]">Benchmark</div>
+                        <div className="font-medium text-gray-700">{context.benchmarkWeight.toFixed(2)}%</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400 text-[10px]">Active</div>
+                        <div className={clsx(
+                          "font-medium",
+                          context.activeWeight !== null && context.activeWeight > 0
+                            ? "text-green-600"
+                            : context.activeWeight !== null && context.activeWeight < 0
+                              ? "text-red-600"
+                              : "text-gray-700"
+                        )}>
+                          {context.activeWeight !== null
+                            ? `${context.activeWeight >= 0 ? '+' : ''}${context.activeWeight.toFixed(2)}%`
+                            : '—'}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )}
+    </>
   )
 }

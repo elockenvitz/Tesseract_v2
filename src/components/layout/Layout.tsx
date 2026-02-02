@@ -23,7 +23,7 @@ interface LayoutProps {
 }
 
 // Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'simulation', 'trade-queue', 'coverage', 'organization', 'templates']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-plans', 'simulation', 'trade-queue', 'coverage', 'organization', 'templates']
 
 export function Layout({
   children,

@@ -12,6 +12,39 @@ export type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'
 export type TradeVote = 'approve' | 'reject' | 'needs_discussion'
 export type PairLegType = 'long' | 'short'
 
+// New workflow types
+export type TradeStage = 'idea' | 'discussing' | 'simulating' | 'deciding'
+export type TradeOutcome = 'executed' | 'rejected' | 'deferred'
+export type VisibilityTier = 'active' | 'trash' | 'archive'
+
+// UI action context for activity logging
+export type UISource = 'drag_drop' | 'dropdown' | 'bulk_action' | 'api' | 'keyboard' | 'modal'
+
+export interface ActionContext {
+  actorId: string
+  actorName: string
+  actorEmail?: string
+  actorRole: 'analyst' | 'pm' | 'admin' | 'system'
+  requestId: string        // Idempotency key
+  batchId?: string         // For bulk operations
+  batchIndex?: number
+  batchTotal?: number
+  uiSource?: UISource
+  note?: string
+}
+
+export interface MoveTarget {
+  stage: TradeStage
+  outcome?: TradeOutcome   // Required only when stage = 'deciding'
+}
+
+export interface StateSnapshot {
+  stage: TradeStage
+  outcome: TradeOutcome | null
+  visibility_tier: VisibilityTier
+  updated_at: string
+}
+
 // Pair Trade - groups related trades that should be executed together
 export interface PairTrade {
   id: string
@@ -42,26 +75,49 @@ export interface PairTradeWithDetails extends PairTrade {
   trade_queue_items?: TradeQueueItemWithDetails[]
 }
 
-// Trade Queue Item
+// Trade Queue Item (Trade Idea)
 export interface TradeQueueItem {
   id: string
-  portfolio_id: string
+  portfolio_id: string | null
   asset_id: string
   action: TradeAction
   proposed_shares: number | null
   proposed_weight: number | null
   target_price: number | null
   urgency: TradeUrgency
-  status: TradeQueueStatus
   priority: number
   rationale: string
   thesis_summary: string
+
+  // Legacy status field (kept for backwards compatibility during migration)
+  status: TradeQueueStatus
+
+  // New workflow fields
+  stage: TradeStage
+  outcome: TradeOutcome | null
+  outcome_at: string | null
+  outcome_by: string | null
+  outcome_note: string | null
+
+  // Visibility/retention
+  visibility_tier: VisibilityTier
+  sharing_visibility: string | null
+  deleted_at: string | null
+  deleted_by: string | null
+  archived_at: string | null
+  previous_state: StateSnapshot | null
+
+  // Ownership & timestamps
   created_by: string | null
   created_at: string
   updated_at: string
+
+  // Legacy approval fields (kept for backwards compat)
   approved_by: string | null
   approved_at: string | null
   executed_at: string | null
+
+  // Pair trade linkage
   pair_trade_id: string | null
   pair_leg_type: PairLegType | null
 }
@@ -292,6 +348,7 @@ export interface SimulatedHolding {
   change_from_baseline: number // Weight change
   is_new: boolean
   is_removed: boolean
+  is_short: boolean // True if this is a short position (negative shares)
 }
 
 // Form types for creating/updating

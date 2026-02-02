@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -19,20 +19,18 @@ import {
   Lightbulb,
   FlaskConical,
   History,
-  FileText,
   ExternalLink,
   Maximize2,
   Minimize2,
   ChevronDown,
   User,
-  Calendar,
   Briefcase,
   Link2,
   Scale,
   Wrench,
-  MoreVertical,
   Trash2,
-  Circle
+  Circle,
+  MoreVertical
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -53,15 +51,17 @@ import type {
   PairTradeWithDetails
 } from '../types/trading'
 import { clsx } from 'clsx'
+import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTradeExpressionCounts'
+import { useTradeIdeaService } from '../hooks/useTradeIdeaService'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
   idea: { label: 'Ideas', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', icon: Lightbulb },
   discussing: { label: 'Working On', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', icon: Wrench },
   simulating: { label: 'Simulating', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', icon: FlaskConical },
-  deciding: { label: 'Deciding', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', icon: Scale },
-  approved: { label: 'Approved', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle2 },
+  deciding: { label: 'Commit', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', icon: Scale },
+  approved: { label: 'Committed', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle2 },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300', icon: XCircle },
-  cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300', icon: XCircle },
+  cancelled: { label: 'Deferred', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300', icon: XCircle },
   deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400', icon: Archive },
 }
 
@@ -83,6 +83,9 @@ export function TradeQueuePage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
+  // Trade service for audited mutations
+  const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
+
   // UI State
   const [filters, setFilters] = useState<TradeQueueFilters>({
     status: 'all',
@@ -97,10 +100,9 @@ export function TradeQueuePage() {
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const [activeSection, setActiveSection] = useState<'idea-pipeline' | 'pretrade' | 'post-trade'>('idea-pipeline')
-  const [fourthColumnView, setFourthColumnView] = useState<'deciding' | 'approved' | 'rejected' | 'archived' | 'deleted'>('deciding')
+  // Note: Post Trade section removed - outcomes are now discoverable via Outcomes page
+  const [fourthColumnView, setFourthColumnView] = useState<'deciding' | 'executed' | 'rejected' | 'archived' | 'deleted'>('deciding')
   const [fullscreenColumn, setFullscreenColumn] = useState<TradeQueueStatus | 'archived' | null>(null)
-  const [showDeletedConfirm, setShowDeletedConfirm] = useState(false)
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
 
   // Fetch trade queue items
@@ -172,6 +174,9 @@ export function TradeQueuePage() {
     },
   })
 
+  // Fetch expression counts for trade ideas (how many labs each idea is in)
+  const { data: expressionCounts } = useTradeExpressionCounts()
+
   // Fetch simulations with their linked trade queue items (for pretrade section)
   const { data: simulations } = useQuery({
     queryKey: ['simulations-with-trades'],
@@ -201,29 +206,6 @@ export function TradeQueuePage() {
     },
   })
 
-  // Fetch executed trades for post-trade section
-  const { data: executedTrades } = useQuery({
-    queryKey: ['executed-trades'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('trade_queue_items')
-        .select(`
-          *,
-          assets (id, symbol, company_name, sector),
-          portfolios (id, name, portfolio_id),
-          users:created_by (id, email, first_name, last_name),
-          approved_user:approved_by (id, email, first_name, last_name),
-          trade_queue_comments (id, content, created_at, users:user_id (id, email, first_name, last_name))
-        `)
-        .eq('status', 'executed')
-        .order('executed_at', { ascending: false })
-        .limit(50)
-
-      if (error) throw error
-      return data
-    },
-  })
-
   // Update trade item priority mutation
   const updatePriorityMutation = useMutation({
     mutationFn: async ({ id, priority }: { id: string; priority: number }) => {
@@ -240,7 +222,7 @@ export function TradeQueuePage() {
   })
 
   // Archived statuses
-  const archivedStatuses: TradeQueueStatus[] = ['executed', 'rejected', 'cancelled']
+  const archivedStatuses: TradeQueueStatus[] = ['executed', 'rejected', 'cancelled', 'approved']
 
   // Filter and sort items (excluding archived)
   const filteredItems = useMemo(() => {
@@ -426,7 +408,6 @@ export function TradeQueuePage() {
     // Get the item ID and type from dataTransfer
     const itemId = e.dataTransfer.getData('text/plain')
     const dragType = e.dataTransfer.getData('type')
-    console.log('Drop event - itemId:', itemId, 'type:', dragType, 'targetStatus:', targetStatus)
 
     if (!itemId) {
       console.error('No item ID found in dataTransfer')
@@ -434,7 +415,7 @@ export function TradeQueuePage() {
       return
     }
 
-    // Handle pair trade drag - update all legs AND the pair_trades record
+    // Handle pair trade drag - uses audited service
     if (dragType === 'pair-trade') {
       const pairTradeGroup = pairTradeGroups.get(itemId)
       if (!pairTradeGroup) {
@@ -444,44 +425,18 @@ export function TradeQueuePage() {
       }
 
       if (pairTradeGroup.pairTrade.status === targetStatus) {
-        console.log('Pair trade already has target status, skipping update')
         setDraggedItem(null)
         return
       }
 
-      console.log('Updating pair trade and all legs to status:', targetStatus)
-
-      // Update the pair_trades record status
-      const { error: pairError } = await supabase
-        .from('pair_trades')
-        .update({ status: targetStatus })
-        .eq('id', itemId)
-
-      if (pairError) {
-        console.error('Error updating pair trade status:', pairError)
-      }
-
-      // Update all legs
-      const legIds = pairTradeGroup.legs.map(leg => leg.id)
-      const { error: legsError } = await supabase
-        .from('trade_queue_items')
-        .update({ status: targetStatus })
-        .in('id', legIds)
-
-      if (legsError) {
-        console.error('Error updating pair trade leg statuses:', legsError)
-      }
-
-      // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
+      // Use audited service for pair trade move
+      movePairTrade({ pairTradeId: itemId, targetStatus, uiSource: 'drag_drop' })
       setDraggedItem(null)
       return
     }
 
     // Handle individual item drag
     const item = tradeItems?.find(i => i.id === itemId)
-    console.log('Found item:', item?.assets?.symbol, 'current status:', item?.status)
 
     if (!item) {
       console.error('Item not found in tradeItems')
@@ -490,31 +445,14 @@ export function TradeQueuePage() {
     }
 
     if (item.status === targetStatus) {
-      console.log('Item already has target status, skipping update')
       setDraggedItem(null)
       return
     }
 
-    console.log('Updating status from', item.status, 'to', targetStatus)
-
-    // Update status via direct supabase call
-    const { error, data } = await supabase
-      .from('trade_queue_items')
-      .update({ status: targetStatus })
-      .eq('id', itemId)
-      .select()
-
-    if (error) {
-      console.error('Error updating trade status:', error)
-    } else {
-      console.log('Status updated successfully:', data)
-      // Invalidate both the list query and the individual item query
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-item', itemId] })
-    }
-
+    // Use audited service for trade move
+    moveTrade({ tradeId: itemId, targetStatus, uiSource: 'drag_drop' })
     setDraggedItem(null)
-  }, [tradeItems, pairTradeGroups, queryClient])
+  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade])
 
   const handleSort = useCallback((field: typeof sortBy) => {
     if (sortBy === field) {
@@ -524,6 +462,13 @@ export function TradeQueuePage() {
       setSortOrder('desc')
     }
   }, [sortBy])
+
+  // Handle lab click - navigate to trade lab
+  const handleLabClick = useCallback((labId: string, labName: string, portfolioId: string) => {
+    window.dispatchEvent(new CustomEvent('openTradeLab', {
+      detail: { labId, labName, portfolioId }
+    }))
+  }, [])
 
   // ESC key handler for fullscreen mode
   useEffect(() => {
@@ -572,57 +517,7 @@ export function TradeQueuePage() {
           </Button>
         </div>
 
-        {/* Pipeline Section Tabs */}
-        <div className="flex items-center gap-1 mb-4 p-1 bg-gray-100 dark:bg-gray-700/50 rounded-lg w-fit">
-          <button
-            onClick={() => setActiveSection('idea-pipeline')}
-            className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-              activeSection === 'idea-pipeline'
-                ? "bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm"
-                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-            )}
-          >
-            <Lightbulb className="h-4 w-4" />
-            Idea Pipeline
-            <Badge variant="secondary" className="text-xs ml-1">
-              {filteredItems.length}
-            </Badge>
-          </button>
-          <button
-            onClick={() => setActiveSection('pretrade')}
-            className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-              activeSection === 'pretrade'
-                ? "bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm"
-                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-            )}
-          >
-            <FlaskConical className="h-4 w-4" />
-            Pretrade
-            <Badge variant="secondary" className="text-xs ml-1">
-              {itemsByStatus.simulating.length}
-            </Badge>
-          </button>
-          <button
-            onClick={() => setActiveSection('post-trade')}
-            className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-              activeSection === 'post-trade'
-                ? "bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm"
-                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-            )}
-          >
-            <History className="h-4 w-4" />
-            Post Trade
-            <Badge variant="secondary" className="text-xs ml-1">
-              {executedTrades?.length || 0}
-            </Badge>
-          </button>
-        </div>
-
-        {/* Filters - only show for idea pipeline */}
-        {activeSection === 'idea-pipeline' && (
+        {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -706,15 +601,11 @@ export function TradeQueuePage() {
             <ArrowUpDown className="h-3 w-3" />
           </button>
         </div>
-        )}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
-        {/* IDEA PIPELINE SECTION */}
-        {activeSection === 'idea-pipeline' && (
-          <>
-            {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 ? (
+        {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 ? (
               <EmptyState
                 icon={TrendingUp}
                 title="No trade ideas yet"
@@ -790,9 +681,11 @@ export function TradeQueuePage() {
                             key={item.id}
                             item={item}
                             isDragging={draggedItem === item.id}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handleDragStart(e, item.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                       </div>
@@ -857,9 +750,11 @@ export function TradeQueuePage() {
                             key={item.id}
                             item={item}
                             isDragging={draggedItem === item.id}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handleDragStart(e, item.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                       </div>
@@ -924,9 +819,11 @@ export function TradeQueuePage() {
                             key={item.id}
                             item={item}
                             isDragging={draggedItem === item.id}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handleDragStart(e, item.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                       </div>
@@ -950,7 +847,7 @@ export function TradeQueuePage() {
                     )}>
                       {/* Icon changes based on view */}
                       {fourthColumnView === 'deciding' && <Scale className="h-5 w-5 text-amber-500" />}
-                      {fourthColumnView === 'approved' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                      {fourthColumnView === 'executed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
                       {fourthColumnView === 'rejected' && <XCircle className="h-5 w-5 text-gray-400" />}
                       {fourthColumnView === 'archived' && <Archive className="h-5 w-5 text-gray-400" />}
                       {fourthColumnView === 'deleted' && <Trash2 className="h-5 w-5 text-gray-400" />}
@@ -973,7 +870,7 @@ export function TradeQueuePage() {
                             </>
                           ) : (
                             <>
-                              {fourthColumnView === 'approved' ? 'Approved' : fourthColumnView === 'rejected' ? 'Rejected' : fourthColumnView === 'archived' ? 'Archived' : 'Deleted'}
+                              {fourthColumnView === 'executed' ? 'Committed' : fourthColumnView === 'rejected' ? 'Rejected' : fourthColumnView === 'archived' ? 'Archived' : 'Deleted'}
                               <span className="ml-1 px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 rounded flex items-center gap-0.5">
                                 <History className="h-2.5 w-2.5" />
                                 History
@@ -997,7 +894,7 @@ export function TradeQueuePage() {
                               "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
                               fourthColumnView === 'deciding' && "bg-amber-50 dark:bg-amber-900/20"
                             )}
-                            title="Active items awaiting a decision"
+                            title="Active items ready for decision"
                           >
                             <div className="flex items-center gap-2 flex-1">
                               {fourthColumnView === 'deciding' && (
@@ -1020,15 +917,15 @@ export function TradeQueuePage() {
                             <History className="h-3 w-3 text-gray-400" />
                           </div>
                           <button
-                            onClick={() => setFourthColumnView('approved')}
+                            onClick={() => setFourthColumnView('executed')}
                             className={clsx(
                               "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700",
-                              fourthColumnView === 'approved' && "bg-gray-100 dark:bg-gray-700"
+                              fourthColumnView === 'executed' && "bg-gray-100 dark:bg-gray-700"
                             )}
-                            title="Trade ideas that were approved"
+                            title="Trade ideas that were committed"
                           >
                             <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className={fourthColumnView === 'approved' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Approved</span>
+                            <span className={fourthColumnView === 'executed' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Committed</span>
                             <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.approved.length + pairTradesByStatus.approved.length}</Badge>
                           </button>
                           <button
@@ -1062,7 +959,7 @@ export function TradeQueuePage() {
                       <Badge variant="default" className="ml-auto">
                         {fourthColumnView === 'deciding'
                           ? itemsByStatus.deciding.length + pairTradesByStatus.deciding.length
-                          : fourthColumnView === 'approved'
+                          : fourthColumnView === 'executed'
                             ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
                             : fourthColumnView === 'rejected'
                               ? itemsByStatus.rejected.length + pairTradesByStatus.rejected.length
@@ -1084,39 +981,39 @@ export function TradeQueuePage() {
                         )}
                       </button>
 
-                      {/* Overflow menu for Deleted */}
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowOverflowMenu(!showOverflowMenu)}
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                          title="More options"
-                        >
-                          <MoreVertical className="h-4 w-4 text-gray-400" />
-                        </button>
-                        {showOverflowMenu && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-10"
-                              onClick={() => setShowOverflowMenu(false)}
-                            />
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20">
-                              <div className="py-1">
+                      {/* Three-dot overflow menu */}
+                      {deletedItems.length > 0 && (
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowOverflowMenu(!showOverflowMenu)}
+                            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                            title="More options"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                          {showOverflowMenu && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setShowOverflowMenu(false)}
+                              />
+                              <div className="absolute right-0 top-full mt-1 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
                                 <button
                                   onClick={() => {
-                                    setShowDeletedConfirm(true)
+                                    setFourthColumnView('deleted')
                                     setShowOverflowMenu(false)
                                   }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors whitespace-nowrap"
                                 >
-                                  <Trash2 className="h-4 w-4" />
-                                  View Deleted Items
-                                  <Badge variant="secondary" className="text-xs ml-auto">{deletedItems.length}</Badge>
+                                  <Trash2 className="h-4 w-4 flex-shrink-0" />
+                                  <span>View Deleted</span>
+                                  <Badge variant="secondary" className="ml-auto text-xs">{deletedItems.length}</Badge>
                                 </button>
                               </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className={clsx(
                       "flex-1 rounded-lg border-2 border-dashed p-2 transition-colors",
@@ -1128,22 +1025,22 @@ export function TradeQueuePage() {
                           : "border-gray-200 dark:border-gray-700"
                     )}>
                       {/* Outcome history banners */}
-                      {(fourthColumnView === 'approved' || fourthColumnView === 'rejected' || fourthColumnView === 'archived') && (
+                      {(fourthColumnView === 'executed' || fourthColumnView === 'rejected' || fourthColumnView === 'archived') && (
                         <div className="mb-3 p-2.5 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
                           <div className="flex items-center gap-2">
                             <History className="h-4 w-4 text-gray-400 flex-shrink-0" />
                             <p className="text-xs text-gray-500 dark:text-gray-400 flex-1">
-                              {fourthColumnView === 'approved'
-                                ? "Viewing approved trade ideas. These were approved from Deciding."
+                              {fourthColumnView === 'executed'
+                                ? "Viewing committed trade ideas. These were committed via Trade Lab."
                                 : fourthColumnView === 'rejected'
                                   ? "Viewing rejected trade ideas. These were reviewed and decided against."
-                                  : "Viewing archived trade ideas. These are not being pursued right now."}
+                                  : "Viewing deferred trade ideas. These are not being pursued right now."}
                             </p>
                             <button
                               onClick={() => setFourthColumnView('deciding')}
                               className="flex-shrink-0 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                             >
-                              Back to Active
+                              Back to Commit
                             </button>
                           </div>
                         </div>
@@ -1156,7 +1053,7 @@ export function TradeQueuePage() {
                             <Trash2 className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                                Viewing Deleted Items
+                                Viewing Deleted
                               </p>
                               <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
                                 These items have been removed. Click on an item to restore it if needed.
@@ -1191,7 +1088,7 @@ export function TradeQueuePage() {
                           />
                         ))}
                         {/* Approved outcome: trades that were approved */}
-                        {fourthColumnView === 'approved' && pairTradesByStatus.approved.map(({ pairTradeId, pairTrade, legs }) => (
+                        {fourthColumnView === 'executed' && pairTradesByStatus.approved.map(({ pairTradeId, pairTrade, legs }) => (
                           <PairTradeCard
                             key={pairTradeId}
                             pairTradeId={pairTradeId}
@@ -1218,7 +1115,7 @@ export function TradeQueuePage() {
                         {/* Individual Trade Cards */}
                         {(fourthColumnView === 'deciding'
                           ? itemsByStatus.deciding
-                          : fourthColumnView === 'approved'
+                          : fourthColumnView === 'executed'
                             ? itemsByStatus.approved
                             : fourthColumnView === 'rejected'
                               ? itemsByStatus.rejected
@@ -1230,9 +1127,11 @@ export function TradeQueuePage() {
                             key={item.id}
                             item={item}
                             isDragging={draggedItem === item.id}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handleDragStart(e, item.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
+                            onLabClick={handleLabClick}
                             isArchived={fourthColumnView === 'archived' || fourthColumnView === 'deleted'}
                           />
                         ))}
@@ -1243,294 +1142,6 @@ export function TradeQueuePage() {
                 </div>
               </>
             )}
-          </>
-        )}
-
-        {/* PRETRADE SECTION */}
-        {activeSection === 'pretrade' && (
-          <div className="space-y-6">
-            {/* Simulating Trade Ideas Section */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Simulating Trade Ideas</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Trade ideas currently being analyzed in simulations
-                  </p>
-                </div>
-              </div>
-
-              {itemsByStatus.simulating.length === 0 ? (
-                <Card className="p-6 text-center">
-                  <FlaskConical className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No trade ideas currently simulating</p>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-                  {itemsByStatus.simulating.map(item => (
-                    <TradeQueueCard
-                      key={item.id}
-                      item={item}
-                      isDragging={draggedItem === item.id}
-                      onDragStart={(e) => handleDragStart(e, item.id)}
-                      onDragEnd={handleDragEnd}
-                      onClick={() => setSelectedTradeId(item.id)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Active Simulations Section */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Active Trade Labs</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Trade ideas being analyzed in simulations before execution
-                  </p>
-                </div>
-              </div>
-
-            {(!simulations || simulations.length === 0) ? (
-              <Card className="p-6 text-center">
-                <FlaskConical className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                <p className="text-sm text-gray-500 dark:text-gray-400">No active simulations</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Select approved trade ideas and create a simulation</p>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {simulations.map((sim: any) => (
-                  <Card key={sim.id} className="p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h3 className="font-semibold text-gray-900 dark:text-white">{sim.name}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          {sim.portfolios?.name || 'Unknown Portfolio'}
-                        </p>
-                      </div>
-                      <Badge variant={sim.status === 'running' ? 'success' : 'secondary'}>
-                        {sim.status}
-                      </Badge>
-                    </div>
-
-                    {sim.description && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 line-clamp-2">
-                        {sim.description}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {sim.simulation_trades?.length || 0} trades
-                      </span>
-                      <span className="text-xs text-gray-400">•</span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        Created {new Date(sim.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-
-                    {/* Trade preview */}
-                    {sim.simulation_trades && sim.simulation_trades.length > 0 && (
-                      <div className="border-t border-gray-100 dark:border-gray-700 pt-3 mt-3">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Trades:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {sim.simulation_trades.slice(0, 5).map((trade: any) => (
-                            <span
-                              key={trade.id}
-                              className={clsx(
-                                "text-xs px-2 py-0.5 rounded-full",
-                                trade.action === 'buy' || trade.action === 'add'
-                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                              )}
-                            >
-                              {trade.action.toUpperCase()} {trade.assets?.symbol}
-                            </span>
-                          ))}
-                          {sim.simulation_trades.length > 5 && (
-                            <span className="text-xs text-gray-400">
-                              +{sim.simulation_trades.length - 5} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          // Navigate to simulation page - dispatch custom event
-                          window.dispatchEvent(new CustomEvent('openSimulation', { detail: { simulationId: sim.id } }))
-                        }}
-                      >
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Open Trade Lab
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-            </div>
-          </div>
-        )}
-
-        {/* POST TRADE SECTION */}
-        {activeSection === 'post-trade' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Trade History</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Review executed trades, rationales, and lessons learned
-                </p>
-              </div>
-            </div>
-
-            {(!executedTrades || executedTrades.length === 0) ? (
-              <EmptyState
-                icon={History}
-                title="No executed trades yet"
-                description="Executed trades will appear here with their rationales and notes"
-              />
-            ) : (
-              <div className="space-y-4">
-                {executedTrades.map((trade: any) => (
-                  <Card key={trade.id} className="p-4">
-                    <div className="flex items-start gap-4">
-                      {/* Trade action indicator */}
-                      <div className={clsx(
-                        "flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center",
-                        trade.action === 'buy' || trade.action === 'add'
-                          ? "bg-green-100 dark:bg-green-900/30"
-                          : "bg-red-100 dark:bg-red-900/30"
-                      )}>
-                        {trade.action === 'buy' || trade.action === 'add' ? (
-                          <TrendingUp className={clsx("h-6 w-6", ACTION_CONFIG[trade.action as TradeAction].color)} />
-                        ) : (
-                          <TrendingDown className={clsx("h-6 w-6", ACTION_CONFIG[trade.action as TradeAction].color)} />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className={clsx("text-sm font-medium uppercase", ACTION_CONFIG[trade.action as TradeAction].color)}>
-                                {trade.action}
-                              </span>
-                              <h3 className="font-semibold text-gray-900 dark:text-white">
-                                {trade.assets?.symbol}
-                              </h3>
-                              <span className="text-gray-500 dark:text-gray-400">-</span>
-                              <span className="text-sm text-gray-600 dark:text-gray-300">
-                                {trade.assets?.company_name}
-                              </span>
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                              {trade.portfolios?.name} • Executed {trade.executed_at ? new Date(trade.executed_at).toLocaleDateString() : 'N/A'}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            {trade.proposed_weight && (
-                              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                {trade.proposed_weight.toFixed(1)}% weight
-                              </p>
-                            )}
-                            {trade.proposed_shares && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {trade.proposed_shares.toLocaleString()} shares
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Rationale */}
-                        {trade.rationale && (
-                          <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
-                              <FileText className="h-3 w-3" />
-                              Trade Rationale
-                            </p>
-                            <p className="text-sm text-gray-700 dark:text-gray-300">
-                              {trade.rationale}
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Thesis Summary */}
-                        {trade.thesis_summary && (
-                          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                            <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">
-                              Thesis Summary
-                            </p>
-                            <p className="text-sm text-blue-800 dark:text-blue-200">
-                              {trade.thesis_summary}
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Comments/Notes */}
-                        {trade.trade_queue_comments && trade.trade_queue_comments.length > 0 && (
-                          <div className="mt-3 border-t border-gray-100 dark:border-gray-700 pt-3">
-                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
-                              <MessageSquare className="h-3 w-3" />
-                              Discussion Notes ({trade.trade_queue_comments.length})
-                            </p>
-                            <div className="space-y-2">
-                              {trade.trade_queue_comments.slice(0, 2).map((comment: any) => (
-                                <div key={comment.id} className="text-sm">
-                                  <span className="font-medium text-gray-700 dark:text-gray-300">
-                                    {comment.users?.first_name || comment.users?.email?.split('@')[0] || 'Unknown'}:
-                                  </span>
-                                  <span className="text-gray-600 dark:text-gray-400 ml-1">
-                                    {comment.content}
-                                  </span>
-                                </div>
-                              ))}
-                              {trade.trade_queue_comments.length > 2 && (
-                                <button
-                                  onClick={() => setSelectedTradeId(trade.id)}
-                                  className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
-                                >
-                                  View all {trade.trade_queue_comments.length} comments
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Footer with metadata */}
-                        <div className="mt-3 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-                          {trade.users && (
-                            <span>
-                              Proposed by {trade.users.first_name || trade.users.email?.split('@')[0]}
-                            </span>
-                          )}
-                          {trade.approved_user && (
-                            <span>
-                              Approved by {trade.approved_user.first_name || trade.approved_user.email?.split('@')[0]}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => setSelectedTradeId(trade.id)}
-                            className="text-primary-600 dark:text-primary-400 hover:underline ml-auto"
-                          >
-                            View Details
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Modals */}
@@ -1552,52 +1163,6 @@ export function TradeQueuePage() {
         />
       )}
 
-      {/* Deleted Items Confirmation Modal */}
-      {showDeletedConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setShowDeletedConfirm(false)}
-          />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  View Deleted Items
-                </h3>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  You're about to view {deletedItems.length} deleted trade idea{deletedItems.length !== 1 ? 's' : ''}.
-                  These items have been removed from the active pipeline.
-                </p>
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-500">
-                  Deleted items are retained for audit purposes and can be restored if needed.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => setShowDeletedConfirm(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setFourthColumnView('deleted')
-                  setShowDeletedConfirm(false)
-                }}
-              >
-                <Trash2 className="h-4 w-4 mr-1.5" />
-                View Deleted
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1715,20 +1280,66 @@ interface TradeQueueCardProps {
   item: TradeQueueItemWithDetails
   isDragging: boolean
   isArchived?: boolean
+  expressionCounts?: Map<string, { count: number; labNames: string[]; labIds: string[]; portfolioIds: string[]; portfolioNames: string[] }>
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: () => void
   onClick: () => void
+  onLabClick?: (labId: string, labName: string, portfolioId: string) => void
 }
 
 function TradeQueueCard({
   item,
   isDragging,
   isArchived,
+  expressionCounts,
   onDragStart,
   onDragEnd,
-  onClick
+  onClick,
+  onLabClick
 }: TradeQueueCardProps) {
-  const ActionIcon = ACTION_CONFIG[item.action].icon
+  const [showLabsDropdown, setShowLabsDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const isBuy = item.action === 'buy' || item.action === 'add'
+  const actionLabel = item.action.toUpperCase()
+
+  // Get lab inclusion info
+  const labInfo = expressionCounts?.get(item.id)
+  const labCount = labInfo?.count || 0
+  const hasMultipleLabs = labCount > 1
+
+  // Get user display name
+  const creatorName = item.users?.first_name
+    ? `${item.users.first_name}${item.users.last_name ? ' ' + item.users.last_name[0] + '.' : ''}`
+    : item.users?.email?.split('@')[0] || 'Unknown'
+
+  // Format relative time
+  const getRelativeTime = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowLabsDropdown(false)
+      }
+    }
+    if (showLabsDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showLabsDropdown])
 
   return (
     <div
@@ -1765,82 +1376,109 @@ function TradeQueueCard({
           </div>
         )}
 
-        {/* Header */}
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-2">
-            {!isArchived && (
-              <GripVertical className="h-4 w-4 text-gray-400 cursor-grab" />
-            )}
-            <div className={clsx("flex items-center gap-1.5 font-medium", ACTION_CONFIG[item.action].color)}>
-              <ActionIcon className="h-4 w-4" />
-              <span className="uppercase text-xs">{item.action}</span>
-              {item.proposed_weight && (
-                <span className="text-xs">
-                  {(item.action === 'buy' || item.action === 'add') ? '+' : '-'}{item.proposed_weight.toFixed(1)}%
-                </span>
-              )}
-              {!item.proposed_weight && item.proposed_shares && (
-                <span className="text-xs">
-                  {(item.action === 'buy' || item.action === 'add') ? '+' : '-'}{item.proposed_shares.toLocaleString()} shs
-                </span>
-              )}
-            </div>
-          </div>
+        {/* Line 1: BUY COIN Coinbase Global */}
+        <div className="flex items-center gap-2 mb-1.5">
+          {!isArchived && (
+            <GripVertical className="h-4 w-4 text-gray-300 dark:text-gray-600 cursor-grab flex-shrink-0" />
+          )}
+          <p className="text-sm text-gray-900 dark:text-white">
+            <span className={clsx(
+              "font-semibold",
+              isBuy ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            )}>
+              {actionLabel}
+            </span>
+            {' '}
+            <span className="font-semibold">{item.assets?.symbol}</span>
+            {' '}
+            <span className="text-gray-600 dark:text-gray-400">{item.assets?.company_name}</span>
+          </p>
         </div>
 
-        {/* Asset info */}
-        <div className="mb-2">
-          <div className="font-semibold text-gray-900 dark:text-white">
-            {item.assets?.symbol}
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
-            {item.assets?.company_name}
-          </div>
-        </div>
+        {/* Line 2: for [portfolio] + urgency badge */}
+        <div className="flex items-center gap-2 mb-2 relative" ref={dropdownRef}>
+          {labCount > 0 ? (
+            // In trade labs
+            hasMultipleLabs ? (
+              // Multiple labs - dropdown
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowLabsDropdown(!showLabsDropdown)
+                }}
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex items-center gap-1"
+              >
+                for <span className="text-primary-600 dark:text-primary-400 font-medium">{labCount} portfolios</span>
+                <ChevronDown className={clsx("h-3 w-3 transition-transform", showLabsDropdown && "rotate-180")} />
+              </button>
+            ) : (
+              // Single lab - link directly, show portfolio name
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (labInfo && onLabClick) {
+                    onLabClick(labInfo.labIds[0], labInfo.labNames[0], labInfo.portfolioIds[0])
+                  }
+                }}
+                className="text-xs text-gray-500 dark:text-gray-400"
+              >
+                for <span className="text-primary-600 dark:text-primary-400 font-medium hover:underline">{labInfo?.portfolioNames?.[0] || labInfo?.labNames[0]}</span>
+              </button>
+            )
+          ) : item.portfolios?.name ? (
+            // Not in labs but has portfolio
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              for <span className="font-medium">{item.portfolios.name}</span>
+            </span>
+          ) : null}
 
-        {/* Portfolio, Creator, Date */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 text-xs text-gray-500 dark:text-gray-400">
-          {item.portfolios?.name && (
-            <span className="flex items-center gap-1">
-              <Briefcase className="h-3 w-3" />
-              {item.portfolios.name}
-            </span>
-          )}
-          {item.users && (
-            <span className="flex items-center gap-1">
-              <User className="h-3 w-3" />
-              {item.users.first_name || item.users.email?.split('@')[0] || 'Unknown'}
-            </span>
-          )}
-          <span className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            {new Date(item.created_at).toLocaleDateString()}
+          {/* Urgency badge */}
+          <span className={clsx(
+            "text-xs px-2 py-0.5 rounded-full",
+            URGENCY_CONFIG[item.urgency].color
+          )}>
+            {item.urgency}
           </span>
+
+          {/* Labs dropdown - show portfolio names */}
+          {showLabsDropdown && labInfo && labCount > 0 && (
+            <div
+              className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[160px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {labInfo.portfolioNames?.map((portfolioName, idx) => (
+                <button
+                  key={labInfo.labIds[idx]}
+                  onClick={() => {
+                    onLabClick?.(labInfo.labIds[idx], labInfo.labNames[idx], labInfo.portfolioIds[idx])
+                    setShowLabsDropdown(false)
+                  }}
+                  className="w-full px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                >
+                  {portfolioName}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Sizing - show shares as supplementary info if we have both weight and shares */}
-        {item.proposed_weight && item.proposed_shares && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            {item.proposed_shares.toLocaleString()} shares
-          </div>
-        )}
-
-        {/* Rationale preview */}
+        {/* Rationale - prominent but not too bold */}
         {item.rationale && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">
+          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mb-2 leading-relaxed">
             {item.rationale}
           </p>
         )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
-          <div className="flex items-center gap-2">
-            <span className={clsx("text-xs px-2 py-0.5 rounded-full", URGENCY_CONFIG[item.urgency].color)}>
-              {item.urgency}
-            </span>
+        {/* Footer: Author + Time + Comments/Votes */}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <User className="h-3 w-3" />
+            <span>{creatorName}</span>
+            <span className="text-gray-300 dark:text-gray-600">•</span>
+            <span>{getRelativeTime(item.created_at)}</span>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-2">
             {item.trade_queue_comments && item.trade_queue_comments.length > 0 && (
               <span className="flex items-center gap-0.5">
                 <MessageSquare className="h-3 w-3" />
@@ -1850,13 +1488,13 @@ function TradeQueueCard({
             {item.vote_summary && (
               <>
                 {item.vote_summary.approve > 0 && (
-                  <span className="flex items-center gap-0.5 text-green-600">
+                  <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
                     <ThumbsUp className="h-3 w-3" />
                     {item.vote_summary.approve}
                   </span>
                 )}
                 {item.vote_summary.reject > 0 && (
-                  <span className="flex items-center gap-0.5 text-red-600">
+                  <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
                     <ThumbsDown className="h-3 w-3" />
                     {item.vote_summary.reject}
                   </span>

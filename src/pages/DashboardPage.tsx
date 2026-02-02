@@ -27,6 +27,8 @@ import { OutcomesPage } from './OutcomesPage'
 import { FilesPage } from './FilesPage'
 import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
+import { TradePlanHistoryPage } from './TradePlanHistoryPage'
+// TradeLabPage is available for future use when ready to migrate from SimulationPage
 import { AssetAllocationPage } from './AssetAllocationPage'
 import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
@@ -37,6 +39,7 @@ import { CalendarPage } from './CalendarPage'
 import { CoveragePage } from './CoveragePage'
 import { OrganizationPage } from './OrganizationPage'
 import { AttentionPage } from './AttentionPage'
+import { AuditExplorerPage } from './AuditExplorerPage'
 import { AttentionDashboard, type QuickCaptureMode } from '../components/attention'
 import type { AttentionItem, AttentionType } from '../types/attention'
 
@@ -127,14 +130,17 @@ export function DashboardPage() {
     }
 
     // Check if a tab with this ID or symbol already exists (for asset tabs)
-    // Also check for coverage tabs by type since they should be singleton
+    // Also check for singleton tabs by type (only one tab of this type allowed)
     const existingTab = tabs.find(tab => {
       if (tab.id === result.id) return true
       // For asset tabs, also check by symbol
       if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
       if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
-      // For coverage tabs, check by type (singleton - only one coverage tab allowed)
+      // For singleton tabs, check by type (only one tab of this type allowed)
       if (result.type === 'coverage' && tab.type === 'coverage') return true
+      if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
+      if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
+      if (result.type === 'trade-plans' && tab.type === 'trade-plans') return true
       return false
     })
 
@@ -252,6 +258,25 @@ export function DashboardPage() {
     // Focus search functionality would be implemented here
   }
 
+  // Listen for custom event to open Trade Lab with specific portfolio
+  useEffect(() => {
+    const handleOpenTradeLab = (event: CustomEvent) => {
+      const { labId, labName, portfolioId } = event.detail || {}
+      console.log('🧪 Opening Trade Lab:', { labId, labName, portfolioId })
+
+      // Navigate to trade-lab tab with the portfolio/lab ID
+      handleSearchResult({
+        id: labId || 'trade-lab',
+        title: labName || 'Trade Lab',
+        type: 'trade-lab',
+        data: { id: labId, portfolioId }
+      })
+    }
+
+    window.addEventListener('openTradeLab', handleOpenTradeLab as EventListener)
+    return () => window.removeEventListener('openTradeLab', handleOpenTradeLab as EventListener)
+  }, [])
+
   // Memoize active tab to prevent unnecessary recalculations
   const activeTab = useMemo(() =>
     tabs.find(tab => tab.id === activeTabId),
@@ -297,7 +322,9 @@ export function DashboardPage() {
       case 'trade-queue':
         return <TradeQueuePage />
       case 'trade-lab':
-        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} />
+        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} />
+      case 'trade-plans':
+        return <TradePlanHistoryPage />
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':
@@ -394,6 +421,8 @@ export function DashboardPage() {
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':
         return <ChartingPage onItemSelect={handleSearchResult} initialSymbol={activeTab.data?.symbol} />
+      case 'audit':
+        return <AuditExplorerPage />
       case 'user':
         return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
       case 'templates':

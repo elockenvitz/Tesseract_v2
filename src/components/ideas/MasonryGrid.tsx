@@ -11,12 +11,20 @@ import { BookmarkButton } from './social/BookmarkButton'
 import { FlippableCard } from './FlippableCard'
 import type { ScoredFeedItem, CardSize } from '../../hooks/ideas/types'
 
+interface LabInclusionInfo {
+  count: number
+  labNames: string[]
+  labIds: string[]
+  portfolioIds: string[]
+}
+
 interface MasonryGridProps {
   items: ScoredFeedItem[]
   onItemClick?: (item: ScoredFeedItem) => void
   onAuthorClick?: (authorId: string) => void
   onAssetClick?: (assetId: string, symbol: string) => void
   onPortfolioClick?: (portfolioId: string) => void
+  onLabClick?: (labId: string, labName: string, portfolioId: string) => void
   onSourceClick?: (sourceId: string, sourceType: string, sourceName?: string) => void
   onTagClick?: (tag: string) => void
   onGenerateIdea?: (item: ScoredFeedItem) => void
@@ -25,6 +33,8 @@ interface MasonryGridProps {
   showReactions?: boolean
   showBookmarks?: boolean
   showCharts?: boolean
+  // Map of trade idea ID -> lab inclusion info
+  labInclusionsMap?: Map<string, LabInclusionInfo>
 }
 
 export function MasonryGrid({
@@ -33,6 +43,7 @@ export function MasonryGrid({
   onAuthorClick,
   onAssetClick,
   onPortfolioClick,
+  onLabClick,
   onSourceClick,
   onTagClick,
   onGenerateIdea,
@@ -40,7 +51,8 @@ export function MasonryGrid({
   className,
   showReactions = true,
   showBookmarks = true,
-  showCharts = true
+  showCharts = true,
+  labInclusionsMap
 }: MasonryGridProps) {
   // Track which cards are flipped to show charts
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set())
@@ -159,7 +171,8 @@ export function MasonryGrid({
         cardContent = (
           <TradeIdeaCard
             item={item as any}
-            onPortfolioClick={onPortfolioClick}
+            onLabClick={onLabClick}
+            labInclusions={labInclusionsMap?.get(item.id)}
             {...commonProps}
           />
         )
@@ -216,7 +229,7 @@ export function MasonryGrid({
     }
 
     return cardContent
-  }, [onItemClick, onAuthorClick, onAssetClick, onPortfolioClick, onSourceClick, onTagClick, onGenerateIdea, showReactions, showBookmarks, showCharts, flippedCards, toggleFlip, expandedCards, toggleExpand])
+  }, [onItemClick, onAuthorClick, onAssetClick, onPortfolioClick, onLabClick, onSourceClick, onTagClick, onGenerateIdea, showReactions, showBookmarks, showCharts, flippedCards, toggleFlip, expandedCards, toggleExpand, labInclusionsMap])
 
   if (isLoading) {
     return (

@@ -22,6 +22,7 @@ const STATIC_PAGES = [
   { id: 'calendar', title: 'Calendar', type: 'page' as const, subtitle: 'Events and schedule', keywords: ['events', 'schedule', 'meetings', 'earnings'] },
   { id: 'trade-lab', title: 'Trade Lab', type: 'page' as const, subtitle: 'Trade analysis and simulation', keywords: ['trading', 'backtest', 'simulation', 'orders'] },
   { id: 'trade-queue', title: 'Trade Queue', type: 'page' as const, subtitle: 'Pending trades', keywords: ['orders', 'execution', 'trading'] },
+  { id: 'trade-plans', title: 'Trade Plans', type: 'page' as const, subtitle: 'Trade plan history and approvals', keywords: ['plans', 'approvals', 'history', 'desk', 'orders'] },
   { id: 'charting', title: 'Charting', type: 'page' as const, subtitle: 'Technical charts', keywords: ['charts', 'technical', 'graphs', 'price'] },
   { id: 'asset-allocation', title: 'Asset Allocation', type: 'page' as const, subtitle: 'Portfolio allocation analysis', keywords: ['allocation', 'weights', 'rebalance'] },
   // Prioritizer removed - consolidated into All Priorities
@@ -32,6 +33,7 @@ const STATIC_PAGES = [
   { id: 'templates', title: 'Templates', type: 'page' as const, subtitle: 'Model and text templates', keywords: ['models', 'spreadsheets'] },
   { id: 'organization', title: 'Organization', type: 'page' as const, subtitle: 'Team and settings', keywords: ['team', 'settings', 'users', 'members'] },
   { id: 'simulations', title: 'Simulations', type: 'page' as const, subtitle: 'Portfolio simulations', keywords: ['monte carlo', 'scenarios', 'backtest'] },
+  { id: 'audit', title: 'Activity History', type: 'page' as const, subtitle: 'Track all changes and actions', keywords: ['audit', 'activity', 'history', 'log', 'trail', 'changes', 'compliance'] },
 ]
 
 interface SearchResult {

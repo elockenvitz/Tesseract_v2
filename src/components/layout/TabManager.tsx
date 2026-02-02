@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -29,8 +29,8 @@ export interface Tab {
   type: 'asset' | 'portfolio' | 'theme' | 'note' | 'dashboard' | 'assets-list'
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
   | 'idea-generator' | 'workflows' | 'projects-list' | 'project'
-  | 'trade-queue' | 'simulation' | 'trade-lab' | 'tdf' | 'tdf-list' | 'asset-allocation'
-  | 'calendar' | 'priorities' | 'coverage' | 'organization' | 'outcomes' | 'files' | 'charting'
+  | 'trade-queue' | 'simulation' | 'trade-lab' | 'trade-plans' | 'tdf' | 'tdf-list' | 'asset-allocation'
+  | 'calendar' | 'priorities' | 'coverage' | 'organization' | 'outcomes' | 'files' | 'charting' | 'audit'
   data?: any
   isActive: boolean
   isBlank?: boolean
@@ -50,8 +50,8 @@ interface TabManagerProps {
 // Types that should NOT be grouped (singleton types)
 const SINGLETON_TYPES = new Set([
   'dashboard', 'idea-generator', 'workflows', 'trade-queue',
-  'simulation', 'trade-lab', 'asset-allocation', 'calendar',
-  'priorities', 'coverage', 'organization', 'outcomes', 'files', 'charting'
+  'simulation', 'trade-lab', 'trade-plans', 'asset-allocation', 'calendar',
+  'priorities', 'coverage', 'organization', 'outcomes', 'files', 'charting', 'audit'
 ])
 
 // Parent-child type relationships (parent list type -> child item type)
@@ -848,6 +848,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       case 'outcomes': return <Target className="h-3.5 w-3.5" />
       case 'files': return <FolderOpen className="h-3.5 w-3.5" />
       case 'charting': return <LineChart className="h-3.5 w-3.5" />
+      case 'audit': return <Activity className="h-3.5 w-3.5" />
       case 'dashboard': return <Home className="h-3.5 w-3.5" />
       case 'profile': return <User className="h-3.5 w-3.5" />
       case 'user': return <User className="h-3.5 w-3.5" />

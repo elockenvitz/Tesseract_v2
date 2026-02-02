@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Lightbulb, Shuffle, Activity, RefreshCw, Search, Filter, X
 } from 'lucide-react'
@@ -10,6 +10,7 @@ import { ReelsFeed } from '../components/feed/ReelsFeed'
 import { ShareToUserModal } from '../components/feed/ShareToUserModal'
 import { QuickThoughtCapture } from '../components/thoughts/QuickThoughtCapture'
 import { useDiscoveryFeed, type FeedFilters, type ItemType, type ScoredFeedItem } from '../hooks/ideas'
+import { useTradeExpressionCounts } from '../hooks/useTradeExpressionCounts'
 import { TabStateManager } from '../lib/tabStateManager'
 
 interface IdeaGeneratorPageProps {
@@ -60,6 +61,16 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
     isLoading: discoveryLoading,
     refetch: refetchDiscovery
   } = useDiscoveryFeed(filters)
+
+  // Get lab inclusions for trade ideas
+  const { data: labInclusionsMap } = useTradeExpressionCounts()
+
+  // Handle lab click - dispatch event to open trade lab
+  const handleLabClick = useCallback((labId: string, labName: string, portfolioId: string) => {
+    window.dispatchEvent(new CustomEvent('openTradeLab', {
+      detail: { labId, labName, portfolioId }
+    }))
+  }, [])
 
   // Filter items by search query
   const filteredDiscoveryItems = searchQuery
@@ -425,7 +436,9 @@ export function IdeaGeneratorPage({ onItemSelect }: IdeaGeneratorPageProps) {
             onAuthorClick={handleAuthorClick}
             onAssetClick={handleAssetClick}
             onPortfolioClick={handlePortfolioClick}
+            onLabClick={handleLabClick}
             onSourceClick={handleSourceClick}
+            labInclusionsMap={labInclusionsMap}
             isLoading={discoveryLoading}
             showReactions
             showBookmarks

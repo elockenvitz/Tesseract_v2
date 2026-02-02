@@ -192,8 +192,10 @@ export function ThoughtsSection({
               autoFocus={true}
               onSuccess={handleTradeIdeaSuccess}
               onCancel={handleCaptureCancel}
-              capturedContext={capturedContext}
-              onContextChange={handleContextChange}
+              // Provenance is now auto-captured from location.pathname
+              // Pass context as provenance props if available
+              assetId={initialContextType === 'asset' ? initialContextId : undefined}
+              portfolioId={initialContextType === 'portfolio' ? initialContextId : undefined}
             />
           </div>
         )}

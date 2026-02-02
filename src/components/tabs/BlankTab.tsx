@@ -17,7 +17,8 @@ import {
   Calendar,
   Target,
   FileBox,
-  LayoutTemplate
+  LayoutTemplate,
+  Activity
 } from 'lucide-react'
 import { GlobalSearch } from '../search/GlobalSearch'
 
@@ -203,6 +204,15 @@ const UTILITY_SURFACES = [
     icon: Users,
     gradient: 'from-sky-100 to-blue-100',
     iconColor: 'text-sky-600'
+  },
+  {
+    id: 'audit',
+    title: 'Activity',
+    type: 'audit',
+    description: 'History & changes',
+    icon: Activity,
+    gradient: 'from-indigo-100 to-violet-100',
+    iconColor: 'text-indigo-600'
   }
 ]
 
