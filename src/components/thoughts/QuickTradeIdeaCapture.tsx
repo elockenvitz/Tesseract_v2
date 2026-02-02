@@ -3,32 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import {
   TrendingUp, TrendingDown, Search, Send, Loader2, ChevronDown,
-  Globe, Lock, Users, Building2, ChevronRight, ChevronLeft, Briefcase, FolderKanban,
-  ArrowLeftRight, X, CheckCircle, XCircle
+  Lock, Users, FolderKanban, ArrowLeftRight, X
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { emitAuditEvent } from '../../lib/audit'
 import { clsx } from 'clsx'
 import type { TradeAction, TradeUrgency } from '../../types/trading'
-import { inferProvenance, getProvenanceDisplayText, type Provenance } from '../../lib/provenance'
+import { inferProvenance, type Provenance } from '../../lib/provenance'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
-
-type OrgNodeType = 'division' | 'department' | 'team' | 'portfolio'
-
-interface OrgChartNode {
-  id: string
-  name: string
-  node_type: OrgNodeType
-  parent_id: string | null
-}
-
-const categoryOptions: { value: OrgNodeType; label: string; icon: typeof Building2; color: string }[] = [
-  { value: 'division', label: 'Divisions', icon: Building2, color: 'bg-purple-500' },
-  { value: 'department', label: 'Departments', icon: Briefcase, color: 'bg-blue-500' },
-  { value: 'team', label: 'Teams', icon: Users, color: 'bg-green-500' },
-  { value: 'portfolio', label: 'Portfolios', icon: FolderKanban, color: 'bg-amber-500' },
-]
 
 interface QuickTradeIdeaCaptureProps {
   onSuccess?: () => void
@@ -93,13 +76,8 @@ export function QuickTradeIdeaCapture({
   const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<string[]>([])
   const [showPortfolioMenu, setShowPortfolioMenu] = useState(false)
 
-  // Visibility
-  const [visibility, setVisibility] = useState<'private' | 'public' | 'organization' | 'team' | 'portfolio'>('private')
-  const [selectedOrgNodeId, setSelectedOrgNodeId] = useState<string | null>(null)
-  const [selectedOrgNodeType, setSelectedOrgNodeType] = useState<string | null>(null)
-  const [selectedOrgNodeName, setSelectedOrgNodeName] = useState<string | null>(null)
-  const [visibilityStep, setVisibilityStep] = useState<'main' | 'category' | 'items'>('main')
-  const [selectedCategory, setSelectedCategory] = useState<OrgNodeType | null>(null)
+  // Visibility - simplified to private or portfolio
+  const [visibility, setVisibility] = useState<'private' | 'portfolio'>('private')
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false)
 
   // Error state for inline feedback
@@ -169,19 +147,6 @@ export function QuickTradeIdeaCapture({
       if (error) throw error
       return data
     },
-  })
-
-  // Get org chart nodes for visibility
-  const { data: orgChartNodes } = useQuery({
-    queryKey: ['org-chart-nodes-visibility'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('org_chart_nodes')
-        .select('id, name, node_type, parent_id')
-        .order('name')
-      if (error) return []
-      return (data || []) as OrgChartNode[]
-    }
   })
 
   // Get the current asset ID for context lookup (single trade mode)
@@ -258,13 +223,6 @@ export function QuickTradeIdeaCapture({
     enabled: selectedPortfolioIds.length > 0 && !!currentAssetId && tradeType === 'single',
   })
 
-  const nodesByType = {
-    division: orgChartNodes?.filter(n => n.node_type === 'division') || [],
-    department: orgChartNodes?.filter(n => n.node_type === 'department') || [],
-    team: orgChartNodes?.filter(n => n.node_type === 'team') || [],
-    portfolio: orgChartNodes?.filter(n => n.node_type === 'portfolio') || [],
-  }
-
   useEffect(() => {
     if (autoFocus && searchInputRef.current) {
       searchInputRef.current.focus()
@@ -302,11 +260,6 @@ export function QuickTradeIdeaCapture({
     })
   }, [location.pathname, selectedAsset, propAssetId, propAssetSymbol, propAssetName, propPortfolioId, propPortfolioName])
 
-  // Get display text for provenance (shown as passive info)
-  const provenanceDisplayText = useMemo(() => {
-    return getProvenanceDisplayText(provenance)
-  }, [provenance])
-
   const createTradeIdea = useMutation({
     mutationFn: async () => {
       // Clear any previous error
@@ -327,7 +280,7 @@ export function QuickTradeIdeaCapture({
       const pairId = tradeType === 'pair' ? crypto.randomUUID() : null
 
       // Map visibility to database-compatible value
-      const dbVisibility = visibility === 'organization' || visibility === 'portfolio' ? 'team' : visibility
+      const dbVisibility = visibility === 'portfolio' ? 'team' : visibility
 
       // Create ONE trade idea (portfolio_id = null, linked to labs via trade_lab_idea_links)
       const inserts: any[] = []
@@ -570,9 +523,6 @@ export function QuickTradeIdeaCapture({
       setContextTags([])
       setSelectedPortfolioIds([])
       setVisibility('private')
-      setSelectedOrgNodeId(null)
-      setSelectedOrgNodeType(null)
-      setSelectedOrgNodeName(null)
       setSubmitError(null)
       onSuccess?.()
     },
@@ -640,60 +590,20 @@ export function QuickTradeIdeaCapture({
   }
 
   const getVisibilityLabel = () => {
-    if (visibility === 'organization' && selectedOrgNodeName) return selectedOrgNodeName
-    if (visibility === 'private') return 'Private (not yet shared)'
-    if (visibility === 'public') return 'Public'
+    if (visibility === 'private') return 'Private'
+    if (visibility === 'portfolio') return 'Portfolio'
     return 'Select'
   }
 
   const getVisibilityIcon = () => {
-    if (visibility === 'organization' && selectedOrgNodeType) {
-      const category = categoryOptions.find(c => c.value === selectedOrgNodeType)
-      if (category) {
-        const Icon = category.icon
-        return <Icon className="h-3.5 w-3.5" />
-      }
-    }
     if (visibility === 'private') return <Lock className="h-3.5 w-3.5" />
-    if (visibility === 'public') return <Globe className="h-3.5 w-3.5" />
+    if (visibility === 'portfolio') return <Users className="h-3.5 w-3.5 text-blue-500" />
     return <Lock className="h-3.5 w-3.5" />
   }
 
-  const handleVisibilitySelect = (type: 'private' | 'public' | 'organization') => {
-    if (type === 'organization') {
-      setVisibility('organization')
-      setVisibilityStep('category')
-    } else {
-      setVisibility(type)
-      setSelectedOrgNodeId(null)
-      setSelectedOrgNodeType(null)
-      setSelectedOrgNodeName(null)
-      setVisibilityStep('main')
-      setSelectedCategory(null)
-      setShowVisibilityMenu(false)
-    }
-  }
-
-  const handleCategorySelect = (category: OrgNodeType) => {
-    setSelectedCategory(category)
-    setVisibilityStep('items')
-  }
-
-  const handleNodeSelect = (node: OrgChartNode) => {
-    setSelectedOrgNodeId(node.id)
-    setSelectedOrgNodeType(node.node_type)
-    setSelectedOrgNodeName(node.name)
+  const handleVisibilitySelect = (type: 'private' | 'portfolio') => {
+    setVisibility(type)
     setShowVisibilityMenu(false)
-    setVisibilityStep('main')
-  }
-
-  const handleVisibilityBack = () => {
-    if (visibilityStep === 'items') {
-      setVisibilityStep('category')
-      setSelectedCategory(null)
-    } else if (visibilityStep === 'category') {
-      setVisibilityStep('main')
-    }
   }
 
   return (
@@ -1118,124 +1028,34 @@ export function QuickTradeIdeaCapture({
 
           {showVisibilityMenu && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => {
-                setShowVisibilityMenu(false)
-                setVisibilityStep('main')
-              }} />
-              <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[220px] z-20 max-h-64 overflow-y-auto">
-                {visibilityStep === 'main' && (
-                  <>
-                    <button
-                      onClick={() => handleVisibilitySelect('private')}
-                      className={clsx(
-                        "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                        visibility === 'private' && "bg-gray-50"
-                      )}
-                    >
-                      <Lock className="h-4 w-4 text-gray-500" />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">Private</div>
-                        <div className="text-xs text-gray-500">Not yet shared</div>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => handleVisibilitySelect('organization')}
-                      className={clsx(
-                        "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                        visibility === 'organization' && "bg-gray-50"
-                      )}
-                    >
-                      <Building2 className="h-4 w-4 text-indigo-500" />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">Organization</div>
-                        <div className="text-xs text-gray-500">
-                          {selectedOrgNodeName || 'Select division, department, team...'}
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-gray-400" />
-                    </button>
-                    <button
-                      onClick={() => handleVisibilitySelect('public')}
-                      className={clsx(
-                        "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                        visibility === 'public' && "bg-gray-50"
-                      )}
-                    >
-                      <Globe className="h-4 w-4 text-green-500" />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">Public</div>
-                        <div className="text-xs text-gray-500">Visible to everyone</div>
-                      </div>
-                    </button>
-                  </>
-                )}
-
-                {visibilityStep === 'category' && (
-                  <>
-                    <button
-                      onClick={handleVisibilityBack}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-100"
-                    >
-                      <ChevronLeft className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-600">Back</span>
-                    </button>
-                    {categoryOptions.map((category) => {
-                      const Icon = category.icon
-                      const count = nodesByType[category.value]?.length || 0
-                      return (
-                        <button
-                          key={category.value}
-                          onClick={() => handleCategorySelect(category.value)}
-                          disabled={count === 0}
-                          className={clsx(
-                            "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                            count === 0 && "opacity-50 cursor-not-allowed"
-                          )}
-                        >
-                          <div className={clsx("h-4 w-4 rounded flex items-center justify-center", category.color)}>
-                            <Icon className="h-2.5 w-2.5 text-white" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">{category.label}</div>
-                            <div className="text-xs text-gray-500">{count} available</div>
-                          </div>
-                          {count > 0 && <ChevronRight className="h-4 w-4 text-gray-400" />}
-                        </button>
-                      )
-                    })}
-                  </>
-                )}
-
-                {visibilityStep === 'items' && selectedCategory && (
-                  <>
-                    <button
-                      onClick={handleVisibilityBack}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-100"
-                    >
-                      <ChevronLeft className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-600">Back</span>
-                    </button>
-                    {nodesByType[selectedCategory]?.map((node) => {
-                      const category = categoryOptions.find(c => c.value === selectedCategory)
-                      const Icon = category?.icon || Users
-                      return (
-                        <button
-                          key={node.id}
-                          onClick={() => handleNodeSelect(node)}
-                          className={clsx(
-                            "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                            selectedOrgNodeId === node.id && "bg-primary-50"
-                          )}
-                        >
-                          <div className={clsx("h-4 w-4 rounded flex items-center justify-center", category?.color || 'bg-gray-500')}>
-                            <Icon className="h-2.5 w-2.5 text-white" />
-                          </div>
-                          <div className="text-sm font-medium text-gray-900">{node.name}</div>
-                        </button>
-                      )
-                    })}
-                  </>
-                )}
+              <div className="fixed inset-0 z-10" onClick={() => setShowVisibilityMenu(false)} />
+              <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[220px] z-20">
+                <button
+                  onClick={() => handleVisibilitySelect('private')}
+                  className={clsx(
+                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
+                    visibility === 'private' && "bg-gray-50"
+                  )}
+                >
+                  <Lock className="h-4 w-4 text-gray-500" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">Private</div>
+                    <div className="text-xs text-gray-500">Only visible to you</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleVisibilitySelect('portfolio')}
+                  className={clsx(
+                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
+                    visibility === 'portfolio' && "bg-gray-50"
+                  )}
+                >
+                  <Users className="h-4 w-4 text-blue-500" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">Portfolio</div>
+                    <div className="text-xs text-gray-500">Members of selected portfolios can see</div>
+                  </div>
+                </button>
               </div>
             </>
           )}
@@ -1294,12 +1114,6 @@ export function QuickTradeIdeaCapture({
           </span>
         </div>
 
-        {/* Passive provenance display */}
-        {provenanceDisplayText && (
-          <div className="mt-1 text-[10px] text-gray-400 italic">
-            {provenanceDisplayText}
-          </div>
-        )}
       </div>
     </div>
 

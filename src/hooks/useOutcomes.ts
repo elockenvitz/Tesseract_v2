@@ -58,7 +58,6 @@ export function useOutcomeDecisions(options: UseOutcomeDecisionsOptions = {}): O
           urgency,
           status,
           rationale,
-          thesis_summary,
           proposed_shares,
           proposed_weight,
           target_price,
@@ -137,7 +136,7 @@ export function useOutcomeDecisions(options: UseOutcomeDecisionsOptions = {}): O
       // Transform to OutcomeDecision format
       const decisions: OutcomeDecision[] = (data || []).map((item: any) => {
         const direction = mapActionToDirection(item.action)
-        const hasRationale = !!(item.rationale || item.thesis_summary)
+        const hasRationale = !!item.rationale
         const approvedAt = item.approved_at ? parseISO(item.approved_at) : null
         const daysSinceApproved = approvedAt
           ? differenceInDays(new Date(), approvedAt)
@@ -158,8 +157,7 @@ export function useOutcomeDecisions(options: UseOutcomeDecisionsOptions = {}): O
           urgency: item.urgency,
           stage: item.status,
           rationale_snapshot: hasRationale ? {
-            summary: item.thesis_summary || undefined,
-            thesis: item.rationale || undefined,
+            thesis: item.rationale,
           } : null,
           linked_forecast_snapshot: null, // TODO: Snapshot price targets at approval
           owner_user_ids: item.created_by ? [item.created_by] : [],

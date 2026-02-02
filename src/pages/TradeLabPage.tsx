@@ -343,11 +343,18 @@ interface DraftCardProps {
 }
 
 function DraftCard({ draft, onDelete }: DraftCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
   const isPositive = draft.action === 'buy'
   const ActionIcon = isPositive ? ArrowUpRight : draft.action === 'sell' ? ArrowDownRight : Minus
 
+  // Get rationale from trade_queue_item or notes
+  const rationale = draft.trade_queue_item?.rationale || draft.notes
+
   return (
-    <Card className="p-4">
+    <Card
+      className={clsx("p-4 cursor-pointer hover:bg-gray-50 transition-colors", isExpanded && "ring-2 ring-purple-200")}
+      onClick={() => setIsExpanded(!isExpanded)}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div
@@ -371,34 +378,34 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
               )}
             />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
               <span
                 className={clsx(
-                  'text-sm font-medium',
+                  'text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0',
                   isPositive
-                    ? 'text-green-600'
+                    ? 'bg-green-100 text-green-700'
                     : draft.action === 'sell'
-                    ? 'text-red-600'
-                    : 'text-gray-600'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-gray-100 text-gray-600'
                 )}
               >
                 {draft.action.toUpperCase()}
               </span>
-              <span className="font-medium">{draft.asset?.symbol || 'Unknown'}</span>
+              <span className="font-semibold text-gray-900 flex-shrink-0">{draft.asset?.symbol || 'Unknown'}</span>
+              {draft.asset?.company_name && (
+                <span
+                  className="text-sm text-gray-500 truncate min-w-0"
+                  title={draft.asset.company_name}
+                >
+                  {draft.asset.company_name}
+                </span>
+              )}
             </div>
-            <p className="text-sm text-gray-500">{draft.asset?.company_name}</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right text-sm">
-            {draft.shares && (
-              <div className="text-gray-900">{draft.shares.toLocaleString()} shares</div>
-            )}
-            {draft.weight && (
-              <div className="text-gray-500">{(draft.weight * 100).toFixed(2)}%</div>
-            )}
-          </div>
+        <div className="flex items-center gap-3">
+          <ChevronDown className={clsx("h-4 w-4 text-gray-400 transition-transform", isExpanded && "rotate-180")} />
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -410,8 +417,26 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
           </button>
         </div>
       </div>
-      {draft.notes && (
-        <p className="mt-2 text-sm text-gray-600 line-clamp-2">{draft.notes}</p>
+      {isExpanded && (
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+          {/* Sizing info */}
+          {(draft.shares || draft.weight) && (
+            <div className="flex items-center gap-4 text-sm">
+              {draft.shares && (
+                <span className="text-gray-700"><span className="text-gray-500">Shares:</span> {draft.shares.toLocaleString()}</span>
+              )}
+              {draft.weight && (
+                <span className="text-gray-700"><span className="text-gray-500">Weight:</span> {(draft.weight * 100).toFixed(2)}%</span>
+              )}
+            </div>
+          )}
+          {/* Rationale */}
+          {rationale ? (
+            <p className="text-sm text-gray-600">{rationale}</p>
+          ) : (
+            <p className="text-sm text-gray-400 italic">No rationale provided</p>
+          )}
+        </div>
       )}
     </Card>
   )

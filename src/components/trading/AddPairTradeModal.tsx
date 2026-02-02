@@ -56,7 +56,6 @@ export function AddPairTradeModal({
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [rationale, setRationale] = useState('')
-  const [thesisSummary, setThesisSummary] = useState('')
   const [urgency, setUrgency] = useState<TradeUrgency>('medium')
 
   // Legs state - start with one long and one short leg
@@ -113,7 +112,6 @@ export function AddPairTradeModal({
           name,
           description,
           rationale,
-          thesis_summary: thesisSummary,
           urgency,
           status: 'idea',
           created_by: user?.id,
@@ -136,7 +134,6 @@ export function AddPairTradeModal({
           urgency,
           status: 'idea',
           rationale: '', // Individual legs don't need rationale - it's on the pair
-          thesis_summary: '',
           created_by: user?.id,
           pair_trade_id: pairTrade.id,
           pair_leg_type: leg.legType,
@@ -165,7 +162,6 @@ export function AddPairTradeModal({
     setName('')
     setDescription('')
     setRationale('')
-    setThesisSummary('')
     setUrgency('medium')
     setLegs([createEmptyLeg('long'), createEmptyLeg('short')])
     setActiveSearchLegId(null)
@@ -419,18 +415,6 @@ export function AddPairTradeModal({
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Thesis Summary */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Thesis Summary
-            </label>
-            <Input
-              placeholder="Brief summary of the pairs trade thesis..."
-              value={thesisSummary}
-              onChange={(e) => setThesisSummary(e.target.value)}
-            />
           </div>
 
           {/* Rationale */}

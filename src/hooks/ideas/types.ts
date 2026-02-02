@@ -75,6 +75,7 @@ export interface TradeIdeaItem extends BaseIdeaItem {
   rationale?: string
   status: string
   pair_id?: string
+  sharing_visibility?: 'private' | 'team' | 'public' | null
   asset?: {
     id: string
     symbol: string

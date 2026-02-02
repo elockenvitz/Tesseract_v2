@@ -122,7 +122,6 @@ export interface TradeLabDraftWithDetails extends TradeLabDraft {
   trade_queue_item?: {
     id: string
     rationale: string
-    thesis_summary: string
     urgency: string
     stage: string
     outcome: string | null
@@ -600,7 +599,7 @@ export async function getDraftsForLab(
     .select(`
       *,
       asset:assets (id, symbol, company_name, sector),
-      trade_queue_item:trade_queue_items (id, rationale, thesis_summary, urgency, stage, outcome)
+      trade_queue_item:trade_queue_items (id, rationale, urgency, stage, outcome)
     `)
     .eq('lab_id', labId)
     .eq('visibility_tier', 'active')
@@ -628,7 +627,7 @@ export async function getDraftsForView(viewId: string): Promise<TradeLabDraftWit
     .select(`
       *,
       asset:assets (id, symbol, company_name, sector),
-      trade_queue_item:trade_queue_items (id, rationale, thesis_summary, urgency, stage, outcome)
+      trade_queue_item:trade_queue_items (id, rationale, urgency, stage, outcome)
     `)
     .eq('view_id', viewId)
     .eq('visibility_tier', 'active')
@@ -975,21 +974,12 @@ export async function linkIdeaToLab(
   tradeQueueItemId: string,
   context: ActionContext
 ): Promise<void> {
-  // Get lab's simulation_id for backwards compat
-  const { data: lab } = await supabase
-    .from('trade_labs')
-    .select('legacy_simulation_id')
-    .eq('id', labId)
-    .single()
-
-  const simulationId = lab?.legacy_simulation_id || labId
-
   const { error } = await supabase
     .from('trade_lab_idea_links')
     .insert({
-      simulation_id: simulationId,
+      trade_lab_id: labId,
       trade_queue_item_id: tradeQueueItemId,
-      linked_by: context.actorId,
+      created_by: context.actorId,
     })
 
   if (error && error.code !== '23505') {
@@ -1005,24 +995,53 @@ export async function unlinkIdeaFromLab(
   tradeQueueItemId: string,
   context: ActionContext
 ): Promise<void> {
-  // Get lab's simulation_id for backwards compat
-  const { data: lab } = await supabase
-    .from('trade_labs')
-    .select('legacy_simulation_id')
-    .eq('id', labId)
-    .single()
-
-  const simulationId = lab?.legacy_simulation_id || labId
-
   const { error } = await supabase
     .from('trade_lab_idea_links')
     .delete()
-    .eq('simulation_id', simulationId)
+    .eq('trade_lab_id', labId)
     .eq('trade_queue_item_id', tradeQueueItemId)
 
   if (error) {
     throw new Error(`Failed to unlink idea: ${error.message}`)
   }
+}
+
+/**
+ * Update per-portfolio sizing for a trade idea link
+ */
+export async function updateIdeaLinkSizing(
+  labId: string,
+  tradeQueueItemId: string,
+  sizing: { proposedWeight?: number | null; proposedShares?: number | null },
+  context: ActionContext
+): Promise<void> {
+  const { error } = await supabase
+    .from('trade_lab_idea_links')
+    .update({
+      proposed_weight: sizing.proposedWeight,
+      proposed_shares: sizing.proposedShares,
+    })
+    .eq('trade_lab_id', labId)
+    .eq('trade_queue_item_id', tradeQueueItemId)
+
+  if (error) {
+    throw new Error(`Failed to update sizing: ${error.message}`)
+  }
+
+  await emitAuditEvent({
+    actor: { id: context.actorId, type: 'user', role: context.actorRole },
+    entity: { type: 'trade_queue_item', id: tradeQueueItemId },
+    action: { type: 'update_portfolio_sizing', category: 'update' },
+    state: { to: { lab_id: labId, ...sizing } },
+    metadata: {
+      request_id: context.requestId,
+      ui_source: context.uiSource,
+      lab_id: labId,
+    },
+    orgId: undefined,
+    actorName: context.actorName,
+    actorEmail: context.actorEmail,
+  })
 }
 
 /**
@@ -1033,7 +1052,7 @@ export async function getIdeaExpressionCount(
 ): Promise<{ count: number; labNames: string[] }> {
   const { data, error } = await supabase
     .from('trade_lab_idea_links')
-    .select('simulation_id, simulations (name)')
+    .select('trade_lab_id, trade_labs (name)')
     .eq('trade_queue_item_id', tradeQueueItemId)
 
   if (error) {
@@ -1042,8 +1061,73 @@ export async function getIdeaExpressionCount(
 
   return {
     count: data?.length || 0,
-    labNames: data?.map((d: any) => d.simulations?.name).filter(Boolean) || [],
+    labNames: data?.map((d: any) => d.trade_labs?.name).filter(Boolean) || [],
   }
+}
+
+export interface IdeaLabLink {
+  id: string
+  trade_lab_id: string
+  trade_queue_item_id: string
+  proposed_weight: number | null
+  proposed_shares: number | null
+  created_by: string | null
+  created_at: string
+  trade_lab?: {
+    id: string
+    name: string
+    portfolio_id: string
+    portfolio?: {
+      id: string
+      name: string
+    }
+  }
+}
+
+/**
+ * Get all lab links for a trade idea with sizing data
+ */
+export async function getIdeaLabLinks(
+  tradeQueueItemId: string
+): Promise<IdeaLabLink[]> {
+  const { data, error } = await supabase
+    .from('trade_lab_idea_links')
+    .select(`
+      id,
+      trade_lab_id,
+      trade_queue_item_id,
+      proposed_weight,
+      proposed_shares,
+      created_by,
+      created_at,
+      trade_labs:trade_lab_id (
+        id,
+        name,
+        portfolio_id,
+        portfolios:portfolio_id (
+          id,
+          name
+        )
+      )
+    `)
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .order('created_at')
+
+  if (error) {
+    throw new Error(`Failed to get idea lab links: ${error.message}`)
+  }
+
+  // Transform nested data structure
+  return (data || []).map((link: any) => ({
+    ...link,
+    trade_lab: link.trade_labs ? {
+      id: link.trade_labs.id,
+      name: link.trade_labs.name,
+      portfolio_id: link.trade_labs.portfolio_id,
+      portfolio: link.trade_labs.portfolios,
+    } : undefined,
+    trade_labs: undefined,
+  }))
 }
 
 // ============================================================
@@ -1136,7 +1220,7 @@ export async function getDraftsForSimulation(
     .select(`
       *,
       asset:assets (id, symbol, company_name, sector),
-      trade_queue_item:trade_queue_items (id, rationale, thesis_summary, urgency, stage, outcome)
+      trade_queue_item:trade_queue_items (id, rationale, urgency, stage, outcome)
     `)
     .eq('simulation_id', simulationId)
     .eq('visibility_tier', 'active')

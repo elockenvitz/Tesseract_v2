@@ -52,7 +52,6 @@ export interface PairTrade {
   name: string
   description: string
   rationale: string
-  thesis_summary: string
   urgency: TradeUrgency
   status: TradeQueueStatus
   created_by: string | null
@@ -87,7 +86,6 @@ export interface TradeQueueItem {
   urgency: TradeUrgency
   priority: number
   rationale: string
-  thesis_summary: string
 
   // Legacy status field (kept for backwards compatibility during migration)
   status: TradeQueueStatus
@@ -120,6 +118,19 @@ export interface TradeQueueItem {
   // Pair trade linkage
   pair_trade_id: string | null
   pair_leg_type: PairLegType | null
+
+  // Risk & Planning fields
+  stop_loss: number | null
+  take_profit: number | null
+  conviction: 'low' | 'medium' | 'high' | null
+  time_horizon: 'short' | 'medium' | 'long' | null
+
+  // Context tags for entity-based categorization
+  context_tags: Array<{
+    entity_type: string
+    entity_id: string
+    display_name: string
+  }> | null
 }
 
 // Trade Queue Item with related data
@@ -361,7 +372,6 @@ export interface CreateTradeQueueItemInput {
   target_price?: number | null
   urgency?: TradeUrgency
   rationale?: string
-  thesis_summary?: string
   pair_trade_id?: string | null
   pair_leg_type?: PairLegType | null
 }
@@ -382,7 +392,6 @@ export interface CreatePairTradeInput {
   name: string
   description?: string
   rationale?: string
-  thesis_summary?: string
   urgency?: TradeUrgency
   legs: PairTradeLegInput[]
 }
@@ -396,7 +405,16 @@ export interface UpdateTradeQueueItemInput {
   status?: TradeQueueStatus
   priority?: number
   rationale?: string
-  thesis_summary?: string
+  stop_loss?: number | null
+  take_profit?: number | null
+  conviction?: 'low' | 'medium' | 'high' | null
+  time_horizon?: 'short' | 'medium' | 'long' | null
+  context_tags?: Array<{
+    entity_type: string
+    entity_id: string
+    display_name: string
+  }> | null
+  sharing_visibility?: 'private' | 'portfolio' | 'team' | 'public' | null
 }
 
 export interface CreateSimulationInput {

@@ -9,6 +9,7 @@ export type OriginType =
   | 'asset_page'
   | 'portfolio_page'
   | 'trade_lab'
+  | 'trade_queue'
   | 'search'
   | 'dashboard'
   | 'manual'
@@ -94,6 +95,17 @@ export function inferProvenance(context: ProvenanceContext): Provenance {
     }
   }
 
+  // Trade queue detection
+  if (pathname.includes('/trade-queue')) {
+    return {
+      origin_type: 'trade_queue',
+      origin_entity_type: null,
+      origin_entity_id: null,
+      origin_route: pathname,
+      origin_metadata: {},
+    }
+  }
+
   // Trade lab detection
   if (pathname.includes('/trade-lab') || pathname.includes('/simulation')) {
     return {
@@ -170,6 +182,9 @@ export function getProvenanceDisplayText(provenance: Provenance): string | null 
         return `Captured from Trade Lab: ${origin_metadata.trade_lab_name}`
       }
       return 'Captured from Trade Lab'
+
+    case 'trade_queue':
+      return 'Captured from Trade Queue'
 
     case 'search':
       if (origin_metadata.search_query) {

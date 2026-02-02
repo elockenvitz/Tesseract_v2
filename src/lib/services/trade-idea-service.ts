@@ -87,7 +87,7 @@ export interface CreateTradeParams {
   targetPrice?: number | null
   urgency: string
   rationale?: string
-  thesisSummary?: string
+  sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public'
   context: ActionContext
   // Provenance - auto-captured origin context
   originType?: string
@@ -108,7 +108,6 @@ export interface CreatePairTradeParams {
   name?: string
   description?: string
   rationale?: string
-  thesisSummary?: string
   urgency: string
   legs: Array<{
     assetId: string
@@ -118,6 +117,28 @@ export interface CreatePairTradeParams {
     proposedShares?: number | null
     targetPrice?: number | null
   }>
+  context: ActionContext
+}
+
+export interface UpdateTradeIdeaParams {
+  tradeId: string
+  updates: {
+    rationale?: string | null
+    proposedWeight?: number | null
+    proposedShares?: number | null
+    targetPrice?: number | null
+    stopLoss?: number | null
+    takeProfit?: number | null
+    conviction?: 'low' | 'medium' | 'high' | null
+    timeHorizon?: 'short' | 'medium' | 'long' | null
+    urgency?: string
+    sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public' | null
+    contextTags?: Array<{
+      entity_type: string
+      entity_id: string
+      display_name: string
+    }> | null
+  }
   context: ActionContext
 }
 
@@ -665,7 +686,7 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
     targetPrice,
     urgency,
     rationale,
-    thesisSummary,
+    sharingVisibility,
     context,
     // Provenance
     originType,
@@ -689,7 +710,7 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
       target_price: targetPrice,
       urgency,
       rationale,
-      thesis_summary: thesisSummary,
+      sharing_visibility: sharingVisibility || 'private',
       stage: 'idea',
       outcome: null,
       visibility_tier: 'active',
@@ -802,6 +823,122 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
 }
 
 /**
+ * Update an existing trade idea
+ *
+ * Supports updating: rationale, sizing, risk/planning fields, context tags
+ * Validates ownership and emits audit events
+ */
+export async function updateTradeIdea(params: UpdateTradeIdeaParams): Promise<void> {
+  const { tradeId, updates, context } = params
+
+  // Get current state
+  const currentTrade = await getTradeIdea(tradeId)
+  if (!currentTrade) {
+    throw new Error(`Trade not found: ${tradeId}`)
+  }
+
+  // Build update object - only include fields that are being changed
+  const now = new Date().toISOString()
+  const dbUpdates: Record<string, unknown> = {
+    updated_at: now,
+  }
+
+  const changedFields: string[] = []
+
+  // Map camelCase to snake_case and track changes
+  if (updates.rationale !== undefined) {
+    dbUpdates.rationale = updates.rationale
+    changedFields.push('rationale')
+  }
+  if (updates.proposedWeight !== undefined) {
+    dbUpdates.proposed_weight = updates.proposedWeight
+    changedFields.push('proposed_weight')
+  }
+  if (updates.proposedShares !== undefined) {
+    dbUpdates.proposed_shares = updates.proposedShares
+    changedFields.push('proposed_shares')
+  }
+  if (updates.targetPrice !== undefined) {
+    dbUpdates.target_price = updates.targetPrice
+    changedFields.push('target_price')
+  }
+  if (updates.stopLoss !== undefined) {
+    dbUpdates.stop_loss = updates.stopLoss
+    changedFields.push('stop_loss')
+  }
+  if (updates.takeProfit !== undefined) {
+    dbUpdates.take_profit = updates.takeProfit
+    changedFields.push('take_profit')
+  }
+  if (updates.conviction !== undefined) {
+    dbUpdates.conviction = updates.conviction
+    changedFields.push('conviction')
+  }
+  if (updates.timeHorizon !== undefined) {
+    dbUpdates.time_horizon = updates.timeHorizon
+    changedFields.push('time_horizon')
+  }
+  if (updates.urgency !== undefined) {
+    dbUpdates.urgency = updates.urgency
+    changedFields.push('urgency')
+  }
+  if (updates.sharingVisibility !== undefined) {
+    dbUpdates.sharing_visibility = updates.sharingVisibility
+    changedFields.push('sharing_visibility')
+  }
+  if (updates.contextTags !== undefined) {
+    dbUpdates.context_tags = updates.contextTags
+    changedFields.push('context_tags')
+  }
+
+  // No changes to make
+  if (changedFields.length === 0) {
+    return
+  }
+
+  // Perform update
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update(dbUpdates)
+    .eq('id', tradeId)
+
+  if (error) {
+    throw new Error(`Failed to update trade: ${error.message}`)
+  }
+
+  // Get display name for audit
+  const displayName = await getTradeDisplayName(currentTrade)
+
+  // Emit audit event
+  await emitAuditEvent({
+    actor: { id: context.actorId, type: 'user', role: context.actorRole },
+    entity: {
+      type: 'trade_idea',
+      id: tradeId,
+      displayName,
+    },
+    action: { type: 'update', category: 'content_change' },
+    state: {
+      from: {
+        rationale: currentTrade.rationale,
+      },
+      to: {
+        ...updates,
+      },
+    },
+    changedFields,
+    metadata: {
+      request_id: context.requestId,
+      ui_source: context.uiSource,
+    },
+    orgId: getOrgId(context),
+    teamId: undefined,
+    actorName: context.actorName,
+    actorEmail: context.actorEmail,
+  })
+}
+
+/**
  * Create a new pair trade with legs
  */
 export async function createPairTrade(params: CreatePairTradeParams): Promise<{ id: string; legIds: string[] }> {
@@ -810,7 +947,6 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
     name,
     description,
     rationale,
-    thesisSummary,
     urgency,
     legs,
     context,
@@ -824,7 +960,6 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
       name,
       description,
       rationale,
-      thesis_summary: thesisSummary,
       urgency,
       status: 'idea',
       created_by: context.actorId,
@@ -850,7 +985,6 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
     visibility_tier: 'active' as VisibilityTier,
     status: 'idea', // Legacy
     rationale: '',
-    thesis_summary: '',
     created_by: context.actorId,
     pair_trade_id: pairTrade.id,
     pair_leg_type: leg.legType,

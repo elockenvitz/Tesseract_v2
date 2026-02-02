@@ -137,6 +137,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [quickTradeShares, setQuickTradeShares] = useState('')
   const [quickTradeWeight, setQuickTradeWeight] = useState('')
 
+  // Track expanded trade idea cards
+  const [expandedTradeIds, setExpandedTradeIds] = useState<Set<string>>(new Set())
+
   // Persist state when it changes
   useEffect(() => {
     if (tabId) {
@@ -379,7 +382,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           simulation_trades (
             *,
             assets (id, symbol, company_name, sector),
-            trade_queue_items (id, rationale, thesis_summary, proposed_shares, proposed_weight)
+            trade_queue_items (id, rationale, proposed_shares, proposed_weight)
           ),
           simulation_collaborators (
             *,
@@ -442,7 +445,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           *,
           assets (id, symbol, company_name, sector),
           portfolios (id, name),
-          pair_trades (id, name, description, rationale, thesis_summary, urgency, status)
+          pair_trades (id, name, description, rationale, urgency, status)
         `)
         .in('status', ['idea', 'discussing', 'simulating', 'approved'])
         .or(`portfolio_id.eq.${selectedPortfolioId}${linkedIdeaIds.length > 0 ? `,id.in.(${linkedIdeaIds.join(',')})` : ''}`)
@@ -1355,6 +1358,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       (sandboxTrade.weight !== idea.proposed_weight)
     )
 
+    const isExpanded = expandedTradeIds.has(idea.id)
+    const toggleExpand = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      setExpandedTradeIds(prev => {
+        const next = new Set(prev)
+        if (next.has(idea.id)) {
+          next.delete(idea.id)
+        } else {
+          next.add(idea.id)
+        }
+        return next
+      })
+    }
+
     return (
       <div
         key={idea.id}
@@ -1399,9 +1416,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             {idea.isAdded && <Check className="h-3 w-3" />}
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <span className={clsx(
-                "text-xs font-medium uppercase px-1.5 py-0.5 rounded",
+                "text-xs font-medium uppercase px-1.5 py-0.5 rounded flex-shrink-0",
                 idea.action === 'buy' || idea.action === 'add'
                   ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                   : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
@@ -1409,11 +1426,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 {idea.action}
               </span>
               <span className={clsx(
-                "font-medium text-sm",
+                "font-semibold text-sm flex-shrink-0",
                 idea.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-900 dark:text-white"
               )}>
                 {idea.assets?.symbol}
               </span>
+              {idea.assets?.company_name && (
+                <span
+                  className="text-xs text-gray-500 dark:text-gray-400 truncate min-w-0"
+                  title={idea.assets.company_name}
+                >
+                  {idea.assets.company_name}
+                </span>
+              )}
             </div>
 
             {/* Editable sandbox trade values */}
@@ -1481,13 +1506,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               </div>
             )}
 
-            {idea.thesis_summary && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                {idea.thesis_summary}
-              </div>
+          </div>
+          {/* Expand button */}
+          <button
+            onClick={toggleExpand}
+            className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          >
+            <ChevronDown className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
+          </button>
+        </div>
+        {/* Expanded content - rationale */}
+        {isExpanded && (
+          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+            {idea.rationale ? (
+              <p className="text-xs text-gray-600 dark:text-gray-400">{idea.rationale}</p>
+            ) : (
+              <p className="text-xs text-gray-400 dark:text-gray-500 italic">No rationale provided</p>
             )}
           </div>
-        </div>
+        )}
       </div>
     )
   }
@@ -1606,13 +1643,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 </div>
               ))}
             </div>
-
-            {/* Thesis summary */}
-            {pairTrade.thesis_summary && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">
-                {pairTrade.thesis_summary}
-              </div>
-            )}
           </div>
         </div>
       </div>

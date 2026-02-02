@@ -9,7 +9,9 @@ import {
   ChevronDown,
   Clock,
   MoreVertical,
-  Building2
+  Building2,
+  Lock,
+  Users
 } from 'lucide-react'
 import type { TradeIdeaItem, TradeUrgency, ScoredFeedItem, Author } from '../../../hooks/ideas/types'
 
@@ -238,10 +240,10 @@ export function TradeIdeaCard({
 
       {/* Thesis/Rationale - Prominent */}
       {thesis && (
-        <div className="flex-1 mb-3">
+        <div className="mb-3">
           <p className={clsx(
             "text-gray-800 dark:text-gray-200 leading-relaxed",
-            size === 'small' ? 'text-sm font-medium' : 'text-base font-semibold',
+            size === 'small' ? 'text-sm font-medium' : 'text-sm',
             size === 'small' ? 'line-clamp-3' : size === 'medium' ? 'line-clamp-4' : 'line-clamp-6'
           )}>
             {thesis}
@@ -249,16 +251,31 @@ export function TradeIdeaCard({
         </div>
       )}
 
-      {/* Footer: Author + Time */}
+      {/* Footer: Author + Visibility + Time */}
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-100 dark:border-gray-700 mt-auto">
         <AuthorInfo
           author={item.author}
           onClick={onAuthorClick}
         />
 
-        <div className="flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
+        <div className="flex items-center gap-3">
+          {/* Visibility indicator */}
+          {item.sharing_visibility && item.sharing_visibility !== 'private' ? (
+            <div className="flex items-center gap-1 text-blue-500 dark:text-blue-400" title="Shared with portfolio members">
+              <Users className="h-3 w-3" />
+              <span className="text-[10px]">Portfolio</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1" title="Private - only visible to you">
+              <Lock className="h-3 w-3" />
+              <span className="text-[10px]">Private</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
+          </div>
         </div>
       </div>
     </div>

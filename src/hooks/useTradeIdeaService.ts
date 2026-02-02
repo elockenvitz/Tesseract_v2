@@ -21,6 +21,7 @@ import {
   movePairTrade as movePairTradeService,
   createTradeIdea,
   createPairTrade as createPairTradeService,
+  updateTradeIdea,
   // Legacy exports for backwards compatibility
   moveTrade as moveTradeL,
   deleteTrade as deleteTradeL,
@@ -41,6 +42,7 @@ interface UseTradeIdeaServiceOptions {
   onRestoreSuccess?: () => void
   onCreateSuccess?: () => void
   onCreatePairTradeSuccess?: () => void
+  onUpdateSuccess?: () => void
 }
 
 /**
@@ -344,7 +346,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       targetPrice?: number | null
       urgency: string
       rationale?: string
-      thesisSummary?: string
+      sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public'
       uiSource?: UISource
       // Provenance
       originType?: string
@@ -370,7 +372,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         targetPrice: params.targetPrice,
         urgency: params.urgency,
         rationale: params.rationale,
-        thesisSummary: params.thesisSummary,
+        sharingVisibility: params.sharingVisibility,
         context: buildActionContext(user, params.uiSource),
         // Provenance
         originType: params.originType,
@@ -399,7 +401,6 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       name?: string
       description?: string
       rationale?: string
-      thesisSummary?: string
       urgency: string
       legs: Array<{
         assetId: string
@@ -418,7 +419,6 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         name: params.name,
         description: params.description,
         rationale: params.rationale,
-        thesisSummary: params.thesisSummary,
         urgency: params.urgency,
         legs: params.legs,
         context: buildActionContext(user, params.uiSource),
@@ -431,6 +431,47 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to create pair trade')
+    },
+  })
+
+  // Update trade mutation - for editing trade details
+  const updateTradeM = useMutation({
+    mutationFn: async (params: {
+      tradeId: string
+      updates: {
+        rationale?: string | null
+        proposedWeight?: number | null
+        proposedShares?: number | null
+        targetPrice?: number | null
+        stopLoss?: number | null
+        takeProfit?: number | null
+        conviction?: 'low' | 'medium' | 'high' | null
+        timeHorizon?: 'short' | 'medium' | 'long' | null
+        urgency?: string
+        sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public' | null
+        contextTags?: Array<{
+          entity_type: string
+          entity_id: string
+          display_name: string
+        }> | null
+      }
+      uiSource?: UISource
+    }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      await updateTradeIdea({
+        tradeId: params.tradeId,
+        updates: params.updates,
+        context: buildActionContext(user, params.uiSource),
+      })
+    },
+    onSuccess: () => {
+      invalidateQueries()
+      toast.success('Trade idea updated')
+      options.onUpdateSuccess?.()
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to update trade idea')
     },
   })
 
@@ -488,6 +529,11 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     createPairTradeAsync: createPairTradeM.mutateAsync,
     isCreatingPairTrade: createPairTradeM.isPending,
 
+    // Update operations
+    updateTrade: updateTradeM.mutate,
+    updateTradeAsync: updateTradeM.mutateAsync,
+    isUpdating: updateTradeM.isPending,
+
     // Bulk operations
     bulkMove: bulkMoveM.mutate,
     bulkMoveAsync: bulkMoveM.mutateAsync,
@@ -506,6 +552,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       setOutcomeM.isPending ||
       createTradeM.isPending ||
       createPairTradeM.isPending ||
+      updateTradeM.isPending ||
       bulkMoveM.isPending ||
       movePairTradeM.isPending,
   }

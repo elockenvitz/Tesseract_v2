@@ -30,7 +30,9 @@ import {
   Wrench,
   Trash2,
   Circle,
-  MoreVertical
+  MoreVertical,
+  Lock,
+  Users
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -118,7 +120,7 @@ export function TradeQueuePage() {
           users:created_by (id, email, first_name, last_name),
           trade_queue_comments (id),
           trade_queue_votes (id, vote),
-          pair_trades (id, name, description, rationale, thesis_summary, urgency, status)
+          pair_trades (id, name, description, rationale, urgency, status)
         `)
         .order('priority', { ascending: false })
         .order('created_at', { ascending: false })
@@ -1381,18 +1383,16 @@ function TradeQueueCard({
           {!isArchived && (
             <GripVertical className="h-4 w-4 text-gray-300 dark:text-gray-600 cursor-grab flex-shrink-0" />
           )}
-          <p className="text-sm text-gray-900 dark:text-white">
+          <div className="flex items-center gap-2 text-sm">
             <span className={clsx(
               "font-semibold",
               isBuy ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
             )}>
               {actionLabel}
             </span>
-            {' '}
-            <span className="font-semibold">{item.assets?.symbol}</span>
-            {' '}
-            <span className="text-gray-600 dark:text-gray-400">{item.assets?.company_name}</span>
-          </p>
+            <span className="font-semibold text-gray-900 dark:text-white">{item.assets?.symbol}</span>
+            <span className="text-gray-500 dark:text-gray-400">{item.assets?.company_name}</span>
+          </div>
         </div>
 
         {/* Line 2: for [portfolio] + urgency badge */}
@@ -1469,7 +1469,7 @@ function TradeQueueCard({
           </p>
         )}
 
-        {/* Footer: Author + Time + Comments/Votes */}
+        {/* Footer: Author + Time + Visibility + Comments/Votes */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-1.5">
             <User className="h-3 w-3" />
@@ -1478,29 +1478,44 @@ function TradeQueueCard({
             <span>{getRelativeTime(item.created_at)}</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            {item.trade_queue_comments && item.trade_queue_comments.length > 0 && (
-              <span className="flex items-center gap-0.5">
-                <MessageSquare className="h-3 w-3" />
-                {item.trade_queue_comments.length}
-              </span>
+          <div className="flex items-center gap-3">
+            {/* Visibility indicator */}
+            {item.sharing_visibility && item.sharing_visibility !== 'private' ? (
+              <div className="flex items-center gap-1 text-blue-500 dark:text-blue-400" title="Shared with portfolio members">
+                <Users className="h-3 w-3" />
+                <span className="text-[10px]">Portfolio</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1" title="Private - only visible to you">
+                <Lock className="h-3 w-3" />
+                <span className="text-[10px]">Private</span>
+              </div>
             )}
-            {item.vote_summary && (
-              <>
-                {item.vote_summary.approve > 0 && (
-                  <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
-                    <ThumbsUp className="h-3 w-3" />
-                    {item.vote_summary.approve}
-                  </span>
-                )}
-                {item.vote_summary.reject > 0 && (
-                  <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
-                    <ThumbsDown className="h-3 w-3" />
-                    {item.vote_summary.reject}
-                  </span>
-                )}
-              </>
-            )}
+
+            <div className="flex items-center gap-2">
+              {item.trade_queue_comments && item.trade_queue_comments.length > 0 && (
+                <span className="flex items-center gap-0.5">
+                  <MessageSquare className="h-3 w-3" />
+                  {item.trade_queue_comments.length}
+                </span>
+              )}
+              {item.vote_summary && (
+                <>
+                  {item.vote_summary.approve > 0 && (
+                    <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
+                      <ThumbsUp className="h-3 w-3" />
+                      {item.vote_summary.approve}
+                    </span>
+                  )}
+                  {item.vote_summary.reject > 0 && (
+                    <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
+                      <ThumbsDown className="h-3 w-3" />
+                      {item.vote_summary.reject}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

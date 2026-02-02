@@ -30,6 +30,7 @@ interface ContextTagsInputProps {
   maxTags?: number
   className?: string
   compact?: boolean
+  autoFocus?: boolean
 }
 
 // Entity type configuration
@@ -91,12 +92,21 @@ export function ContextTagsInput({
   maxTags = 10,
   className,
   compact = false,
+  autoFocus = false,
 }: ContextTagsInputProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(autoFocus)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Auto-focus on mount if autoFocus is true
+  useEffect(() => {
+    if (autoFocus) {
+      setIsExpanded(true)
+      setTimeout(() => inputRef.current?.focus(), 0)
+    }
+  }, [autoFocus])
 
   // Combined search across all entity types
   const { data: searchResults, isLoading } = useQuery({
