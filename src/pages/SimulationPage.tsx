@@ -58,7 +58,9 @@ import type {
   SimulationVisibility,
   SimulationPermission,
   SimulationCollaboratorWithUser,
-  PairTrade
+  PairTrade,
+  TradeSizingMode,
+  TradeSizing
 } from '../types/trading'
 import { clsx } from 'clsx'
 import { formatDistanceToNow, format } from 'date-fns'
@@ -92,6 +94,72 @@ function getInitialState(propSimulationId?: string, tabId?: string) {
   }
 }
 
+// Simplified sizing mode options - delta is auto-detected from +/- prefix
+type SimpleSizingMode = 'weight' | 'shares' | 'vs_benchmark'
+const SIZING_MODE_OPTIONS: { value: SimpleSizingMode; label: string; unit: string; placeholder: string; disabled?: boolean }[] = [
+  { value: 'weight', label: 'Weight', unit: '%', placeholder: '' },
+  { value: 'shares', label: 'Shares', unit: 'sh', placeholder: '' },
+  { value: 'vs_benchmark', label: '± Bench', unit: '%', placeholder: '', disabled: true },
+]
+
+// Parse value to detect if it's a delta (starts with + or -)
+const parseEditingValue = (value: string, baseMode: SimpleSizingMode): { mode: TradeSizingMode; numValue: number | null } => {
+  if (baseMode === 'vs_benchmark') return { mode: 'delta_benchmark', numValue: null }
+  if (!value || value.trim() === '') return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue: null }
+  const trimmed = value.trim()
+  const isDelta = trimmed.startsWith('+') || (trimmed.startsWith('-') && trimmed !== '-')
+  const numValue = parseFloat(trimmed)
+  if (isNaN(numValue)) return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue: null }
+
+  if (isDelta) {
+    return { mode: baseMode === 'weight' ? 'delta_weight' : 'delta_shares', numValue }
+  }
+  return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue }
+}
+
+// Get current sizing mode option
+const getSizingModeOption = (mode: SimpleSizingMode) =>
+  SIZING_MODE_OPTIONS.find(opt => opt.value === mode) || SIZING_MODE_OPTIONS[0]
+
+// Resolve sizing mode to absolute shares/weight values
+function resolveSizing(
+  sizing: TradeSizing,
+  baseline: BaselineHolding | undefined,
+  currentHolding: SimulatedHolding | undefined,
+  totalPortfolioValue: number,
+  currentPrice: number
+): { shares: number | null; weight: number | null } {
+  const { mode, value } = sizing
+  if (value === null || value === undefined) {
+    return { shares: null, weight: null }
+  }
+
+  switch (mode) {
+    case 'weight':
+      return { shares: null, weight: value }
+
+    case 'shares':
+      return { shares: value, weight: null }
+
+    case 'delta_weight': {
+      const currentWeight = currentHolding?.weight ?? baseline?.weight ?? 0
+      return { shares: null, weight: currentWeight + value }
+    }
+
+    case 'delta_shares': {
+      const currentShares = currentHolding?.shares ?? baseline?.shares ?? 0
+      return { shares: currentShares + value, weight: null }
+    }
+
+    case 'delta_benchmark':
+      // Future: when benchmark data exists
+      return { shares: null, weight: null }
+
+    default:
+      return { shares: null, weight: null }
+  }
+}
+
 export function SimulationPage({ simulationId: propSimulationId, tabId, onClose, initialPortfolioId }: SimulationPageProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -104,8 +172,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [showCreatePanel, setShowCreatePanel] = useState(false)
   const [showIdeasPanel, setShowIdeasPanel] = useState(initialState.current.showIdeasPanel)
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null)
-  const [editingShares, setEditingShares] = useState<string>('')
-  const [editingWeight, setEditingWeight] = useState<string>('')
+  const [editingSizingMode, setEditingSizingMode] = useState<SimpleSizingMode>('weight')
+  const [editingValue, setEditingValue] = useState<string>('')
   const [impactView, setImpactView] = useState<'summary' | 'holdings' | 'trades'>(initialState.current.impactView)
 
   // New: Portfolio-first workflow state
@@ -1301,47 +1369,97 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   const startEditingTrade = (trade: SimulationTradeWithDetails) => {
     setEditingTradeId(trade.id)
-    setEditingShares(trade.shares?.toString() || '')
-    setEditingWeight(trade.weight?.toString() || '')
+    // Determine initial sizing mode based on trade's current values
+    if (trade.weight != null) {
+      setEditingSizingMode('weight')
+      setEditingValue(trade.weight.toString())
+    } else if (trade.shares != null) {
+      setEditingSizingMode('shares')
+      setEditingValue(trade.shares.toString())
+    } else {
+      // Default to weight mode with empty value
+      setEditingSizingMode('weight')
+      setEditingValue('')
+    }
   }
 
-  // Queue trade change for auto-save (finds trade by editingTradeId)
-  const queueTradeChange = useCallback((shares?: string, weight?: string) => {
+  // Queue trade change for auto-save using current sizing mode
+  const queueTradeChange = useCallback((baseMode: SimpleSizingMode, value: string) => {
     if (!editingTradeId || !simulation?.simulation_trades) return
     const trade = simulation.simulation_trades.find(t => t.id === editingTradeId)
     if (!trade) return
+
+    // Parse value to detect delta mode from +/- prefix
+    const { mode, numValue } = parseEditingValue(value, baseMode)
+
+    // Get baseline and current holding for delta calculations
+    const baseline = (simulation.baseline_holdings as BaselineHolding[])
+      ?.find(b => b.asset_id === trade.asset_id)
+    const currentHolding = metrics?.holdings_after
+      ?.find(h => h.asset_id === trade.asset_id)
+
+    const resolved = resolveSizing(
+      { mode, value: numValue },
+      baseline,
+      currentHolding,
+      simulation.baseline_total_value || 0,
+      priceMap?.[trade.asset_id] || trade.price || 100
+    )
+
     workbenchQueueChange(trade.id, {
       id: trade.id,
       assetId: trade.asset_id,
       action: trade.action,
-      shares: shares ? parseFloat(shares) : null,
-      weight: weight ? parseFloat(weight) : null,
+      shares: resolved.shares,
+      weight: resolved.weight,
       price: trade.price,
       tradeQueueItemId: trade.trade_queue_item_id,
     })
-  }, [editingTradeId, simulation?.simulation_trades, workbenchQueueChange])
+  }, [editingTradeId, simulation?.simulation_trades, simulation?.baseline_holdings, simulation?.baseline_total_value, metrics?.holdings_after, priceMap, workbenchQueueChange])
 
-  // Handler for shares changes that triggers auto-save
-  const handleEditingSharesChange = useCallback((value: string) => {
-    setEditingShares(value)
-    queueTradeChange(value, editingWeight)
-  }, [editingWeight, queueTradeChange])
+  // Handler for value changes that triggers auto-save
+  const handleEditingValueChange = useCallback((value: string) => {
+    setEditingValue(value)
+    queueTradeChange(editingSizingMode, value)
+  }, [editingSizingMode, queueTradeChange])
 
-  // Handler for weight changes that triggers auto-save
-  const handleEditingWeightChange = useCallback((value: string) => {
-    setEditingWeight(value)
-    queueTradeChange(editingShares, value)
-  }, [editingShares, queueTradeChange])
+  // Handler for sizing mode changes
+  const handleSizingModeChange = useCallback((mode: SimpleSizingMode) => {
+    setEditingSizingMode(mode)
+    // Clear value when switching modes to avoid confusion
+    setEditingValue('')
+  }, [])
 
   const saveTradeEdit = () => {
-    if (!editingTradeId) return
+    if (!editingTradeId || !simulation) return
+
+    const trade = simulation.simulation_trades?.find(t => t.id === editingTradeId)
+    if (!trade) return
+
+    // Parse value to detect delta mode from +/- prefix
+    const { mode, numValue } = parseEditingValue(editingValue, editingSizingMode)
+
+    // Get baseline and current holding for delta calculations
+    const baseline = (simulation.baseline_holdings as BaselineHolding[])
+      ?.find(b => b.asset_id === trade.asset_id)
+    const currentHolding = metrics?.holdings_after
+      ?.find(h => h.asset_id === trade.asset_id)
+
+    const resolved = resolveSizing(
+      { mode, value: numValue },
+      baseline,
+      currentHolding,
+      simulation.baseline_total_value || 0,
+      priceMap?.[trade.asset_id] || trade.price || 100
+    )
+
     // Force immediate save of any pending changes
     workbenchSaveNow()
     // Also update via the direct mutation for immediate UI feedback
     updateTradeMutation.mutate({
       tradeId: editingTradeId,
-      shares: editingShares ? parseFloat(editingShares) : undefined,
-      weight: editingWeight ? parseFloat(editingWeight) : undefined,
+      shares: resolved.shares ?? undefined,
+      weight: resolved.weight ?? undefined,
     })
   }
 
@@ -1351,12 +1469,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       ? simulation?.simulation_trades?.find(t => t.asset_id === idea.asset_id)
       : null
     const isEditingThis = sandboxTrade && editingTradeId === sandboxTrade.id
-
-    // Check if sandbox trade has been modified from original idea
-    const isModified = sandboxTrade && (
-      (sandboxTrade.shares !== idea.proposed_shares) ||
-      (sandboxTrade.weight !== idea.proposed_weight)
-    )
 
     const isExpanded = expandedTradeIds.has(idea.id)
     const toggleExpand = (e: React.MouseEvent) => {
@@ -1376,20 +1488,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       <div
         key={idea.id}
         className={clsx(
-          "bg-white dark:bg-gray-800 rounded-lg p-3 border transition-colors relative",
-          isModified
-            ? "border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10"
-            : idea.isAdded
-              ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
-              : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
+          "bg-white dark:bg-gray-800 rounded-lg p-3 border transition-colors",
+          idea.isAdded
+            ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
+            : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
         )}
       >
-        {/* Modified badge in upper right */}
-        {isModified && (
-          <span className="absolute -top-2 -right-2 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-amber-500 text-white shadow-sm">
-            Modified
-          </span>
-        )}
         <div className="flex items-start gap-2">
           {/* Checkbox for added status */}
           <button
@@ -1441,70 +1545,29 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               )}
             </div>
 
-            {/* Editable sandbox trade values */}
-            {idea.isAdded && sandboxTrade ? (
-              isEditingThis ? (
-                <div className="flex items-center gap-2 mt-2">
-                  <Input
-                    type="number"
-                    value={editingShares}
-                    onChange={(e) => handleEditingSharesChange(e.target.value)}
-                    className="w-20 text-xs h-7"
-                    placeholder="Shares"
-                  />
-                  <Input
-                    type="number"
-                    value={editingWeight}
-                    onChange={(e) => handleEditingWeightChange(e.target.value)}
-                    className="w-16 text-xs h-7"
-                    placeholder="%"
-                  />
-                  <button
-                    onClick={saveTradeEdit}
-                    className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
-                  >
-                    <Check className="h-3 w-3" />
-                  </button>
-                  <button
-                    onClick={() => setEditingTradeId(null)}
-                    className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-1">
-                  <button
-                    onClick={() => sandboxTrade && startEditingTrade(sandboxTrade)}
-                    className={clsx(
-                      "text-xs mt-1 truncate hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group",
-                      isModified ? "text-amber-700 dark:text-amber-400 font-medium" : "text-gray-500 dark:text-gray-400"
-                    )}
-                  >
-                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {sandboxTrade.weight ? `${sandboxTrade.weight}%` : ''}
-                    {sandboxTrade.weight && sandboxTrade.shares ? ' · ' : ''}
-                    {sandboxTrade.shares ? `${sandboxTrade.shares} shares` : ''}
-                    {!sandboxTrade.weight && !sandboxTrade.shares && (
-                      <span className="italic">Click to set shares/weight</span>
-                    )}
-                  </button>
-                  {isModified && (
-                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 line-through">
-                      Original: {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
-                      {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
-                      {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
-                    </div>
+            {/* Non-editing: show size display */}
+            {idea.isAdded && sandboxTrade && !isEditingThis ? (
+              <div className="mt-1">
+                <button
+                  onClick={() => sandboxTrade && startEditingTrade(sandboxTrade)}
+                  className="text-xs text-gray-500 dark:text-gray-400 truncate hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group"
+                >
+                  <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  {sandboxTrade.weight != null && `${sandboxTrade.weight}%`}
+                  {sandboxTrade.weight != null && sandboxTrade.shares != null && ' · '}
+                  {sandboxTrade.shares != null && `${sandboxTrade.shares.toLocaleString()} shares`}
+                  {sandboxTrade.weight == null && sandboxTrade.shares == null && (
+                    <span className="italic">Set size</span>
                   )}
-                </div>
-              )
-            ) : (
+                </button>
+              </div>
+            ) : !idea.isAdded ? (
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
                 {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
                 {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
                 {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
               </div>
-            )}
+            ) : null}
 
           </div>
           {/* Expand button */}
@@ -1515,6 +1578,91 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             <ChevronDown className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
           </button>
         </div>
+
+        {/* Editing UI - full width below the header row */}
+        {idea.isAdded && sandboxTrade && isEditingThis && (() => {
+          const baseline = (simulation?.baseline_holdings as BaselineHolding[])
+            ?.find(b => b.asset_id === sandboxTrade.asset_id)
+          const currentHolding = metrics?.holdings_after
+            ?.find(h => h.asset_id === sandboxTrade.asset_id)
+          const modeOption = getSizingModeOption(editingSizingMode)
+
+          // Parse to detect delta and calculate preview
+          const { mode: resolvedMode, numValue } = parseEditingValue(editingValue, editingSizingMode)
+          const isDelta = resolvedMode.startsWith('delta_')
+          const getPreview = () => {
+            if (numValue === null) return null
+            if (resolvedMode === 'delta_weight') {
+              const current = currentHolding?.weight ?? baseline?.weight ?? 0
+              return { type: 'weight', to: current + numValue }
+            }
+            if (resolvedMode === 'delta_shares') {
+              const current = currentHolding?.shares ?? baseline?.shares ?? 0
+              return { type: 'shares', to: current + numValue }
+            }
+            return null
+          }
+          const preview = isDelta ? getPreview() : null
+
+          return (
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center gap-1">
+                <select
+                  value={editingSizingMode}
+                  onChange={(e) => handleSizingModeChange(e.target.value as SimpleSizingMode)}
+                  className="text-xs h-6 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
+                >
+                  {SIZING_MODE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                      {opt.label}{opt.disabled ? ' (N/A)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={editingValue}
+                    onChange={(e) => handleEditingValueChange(e.target.value)}
+                    className="w-14 text-xs h-6 pl-1.5 pr-5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
+                    autoFocus
+                  />
+                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 dark:text-gray-500 pointer-events-none">
+                    {modeOption.unit}
+                  </span>
+                </div>
+                <button
+                  onClick={saveTradeEdit}
+                  className="h-6 w-6 bg-primary-500 text-white rounded hover:bg-primary-600 transition-colors flex items-center justify-center"
+                >
+                  <Check className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => setEditingTradeId(null)}
+                  className="h-6 w-6 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                {baseline ? (
+                  <span>Current: {baseline.shares.toLocaleString()} sh ({baseline.weight.toFixed(2)}%)</span>
+                ) : (
+                  <span className="italic">New position</span>
+                )}
+                {preview && (
+                  <span className="text-primary-600 dark:text-primary-400 ml-1">
+                    → {preview.type === 'weight'
+                      ? `${preview.to.toFixed(2)}%`
+                      : `${preview.to.toLocaleString()} sh`
+                    }
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Expanded content - rationale */}
         {isExpanded && (
           <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
@@ -2332,7 +2480,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             {/* Key Metrics - Modern card grid */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                               {/* Positions Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
                                 <div className="flex items-center justify-between mb-3">
                                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Positions</span>
                                   <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -2345,7 +2493,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     <span className="text-sm text-gray-400">from {metrics.position_count_before}</span>
                                   )}
                                 </div>
-                                <div className="mt-2 flex items-center gap-2 text-xs">
+                                <div className="mt-2 flex items-center gap-2 text-xs h-5">
                                   {metrics.positions_added > 0 && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400">
                                       <Plus className="h-3 w-3" />{metrics.positions_added} new
@@ -2360,7 +2508,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               </div>
 
                               {/* Top 5 Concentration Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
                                 <div className="flex items-center justify-between mb-3">
                                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Top 5</span>
                                   <div className={clsx(
@@ -2378,22 +2526,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                 <div className="flex items-baseline gap-2">
                                   <span className="text-2xl font-bold text-gray-900 dark:text-white">{metrics.top_5_concentration_after.toFixed(1)}%</span>
                                 </div>
-                                {metrics.top_5_concentration_after !== metrics.top_5_concentration_before && (
-                                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                    <span className={clsx(
-                                      "font-medium",
-                                      metrics.top_5_concentration_after > metrics.top_5_concentration_before ? "text-amber-600" : "text-green-600"
-                                    )}>
-                                      {metrics.top_5_concentration_after > metrics.top_5_concentration_before ? '+' : ''}
-                                      {(metrics.top_5_concentration_after - metrics.top_5_concentration_before).toFixed(1)}%
-                                    </span>
-                                    {' '}from {metrics.top_5_concentration_before.toFixed(1)}%
-                                  </div>
-                                )}
+                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 h-4">
+                                  {metrics.top_5_concentration_after !== metrics.top_5_concentration_before && (
+                                    <>
+                                      <span className={clsx(
+                                        "font-medium",
+                                        metrics.top_5_concentration_after > metrics.top_5_concentration_before ? "text-amber-600" : "text-green-600"
+                                      )}>
+                                        {metrics.top_5_concentration_after > metrics.top_5_concentration_before ? '+' : ''}
+                                        {(metrics.top_5_concentration_after - metrics.top_5_concentration_before).toFixed(1)}%
+                                      </span>
+                                      {' '}from {metrics.top_5_concentration_before.toFixed(1)}%
+                                    </>
+                                  )}
+                                </div>
                               </div>
 
                               {/* Top 10 Concentration Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
                                 <div className="flex items-center justify-between mb-3">
                                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Top 10</span>
                                   <div className={clsx(
@@ -2411,22 +2561,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                 <div className="flex items-baseline gap-2">
                                   <span className="text-2xl font-bold text-gray-900 dark:text-white">{metrics.top_10_concentration_after.toFixed(1)}%</span>
                                 </div>
-                                {metrics.top_10_concentration_after !== metrics.top_10_concentration_before && (
-                                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                    <span className={clsx(
-                                      "font-medium",
-                                      metrics.top_10_concentration_after > metrics.top_10_concentration_before ? "text-amber-600" : "text-green-600"
-                                    )}>
-                                      {metrics.top_10_concentration_after > metrics.top_10_concentration_before ? '+' : ''}
-                                      {(metrics.top_10_concentration_after - metrics.top_10_concentration_before).toFixed(1)}%
-                                    </span>
-                                    {' '}from {metrics.top_10_concentration_before.toFixed(1)}%
-                                  </div>
-                                )}
+                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 h-4">
+                                  {metrics.top_10_concentration_after !== metrics.top_10_concentration_before && (
+                                    <>
+                                      <span className={clsx(
+                                        "font-medium",
+                                        metrics.top_10_concentration_after > metrics.top_10_concentration_before ? "text-amber-600" : "text-green-600"
+                                      )}>
+                                        {metrics.top_10_concentration_after > metrics.top_10_concentration_before ? '+' : ''}
+                                        {(metrics.top_10_concentration_after - metrics.top_10_concentration_before).toFixed(1)}%
+                                      </span>
+                                      {' '}from {metrics.top_10_concentration_before.toFixed(1)}%
+                                    </>
+                                  )}
+                                </div>
                               </div>
 
                               {/* HHI Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
                                 <div className="flex items-center justify-between mb-3">
                                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">HHI Index</span>
                                   <div className={clsx(
@@ -2446,11 +2598,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                 <div className="flex items-baseline gap-2">
                                   <span className="text-2xl font-bold text-gray-900 dark:text-white">{(metrics.herfindahl_index_after * 100).toFixed(0)}</span>
                                 </div>
-                                {metrics.herfindahl_index_after !== metrics.herfindahl_index_before && (
-                                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                    from {(metrics.herfindahl_index_before * 100).toFixed(0)}
-                                  </div>
-                                )}
+                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 h-4">
+                                  {metrics.herfindahl_index_after !== metrics.herfindahl_index_before && (
+                                    <>from {(metrics.herfindahl_index_before * 100).toFixed(0)}</>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
@@ -2766,22 +2918,39 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                                   {trade ? (
                                                     isEditing ? (
                                                       <div className="flex items-center gap-1 justify-center">
-                                                        <Input
-                                                          type="number"
-                                                          value={editingShares}
-                                                          onChange={(e) => handleEditingSharesChange(e.target.value)}
-                                                          className="w-20 text-xs h-7"
-                                                          placeholder="Shares"
-                                                        />
+                                                        <select
+                                                          value={editingSizingMode}
+                                                          onChange={(e) => handleSizingModeChange(e.target.value as SimpleSizingMode)}
+                                                          className="text-[10px] h-6 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-0.5"
+                                                        >
+                                                          {SIZING_MODE_OPTIONS.map(opt => (
+                                                            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                                                              {opt.label}{opt.disabled ? ' (N/A)' : ''}
+                                                            </option>
+                                                          ))}
+                                                        </select>
+                                                        <div className="relative">
+                                                          <input
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            value={editingValue}
+                                                            onChange={(e) => handleEditingValueChange(e.target.value)}
+                                                            className="w-12 text-xs h-6 pl-1 pr-4 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                                            autoFocus
+                                                          />
+                                                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">
+                                                            {getSizingModeOption(editingSizingMode).unit}
+                                                          </span>
+                                                        </div>
                                                         <button
                                                           onClick={saveTradeEdit}
-                                                          className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                                                          className="p-1 bg-primary-500 text-white rounded hover:bg-primary-600"
                                                         >
                                                           <Check className="h-3 w-3" />
                                                         </button>
                                                         <button
                                                           onClick={() => setEditingTradeId(null)}
-                                                          className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                                          className="p-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
                                                         >
                                                           <X className="h-3 w-3" />
                                                         </button>
@@ -2800,7 +2969,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                                           title={canEdit ? "Click to edit" : undefined}
                                                         >
                                                           {trade.action}
-                                                          {trade.shares && <span className="font-normal">({trade.shares})</span>}
+                                                          {trade.shares && <span className="font-normal">({trade.shares.toLocaleString()})</span>}
                                                         </button>
                                                         {canEdit && (
                                                           <button
@@ -2896,22 +3065,40 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                             {trade ? (
                                               isEditing ? (
                                                 <div className="flex items-center gap-1 justify-center">
-                                                  <Input
-                                                    type="number"
-                                                    value={editingShares}
-                                                    onChange={(e) => handleEditingSharesChange(e.target.value)}
-                                                    className="w-20 text-xs h-7"
-                                                    placeholder="Shares"
-                                                  />
+                                                  <select
+                                                    value={editingSizingMode}
+                                                    onChange={(e) => handleSizingModeChange(e.target.value as SimpleSizingMode)}
+                                                    className="text-[10px] h-6 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-0.5"
+                                                  >
+                                                    {SIZING_MODE_OPTIONS.map(opt => (
+                                                      <option key={opt.value} value={opt.value}>
+                                                        {opt.label}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                  <div className="relative">
+                                                    <input
+                                                      type="text"
+                                                      inputMode="numeric"
+                                                      value={editingValue}
+                                                      onChange={(e) => handleEditingValueChange(e.target.value)}
+                                                      className="w-16 text-xs h-6 pl-1.5 pr-5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                                      placeholder={getSizingModeOption(editingSizingMode).placeholder}
+                                                      autoFocus
+                                                    />
+                                                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">
+                                                      {getSizingModeOption(editingSizingMode).unit}
+                                                    </span>
+                                                  </div>
                                                   <button
                                                     onClick={saveTradeEdit}
-                                                    className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                                                    className="p-1 bg-primary-500 text-white rounded hover:bg-primary-600"
                                                   >
                                                     <Check className="h-3 w-3" />
                                                   </button>
                                                   <button
                                                     onClick={() => setEditingTradeId(null)}
-                                                    className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                                    className="p-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
                                                   >
                                                     <X className="h-3 w-3" />
                                                   </button>
@@ -2930,7 +3117,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                                     title={canEdit ? "Click to edit" : undefined}
                                                   >
                                                     {trade.action}
-                                                    {trade.shares && <span className="font-normal">({trade.shares})</span>}
+                                                    {trade.shares && <span className="font-normal">({trade.shares.toLocaleString()})</span>}
                                                   </button>
                                                   {canEdit && (
                                                     <button
@@ -3381,26 +3568,28 @@ function calculateSimulationMetrics(
   const tradedAssetIds = new Set<string>()
 
   trades.forEach(trade => {
-    tradedAssetIds.add(trade.asset_id)
     const existing = holdingsMap.get(trade.asset_id)
     const price = priceMap[trade.asset_id] || trade.price || 100
 
     if (trade.action === 'buy' || trade.action === 'add') {
+      const additionalShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
+      // Only count as a trade if there's actual impact
+      if (additionalShares === 0) return
+      tradedAssetIds.add(trade.asset_id)
+
       if (existing) {
-        const additionalShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
         existing.shares += additionalShares
         existing.value = existing.shares * existing.price
         positionsAdjusted++
       } else {
-        const shares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
         holdingsMap.set(trade.asset_id, {
           asset_id: trade.asset_id,
           symbol: trade.assets?.symbol || '',
           company_name: trade.assets?.company_name || '',
           sector: trade.assets?.sector || null,
-          shares,
+          shares: additionalShares,
           price,
-          value: shares * price,
+          value: additionalShares * price,
           weight: 0,
           change_from_baseline: 0,
           is_new: true,
@@ -3411,6 +3600,9 @@ function calculateSimulationMetrics(
       }
     } else if (trade.action === 'sell') {
       const sellShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
+      // Only count as a trade if there's actual impact
+      if (sellShares === 0) return
+      tradedAssetIds.add(trade.asset_id)
 
       if (existing) {
         // Selling existing position - can go short (negative shares)
@@ -3452,6 +3644,10 @@ function calculateSimulationMetrics(
     } else if (trade.action === 'trim') {
       if (existing) {
         const sellShares = trade.shares || existing.shares * 0.5
+        // Only count as a trade if there's actual impact
+        if (sellShares === 0) return
+        tradedAssetIds.add(trade.asset_id)
+
         existing.shares = Math.max(0, existing.shares - sellShares)
         existing.value = existing.shares * existing.price
         if (existing.shares === 0) {

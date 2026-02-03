@@ -438,10 +438,9 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showLeftArrow, setShowLeftArrow] = useState(false)
   const [showRightArrow, setShowRightArrow] = useState(false)
-  const [isScrolling, setIsScrolling] = useState(false)
+  const [hasOverflow, setHasOverflow] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const visibilityCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const prevTabsLengthRef = useRef(tabs.length)
 
   // Track the "selected" tab for each family (e.g., 'assets', 'themes')
   const [selectedTabPerFamily, setSelectedTabPerFamily] = useState<Record<string, string>>({})
@@ -622,202 +621,87 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
     onTabsReorder(newTabs)
   }
 
-  const checkScrollVisibility = () => {
-    if (scrollContainerRef.current) {
-      const container = scrollContainerRef.current
-      const { scrollLeft, scrollWidth, clientWidth } = container
-      const leftPadding = 16
-
-      // Check if scrolled from the left
-      setShowLeftArrow(scrollLeft > leftPadding + 10)
-
-      // Check if we can scroll right (are we at or near the end?)
-      const maxScrollLeft = scrollWidth - clientWidth
-      const isAtEnd = maxScrollLeft <= 0 || scrollLeft >= maxScrollLeft - 5
-
-      if (isAtEnd) {
-        // At the end - no right arrow needed
-        setShowRightArrow(false)
-      } else {
-        // Find the last actual tab to check if it's fully visible
-        const tabElements = Array.from(container.children).filter(
-          child => !child.classList.contains('ml-1')
-        ) as HTMLElement[]
-        const lastTab = tabElements[tabElements.length - 1]
-
-        if (lastTab) {
-          // Use getBoundingClientRect for more accurate position detection
-          const containerRect = container.getBoundingClientRect()
-          const tabRect = lastTab.getBoundingClientRect()
-          // When checking, use the plus button width (arrow not visible yet if we need to show it)
-          const fixedControlsWidth = 48 // plus button + some padding
-          const visibleRight = containerRect.right - fixedControlsWidth
-
-          setShowRightArrow(tabRect.right > visibleRight + 4)
-        } else {
-          setShowRightArrow(false)
-        }
-      }
-    }
-  }
-
-  const debouncedCheckScrollVisibility = () => {
-    if (isScrolling) return
-
-    if (visibilityCheckTimeoutRef.current) {
-      clearTimeout(visibilityCheckTimeoutRef.current)
-    }
-    visibilityCheckTimeoutRef.current = setTimeout(() => {
-      if (!isScrolling) {
-        checkScrollVisibility()
-      }
-    }, 150)
-  }
-
-  const scrollLeft = () => {
-    if (scrollContainerRef.current && !isScrolling) {
-      setIsScrolling(true)
-      const container = scrollContainerRef.current
-      const containerWidth = container.clientWidth
-      const currentScrollLeft = container.scrollLeft
-
-      const scrollAmount = containerWidth * 0.75
-      let targetScrollLeft = currentScrollLeft - scrollAmount
-
-      // If we're close to the start, just go all the way to ensure clean snap
-      if (targetScrollLeft <= 50) {
-        targetScrollLeft = 0
-      }
-
-      container.scrollTo({
-        left: Math.max(0, targetScrollLeft),
-        behavior: 'smooth'
-      })
-
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
-      scrollTimeoutRef.current = setTimeout(() => {
-        setIsScrolling(false)
-        checkScrollVisibility() // Re-check to update arrow visibility
-      }, 400)
-    }
-  }
-
-  const scrollRight = () => {
-    if (scrollContainerRef.current && !isScrolling) {
-      setIsScrolling(true)
-      const container = scrollContainerRef.current
-      const containerWidth = container.clientWidth
-      const currentScrollLeft = container.scrollLeft
-      const maxScrollLeft = container.scrollWidth - containerWidth
-
-      const scrollAmount = containerWidth * 0.75
-      let targetScrollLeft = currentScrollLeft + scrollAmount
-
-      // If we're close to the end, just go all the way to ensure clean snap
-      if (targetScrollLeft >= maxScrollLeft - 50) {
-        targetScrollLeft = maxScrollLeft
-      }
-
-      container.scrollTo({
-        left: targetScrollLeft,
-        behavior: 'smooth'
-      })
-
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
-      scrollTimeoutRef.current = setTimeout(() => {
-        setIsScrolling(false)
-        checkScrollVisibility() // Re-check to update arrow visibility
-      }, 400)
-    }
-  }
-
-  const scrollToShowLastTab = () => {
-    if (scrollContainerRef.current) {
-      const container = scrollContainerRef.current
-      // Find all tab elements (exclude the inline + button which has ml-1 class)
-      const tabElements = Array.from(container.children).filter(
-        child => !child.classList.contains('ml-1')
-      ) as HTMLElement[]
-      const lastTab = tabElements[tabElements.length - 1]
-
-      if (lastTab) {
-        // Check if we need to scroll at all
-        const maxScrollLeft = container.scrollWidth - container.clientWidth
-
-        if (maxScrollLeft > 0) {
-          // There's overflow - scroll to show the last tab
-          // Right controls: arrow (36px) + plus (28px) + padding (8px) = 72px
-          // Left arrow will appear after scrolling: 36px (reduces visible width)
-          // Buffer for close button: 8px
-          const rightControlsWidth = 72
-          const leftArrowWidth = 36
-          const buffer = 8
-
-          // Calculate where we need to scroll to
-          // Account for left arrow appearing and reducing visible area
-          const lastTabRight = lastTab.offsetLeft + lastTab.offsetWidth
-          const effectiveClientWidth = container.clientWidth - leftArrowWidth
-          const targetScrollLeft = lastTabRight - effectiveClientWidth + rightControlsWidth + buffer
-
-          container.scrollTo({
-            left: Math.max(0, targetScrollLeft),
-            behavior: 'smooth'
-          })
-
-          // Re-check scroll visibility after scrolling
-          setTimeout(checkScrollVisibility, 350)
-        }
-      }
-    }
-  }
-
-  useEffect(() => {
-    // Only check visibility if not in the middle of a scroll animation
-    if (!isScrolling) {
-      checkScrollVisibility()
-    }
-    const handleResize = () => {
-      if (!isScrolling) {
-        checkScrollVisibility()
-      }
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [tabs, isScrolling])
-
-  useEffect(() => {
-    // Hide right arrow immediately to prevent flicker when adding new tab
-    setShowRightArrow(false)
-    setIsScrolling(true)
-
-    const timer = setTimeout(() => {
-      scrollToShowLastTab()
-      // Delay visibility check until after scroll animation
-      setTimeout(() => {
-        setIsScrolling(false)
-        checkScrollVisibility()
-      }, 400)
-    }, 50)
-
-    return () => clearTimeout(timer)
-  }, [tabs.length])
-
-  useEffect(() => {
+  // Simple function to update all scroll-related state
+  const updateScrollState = useCallback(() => {
     const container = scrollContainerRef.current
-    if (container) {
-      container.addEventListener('scroll', debouncedCheckScrollVisibility)
-      return () => {
-        container.removeEventListener('scroll', debouncedCheckScrollVisibility)
-        if (visibilityCheckTimeoutRef.current) {
-          clearTimeout(visibilityCheckTimeoutRef.current)
-        }
-      }
+    if (!container) return
+
+    const { scrollLeft, scrollWidth, clientWidth } = container
+    const maxScrollLeft = scrollWidth - clientWidth
+    const contentOverflows = maxScrollLeft > 0
+
+    setHasOverflow(contentOverflows)
+    setShowLeftArrow(scrollLeft > 20)
+    setShowRightArrow(contentOverflows && scrollLeft < maxScrollLeft - 10)
+  }, [])
+
+  const scrollLeftClick = () => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const scrollAmount = container.clientWidth * 0.75
+    const targetScrollLeft = Math.max(0, container.scrollLeft - scrollAmount)
+
+    container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' })
+  }
+
+  const scrollRightClick = () => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const maxScrollLeft = container.scrollWidth - container.clientWidth
+    const scrollAmount = container.clientWidth * 0.75
+    const targetScrollLeft = Math.min(maxScrollLeft, container.scrollLeft + scrollAmount)
+
+    container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' })
+  }
+
+  const scrollToEnd = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const maxScrollLeft = container.scrollWidth - container.clientWidth
+    if (maxScrollLeft > 0) {
+      container.scrollLeft = maxScrollLeft
     }
   }, [])
+
+  // Update scroll state on tabs change, resize, and scroll
+  useEffect(() => {
+    updateScrollState()
+    window.addEventListener('resize', updateScrollState)
+    return () => window.removeEventListener('resize', updateScrollState)
+  }, [tabs, updateScrollState])
+
+  // Handle tab additions - scroll to show new tab
+  useEffect(() => {
+    const wasAdding = tabs.length > prevTabsLengthRef.current
+    prevTabsLengthRef.current = tabs.length
+
+    if (wasAdding) {
+      // Wait for DOM to update, then scroll to end and update state
+      requestAnimationFrame(() => {
+        scrollToEnd()
+        // After scroll, update state
+        requestAnimationFrame(() => {
+          updateScrollState()
+        })
+      })
+    } else if (tabs.length < prevTabsLengthRef.current + 1) {
+      // Tab removed - update state
+      requestAnimationFrame(updateScrollState)
+    }
+  }, [tabs.length, scrollToEnd, updateScrollState])
+
+  // Listen for scroll events
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => updateScrollState()
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [updateScrollState])
 
   const getTabIcon = (type: string) => {
     switch (type) {
@@ -868,6 +752,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       }, 100)
     } else {
       onNewTab()
+      // The useEffect on tabs.length handles scrolling to show the new tab
       setTimeout(() => {
         onFocusSearch?.()
       }, 100)
@@ -908,7 +793,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
           )}
         >
           <button
-            onClick={scrollLeft}
+            onClick={scrollLeftClick}
             className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
             title="Scroll left"
             tabIndex={showLeftArrow ? 0 : -1}
@@ -938,7 +823,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',
                 paddingLeft: '8px',
-                paddingRight: '80px' // Reserve space for arrow + plus button when overflow
+                paddingRight: hasOverflow ? (showRightArrow ? '60px' : '44px') : '8px' // Reserve space for fixed controls
               }}
             >
               {consolidatedTabs.map((item) => {
@@ -970,6 +855,16 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
                 }
                 return null
               })}
+              {/* Inline plus button - shown when no overflow */}
+              {!hasOverflow && (
+                <button
+                  onClick={handleNewTabClick}
+                  className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 ml-1"
+                  title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </SortableContext>
           <DragOverlay>
@@ -982,33 +877,29 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
           </DragOverlay>
         </DndContext>
 
-        {/* Right side controls - plus button always visible, arrow expands/collapses */}
-        <div className="absolute right-2 top-0 bottom-0 flex items-center bg-white pl-2">
-          {/* Right arrow - smoothly expands/collapses */}
-          <div
-            className={clsx(
-              "flex-shrink-0 overflow-hidden transition-all duration-200 ease-in-out",
-              showRightArrow ? "w-8 mr-1" : "w-0"
+        {/* Right side controls - only shown when tabs overflow */}
+        {hasOverflow && (
+          <div className="absolute right-2 top-0 bottom-0 flex items-center bg-white pl-2">
+            {/* Right arrow - only shown when there's more content to scroll */}
+            {showRightArrow && (
+              <button
+                onClick={scrollRightClick}
+                className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors bg-white mr-1"
+                title="Scroll right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             )}
-          >
+
             <button
-              onClick={scrollRight}
-              className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors bg-white"
-              title="Scroll right"
-              tabIndex={showRightArrow ? 0 : -1}
+              onClick={handleNewTabClick}
+              className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white"
+              title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
             >
-              <ChevronRight className="h-4 w-4" />
+              <Plus className="h-4 w-4" />
             </button>
           </div>
-
-          <button
-            onClick={handleNewTabClick}
-            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white"
-            title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
+        )}
       </div>
     </div>
   )

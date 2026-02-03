@@ -12,6 +12,19 @@ export type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'
 export type TradeVote = 'approve' | 'reject' | 'needs_discussion'
 export type PairLegType = 'long' | 'short'
 
+// Trade sizing modes
+export type TradeSizingMode =
+  | 'weight'          // Absolute weight %
+  | 'shares'          // Absolute shares
+  | 'delta_weight'    // +/- weight change
+  | 'delta_shares'    // +/- shares change
+  | 'delta_benchmark' // +/- vs benchmark (future)
+
+export interface TradeSizing {
+  mode: TradeSizingMode
+  value: number | null
+}
+
 // New workflow types
 export type TradeStage = 'idea' | 'discussing' | 'simulating' | 'deciding'
 export type TradeOutcome = 'executed' | 'rejected' | 'deferred'
@@ -441,6 +454,7 @@ export interface TradeQueueFilters {
   urgency?: TradeUrgency | 'all'
   action?: TradeAction | 'all'
   portfolio_id?: string | 'all'
+  created_by?: string | 'all'
   search?: string
 }
 

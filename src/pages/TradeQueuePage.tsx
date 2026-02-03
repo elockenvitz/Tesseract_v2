@@ -23,6 +23,8 @@ import {
   Maximize2,
   Minimize2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   User,
   Briefcase,
   Link2,
@@ -94,6 +96,7 @@ export function TradeQueuePage() {
     urgency: 'all',
     action: 'all',
     portfolio_id: 'all',
+    created_by: 'all',
     search: ''
   })
   const [sortBy, setSortBy] = useState<'created_at' | 'urgency' | 'priority'>('created_at')
@@ -176,6 +179,56 @@ export function TradeQueuePage() {
     },
   })
 
+  // Fetch team members from portfolios the current user is on (for "Created by" filter)
+  const { data: teamMembers } = useQuery({
+    queryKey: ['portfolio-team-members', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+
+      // First get the portfolios the current user is on
+      const { data: userPortfolios, error: portfolioError } = await supabase
+        .from('portfolio_team')
+        .select('portfolio_id')
+        .eq('user_id', user.id)
+
+      if (portfolioError) throw portfolioError
+      if (!userPortfolios?.length) return []
+
+      const portfolioIds = userPortfolios.map(p => p.portfolio_id)
+
+      // Then get all team members from those portfolios
+      const { data: members, error: membersError } = await supabase
+        .from('portfolio_team')
+        .select(`
+          user_id,
+          user:users!inner (
+            id,
+            email,
+            first_name,
+            last_name
+          )
+        `)
+        .in('portfolio_id', portfolioIds)
+
+      if (membersError) throw membersError
+
+      // Deduplicate users (they might be on multiple portfolios)
+      const uniqueUsers = new Map<string, { id: string; email: string; first_name: string | null; last_name: string | null }>()
+      members?.forEach((m: any) => {
+        if (m.user && !uniqueUsers.has(m.user.id)) {
+          uniqueUsers.set(m.user.id, m.user)
+        }
+      })
+
+      return Array.from(uniqueUsers.values()).sort((a, b) => {
+        const nameA = a.first_name || a.email || ''
+        const nameB = b.first_name || b.email || ''
+        return nameA.localeCompare(nameB)
+      })
+    },
+    enabled: !!user?.id,
+  })
+
   // Fetch expression counts for trade ideas (how many labs each idea is in)
   const { data: expressionCounts } = useTradeExpressionCounts()
 
@@ -239,6 +292,7 @@ export function TradeQueuePage() {
         if (filters.urgency && filters.urgency !== 'all' && item.urgency !== filters.urgency) return false
         if (filters.action && filters.action !== 'all' && item.action !== filters.action) return false
         if (filters.portfolio_id && filters.portfolio_id !== 'all' && item.portfolio_id !== filters.portfolio_id) return false
+        if (filters.created_by && filters.created_by !== 'all' && item.created_by !== filters.created_by) return false
         if (filters.search) {
           const search = filters.search.toLowerCase()
           const matchesSymbol = item.assets?.symbol?.toLowerCase().includes(search)
@@ -575,6 +629,24 @@ export function TradeQueuePage() {
             ))}
           </select>
 
+          <select
+            value={filters.created_by || 'all'}
+            onChange={(e) => setFilters(prev => ({ ...prev, created_by: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          >
+            <option value="all">All People</option>
+            {user && (
+              <option value={user.id}>My Ideas</option>
+            )}
+            {teamMembers?.filter(m => m.id !== user?.id).map(member => (
+              <option key={member.id} value={member.id}>
+                {member.first_name
+                  ? `${member.first_name}${member.last_name ? ' ' + member.last_name : ''}`
+                  : member.email?.split('@')[0]}
+              </option>
+            ))}
+          </select>
+
           <button
             onClick={() => handleSort('created_at')}
             className={clsx(
@@ -622,9 +694,12 @@ export function TradeQueuePage() {
             ) : (
               <>
                 {/* Kanban Grid - shows either 4 columns or 1 fullscreen column */}
+                {/* At xl: 4 main columns + 3 dividers = grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] */}
                 <div className={clsx(
                   "gap-4",
-                  fullscreenColumn ? "grid grid-cols-1" : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4"
+                  fullscreenColumn
+                    ? "grid grid-cols-1"
+                    : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr]"
                 )}>
                   {/* Ideas Column */}
                   {(!fullscreenColumn || fullscreenColumn === 'idea') && (
@@ -688,11 +763,21 @@ export function TradeQueuePage() {
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
                             onLabClick={handleLabClick}
+                            canMoveLeft={false}
+                            canMoveRight={true}
+                            onMoveRight={() => moveTrade({ tradeId: item.id, targetStatus: 'discussing', uiSource: 'arrow_button' })}
                           />
                         ))}
                       </div>
                     </div>
                   </div>
+                  )}
+
+                  {/* Divider 1 */}
+                  {!fullscreenColumn && (
+                    <div className="hidden xl:flex items-stretch justify-center">
+                      <div className="w-px bg-gray-200 dark:bg-gray-700" />
+                    </div>
                   )}
 
                   {/* Working On Column */}
@@ -757,11 +842,22 @@ export function TradeQueuePage() {
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
                             onLabClick={handleLabClick}
+                            canMoveLeft={true}
+                            canMoveRight={true}
+                            onMoveLeft={() => moveTrade({ tradeId: item.id, targetStatus: 'idea', uiSource: 'arrow_button' })}
+                            onMoveRight={() => moveTrade({ tradeId: item.id, targetStatus: 'simulating', uiSource: 'arrow_button' })}
                           />
                         ))}
                       </div>
                     </div>
                   </div>
+                  )}
+
+                  {/* Divider 2 */}
+                  {!fullscreenColumn && (
+                    <div className="hidden xl:flex items-stretch justify-center">
+                      <div className="w-px bg-gray-200 dark:bg-gray-700" />
+                    </div>
                   )}
 
                   {/* Simulating Column */}
@@ -826,11 +922,22 @@ export function TradeQueuePage() {
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTradeId(item.id)}
                             onLabClick={handleLabClick}
+                            canMoveLeft={true}
+                            canMoveRight={true}
+                            onMoveLeft={() => moveTrade({ tradeId: item.id, targetStatus: 'discussing', uiSource: 'arrow_button' })}
+                            onMoveRight={() => moveTrade({ tradeId: item.id, targetStatus: 'deciding', uiSource: 'arrow_button' })}
                           />
                         ))}
                       </div>
                     </div>
                   </div>
+                  )}
+
+                  {/* Divider 3 */}
+                  {!fullscreenColumn && (
+                    <div className="hidden xl:flex items-stretch justify-center">
+                      <div className="w-px bg-gray-200 dark:bg-gray-700" />
+                    </div>
                   )}
 
                   {/* Fourth Column - Deciding (Active) + Outcomes (History) */}
@@ -1135,6 +1242,9 @@ export function TradeQueuePage() {
                             onClick={() => setSelectedTradeId(item.id)}
                             onLabClick={handleLabClick}
                             isArchived={fourthColumnView === 'archived' || fourthColumnView === 'deleted'}
+                            canMoveLeft={fourthColumnView === 'deciding'}
+                            canMoveRight={false}
+                            onMoveLeft={fourthColumnView === 'deciding' ? () => moveTrade({ tradeId: item.id, targetStatus: 'simulating', uiSource: 'arrow_button' }) : undefined}
                           />
                         ))}
                       </div>
@@ -1287,6 +1397,10 @@ interface TradeQueueCardProps {
   onDragEnd: () => void
   onClick: () => void
   onLabClick?: (labId: string, labName: string, portfolioId: string) => void
+  onMoveLeft?: () => void
+  onMoveRight?: () => void
+  canMoveLeft?: boolean
+  canMoveRight?: boolean
 }
 
 function TradeQueueCard({
@@ -1297,7 +1411,11 @@ function TradeQueueCard({
   onDragStart,
   onDragEnd,
   onClick,
-  onLabClick
+  onLabClick,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight
 }: TradeQueueCardProps) {
   const [showLabsDropdown, setShowLabsDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -1350,13 +1468,41 @@ function TradeQueueCard({
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={clsx(
-        "bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer",
+        "relative group bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer",
         isDragging && "opacity-50 rotate-2 scale-105",
         isArchived
           ? "border-gray-200 dark:border-gray-700 opacity-75"
           : "border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600"
       )}
     >
+      {/* Left arrow - move to previous status */}
+      {canMoveLeft && onMoveLeft && !isArchived && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveLeft()
+          }}
+          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full p-1 shadow-md hover:bg-gray-50 dark:hover:bg-gray-600"
+          title="Move to previous stage"
+        >
+          <ChevronLeft className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+        </button>
+      )}
+
+      {/* Right arrow - move to next status */}
+      {canMoveRight && onMoveRight && !isArchived && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveRight()
+          }}
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full p-1 shadow-md hover:bg-gray-50 dark:hover:bg-gray-600"
+          title="Move to next stage"
+        >
+          <ChevronRight className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+        </button>
+      )}
+
       <div className="p-3">
         {/* Pairs Trade Indicator */}
         {item.pair_trade_id && item.pair_trades && (
@@ -1443,7 +1589,7 @@ function TradeQueueCard({
           {/* Labs dropdown - show portfolio names */}
           {showLabsDropdown && labInfo && labCount > 0 && (
             <div
-              className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[160px]"
+              className="absolute left-0 top-full mt-0.5 z-50 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-200 dark:border-gray-700 py-0.5 min-w-[120px]"
               onClick={(e) => e.stopPropagation()}
             >
               {labInfo.portfolioNames?.map((portfolioName, idx) => (
@@ -1453,9 +1599,10 @@ function TradeQueueCard({
                     onLabClick?.(labInfo.labIds[idx], labInfo.labNames[idx], labInfo.portfolioIds[idx])
                     setShowLabsDropdown(false)
                   }}
-                  className="w-full px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                  className="w-full flex items-center gap-1.5 px-2 py-1 text-xs text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
                 >
-                  {portfolioName}
+                  <Briefcase className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{portfolioName}</span>
                 </button>
               ))}
             </div>

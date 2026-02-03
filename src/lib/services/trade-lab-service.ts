@@ -689,12 +689,19 @@ export async function upsertDraft(params: UpsertDraftParams): Promise<TradeLabDr
   }
 
   if (id) {
-    // Update existing draft
+    // Update existing draft - only update the editable fields, not relationship IDs
     const { data, error } = await supabase
       .from('simulation_trades')
       .update({
-        ...draftData,
-        autosave_version: supabase.sql`autosave_version + 1`,
+        action,
+        shares,
+        weight,
+        price,
+        notes,
+        tags,
+        sort_order: sortOrder ?? 0,
+        last_autosave_at: now,
+        updated_by: context.actorId,
       })
       .eq('id', id)
       .select()
