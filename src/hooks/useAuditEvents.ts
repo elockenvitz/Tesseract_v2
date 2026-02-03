@@ -114,8 +114,15 @@ export function useAuditEventCount(filters: AuditEventFilters, enabled = true) {
 const STAGE_LABELS: Record<string, string> = {
   idea: 'Ideas',
   discussing: 'Working On',
-  simulating: 'Simulating',
-  deciding: 'Commit',
+  working_on: 'Working On',
+  simulating: 'Modeling',
+  modeling: 'Modeling',
+  deciding: 'Deciding',
+  approved: 'Committed',
+  rejected: 'Rejected',
+  cancelled: 'Deferred',
+  archived: 'Archived',
+  executed: 'Executed',
 }
 
 /**
@@ -125,6 +132,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   executed: 'Executed',
   rejected: 'Rejected',
   deferred: 'Deferred',
+  accepted: 'Committed',
 }
 
 /**

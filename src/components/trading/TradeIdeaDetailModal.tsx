@@ -41,11 +41,13 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
+import { DatePicker } from '../ui/DatePicker'
 import { ContextTagsInput, type ContextTag, type ContextTagEntityType } from '../ui/ContextTagsInput'
 import { useTradeExpressionCounts } from '../../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { EntityTimeline } from '../audit/EntityTimeline'
-import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, type IdeaLabLink } from '../../lib/services/trade-lab-service'
+import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, getProposalsForTradeIdea, upsertProposal, type IdeaLabLink, type TradeProposalWithUser } from '../../lib/services/trade-lab-service'
+import type { ActionContext } from '../../types/trading'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import type {
@@ -54,7 +56,7 @@ import type {
 } from '../../types/trading'
 import { clsx } from 'clsx'
 
-type ModalTab = 'details' | 'activity'
+type ModalTab = 'details' | 'proposals' | 'activity'
 
 interface TradeIdeaDetailModalProps {
   isOpen: boolean
@@ -64,12 +66,17 @@ interface TradeIdeaDetailModalProps {
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> = {
   idea: { label: 'Ideas', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  // New workflow stages
+  working_on: { label: 'Working On', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
+  modeling: { label: 'Modeling', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
+  // Legacy stages (kept for backwards compat)
   discussing: { label: 'Working On', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
-  simulating: { label: 'Simulating', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
-  deciding: { label: 'Commit', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
+  simulating: { label: 'Modeling', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
+  deciding: { label: 'Deciding', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
   approved: { label: 'Committed', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
   cancelled: { label: 'Deferred', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300' },
+  executed: { label: 'Executed', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
   deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' },
 }
 
@@ -85,6 +92,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showDeferModal, setShowDeferModal] = useState(false)
+  const [deferUntilDate, setDeferUntilDate] = useState<string | null>(null)
+  const [showProposalModal, setShowProposalModal] = useState(false)
+  const [proposalWeight, setProposalWeight] = useState<string>('')
+  const [proposalShares, setProposalShares] = useState<string>('')
+  const [proposalNotes, setProposalNotes] = useState<string>('')
+  const [isSubmittingProposal, setIsSubmittingProposal] = useState(false)
   const [isLabsExpanded, setIsLabsExpanded] = useState(false)
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
@@ -229,6 +243,19 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
     queryFn: () => getIdeaLabLinks(tradeId),
     enabled: isOpen && !!trade,
   })
+
+  // Fetch proposals for this trade idea
+  const { data: proposals = [], refetch: refetchProposals } = useQuery({
+    queryKey: ['trade-proposals', tradeId],
+    queryFn: () => {
+      console.log('[TradeIdeaDetailModal] Fetching proposals for tradeId:', tradeId)
+      return getProposalsForTradeIdea(tradeId)
+    },
+    enabled: isOpen && !!tradeId,
+  })
+
+  // Debug: Log proposals when they change
+  console.log('[TradeIdeaDetailModal] proposals:', proposals, 'tradeId:', tradeId, 'isOpen:', isOpen)
 
   // Get portfolio IDs from lab links
   const linkedPortfolioIds = labLinks.map(l => l.trade_lab?.portfolio_id).filter(Boolean) as string[]
@@ -544,16 +571,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
     moveTrade,
     deleteTrade,
     restoreTrade,
+    archiveTrade,
+    deferTrade,
     movePairTrade,
     updateTrade,
     isMoving,
     isDeleting,
     isRestoring,
+    isArchiving,
+    isDefering,
     isMovingPairTrade,
     isUpdating,
   } = useTradeIdeaService({
     onDeleteSuccess: () => {
       setShowDeleteConfirm(false)
+      onClose()
+    },
+    onArchiveSuccess: () => {
       onClose()
     },
     onUpdateSuccess: () => {
@@ -956,6 +990,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
               Details
             </button>
             <button
+              onClick={() => setActiveTab('proposals')}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
+                activeTab === 'proposals'
+                  ? "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+                  : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              )}
+            >
+              <Users className="h-4 w-4" />
+              Proposals
+              {proposals.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-full">
+                  {proposals.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('activity')}
               className={clsx(
                 "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
@@ -1065,8 +1116,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                         Actions
                       </h3>
                       <div className="flex flex-wrap gap-2">
-                        {/* Move to Simulating */}
-                        {(pairTrade.status === 'idea' || pairTrade.status === 'discussing') && (
+                        {/* Move to Modeling */}
+                        {(pairTrade.status === 'idea' || pairTrade.status === 'discussing' || pairTrade.status === 'working_on') && (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -1074,11 +1125,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                             disabled={updatePairTradeStatusMutation.isPending}
                           >
                             <FlaskConical className="h-4 w-4 mr-1" />
-                            Start Simulating
+                            Start Modeling
                           </Button>
                         )}
-                        {/* Move to Commit */}
-                        {pairTrade.status === 'simulating' && (
+                        {/* Move to Deciding */}
+                        {(pairTrade.status === 'simulating' || pairTrade.status === 'modeling') && (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -1086,10 +1137,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                             disabled={updatePairTradeStatusMutation.isPending}
                           >
                             <Scale className="h-4 w-4 mr-1" />
-                            Escalate to Commit
+                            Move to Deciding
                           </Button>
                         )}
-                        {/* Commit/Reject (only in commit stage) */}
+                        {/* Decision actions (only in deciding stage) */}
                         {pairTrade.status === 'deciding' && (
                           <>
                             <Button
@@ -1098,7 +1149,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                               disabled={updatePairTradeStatusMutation.isPending}
                             >
                               <CheckCircle2 className="h-4 w-4 mr-1" />
-                              Commit
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => updatePairTradeStatusMutation.mutate('cancelled')}
+                              disabled={updatePairTradeStatusMutation.isPending}
+                            >
+                              <Clock className="h-4 w-4 mr-1" />
+                              Defer
                             </Button>
                             <Button
                               size="sm"
@@ -1302,6 +1362,18 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
               {/* Single Trade Details Tab */}
               {activeTab === 'details' && (
                 <div className="p-4 space-y-4">
+                  {/* Deferred Banner */}
+                  {(trade.status === 'cancelled' || trade.outcome === 'deferred') && (
+                    <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          Deferred{trade.deferred_until ? ` until ${format(new Date(trade.deferred_until), 'MMM d, yyyy')}` : ' indefinitely'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* ========== RATIONALE SECTION ========== */}
                   <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
                     {isEditingRationale ? (
@@ -1974,85 +2046,129 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                     )}
                   </div>
 
-                  {/* ========== STATUS ACTIONS (existing) ========== */}
-                  {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && (
-                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                        Actions
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {trade.status === 'idea' && (
-                          <>
-                            <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('discussing')} disabled={updateStatusMutation.isPending}>
-                              <Wrench className="h-4 w-4 mr-1" />
-                              Work on this
-                            </Button>
-                            <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
-                              <FlaskConical className="h-4 w-4 mr-1" />
-                              Send to Simulation
-                            </Button>
-                          </>
-                        )}
-                        {trade.status === 'discussing' && (
-                          <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
-                            <FlaskConical className="h-4 w-4 mr-1" />
-                            Send to Simulation
-                          </Button>
-                        )}
-                        {trade.status === 'simulating' && (
-                          <Button size="sm" onClick={() => updateStatusMutation.mutate('deciding')} disabled={updateStatusMutation.isPending}>
-                            <Scale className="h-4 w-4 mr-1" />
-                            Escalate to Commit
-                          </Button>
-                        )}
-                        {trade.status === 'deciding' && (
-                          <>
-                            <Button size="sm" onClick={() => updateStatusMutation.mutate('approved')} disabled={updateStatusMutation.isPending}>
+                  {/* ========== ACTIONS - SEGMENTED SECTIONS ========== */}
+                  {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && trade.status !== 'archived' && (
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
+
+                      {/* SECTION 1: Move Forward (not shown in Deciding) */}
+                      {trade.stage !== 'deciding' && trade.status !== 'deciding' && (
+                        <div>
+                          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                            Move Forward
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {(trade.status === 'idea' || trade.stage === 'idea') && (
+                              <>
+                                <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('discussing')} disabled={updateStatusMutation.isPending}>
+                                  <Wrench className="h-4 w-4 mr-1" />
+                                  Working On
+                                </Button>
+                                <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
+                                  <FlaskConical className="h-4 w-4 mr-1" />
+                                  Modeling
+                                </Button>
+                                <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
+                                  <Scale className="h-4 w-4 mr-1" />
+                                  Deciding
+                                </Button>
+                              </>
+                            )}
+                            {(trade.status === 'discussing' || trade.stage === 'working_on') && (
+                              <>
+                                <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
+                                  <FlaskConical className="h-4 w-4 mr-1" />
+                                  Modeling
+                                </Button>
+                                <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
+                                  <Scale className="h-4 w-4 mr-1" />
+                                  Deciding
+                                </Button>
+                              </>
+                            )}
+                            {(trade.status === 'simulating' || trade.stage === 'modeling') && (
+                              <Button size="sm" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
+                                <Scale className="h-4 w-4 mr-1" />
+                                Deciding
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SECTION 2: Decision (only in Deciding stage) */}
+                      {(trade.status === 'deciding' || trade.stage === 'deciding') && (
+                        <div>
+                          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                            Decision
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => updateStatusMutation.mutate('approved')} disabled={updateStatusMutation.isPending}>
                               <CheckCircle2 className="h-4 w-4 mr-1" />
-                              Commit
+                              Accept
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => setShowDeferModal(true)} disabled={isDefering}>
+                              <Clock className="h-4 w-4 mr-1" />
+                              Defer
                             </Button>
                             <Button size="sm" variant="danger" onClick={() => updateStatusMutation.mutate('rejected')} disabled={updateStatusMutation.isPending}>
                               <XCircle className="h-4 w-4 mr-1" />
                               Reject
                             </Button>
-                            <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
-                              <FlaskConical className="h-4 w-4 mr-1" />
-                              Back to Simulation
-                            </Button>
-                          </>
-                        )}
-                        {(trade.status === 'idea' || trade.status === 'discussing' || trade.status === 'simulating') && (
-                          <Button size="sm" variant="ghost" onClick={() => updateStatusMutation.mutate('cancelled')} disabled={updateStatusMutation.isPending}>
+                          </div>
+                          <button
+                            onClick={() => updateStatusMutation.mutate('simulating')}
+                            disabled={updateStatusMutation.isPending}
+                            className="mt-2 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 flex items-center gap-1"
+                          >
+                            <FlaskConical className="h-3 w-3" />
+                            Back to Modeling
+                          </button>
+                        </div>
+                      )}
+
+                      {/* SECTION 3: Remove */}
+                      <div className="pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={() => setShowDeferModal(true)}
+                            disabled={isDefering}
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                          >
                             Defer
-                          </Button>
-                        )}
-                        {trade.status !== 'deleted' && (
-                          <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
-                            <Trash2 className="h-4 w-4 mr-1" />
+                          </button>
+                          <button
+                            onClick={() => archiveTrade({ tradeId, uiSource: 'modal' })}
+                            disabled={isArchiving}
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                          >
+                            Archive
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(true)}
+                            className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          >
                             Delete
-                          </Button>
-                        )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Restore Actions for Archived Items */}
-                  {(trade.status === 'approved' || trade.status === 'cancelled' || trade.status === 'rejected') && (
+                  {/* Restore Actions for Archived/Deferred Items */}
+                  {(trade.status === 'approved' || trade.status === 'cancelled' || trade.status === 'rejected' || trade.status === 'archived') && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Restore Trade Idea</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">This trade idea is archived. You can restore it to an active status.</p>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                        Restore
+                      </h4>
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('idea')} disabled={updateStatusMutation.isPending}>
-                          <RotateCcw className="h-4 w-4 mr-1" />
-                          Restore to Ideas
+                          Ideas
                         </Button>
                         <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('discussing')} disabled={updateStatusMutation.isPending}>
-                          <Wrench className="h-4 w-4 mr-1" />
-                          Restore to Working On
+                          Working On
                         </Button>
                         <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
-                          <FlaskConical className="h-4 w-4 mr-1" />
-                          Restore to Simulating
+                          Modeling
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
                           <Trash2 className="h-4 w-4 mr-1" />
@@ -2174,6 +2290,241 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                 </div>
               )}
 
+              {/* Proposals Tab for Single Trade */}
+              {activeTab === 'proposals' && (() => {
+                // Sort proposals: current user first, then by updated_at descending
+                const sortedProposals = [...proposals].sort((a, b) => {
+                  const aIsCurrentUser = a.user_id === user?.id
+                  const bIsCurrentUser = b.user_id === user?.id
+                  if (aIsCurrentUser && !bIsCurrentUser) return -1
+                  if (!aIsCurrentUser && bIsCurrentUser) return 1
+                  return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+                })
+
+                // Check if current user is PM/owner and trade is in deciding stage
+                const isDecidingStage = trade?.status === 'deciding' || trade?.stage === 'deciding'
+                const canMakeDecision = isOwner && isDecidingStage
+
+                // Status text helper
+                const getStatusText = () => {
+                  if (proposals.length === 0) return 'No proposals yet'
+                  if (proposals.length === 1) return '1 active proposal'
+                  return `${proposals.length} active proposals`
+                }
+
+                return (
+                  <div className="p-4 space-y-4">
+                    {/* Header with count */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          Team Proposals {proposals.length > 0 && `(${proposals.length})`}
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {getStatusText()}
+                          {proposals.length === 1 && (
+                            <span className="ml-1">· Awaiting additional recommendations</span>
+                          )}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setShowProposalModal(true)}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Add Proposal
+                      </Button>
+                    </div>
+
+                    {/* PM Decision Actions (only in deciding stage for owner) */}
+                    {canMakeDecision && (
+                      <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-center gap-2">
+                          <Scale className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                            Ready for decision
+                          </span>
+                          {proposals.length === 0 && (
+                            <span className="text-xs text-amber-600 dark:text-amber-400">
+                              · Awaiting recommendation(s)
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            onClick={() => updateStatusMutation.mutate('approved')}
+                            disabled={updateStatusMutation.isPending}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setShowDeferModal(true)}
+                            disabled={updateStatusMutation.isPending}
+                          >
+                            <Clock className="h-3.5 w-3.5 mr-1" />
+                            Defer
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => updateStatusMutation.mutate('rejected')}
+                            disabled={updateStatusMutation.isPending}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty state */}
+                    {proposals.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Users className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          No proposals yet
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          Team members can submit their sizing proposals for this trade idea
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {sortedProposals.map((proposal) => {
+                          const userName = proposal.users?.first_name && proposal.users?.last_name
+                            ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                            : proposal.users?.email || 'Unknown'
+                          const isCurrentUser = proposal.user_id === user?.id
+                          const hasShares = proposal.shares !== null && proposal.shares !== undefined
+
+                          const handleEditProposal = () => {
+                            setProposalWeight(proposal.weight?.toString() || '')
+                            setProposalShares(proposal.shares?.toString() || '')
+                            setProposalNotes(proposal.notes || '')
+                            setShowProposalModal(true)
+                          }
+
+                          return (
+                            <div
+                              key={proposal.id}
+                              className={clsx(
+                                "p-4 rounded-lg border transition-colors",
+                                isCurrentUser
+                                  ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700"
+                                  : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                              )}
+                              onClick={isCurrentUser ? handleEditProposal : undefined}
+                              role={isCurrentUser ? "button" : undefined}
+                              tabIndex={isCurrentUser ? 0 : undefined}
+                              onKeyDown={isCurrentUser ? (e) => e.key === 'Enter' && handleEditProposal() : undefined}
+                            >
+                              {/* Header with user and date */}
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <div className={clsx(
+                                    "h-8 w-8 rounded-full flex items-center justify-center",
+                                    isCurrentUser
+                                      ? "bg-primary-100 dark:bg-primary-900/30"
+                                      : "bg-gray-200 dark:bg-gray-700"
+                                  )}>
+                                    <User className={clsx(
+                                      "h-4 w-4",
+                                      isCurrentUser
+                                        ? "text-primary-600 dark:text-primary-400"
+                                        : "text-gray-500 dark:text-gray-400"
+                                    )} />
+                                  </div>
+                                  <div>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                      {userName}
+                                      {isCurrentUser && (
+                                        <span className="ml-1.5 text-xs text-primary-600 dark:text-primary-400">(You)</span>
+                                      )}
+                                    </span>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })}
+                                      {proposal.updated_at !== proposal.created_at && (
+                                        <span className="ml-1">(edited)</span>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                                {isCurrentUser && (
+                                  <button
+                                    type="button"
+                                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleEditProposal()
+                                    }}
+                                    title="Edit your proposal"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Recommended Size - PRIMARY FOCAL POINT */}
+                              <div className="mb-3">
+                                <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                  Recommended Size
+                                </span>
+                                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
+                                  {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
+                                </p>
+                              </div>
+
+                              {/* Shares - only show if has value */}
+                              {hasShares && (
+                                <div className="mb-3">
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                    Shares
+                                  </span>
+                                  <p className="text-base font-medium text-gray-700 dark:text-gray-300 mt-0.5">
+                                    {proposal.shares!.toLocaleString()}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Sizing mode badge */}
+                              {proposal.sizing_mode && (
+                                <div className="mb-3">
+                                  <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                                    {proposal.sizing_mode === 'weight' && 'Recommended Size'}
+                                    {proposal.sizing_mode === 'shares' && 'Share Count'}
+                                    {proposal.sizing_mode === 'delta_weight' && 'Weight Change'}
+                                    {proposal.sizing_mode === 'delta_shares' && 'Share Change'}
+                                    {proposal.sizing_mode === 'delta_benchmark' && 'vs Benchmark'}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Sizing rationale (formerly Notes) */}
+                              {proposal.notes && (
+                                <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                    Sizing Rationale
+                                  </span>
+                                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                    {proposal.notes}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               {/* Activity Tab for Single Trade */}
               {activeTab === 'activity' && (
                 <div className="p-4">
@@ -2190,6 +2541,207 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
           ) : null}
         </div>
       </div>
+
+      {/* Defer Modal */}
+      {showDeferModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              setShowDeferModal(false)
+              setDeferUntilDate(null)
+            }}
+          />
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                <Clock className="h-6 w-6 text-gray-600 dark:text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Defer Trade Idea
+                </h3>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  When should this idea resurface for review?
+                </p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Resurface Date
+              </label>
+              <DatePicker
+                value={deferUntilDate}
+                onChange={setDeferUntilDate}
+                placeholder="Select date (optional)"
+                allowPastDates={false}
+              />
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Leave empty to defer indefinitely
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowDeferModal(false)
+                  setDeferUntilDate(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  deferTrade({
+                    tradeId,
+                    deferredUntil: deferUntilDate,
+                    uiSource: 'modal',
+                  })
+                  setShowDeferModal(false)
+                  setDeferUntilDate(null)
+                  onClose()
+                }}
+                disabled={isDefering}
+                loading={isDefering}
+              >
+                <Clock className="h-4 w-4 mr-1.5" />
+                Defer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Proposal Modal - shown when moving to Deciding */}
+      {showProposalModal && trade && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              setShowProposalModal(false)
+              setProposalWeight('')
+              setProposalShares('')
+              setProposalNotes('')
+            }}
+          />
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Submit Your Proposal
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Before moving to Deciding, please submit your sizing proposal for {trade.assets?.symbol}.
+            </p>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Target Weight %
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={proposalWeight}
+                    onChange={(e) => setProposalWeight(e.target.value)}
+                    placeholder="e.g. 5.0"
+                    className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Target Shares
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={proposalShares}
+                    onChange={(e) => setProposalShares(e.target.value)}
+                    placeholder="e.g. 1000"
+                    className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={proposalNotes}
+                  onChange={(e) => setProposalNotes(e.target.value)}
+                  placeholder="Add any notes about your sizing rationale..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                You can enter weight, shares, or both. At least one is recommended.
+              </p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowProposalModal(false)
+                  setProposalWeight('')
+                  setProposalShares('')
+                  setProposalNotes('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!user) return
+                  setIsSubmittingProposal(true)
+                  try {
+                    // Build action context
+                    const context: ActionContext = {
+                      actorId: user.id,
+                      actorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '',
+                      actorEmail: user.email,
+                      actorRole: (user.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                      requestId: crypto.randomUUID(),
+                      uiSource: 'modal',
+                    }
+
+                    // Upsert proposal
+                    await upsertProposal({
+                      trade_queue_item_id: tradeId,
+                      weight: proposalWeight ? parseFloat(proposalWeight) : null,
+                      shares: proposalShares ? parseInt(proposalShares, 10) : null,
+                      notes: proposalNotes || null,
+                    }, context)
+
+                    // Move to deciding
+                    await updateStatusMutation.mutateAsync('deciding')
+
+                    // Refresh proposals
+                    queryClient.invalidateQueries({ queryKey: ['trade-proposals', tradeId] })
+
+                    // Close modal and reset
+                    setShowProposalModal(false)
+                    setProposalWeight('')
+                    setProposalShares('')
+                    setProposalNotes('')
+                  } catch (error) {
+                    console.error('Failed to submit proposal:', error)
+                  } finally {
+                    setIsSubmittingProposal(false)
+                  }
+                }}
+                disabled={isSubmittingProposal}
+                loading={isSubmittingProposal}
+              >
+                <Scale className="h-4 w-4 mr-1.5" />
+                Submit & Move to Deciding
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (

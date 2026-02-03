@@ -11,7 +11,21 @@
 
 import { supabase } from '../supabase'
 import { emitAuditEvent } from '../audit'
-import type { ActionContext, TradeAction } from '../../types/trading'
+import type {
+  ActionContext,
+  TradeAction,
+  TradeSizingMode,
+  TradeEventType,
+  TradeLabSimulationItem,
+  TradeProposal,
+  TradeProposalWithUser,
+  TradeProposalVersion,
+  TradeEvent,
+  TradeEventWithActor,
+  CreateTradeProposalInput,
+  UpdateTradeProposalInput,
+  CreateTradeEventInput,
+} from '../../types/trading'
 
 // ============================================================
 // Types
@@ -1244,4 +1258,515 @@ export async function getDraftsForSimulation(
   }
 
   return data as TradeLabDraftWithDetails[]
+}
+
+// ============================================================
+// Trade Lab Simulation Items (Private Sandbox Membership)
+// ============================================================
+
+/**
+ * Get simulation items for a view (which trade ideas are included/excluded)
+ */
+export async function getSimulationItemsForView(
+  viewId: string
+): Promise<TradeLabSimulationItem[]> {
+  const { data, error } = await supabase
+    .from('trade_lab_simulation_items')
+    .select('*')
+    .eq('view_id', viewId)
+    .order('created_at')
+
+  if (error) {
+    throw new Error(`Failed to fetch simulation items: ${error.message}`)
+  }
+
+  return data as TradeLabSimulationItem[]
+}
+
+/**
+ * Set simulation item inclusion for a view
+ * Creates record if doesn't exist, updates if it does
+ */
+export async function setSimulationItemInclusion(
+  viewId: string,
+  tradeQueueItemId: string,
+  included: boolean,
+  context: ActionContext
+): Promise<TradeLabSimulationItem> {
+  const { data, error } = await supabase
+    .from('trade_lab_simulation_items')
+    .upsert(
+      {
+        view_id: viewId,
+        trade_queue_item_id: tradeQueueItemId,
+        included,
+        created_by: context.actorId,
+      },
+      {
+        onConflict: 'view_id,trade_queue_item_id',
+      }
+    )
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to set simulation item inclusion: ${error.message}`)
+  }
+
+  return data as TradeLabSimulationItem
+}
+
+/**
+ * Remove a simulation item from a view
+ */
+export async function removeSimulationItem(
+  viewId: string,
+  tradeQueueItemId: string,
+  context: ActionContext
+): Promise<void> {
+  const { error } = await supabase
+    .from('trade_lab_simulation_items')
+    .delete()
+    .eq('view_id', viewId)
+    .eq('trade_queue_item_id', tradeQueueItemId)
+
+  if (error) {
+    throw new Error(`Failed to remove simulation item: ${error.message}`)
+  }
+}
+
+/**
+ * Batch update simulation items for a view
+ */
+export async function batchUpdateSimulationItems(
+  viewId: string,
+  items: Array<{ tradeQueueItemId: string; included: boolean }>,
+  context: ActionContext
+): Promise<void> {
+  const upserts = items.map((item) => ({
+    view_id: viewId,
+    trade_queue_item_id: item.tradeQueueItemId,
+    included: item.included,
+    created_by: context.actorId,
+  }))
+
+  const { error } = await supabase
+    .from('trade_lab_simulation_items')
+    .upsert(upserts, { onConflict: 'view_id,trade_queue_item_id' })
+
+  if (error) {
+    throw new Error(`Failed to batch update simulation items: ${error.message}`)
+  }
+}
+
+// ============================================================
+// Trade Proposals
+// ============================================================
+
+/**
+ * Get all proposals for a trade idea
+ */
+export async function getProposalsForTradeIdea(
+  tradeQueueItemId: string
+): Promise<TradeProposalWithUser[]> {
+  // First fetch proposals without join (no FK relationship to users)
+  const { data: proposals, error } = await supabase
+    .from('trade_proposals')
+    .select('*')
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .eq('is_active', true)
+    .order('created_at')
+
+  if (error) {
+    throw new Error(`Failed to fetch proposals: ${error.message}`)
+  }
+
+  if (!proposals || proposals.length === 0) {
+    return []
+  }
+
+  // Get unique user IDs
+  const userIds = [...new Set(proposals.map((p: any) => p.user_id).filter(Boolean))]
+
+  // Fetch user data separately
+  let userMap: Record<string, { id: string; email: string; first_name: string | null; last_name: string | null }> = {}
+  if (userIds.length > 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name')
+      .in('id', userIds)
+
+    if (users) {
+      userMap = Object.fromEntries(users.map((u: any) => [u.id, u]))
+    }
+  }
+
+  // Merge user data into proposals
+  return proposals.map((p: any) => ({
+    ...p,
+    users: userMap[p.user_id] || null,
+  })) as TradeProposalWithUser[]
+}
+
+/**
+ * Get a user's active proposal for a trade idea
+ */
+export async function getUserProposalForTradeIdea(
+  tradeQueueItemId: string,
+  userId: string
+): Promise<TradeProposal | null> {
+  const { data, error } = await supabase
+    .from('trade_proposals')
+    .select('*')
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Failed to fetch user proposal: ${error.message}`)
+  }
+
+  return data as TradeProposal | null
+}
+
+/**
+ * Create or update a user's proposal for a trade idea
+ */
+export async function upsertProposal(
+  input: CreateTradeProposalInput,
+  context: ActionContext
+): Promise<TradeProposal> {
+  // Check if user already has an active proposal
+  const existing = await getUserProposalForTradeIdea(
+    input.trade_queue_item_id,
+    context.actorId
+  )
+
+  if (existing) {
+    // Update existing proposal
+    const { data, error } = await supabase
+      .from('trade_proposals')
+      .update({
+        weight: input.weight,
+        shares: input.shares,
+        sizing_mode: input.sizing_mode,
+        sizing_context: input.sizing_context || {},
+        notes: input.notes,
+        lab_id: input.lab_id,
+      })
+      .eq('id', existing.id)
+      .select()
+      .single()
+
+    if (error) {
+      throw new Error(`Failed to update proposal: ${error.message}`)
+    }
+
+    // Log event (non-blocking)
+    try {
+      await createTradeEvent({
+        trade_queue_item_id: input.trade_queue_item_id,
+        event_type: 'proposal_updated',
+        metadata: {
+          proposal_id: data.id,
+          changes: { weight: input.weight, shares: input.shares },
+        },
+        proposal_id: data.id,
+      }, context)
+    } catch (e) {
+      console.warn('Failed to log proposal_updated event:', e)
+    }
+
+    return data as TradeProposal
+  } else {
+    // Create new proposal
+    const { data, error } = await supabase
+      .from('trade_proposals')
+      .insert({
+        trade_queue_item_id: input.trade_queue_item_id,
+        user_id: context.actorId,
+        lab_id: input.lab_id,
+        weight: input.weight,
+        shares: input.shares,
+        sizing_mode: input.sizing_mode,
+        sizing_context: input.sizing_context || {},
+        notes: input.notes,
+        is_active: true,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      throw new Error(`Failed to create proposal: ${error.message}`)
+    }
+
+    // Log event (non-blocking)
+    try {
+      await createTradeEvent({
+        trade_queue_item_id: input.trade_queue_item_id,
+        event_type: 'proposal_created',
+        metadata: {
+          proposal_id: data.id,
+          weight: input.weight,
+          shares: input.shares,
+        },
+        proposal_id: data.id,
+      }, context)
+    } catch (e) {
+      console.warn('Failed to log proposal_created event:', e)
+    }
+
+    return data as TradeProposal
+  }
+}
+
+/**
+ * Delete a user's proposal
+ */
+export async function deleteProposal(
+  proposalId: string,
+  context: ActionContext
+): Promise<void> {
+  // Verify ownership
+  const { data: proposal } = await supabase
+    .from('trade_proposals')
+    .select('user_id, trade_queue_item_id')
+    .eq('id', proposalId)
+    .single()
+
+  if (proposal?.user_id !== context.actorId) {
+    throw new Error('Cannot delete another user\'s proposal')
+  }
+
+  const { error } = await supabase
+    .from('trade_proposals')
+    .delete()
+    .eq('id', proposalId)
+
+  if (error) {
+    throw new Error(`Failed to delete proposal: ${error.message}`)
+  }
+}
+
+// ============================================================
+// Trade Proposal Versions (Snapshots)
+// ============================================================
+
+/**
+ * Create a snapshot of a proposal
+ */
+export async function createProposalSnapshot(
+  proposalId: string,
+  triggerEvent: string,
+  context: ActionContext
+): Promise<TradeProposalVersion> {
+  // Get current proposal
+  const { data: proposal, error: fetchError } = await supabase
+    .from('trade_proposals')
+    .select('*')
+    .eq('id', proposalId)
+    .single()
+
+  if (fetchError || !proposal) {
+    throw new Error(`Proposal not found: ${fetchError?.message}`)
+  }
+
+  // Get next version number
+  const { data: versions } = await supabase
+    .from('trade_proposal_versions')
+    .select('version_number')
+    .eq('proposal_id', proposalId)
+    .order('version_number', { ascending: false })
+    .limit(1)
+
+  const nextVersion = (versions?.[0]?.version_number || 0) + 1
+
+  // Create snapshot
+  const { data, error } = await supabase
+    .from('trade_proposal_versions')
+    .insert({
+      proposal_id: proposalId,
+      version_number: nextVersion,
+      weight: proposal.weight,
+      shares: proposal.shares,
+      sizing_mode: proposal.sizing_mode,
+      sizing_context: proposal.sizing_context,
+      notes: proposal.notes,
+      trigger_event: triggerEvent,
+      created_by: context.actorId,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to create proposal snapshot: ${error.message}`)
+  }
+
+  // Log event
+  await createTradeEvent({
+    trade_queue_item_id: proposal.trade_queue_item_id,
+    event_type: 'proposal_snapshot',
+    metadata: {
+      proposal_id: proposalId,
+      version_number: nextVersion,
+      trigger_event: triggerEvent,
+    },
+    proposal_id: proposalId,
+    proposal_version_id: data.id,
+  }, context)
+
+  return data as TradeProposalVersion
+}
+
+/**
+ * Get all versions for a proposal
+ */
+export async function getProposalVersions(
+  proposalId: string
+): Promise<TradeProposalVersion[]> {
+  const { data, error } = await supabase
+    .from('trade_proposal_versions')
+    .select('*')
+    .eq('proposal_id', proposalId)
+    .order('version_number', { ascending: false })
+
+  if (error) {
+    throw new Error(`Failed to fetch proposal versions: ${error.message}`)
+  }
+
+  return data as TradeProposalVersion[]
+}
+
+// ============================================================
+// Trade Events (Audit Log)
+// ============================================================
+
+/**
+ * Create a trade event
+ */
+export async function createTradeEvent(
+  input: CreateTradeEventInput,
+  context: ActionContext
+): Promise<TradeEvent> {
+  const { data, error } = await supabase
+    .from('trade_events')
+    .insert({
+      trade_queue_item_id: input.trade_queue_item_id,
+      event_type: input.event_type,
+      actor_id: context.actorId,
+      metadata: input.metadata || {},
+      proposal_id: input.proposal_id,
+      proposal_version_id: input.proposal_version_id,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to create trade event: ${error.message}`)
+  }
+
+  return data as TradeEvent
+}
+
+/**
+ * Get events for a trade idea
+ */
+export async function getEventsForTradeIdea(
+  tradeQueueItemId: string,
+  options?: { limit?: number; offset?: number }
+): Promise<TradeEventWithActor[]> {
+  let query = supabase
+    .from('trade_events')
+    .select(`
+      *,
+      users:actor_id (id, email, first_name, last_name)
+    `)
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .order('created_at', { ascending: false })
+
+  if (options?.limit) {
+    query = query.limit(options.limit)
+  }
+  if (options?.offset) {
+    query = query.range(options.offset, options.offset + (options.limit || 50) - 1)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    throw new Error(`Failed to fetch trade events: ${error.message}`)
+  }
+
+  return data as TradeEventWithActor[]
+}
+
+/**
+ * Get recent events across all trade ideas in a lab
+ */
+export async function getRecentEventsForLab(
+  labId: string,
+  limit: number = 50
+): Promise<TradeEventWithActor[]> {
+  // Get trade ideas linked to this lab
+  const { data: links } = await supabase
+    .from('trade_lab_idea_links')
+    .select('trade_queue_item_id')
+    .eq('trade_lab_id', labId)
+
+  if (!links || links.length === 0) {
+    return []
+  }
+
+  const itemIds = links.map((l) => l.trade_queue_item_id)
+
+  const { data, error } = await supabase
+    .from('trade_events')
+    .select(`
+      *,
+      users:actor_id (id, email, first_name, last_name)
+    `)
+    .in('trade_queue_item_id', itemIds)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    throw new Error(`Failed to fetch lab events: ${error.message}`)
+  }
+
+  return data as TradeEventWithActor[]
+}
+
+// ============================================================
+// Proposal Workflow Helpers
+// ============================================================
+
+/**
+ * Move a trade idea to "deciding" stage and snapshot all proposals
+ */
+export async function moveToDecidingWithSnapshots(
+  tradeQueueItemId: string,
+  context: ActionContext
+): Promise<void> {
+  // Get all active proposals for this trade idea
+  const proposals = await getProposalsForTradeIdea(tradeQueueItemId)
+
+  // Create snapshots for each proposal
+  for (const proposal of proposals) {
+    await createProposalSnapshot(proposal.id, 'moved_to_deciding', context)
+  }
+
+  // Log the move event
+  await createTradeEvent({
+    trade_queue_item_id: tradeQueueItemId,
+    event_type: 'moved_to_deciding',
+    metadata: {
+      proposal_count: proposals.length,
+      proposals: proposals.map((p) => ({
+        user_id: p.user_id,
+        weight: p.weight,
+        shares: p.shares,
+      })),
+    },
+  }, context)
 }

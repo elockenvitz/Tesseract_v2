@@ -110,6 +110,10 @@ export function AddTradeIdeaModal({
   const [visibility, setVisibility] = useState<VisibilityOption>('private')
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false)
 
+  // Co-analyst (assigned_to) - can move stages like owner
+  const [assignedTo, setAssignedTo] = useState<string | null>(null)
+  const [showCoAnalystMenu, setShowCoAnalystMenu] = useState(false)
+
   // Advanced section toggle
   const [showAdvanced, setShowAdvanced] = useState(false)
 
@@ -178,6 +182,22 @@ export function AddTradeIdeaModal({
       return data
     },
     enabled: isOpen,
+  })
+
+  // Fetch team members for co-analyst assignment
+  const { data: teamMembers } = useQuery({
+    queryKey: ['team-members'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .neq('id', user?.id || '') // Exclude current user
+        .order('first_name')
+
+      if (error) throw error
+      return data
+    },
+    enabled: isOpen && !!user?.id,
   })
 
   // Fetch which portfolios hold the selected asset
@@ -574,6 +594,8 @@ export function AddTradeIdeaModal({
     setContextTags([])
     setVisibility('private')
     setShowVisibilityMenu(false)
+    setAssignedTo(null)
+    setShowCoAnalystMenu(false)
     setIsPairTrade(false)
     setShowAdvanced(false)
 
@@ -645,6 +667,7 @@ export function AddTradeIdeaModal({
         urgency,
         rationale,
         sharingVisibility: visibility,
+        assignedTo: assignedTo || null,
         uiSource: 'add_trade_modal',
         // Provenance
         originType: provenance.origin_type,
@@ -1368,6 +1391,90 @@ export function AddTradeIdeaModal({
                   </div>
                 </>
               )}
+            </div>
+
+            {/* Co-Analyst Selector (optional) */}
+            <div className="relative">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                Co-Analyst <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowCoAnalystMenu(!showCoAnalystMenu)}
+                className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors bg-white dark:bg-gray-800"
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-gray-400" />
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {assignedTo
+                      ? teamMembers?.find(m => m.id === assignedTo)?.first_name
+                        ? `${teamMembers?.find(m => m.id === assignedTo)?.first_name} ${teamMembers?.find(m => m.id === assignedTo)?.last_name || ''}`
+                        : teamMembers?.find(m => m.id === assignedTo)?.email
+                      : 'None'
+                    }
+                  </span>
+                </div>
+                <ChevronDown className={clsx("h-4 w-4 text-gray-400 transition-transform", showCoAnalystMenu && "rotate-180")} />
+              </button>
+
+              {showCoAnalystMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowCoAnalystMenu(false)} />
+                  <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto">
+                    {/* None option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignedTo(null)
+                        setShowCoAnalystMenu(false)
+                      }}
+                      className={clsx(
+                        "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-sm",
+                        !assignedTo && "bg-primary-50 dark:bg-primary-900/20"
+                      )}
+                    >
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">None</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Only you can move stages</div>
+                      </div>
+                      {!assignedTo && <Check className="h-4 w-4 text-primary-500" />}
+                    </button>
+                    {/* Team members */}
+                    {teamMembers?.map(member => {
+                      const isSelected = assignedTo === member.id
+                      const displayName = member.first_name
+                        ? `${member.first_name} ${member.last_name || ''}`
+                        : member.email
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => {
+                            setAssignedTo(member.id)
+                            setShowCoAnalystMenu(false)
+                          }}
+                          className={clsx(
+                            "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-sm",
+                            isSelected && "bg-primary-50 dark:bg-primary-900/20"
+                          )}
+                        >
+                          <div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-xs font-medium text-primary-700 dark:text-primary-300">
+                            {(member.first_name?.[0] || member.email[0]).toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-white">{displayName}</div>
+                            {member.first_name && <div className="text-xs text-gray-500 dark:text-gray-400">{member.email}</div>}
+                          </div>
+                          {isSelected && <Check className="h-4 w-4 text-primary-500" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Co-analyst can move this idea between stages
+              </p>
             </div>
 
             {/* Portfolio Selection - matching QuickTradeIdeaCapture style */}

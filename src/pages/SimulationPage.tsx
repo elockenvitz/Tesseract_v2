@@ -31,7 +31,11 @@ import {
   List,
   Link2,
   Eye,
-  FileText
+  FileText,
+  Scale,
+  Wrench,
+  AlertTriangle,
+  User
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -47,6 +51,8 @@ import { SectorExposureChart } from '../components/trading/SectorExposureChart'
 import { ConcentrationMetrics } from '../components/trading/ConcentrationMetrics'
 import { HoldingsComparison } from '../components/trading/HoldingsComparison'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
+import { ProposalEditorModal } from '../components/trading/ProposalEditorModal'
+import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -121,6 +127,40 @@ const parseEditingValue = (value: string, baseMode: SimpleSizingMode): { mode: T
 const getSizingModeOption = (mode: SimpleSizingMode) =>
   SIZING_MODE_OPTIONS.find(opt => opt.value === mode) || SIZING_MODE_OPTIONS[0]
 
+// Get user initials from user object
+const getUserInitials = (user?: { first_name?: string | null; last_name?: string | null; email?: string } | null): string => {
+  if (!user) return '?'
+  if (user.first_name && user.last_name) {
+    return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
+  }
+  if (user.first_name) return user.first_name[0].toUpperCase()
+  if (user.email) return user.email[0].toUpperCase()
+  return '?'
+}
+
+// Get time pressure info (days until expiry/alert)
+const getTimePressure = (idea: { expires_at?: string | null; alert_at?: string | null; revisit_at?: string | null }): { label: string; urgent: boolean } | null => {
+  const now = new Date()
+  const dates = [
+    { date: idea.expires_at, label: 'expires' },
+    { date: idea.alert_at, label: 'alert' },
+    { date: idea.revisit_at, label: 'revisit' },
+  ].filter(d => d.date).map(d => ({ ...d, parsed: new Date(d.date!) }))
+
+  if (dates.length === 0) return null
+
+  // Find the nearest date
+  const nearest = dates.reduce((a, b) => a.parsed < b.parsed ? a : b)
+  const diffMs = nearest.parsed.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays < 0) return { label: 'overdue', urgent: true }
+  if (diffDays === 0) return { label: 'today', urgent: true }
+  if (diffDays === 1) return { label: '1d', urgent: true }
+  if (diffDays <= 7) return { label: `${diffDays}d`, urgent: diffDays <= 3 }
+  return { label: `${diffDays}d`, urgent: false }
+}
+
 // Resolve sizing mode to absolute shares/weight values
 function resolveSizing(
   sizing: TradeSizing,
@@ -189,6 +229,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [newSimPortfolioId, setNewSimPortfolioId] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [showAddTradeIdeaModal, setShowAddTradeIdeaModal] = useState(false)
+  const [proposalEditorIdea, setProposalEditorIdea] = useState<TradeQueueItemWithDetails | null>(null)
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
   const [holdingsGroupBy, setHoldingsGroupBy] = useState<'none' | 'sector' | 'action' | 'change'>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
@@ -513,9 +555,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           *,
           assets (id, symbol, company_name, sector),
           portfolios (id, name),
-          pair_trades (id, name, description, rationale, urgency, status)
+          pair_trades (id, name, description, rationale, urgency, status),
+          users:created_by (id, email, first_name, last_name)
         `)
-        .in('status', ['idea', 'discussing', 'simulating', 'approved'])
+        .in('status', ['idea', 'discussing', 'simulating', 'approved', 'deciding'])
         .or(`portfolio_id.eq.${selectedPortfolioId}${linkedIdeaIds.length > 0 ? `,id.in.(${linkedIdeaIds.join(',')})` : ''}`)
         .order('priority', { ascending: false })
 
@@ -1076,38 +1119,41 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     return { pairTrades: pairTradesMap, standalone }
   }, [includedIdeasWithStatus])
 
-  // Group trade ideas by status (including pair trades)
+  // Group trade ideas by stage (new workflow)
+  // Stages: idea -> working_on -> modeling -> deciding
   const tradeIdeasByStatus = useMemo(() => {
     const groups = {
       idea: [] as typeof includedIdeasWithStatus,
-      discussing: [] as typeof includedIdeasWithStatus,
-      simulating: [] as typeof includedIdeasWithStatus,
-      approved: [] as typeof includedIdeasWithStatus
+      workingOn: [] as typeof includedIdeasWithStatus,
+      modeling: [] as typeof includedIdeasWithStatus,
+      deciding: [] as typeof includedIdeasWithStatus
     }
-    // Only include standalone ideas in the status groups
+    // Only include standalone ideas in the stage groups
     pairTradesGrouped.standalone.forEach(idea => {
-      if (idea.status === 'idea') groups.idea.push(idea)
-      else if (idea.status === 'discussing') groups.discussing.push(idea)
-      else if (idea.status === 'simulating') groups.simulating.push(idea)
-      else if (idea.status === 'approved') groups.approved.push(idea)
+      // Use stage field (new workflow), fall back to status for backwards compat
+      const stage = idea.stage || idea.status
+      if (stage === 'idea') groups.idea.push(idea)
+      else if (stage === 'working_on' || stage === 'discussing') groups.workingOn.push(idea)
+      else if (stage === 'modeling' || stage === 'simulating') groups.modeling.push(idea)
+      else if (stage === 'deciding' || stage === 'approved') groups.deciding.push(idea)
     })
     return groups
   }, [pairTradesGrouped.standalone])
 
-  // Group pair trades by their parent pair trade status
+  // Group pair trades by their parent pair trade status/stage
   const pairTradesByStatus = useMemo(() => {
     const groups = {
       idea: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
-      discussing: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
-      simulating: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
-      approved: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>
+      workingOn: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
+      modeling: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
+      deciding: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>
     }
     pairTradesGrouped.pairTrades.forEach(entry => {
       const status = entry.pairTrade.status
       if (status === 'idea') groups.idea.push(entry)
-      else if (status === 'discussing') groups.discussing.push(entry)
-      else if (status === 'simulating') groups.simulating.push(entry)
-      else if (status === 'approved') groups.approved.push(entry)
+      else if (status === 'discussing' || status === 'working_on') groups.workingOn.push(entry)
+      else if (status === 'simulating' || status === 'modeling') groups.modeling.push(entry)
+      else if (status === 'approved' || status === 'deciding') groups.deciding.push(entry)
     })
     return groups
   }, [pairTradesGrouped.pairTrades])
@@ -1484,11 +1530,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })
     }
 
+    const timePressure = getTimePressure(idea)
+    const authorInitials = getUserInitials(idea.users)
+
     return (
       <div
         key={idea.id}
+        onClick={() => setSelectedTradeId(idea.id)}
         className={clsx(
-          "bg-white dark:bg-gray-800 rounded-lg p-3 border transition-colors",
+          "bg-white dark:bg-gray-800 rounded-lg p-3 border transition-colors cursor-pointer",
           idea.isAdded
             ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
             : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
@@ -1497,7 +1547,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         <div className="flex items-start gap-2">
           {/* Checkbox for added status */}
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation()
               console.log('🔘 Checkbox clicked for:', idea.assets?.symbol, 'isAdded:', idea.isAdded)
               if (idea.isAdded) {
                 // Find and remove the trade
@@ -1547,32 +1598,72 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
             {/* Non-editing: show size display */}
             {idea.isAdded && sandboxTrade && !isEditingThis ? (
-              <div className="mt-1">
+              <div className="mt-1 flex items-center gap-2">
+                {sandboxTrade.weight != null || sandboxTrade.shares != null ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      sandboxTrade && startEditingTrade(sandboxTrade)
+                    }}
+                    className="text-xs text-gray-500 dark:text-gray-400 truncate hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group"
+                  >
+                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {sandboxTrade.weight != null && `${sandboxTrade.weight}%`}
+                    {sandboxTrade.weight != null && sandboxTrade.shares != null && ' · '}
+                    {sandboxTrade.shares != null && `${sandboxTrade.shares.toLocaleString()} shares`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      sandboxTrade && startEditingTrade(sandboxTrade)
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    Set size
+                  </button>
+                )}
+                {/* Propose button - opens formal proposal editor */}
                 <button
-                  onClick={() => sandboxTrade && startEditingTrade(sandboxTrade)}
-                  className="text-xs text-gray-500 dark:text-gray-400 truncate hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setProposalEditorIdea(idea)
+                  }}
+                  className="text-[10px] text-gray-400 hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400 transition-colors"
+                  title="Edit your proposal"
                 >
-                  <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  {sandboxTrade.weight != null && `${sandboxTrade.weight}%`}
-                  {sandboxTrade.weight != null && sandboxTrade.shares != null && ' · '}
-                  {sandboxTrade.shares != null && `${sandboxTrade.shares.toLocaleString()} shares`}
-                  {sandboxTrade.weight == null && sandboxTrade.shares == null && (
-                    <span className="italic">Set size</span>
-                  )}
+                  <Scale className="h-3 w-3" />
                 </button>
               </div>
             ) : !idea.isAdded ? (
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
-                {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
-                {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
+              <div className="mt-1 flex items-center gap-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
+                  {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
+                  {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
+                </div>
+                {/* Propose button - opens formal proposal editor */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setProposalEditorIdea(idea)
+                  }}
+                  className="text-[10px] text-gray-400 hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400 transition-colors"
+                  title="Edit your proposal"
+                >
+                  <Scale className="h-3 w-3" />
+                </button>
               </div>
             ) : null}
 
           </div>
           {/* Expand button */}
           <button
-            onClick={toggleExpand}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleExpand(e)
+            }}
             className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
           >
             <ChevronDown className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
@@ -1605,7 +1696,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           const preview = isDelta ? getPreview() : null
 
           return (
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 space-y-1" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-1">
                 <select
                   value={editingSizingMode}
@@ -1671,6 +1762,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             ) : (
               <p className="text-xs text-gray-400 dark:text-gray-500 italic">No rationale provided</p>
             )}
+            {/* Author and timestamp */}
+            <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400 dark:text-gray-500">
+              <span
+                className="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-700 font-medium text-gray-600 dark:text-gray-300 flex items-center justify-center"
+                title={idea.users?.first_name && idea.users?.last_name
+                  ? `${idea.users.first_name} ${idea.users.last_name}`
+                  : idea.users?.email || 'Unknown'}
+              >
+                {authorInitials}
+              </span>
+              <span>·</span>
+              {timePressure ? (
+                <span className={clsx(
+                  timePressure.urgent ? "text-red-600 dark:text-red-400" : ""
+                )}>
+                  <Clock className="h-3 w-3 inline mr-0.5" />
+                  {timePressure.label}
+                </span>
+              ) : (
+                <span>{formatDistanceToNow(new Date(idea.updated_at), { addSuffix: false })}</span>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -2328,24 +2441,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             </button>
                             {!collapsedGroups.has('ideas-pairs') && (
                               <div className="space-y-2 ml-5">
-                                {pairTradesByStatus.approved.map(entry => renderPairTradeCard(entry))}
-                                {pairTradesByStatus.discussing.map(entry => renderPairTradeCard(entry))}
+                                {pairTradesByStatus.deciding.map(entry => renderPairTradeCard(entry))}
+                                {pairTradesByStatus.modeling.map(entry => renderPairTradeCard(entry))}
+                                {pairTradesByStatus.workingOn.map(entry => renderPairTradeCard(entry))}
                                 {pairTradesByStatus.idea.map(entry => renderPairTradeCard(entry))}
                               </div>
                             )}
                           </div>
                         )}
 
-                        {/* Approved Section */}
-                        {tradeIdeasByStatus.approved.length > 0 && (
+                        {/* Deciding Section - Ready for decision */}
+                        {tradeIdeasByStatus.deciding.length > 0 && (
                           <div>
                             <button
                               onClick={() => {
                                 const newCollapsed = new Set(collapsedGroups)
-                                if (newCollapsed.has('ideas-approved')) {
-                                  newCollapsed.delete('ideas-approved')
+                                if (newCollapsed.has('ideas-deciding')) {
+                                  newCollapsed.delete('ideas-deciding')
                                 } else {
-                                  newCollapsed.add('ideas-approved')
+                                  newCollapsed.add('ideas-deciding')
                                 }
                                 setCollapsedGroups(newCollapsed)
                               }}
@@ -2353,30 +2467,61 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             >
                               <ChevronDown className={clsx(
                                 "h-3 w-3 text-gray-400 transition-transform",
-                                collapsedGroups.has('ideas-approved') && "-rotate-90"
+                                collapsedGroups.has('ideas-deciding') && "-rotate-90"
                               )} />
-                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Approved</span>
-                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.approved.length}</Badge>
+                              <Scale className="h-3.5 w-3.5 text-amber-500" />
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Deciding</span>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.deciding.length}</Badge>
                             </button>
-                            {!collapsedGroups.has('ideas-approved') && (
+                            {!collapsedGroups.has('ideas-deciding') && (
                               <div className="space-y-2 ml-5">
-                                {tradeIdeasByStatus.approved.map(idea => renderTradeIdeaCard(idea))}
+                                {tradeIdeasByStatus.deciding.map(idea => renderTradeIdeaCard(idea))}
                               </div>
                             )}
                           </div>
                         )}
 
-                        {/* Simulating Section */}
-                        {tradeIdeasByStatus.simulating.length > 0 && (
+                        {/* Modeling Section - VISUALLY DOMINANT */}
+                        {tradeIdeasByStatus.modeling.length > 0 && (
+                          <div className="bg-purple-50/50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800 rounded-lg p-2 -mx-2">
+                            <button
+                              onClick={() => {
+                                const newCollapsed = new Set(collapsedGroups)
+                                if (newCollapsed.has('ideas-modeling')) {
+                                  newCollapsed.delete('ideas-modeling')
+                                } else {
+                                  newCollapsed.add('ideas-modeling')
+                                }
+                                setCollapsedGroups(newCollapsed)
+                              }}
+                              className="flex items-center gap-2 w-full text-left mb-2 group"
+                            >
+                              <ChevronDown className={clsx(
+                                "h-3 w-3 text-purple-500 transition-transform",
+                                collapsedGroups.has('ideas-modeling') && "-rotate-90"
+                              )} />
+                              <Beaker className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                              <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">Modeling</span>
+                              <Badge className="text-[10px] py-0 px-1.5 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300">{tradeIdeasByStatus.modeling.length}</Badge>
+                            </button>
+                            {!collapsedGroups.has('ideas-modeling') && (
+                              <div className="space-y-2 ml-5">
+                                {tradeIdeasByStatus.modeling.map(idea => renderTradeIdeaCard(idea))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Working On Section - Active work in progress */}
+                        {tradeIdeasByStatus.workingOn.length > 0 && (
                           <div>
                             <button
                               onClick={() => {
                                 const newCollapsed = new Set(collapsedGroups)
-                                if (newCollapsed.has('ideas-simulating')) {
-                                  newCollapsed.delete('ideas-simulating')
+                                if (newCollapsed.has('ideas-workingon')) {
+                                  newCollapsed.delete('ideas-workingon')
                                 } else {
-                                  newCollapsed.add('ideas-simulating')
+                                  newCollapsed.add('ideas-workingon')
                                 }
                                 setCollapsedGroups(newCollapsed)
                               }}
@@ -2384,52 +2529,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             >
                               <ChevronDown className={clsx(
                                 "h-3 w-3 text-gray-400 transition-transform",
-                                collapsedGroups.has('ideas-simulating') && "-rotate-90"
+                                collapsedGroups.has('ideas-workingon') && "-rotate-90"
                               )} />
-                              <Beaker className="h-3.5 w-3.5 text-purple-500" />
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Simulating</span>
-                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.simulating.length}</Badge>
+                              <Wrench className="h-3.5 w-3.5 text-blue-500" />
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Working On</span>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.workingOn.length}</Badge>
                             </button>
-                            {!collapsedGroups.has('ideas-simulating') && (
+                            {!collapsedGroups.has('ideas-workingon') && (
                               <div className="space-y-2 ml-5">
-                                {tradeIdeasByStatus.simulating.map(idea => renderTradeIdeaCard(idea))}
+                                {tradeIdeasByStatus.workingOn.map(idea => renderTradeIdeaCard(idea))}
                               </div>
                             )}
                           </div>
                         )}
 
-                        {/* Discussing Section */}
-                        {tradeIdeasByStatus.discussing.length > 0 && (
-                          <div>
-                            <button
-                              onClick={() => {
-                                const newCollapsed = new Set(collapsedGroups)
-                                if (newCollapsed.has('ideas-discussing')) {
-                                  newCollapsed.delete('ideas-discussing')
-                                } else {
-                                  newCollapsed.add('ideas-discussing')
-                                }
-                                setCollapsedGroups(newCollapsed)
-                              }}
-                              className="flex items-center gap-2 w-full text-left mb-2 group"
-                            >
-                              <ChevronDown className={clsx(
-                                "h-3 w-3 text-gray-400 transition-transform",
-                                collapsedGroups.has('ideas-discussing') && "-rotate-90"
-                              )} />
-                              <MessageSquare className="h-3.5 w-3.5 text-yellow-500" />
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Discussing</span>
-                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.discussing.length}</Badge>
-                            </button>
-                            {!collapsedGroups.has('ideas-discussing') && (
-                              <div className="space-y-2 ml-5">
-                                {tradeIdeasByStatus.discussing.map(idea => renderTradeIdeaCard(idea))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Ideas Section */}
+                        {/* Ideas Section - New ideas backlog */}
                         {tradeIdeasByStatus.idea.length > 0 && (
                           <div>
                             <button
@@ -2448,7 +2562,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                 "h-3 w-3 text-gray-400 transition-transform",
                                 collapsedGroups.has('ideas-idea') && "-rotate-90"
                               )} />
-                              <AlertCircle className="h-3.5 w-3.5 text-blue-500" />
+                              <AlertCircle className="h-3.5 w-3.5 text-gray-400" />
                               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Ideas</span>
                               <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{tradeIdeasByStatus.idea.length}</Badge>
                             </button>
@@ -3522,6 +3636,35 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }}
         preselectedPortfolioId={simulation?.portfolio_id}
       />
+
+      {/* Proposal Editor Modal */}
+      {proposalEditorIdea && (
+        <ProposalEditorModal
+          isOpen={!!proposalEditorIdea}
+          onClose={() => setProposalEditorIdea(null)}
+          tradeIdea={proposalEditorIdea}
+          baseline={(simulation?.baseline_holdings as BaselineHolding[])?.find(
+            b => b.asset_id === proposalEditorIdea.asset_id
+          )}
+          currentHolding={metrics?.holdings_after?.find(
+            h => h.asset_id === proposalEditorIdea.asset_id
+          )}
+          labId={null}
+          onSaved={() => {
+            setProposalEditorIdea(null)
+            // Optionally refetch proposals or update UI
+          }}
+        />
+      )}
+
+      {/* Trade Idea Detail Modal */}
+      {selectedTradeId && (
+        <TradeIdeaDetailModal
+          isOpen={!!selectedTradeId}
+          tradeId={selectedTradeId}
+          onClose={() => setSelectedTradeId(null)}
+        />
+      )}
     </div>
   )
 }

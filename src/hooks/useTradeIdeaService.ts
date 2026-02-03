@@ -17,6 +17,7 @@ import {
   moveTradeIdea,
   deleteTradeIdea,
   restoreTradeIdea,
+  archiveTradeIdea,
   bulkMoveTradeIdeas,
   movePairTrade as movePairTradeService,
   createTradeIdea,
@@ -40,6 +41,7 @@ interface UseTradeIdeaServiceOptions {
   onMoveSuccess?: () => void
   onDeleteSuccess?: () => void
   onRestoreSuccess?: () => void
+  onArchiveSuccess?: () => void
   onCreateSuccess?: () => void
   onCreatePairTradeSuccess?: () => void
   onUpdateSuccess?: () => void
@@ -215,6 +217,59 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     },
   })
 
+  // Archive trade mutation (permanent)
+  const archiveTradeM = useMutation({
+    mutationFn: async (params: {
+      tradeId: string
+      reason?: string
+      uiSource?: UISource
+    }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      await archiveTradeIdea({
+        tradeId: params.tradeId,
+        context: buildActionContext(user, params.uiSource),
+        reason: params.reason,
+      })
+    },
+    onSuccess: () => {
+      invalidateQueries()
+      toast.success('Trade archived')
+      options.onArchiveSuccess?.()
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to archive trade')
+    },
+  })
+
+  // Defer trade mutation (with optional resurface date)
+  const deferTradeM = useMutation({
+    mutationFn: async (params: {
+      tradeId: string
+      deferredUntil?: string | null
+      uiSource?: UISource
+    }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      await moveTradeIdea({
+        tradeId: params.tradeId,
+        target: {
+          stage: 'deciding',
+          outcome: 'deferred',
+          deferredUntil: params.deferredUntil || null,
+        },
+        context: buildActionContext(user, params.uiSource),
+      })
+    },
+    onSuccess: () => {
+      invalidateQueries()
+      toast.success('Trade deferred')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to defer trade')
+    },
+  })
+
   // Bulk move mutation
   const bulkMoveM = useMutation({
     mutationFn: async (params: {
@@ -347,6 +402,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       urgency: string
       rationale?: string
       sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public'
+      assignedTo?: string | null // Co-analyst
       uiSource?: UISource
       // Provenance
       originType?: string
@@ -373,6 +429,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         urgency: params.urgency,
         rationale: params.rationale,
         sharingVisibility: params.sharingVisibility,
+        assignedTo: params.assignedTo,
         context: buildActionContext(user, params.uiSource),
         // Provenance
         originType: params.originType,
@@ -514,6 +571,14 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     restoreTrade: restoreTradeM.mutate,
     restoreTradeAsync: restoreTradeM.mutateAsync,
     isRestoring: restoreTradeM.isPending,
+
+    archiveTrade: archiveTradeM.mutate,
+    archiveTradeAsync: archiveTradeM.mutateAsync,
+    isArchiving: archiveTradeM.isPending,
+
+    deferTrade: deferTradeM.mutate,
+    deferTradeAsync: deferTradeM.mutateAsync,
+    isDefering: deferTradeM.isPending,
 
     // Outcome operations
     setOutcome: setOutcomeM.mutate,

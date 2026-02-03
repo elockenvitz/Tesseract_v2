@@ -5,7 +5,8 @@
  */
 
 // Enums matching database types
-export type TradeQueueStatus = 'idea' | 'discussing' | 'simulating' | 'deciding' | 'approved' | 'rejected' | 'executed' | 'cancelled' | 'deleted'
+// Note: 'discussing' renamed to 'working_on', 'simulating' renamed to 'modeling' in new workflow
+export type TradeQueueStatus = 'idea' | 'discussing' | 'simulating' | 'deciding' | 'working_on' | 'modeling' | 'approved' | 'rejected' | 'executed' | 'cancelled' | 'archived' | 'deleted'
 export type TradeAction = 'buy' | 'sell' | 'trim' | 'add'
 export type SimulationStatus = 'draft' | 'running' | 'completed' | 'archived'
 export type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'
@@ -26,8 +27,12 @@ export interface TradeSizing {
 }
 
 // New workflow types
-export type TradeStage = 'idea' | 'discussing' | 'simulating' | 'deciding'
-export type TradeOutcome = 'executed' | 'rejected' | 'deferred'
+// Stages: idea → working_on → modeling → deciding
+export type TradeStage = 'idea' | 'working_on' | 'modeling' | 'deciding'
+// Decision outcomes (set by PM/owner in deciding stage)
+export type DecisionOutcome = 'accepted' | 'deferred' | 'rejected'
+// Legacy outcome type for backwards compatibility
+export type TradeOutcome = 'executed' | 'rejected' | 'deferred' | 'accepted'
 export type VisibilityTier = 'active' | 'trash' | 'archive'
 
 // UI action context for activity logging
@@ -49,6 +54,7 @@ export interface ActionContext {
 export interface MoveTarget {
   stage: TradeStage
   outcome?: TradeOutcome   // Required only when stage = 'deciding'
+  deferredUntil?: string | null  // When a deferred idea should resurface
 }
 
 export interface StateSnapshot {
@@ -109,6 +115,7 @@ export interface TradeQueueItem {
   outcome_at: string | null
   outcome_by: string | null
   outcome_note: string | null
+  deferred_until: string | null  // When a deferred idea should resurface
 
   // Visibility/retention
   visibility_tier: VisibilityTier
@@ -120,8 +127,15 @@ export interface TradeQueueItem {
 
   // Ownership & timestamps
   created_by: string | null
+  assigned_to: string | null  // Co-analyst/assignee who can also move stages
   created_at: string
   updated_at: string
+
+  // Decision fields (PM/owner controlled)
+  decision_outcome: DecisionOutcome | null
+  decision_reason: string | null
+  decided_by: string | null
+  decided_at: string | null
 
   // Legacy approval fields (kept for backwards compat)
   approved_by: string | null
@@ -165,6 +179,18 @@ export interface TradeQueueItemWithDetails extends TradeQueueItem {
     first_name: string | null
     last_name: string | null
   }
+  assigned_user?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  } | null
+  decided_by_user?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  } | null
   trade_queue_comments?: TradeQueueComment[]
   trade_queue_votes?: TradeQueueVote[]
   vote_summary?: {
@@ -469,4 +495,124 @@ export interface DragItem {
   id: string
   type: 'trade-queue-item' | 'simulation-trade'
   data: TradeQueueItemWithDetails | SimulationTradeWithDetails
+}
+
+// =============================================================================
+// Trade Lab Proposal System Types
+// =============================================================================
+
+// Event types for trade_events table
+export type TradeEventType =
+  | 'created'           // Trade idea created
+  | 'proposal_created'  // User created a proposal
+  | 'proposal_updated'  // User updated their proposal
+  | 'proposal_snapshot' // Proposal version saved
+  | 'moved_to_deciding' // Trade moved to deciding stage
+  | 'moved_to_simulating' // Trade moved to simulating
+  | 'approved'          // Trade approved
+  | 'rejected'          // Trade rejected
+  | 'executed'          // Trade executed
+  | 'sizing_changed'    // Sizing was changed
+  | 'note_added'        // Note was added
+  | 'status_changed'    // General status change
+
+// Trade Lab Simulation Item - private sandbox membership
+// Tracks which items are included in each user's private view
+export interface TradeLabSimulationItem {
+  id: string
+  view_id: string
+  trade_queue_item_id: string
+  included: boolean
+  created_at: string
+  updated_at: string
+  created_by: string | null
+}
+
+// Trade Proposal - one current editable proposal per user per trade idea
+export interface TradeProposal {
+  id: string
+  trade_queue_item_id: string
+  user_id: string
+  lab_id: string | null
+  weight: number | null
+  shares: number | null
+  sizing_mode: TradeSizingMode | null
+  sizing_context: Record<string, unknown>
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface TradeProposalWithUser extends TradeProposal {
+  users: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
+}
+
+// Trade Proposal Version - snapshots for version history
+export interface TradeProposalVersion {
+  id: string
+  proposal_id: string
+  version_number: number
+  weight: number | null
+  shares: number | null
+  sizing_mode: TradeSizingMode | null
+  sizing_context: Record<string, unknown>
+  notes: string | null
+  trigger_event: 'moved_to_deciding' | 'manual_save' | 'before_update' | string | null
+  created_at: string
+  created_by: string | null
+}
+
+// Trade Event - event log for audit trail
+export interface TradeEvent {
+  id: string
+  trade_queue_item_id: string
+  event_type: TradeEventType
+  actor_id: string | null
+  metadata: Record<string, unknown>
+  proposal_id: string | null
+  proposal_version_id: string | null
+  created_at: string
+}
+
+export interface TradeEventWithActor extends TradeEvent {
+  users: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  } | null
+}
+
+// Input types for creating/updating proposals
+export interface CreateTradeProposalInput {
+  trade_queue_item_id: string
+  lab_id?: string | null
+  weight?: number | null
+  shares?: number | null
+  sizing_mode?: TradeSizingMode | null
+  sizing_context?: Record<string, unknown>
+  notes?: string | null
+}
+
+export interface UpdateTradeProposalInput {
+  weight?: number | null
+  shares?: number | null
+  sizing_mode?: TradeSizingMode | null
+  sizing_context?: Record<string, unknown>
+  notes?: string | null
+}
+
+// Input for creating events
+export interface CreateTradeEventInput {
+  trade_queue_item_id: string
+  event_type: TradeEventType
+  metadata?: Record<string, unknown>
+  proposal_id?: string | null
+  proposal_version_id?: string | null
 }

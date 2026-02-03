@@ -266,7 +266,7 @@ export async function getEntityAuditEvents(
 ): Promise<AuditEvent[]> {
   const { limit = 50, orderDirection = 'desc' } = options
 
-  // Direct query for better reliability
+  // Get audit events
   const { data, error } = await supabase
     .from('audit_events')
     .select('*')
@@ -280,7 +280,40 @@ export async function getEntityAuditEvents(
     throw new Error(`Audit query failed: ${error.message}`)
   }
 
-  return (data || []) as AuditEvent[]
+  const events = data || []
+
+  // Get unique actor IDs that don't have actor_name set
+  const actorIdsNeedingNames = [...new Set(
+    events
+      .filter((e: any) => !e.actor_name && e.actor_id)
+      .map((e: any) => e.actor_id)
+  )]
+
+  // Fetch user names for actors without names
+  let userNameMap: Record<string, string> = {}
+  if (actorIdsNeedingNames.length > 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, email')
+      .in('id', actorIdsNeedingNames)
+
+    if (users) {
+      userNameMap = Object.fromEntries(
+        users.map((u: any) => {
+          const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email || ''
+          return [u.id, name]
+        })
+      )
+    }
+  }
+
+  // Merge actor names
+  const eventsWithActorName = events.map((event: any) => ({
+    ...event,
+    actor_name: event.actor_name || userNameMap[event.actor_id] || null,
+  }))
+
+  return eventsWithActorName as AuditEvent[]
 }
 
 /**
@@ -306,7 +339,40 @@ export async function getEntityTreeAuditEvents(
     throw new Error(`Audit tree query failed: ${error.message}`)
   }
 
-  return (data || []) as AuditEvent[]
+  const events = data || []
+
+  // Get unique actor IDs that don't have actor_name set
+  const actorIdsNeedingNames = [...new Set(
+    events
+      .filter((e: any) => !e.actor_name && e.actor_id)
+      .map((e: any) => e.actor_id)
+  )]
+
+  // Fetch user names for actors without names
+  let userNameMap: Record<string, string> = {}
+  if (actorIdsNeedingNames.length > 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, email')
+      .in('id', actorIdsNeedingNames)
+
+    if (users) {
+      userNameMap = Object.fromEntries(
+        users.map((u: any) => {
+          const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email || ''
+          return [u.id, name]
+        })
+      )
+    }
+  }
+
+  // Merge actor names
+  const eventsWithActorName = events.map((event: any) => ({
+    ...event,
+    actor_name: event.actor_name || userNameMap[event.actor_id] || null,
+  }))
+
+  return eventsWithActorName as AuditEvent[]
 }
 
 // ============================================================

@@ -7,9 +7,13 @@
  * This ensures audit events are emitted for every state change.
  *
  * Core Concepts:
- * - Stage: idea → discussing → simulating → deciding
- * - Outcome: executed | rejected | deferred (only valid in 'deciding' stage)
+ * - Stage: idea → working_on → modeling → deciding
+ * - Decision Outcome: accepted | deferred | rejected (PM/owner controlled)
  * - Visibility Tier: active | trash | archive
+ *
+ * Stage Change Permissions:
+ * - Only owner (created_by), assignee (assigned_to), or PM can move stages
+ * - PM can override (move to deciding without proposals)
  */
 
 import { supabase } from '../supabase'
@@ -23,6 +27,7 @@ import {
 import type {
   TradeStage,
   TradeOutcome,
+  DecisionOutcome,
   VisibilityTier,
   TradeQueueStatus,
   ActionContext,
@@ -89,6 +94,8 @@ export interface CreateTradeParams {
   rationale?: string
   sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public'
   context: ActionContext
+  // Co-analyst - can also move stages like owner
+  assignedTo?: string | null
   // Provenance - auto-captured origin context
   originType?: string
   originEntityType?: string | null
@@ -148,11 +155,18 @@ export interface UpdateTradeIdeaParams {
 
 /**
  * Map stage to legacy status for backwards compatibility
+ * New stages: idea, working_on, modeling, deciding
+ * Legacy stages: idea, discussing, simulating, deciding
  */
 function stageToLegacyStatus(stage: TradeStage, outcome: TradeOutcome | null): TradeQueueStatus {
-  if (outcome === 'executed') return 'executed'
+  if (outcome === 'executed' || outcome === 'accepted') return 'executed'
   if (outcome === 'rejected') return 'rejected'
   if (outcome === 'deferred') return 'cancelled' // Map deferred to cancelled for legacy
+
+  // Map new stage names to legacy for backwards compatibility
+  if (stage === 'working_on') return 'discussing'
+  if (stage === 'modeling') return 'simulating'
+
   return stage as TradeQueueStatus
 }
 
@@ -201,6 +215,7 @@ async function getTradeDisplayName(trade: TradeIdeaState): Promise<string> {
 
 /**
  * Validate stage transition
+ * Uses new stage names: idea → working_on → modeling → deciding
  */
 function validateStageTransition(
   fromStage: TradeStage,
@@ -209,9 +224,14 @@ function validateStageTransition(
 ): { valid: boolean; error?: string } {
   const { stage: toStage, outcome: toOutcome } = target
 
-  // If in deciding with an outcome, can't change stage (already decided)
+  // If in deciding with an outcome, only allow if target has no outcome (restoring)
+  // This allows: deciding+deferred → idea (restore)
+  // But blocks: deciding+deferred → deciding+rejected (changing decision)
   if (fromStage === 'deciding' && fromOutcome !== null) {
-    return { valid: false, error: 'Trade has already been decided. Cannot change stage.' }
+    if (toStage === 'deciding' && toOutcome && toOutcome !== fromOutcome) {
+      return { valid: false, error: 'Trade has already been decided. Cannot change decision.' }
+    }
+    // Allow restoring to a different stage (clears outcome)
   }
 
   // Outcome only valid when stage is 'deciding'
@@ -219,12 +239,15 @@ function validateStageTransition(
     return { valid: false, error: 'Outcome can only be set in deciding stage.' }
   }
 
-  // Valid transitions
-  const validTransitions: Record<TradeStage, TradeStage[]> = {
-    idea: ['discussing', 'simulating', 'deciding'],
-    discussing: ['idea', 'simulating', 'deciding'],
-    simulating: ['idea', 'discussing', 'deciding'],
-    deciding: ['idea', 'discussing', 'simulating'], // Can demote if no outcome yet
+  // Valid transitions - includes both new and legacy stage names
+  // idea → working_on/discussing → modeling/simulating → deciding (and backwards)
+  const validTransitions: Record<string, string[]> = {
+    idea: ['working_on', 'discussing', 'modeling', 'simulating', 'deciding'],
+    working_on: ['idea', 'modeling', 'simulating', 'deciding'],
+    discussing: ['idea', 'modeling', 'simulating', 'deciding'],
+    modeling: ['idea', 'working_on', 'discussing', 'deciding'],
+    simulating: ['idea', 'working_on', 'discussing', 'deciding'],
+    deciding: ['idea', 'working_on', 'discussing', 'modeling', 'simulating'],
   }
 
   // Allow same stage (for setting outcome in deciding)
@@ -237,6 +260,41 @@ function validateStageTransition(
   }
 
   return { valid: true }
+}
+
+/**
+ * Check if user can modify a trade idea's stage
+ * User must be: owner (created_by), assignee (assigned_to), or PM/portfolio owner
+ */
+export async function canUserMoveStage(tradeId: string, userId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('can_modify_trade_stage', {
+    p_trade_id: tradeId,
+    p_user_id: userId,
+  })
+
+  if (error) {
+    console.error('Error checking stage permissions:', error)
+    return false
+  }
+
+  return data === true
+}
+
+/**
+ * Check if user is PM/owner of a portfolio
+ */
+export async function isUserPortfolioPM(portfolioId: string, userId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('is_portfolio_pm', {
+    p_portfolio_id: portfolioId,
+    p_user_id: userId,
+  })
+
+  if (error) {
+    console.error('Error checking PM status:', error)
+    return false
+  }
+
+  return data === true
 }
 
 // ============================================================
@@ -322,6 +380,14 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     updates.outcome_at = null
     updates.outcome_by = null
     updates.outcome_note = null
+    updates.deferred_until = null  // Clear defer date when restoring
+  }
+
+  // Handle deferred_until date (only for deferred outcome)
+  if (target.outcome === 'deferred' && target.deferredUntil) {
+    updates.deferred_until = target.deferredUntil
+  } else if (target.outcome !== 'deferred') {
+    updates.deferred_until = null
   }
 
   // Perform update
@@ -457,6 +523,87 @@ export async function deleteTradeIdea(params: DeleteTradeIdeaParams): Promise<vo
       ui_source: context.uiSource,
       reason,
       previous_state: previousState,
+    },
+    orgId: getOrgId(context),
+    teamId: undefined,
+    actorName: context.actorName,
+    actorEmail: context.actorEmail,
+  })
+}
+
+/**
+ * Archive a trade idea (permanent - for compliance)
+ * Archived trades cannot be restored.
+ */
+export async function archiveTradeIdea(params: {
+  tradeId: string
+  context: ActionContext
+  reason?: string
+}): Promise<void> {
+  const { tradeId, context, reason } = params
+
+  // Idempotency check
+  if (context.requestId) {
+    const isDuplicate = await checkIdempotency({
+      requestId: context.requestId,
+      entityType: 'trade_idea',
+      entityId: tradeId,
+      actionType: 'archive',
+    })
+    if (isDuplicate) {
+      console.log(`[TRADE] Skipping duplicate archive request ${context.requestId}`)
+      return
+    }
+  }
+
+  // Get current state
+  const currentTrade = await getTradeIdea(tradeId)
+  if (!currentTrade) {
+    throw new Error(`Trade not found: ${tradeId}`)
+  }
+
+  if (currentTrade.visibility_tier === 'archive') {
+    throw new Error('Trade is already archived')
+  }
+
+  const now = new Date().toISOString()
+
+  // Perform archive
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update({
+      visibility_tier: 'archive',
+      status: 'archived',
+      archived_at: now,
+      updated_at: now,
+    })
+    .eq('id', tradeId)
+
+  if (error) {
+    throw new Error(`Failed to archive trade: ${error.message}`)
+  }
+
+  // Get display name for audit
+  const displayName = await getTradeDisplayName(currentTrade)
+
+  // Emit audit event
+  await emitAuditEvent({
+    actor: { id: context.actorId, type: 'user', role: context.actorRole },
+    entity: {
+      type: 'trade_idea',
+      id: tradeId,
+      displayName,
+    },
+    action: { type: 'archive', category: 'lifecycle' },
+    state: {
+      from: { stage: currentTrade.stage, outcome: currentTrade.outcome, visibility_tier: currentTrade.visibility_tier },
+      to: { stage: currentTrade.stage, outcome: currentTrade.outcome, visibility_tier: 'archive' },
+    },
+    changedFields: ['visibility_tier', 'archived_at', 'status'],
+    metadata: {
+      request_id: context.requestId,
+      ui_source: context.uiSource,
+      reason,
     },
     orgId: getOrgId(context),
     teamId: undefined,
@@ -688,6 +835,7 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
     rationale,
     sharingVisibility,
     context,
+    assignedTo,
     // Provenance
     originType,
     originEntityType,
@@ -716,6 +864,7 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
       visibility_tier: 'active',
       status: 'idea', // Legacy
       created_by: context.actorId,
+      assigned_to: assignedTo || null,
       // Provenance fields
       origin_type: originType || 'manual',
       origin_entity_type: originEntityType || null,
@@ -1378,5 +1527,147 @@ export async function restoreTrade(params: {
       uiSource: metadata.ui_source as any,
     },
     targetStage: targetStatus as TradeStage | undefined,
+  })
+}
+
+// ============================================================
+// Decision Outcome Functions
+// ============================================================
+
+export interface SetDecisionOutcomeParams {
+  tradeId: string
+  outcome: DecisionOutcome
+  reason?: string
+  context: ActionContext
+}
+
+/**
+ * Set decision outcome for a trade idea (Accept/Defer/Reject)
+ * Only PM/owner can set decision outcomes
+ */
+export async function setDecisionOutcome(params: SetDecisionOutcomeParams): Promise<void> {
+  const { tradeId, outcome, reason, context } = params
+
+  // Check if user is PM for this trade's portfolio
+  const { data: trade } = await supabase
+    .from('trade_queue_items')
+    .select('id, portfolio_id, stage, decision_outcome, created_by')
+    .eq('id', tradeId)
+    .single()
+
+  if (!trade) {
+    throw new Error(`Trade not found: ${tradeId}`)
+  }
+
+  // Only PM/owner can set decision outcome
+  const isPM = await isUserPortfolioPM(trade.portfolio_id, context.actorId)
+  const isOwner = trade.created_by === context.actorId
+
+  if (!isPM && !isOwner) {
+    throw new Error('Only PM or trade owner can set decision outcome')
+  }
+
+  // Update the trade with decision
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update({
+      decision_outcome: outcome,
+      decision_reason: reason || null,
+      decided_by: context.actorId,
+      decided_at: now,
+      // Also set legacy outcome field for backwards compat
+      outcome: outcome === 'accepted' ? 'executed' : outcome,
+      outcome_at: now,
+      outcome_by: context.actorId,
+      outcome_note: reason || null,
+      updated_at: now,
+    })
+    .eq('id', tradeId)
+
+  if (error) {
+    throw new Error(`Failed to set decision: ${error.message}`)
+  }
+
+  // Emit audit event
+  const eventType = `decision_${outcome}` as const
+  await emitAuditEvent({
+    eventType,
+    entityType: 'trade_idea',
+    entityId: tradeId,
+    actorId: context.actorId,
+    actorRole: context.actorRole,
+    metadata: {
+      outcome,
+      reason,
+      previous_outcome: trade.decision_outcome,
+    },
+  })
+}
+
+/**
+ * Reopen a decided trade (clear decision outcome)
+ * Only PM/owner can reopen decisions
+ */
+export async function reopenDecision(params: {
+  tradeId: string
+  context: ActionContext
+}): Promise<void> {
+  const { tradeId, context } = params
+
+  // Check if user is PM for this trade's portfolio
+  const { data: trade } = await supabase
+    .from('trade_queue_items')
+    .select('id, portfolio_id, decision_outcome, created_by')
+    .eq('id', tradeId)
+    .single()
+
+  if (!trade) {
+    throw new Error(`Trade not found: ${tradeId}`)
+  }
+
+  if (!trade.decision_outcome) {
+    throw new Error('Trade has no decision to reopen')
+  }
+
+  // Only PM/owner can reopen
+  const isPM = await isUserPortfolioPM(trade.portfolio_id, context.actorId)
+  const isOwner = trade.created_by === context.actorId
+
+  if (!isPM && !isOwner) {
+    throw new Error('Only PM or trade owner can reopen decision')
+  }
+
+  // Clear decision
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update({
+      decision_outcome: null,
+      decision_reason: null,
+      decided_by: null,
+      decided_at: null,
+      outcome: null,
+      outcome_at: null,
+      outcome_by: null,
+      outcome_note: null,
+      updated_at: now,
+    })
+    .eq('id', tradeId)
+
+  if (error) {
+    throw new Error(`Failed to reopen decision: ${error.message}`)
+  }
+
+  // Emit audit event
+  await emitAuditEvent({
+    eventType: 'decision_reopened',
+    entityType: 'trade_idea',
+    entityId: tradeId,
+    actorId: context.actorId,
+    actorRole: context.actorRole,
+    metadata: {
+      previous_outcome: trade.decision_outcome,
+    },
   })
 }
