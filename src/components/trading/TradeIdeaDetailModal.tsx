@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import {
@@ -48,7 +48,7 @@ import { useTradeExpressionCounts } from '../../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { EntityTimeline } from '../audit/EntityTimeline'
 import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, getProposalsForTradeIdea, upsertProposal, getPortfolioTracksForIdea, updatePortfolioTrackDecision, type IdeaLabLink, type TradeProposalWithUser } from '../../lib/services/trade-lab-service'
-import type { ActionContext, DecisionOutcome, TradeIdeaPortfolio, UpdatePortfolioTrackInput } from '../../types/trading'
+import type { ActionContext, DecisionOutcome, TradeIdeaPortfolio, UpdatePortfolioTrackInput, TradeSizingMode } from '../../types/trading'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import type {
@@ -57,7 +57,7 @@ import type {
 } from '../../types/trading'
 import { clsx } from 'clsx'
 
-type ModalTab = 'details' | 'proposals' | 'activity'
+type ModalTab = 'details' | 'discussion' | 'proposals' | 'activity'
 
 interface TradeIdeaDetailModalProps {
   isOpen: boolean
@@ -101,6 +101,9 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [discussionMetadata, setDiscussionMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
+  // Portfolio context for discussion messages
+  const [discussionPortfolioFilter, setDiscussionPortfolioFilter] = useState<string | null>(null) // null = all, 'general' = no portfolio, or portfolio_id
+  const [messagePortfolioContext, setMessagePortfolioContext] = useState<string | null>(null) // portfolio_id for the message being composed
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showDeferModal, setShowDeferModal] = useState(false)
   const [deferUntilDate, setDeferUntilDate] = useState<string | null>(null)
@@ -110,6 +113,31 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [proposalNotes, setProposalNotes] = useState<string>('')
   const [proposalPortfolioId, setProposalPortfolioId] = useState<string>('')
   const [isSubmittingProposal, setIsSubmittingProposal] = useState(false)
+
+  // Enhanced proposal state for inline editing (mimics submit proposal modal)
+  type ProposalSizingMode = 'weight' | 'delta_weight' | 'active_weight' | 'delta_benchmark'
+  interface InlineProposalState {
+    sizingMode: ProposalSizingMode
+    value: string
+    notes: string
+  }
+  const [inlineProposals, setInlineProposals] = useState<Record<string, InlineProposalState>>({})
+  const [expandedProposalInputs, setExpandedProposalInputs] = useState<Set<string>>(new Set())
+
+  // Portfolio context with holdings info
+  interface PortfolioContext {
+    id: string
+    name: string
+    benchmark: string | null
+    currentShares: number
+    currentPrice: number
+    currentValue: number
+    currentWeight: number
+    benchmarkWeight: number | null
+    activeWeight: number | null
+    portfolioTotalValue: number
+  }
+  const [portfolioContexts, setPortfolioContexts] = useState<PortfolioContext[]>([])
   const [isLabsExpanded, setIsLabsExpanded] = useState(false)
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
@@ -135,9 +163,9 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [isEditingTags, setIsEditingTags] = useState(false)
   const [editedTags, setEditedTags] = useState<ContextTag[]>([])
 
-  // Collapsible sections
-  const [isSizingExpanded, setIsSizingExpanded] = useState(true)
-  const [isRiskExpanded, setIsRiskExpanded] = useState(true)
+  // Collapsible sections - collapsed by default
+  const [isSizingExpanded, setIsSizingExpanded] = useState(false)
+  const [isRiskExpanded, setIsRiskExpanded] = useState(false)
 
   // Per-portfolio sizing state
   type SizingMode = 'absolute' | 'relative_current' | 'relative_benchmark'
@@ -163,6 +191,12 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [showPortfolioDecisionPicker, setShowPortfolioDecisionPicker] = useState(false)
   const [pendingDecision, setPendingDecision] = useState<DecisionOutcome | null>(null)
   const [selectedDecisionPortfolioId, setSelectedDecisionPortfolioId] = useState<string | null>(null)
+
+  // Assignment state
+  const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false)
+  const [showCollaboratorsDropdown, setShowCollaboratorsDropdown] = useState(false)
+  const assigneeDropdownRef = useRef<HTMLDivElement>(null)
+  const collaboratorsDropdownRef = useRef<HTMLDivElement>(null)
 
   // Get expression counts for trade ideas
   const { data: expressionCounts } = useTradeExpressionCounts()
@@ -197,7 +231,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           *,
           assets (id, symbol, company_name, sector),
           portfolios (id, name, portfolio_id),
-          users:created_by (id, email, first_name, last_name)
+          users:created_by (id, email, first_name, last_name),
+          assigned_user:assigned_to (id, email, first_name, last_name)
         `)
         .eq('id', tradeId)
         .maybeSingle()
@@ -213,6 +248,22 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Extract trade for backwards compatibility with existing UI
   const trade = tradeData?.type === 'single' ? tradeData.data : null
   const pairTrade = tradeData?.type === 'pair' ? tradeData.data : null
+
+  // Fetch team members for assignment dropdowns
+  const { data: teamMembers } = useQuery({
+    queryKey: ['team-members'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .order('first_name')
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: isOpen,
+    staleTime: 60000, // Cache for 1 minute
+  })
 
   // Fetch portfolio holdings for this asset to determine position context
   const { data: portfolioPositions } = useQuery({
@@ -371,6 +422,50 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       setPortfolioTargets(targets)
     }
   }, [labLinks])
+
+  // Build portfolio contexts from labLinks and portfolioHoldings for proposals tab
+  useEffect(() => {
+    if (labLinks.length > 0 && portfolioHoldings) {
+      const contexts: PortfolioContext[] = labLinks.map(link => {
+        const portfolioId = link.trade_lab?.portfolio_id
+        const portfolioName = link.trade_lab?.portfolio?.name || 'Unknown Portfolio'
+        const benchmark = (link.trade_lab?.portfolio as any)?.benchmark || null
+        const holdingData = portfolioHoldings.find(h => h.portfolioId === portfolioId)
+
+        return {
+          id: portfolioId || '',
+          name: portfolioName,
+          benchmark,
+          currentShares: holdingData?.shares || 0,
+          currentPrice: holdingData?.price || 0,
+          currentValue: holdingData?.marketValue || 0,
+          currentWeight: holdingData?.weight || 0,
+          benchmarkWeight: null, // TODO: fetch from benchmark_holdings when available
+          activeWeight: null,
+          portfolioTotalValue: holdingData?.totalPortfolioValue || 0,
+        }
+      }).filter(c => c.id)
+
+      setPortfolioContexts(contexts)
+
+      // Initialize inline proposals for each portfolio
+      const initialProposals: Record<string, InlineProposalState> = {}
+      contexts.forEach(ctx => {
+        // Check if user already has a proposal for this portfolio
+        const existingProposal = proposals.find(p => p.portfolio_id === ctx.id && p.user_id === user?.id)
+        if (existingProposal) {
+          initialProposals[ctx.id] = {
+            sizingMode: 'weight',
+            value: existingProposal.weight?.toString() || '',
+            notes: existingProposal.notes || '',
+          }
+        } else {
+          initialProposals[ctx.id] = { sizingMode: 'weight', value: '', notes: '' }
+        }
+      })
+      setInlineProposals(initialProposals)
+    }
+  }, [labLinks, portfolioHoldings, proposals, user?.id])
 
   // Mutation for updating per-portfolio sizing
   const updatePortfolioSizingMutation = useMutation({
@@ -619,7 +714,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     })
   }
 
-  // Fetch discussion messages
+  // Fetch discussion messages with portfolio info
   const { data: discussionMessages = [] } = useQuery({
     queryKey: ['messages', 'trade_idea', tradeId],
     queryFn: async () => {
@@ -627,7 +722,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         .from('messages')
         .select(`
           *,
-          user:users(id, email, first_name, last_name)
+          user:users(id, email, first_name, last_name),
+          portfolio:portfolios(id, name)
         `)
         .eq('context_type', 'trade_idea')
         .eq('context_id', tradeId)
@@ -638,6 +734,15 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     },
     enabled: isOpen,
   })
+
+  // Filter discussion messages based on portfolio filter
+  const filteredDiscussionMessages = useMemo(() => {
+    if (discussionPortfolioFilter === null) return discussionMessages // Show all
+    if (discussionPortfolioFilter === 'general') {
+      return discussionMessages.filter((m: any) => !m.portfolio_id)
+    }
+    return discussionMessages.filter((m: any) => m.portfolio_id === discussionPortfolioFilter)
+  }, [discussionMessages, discussionPortfolioFilter])
 
   // Get reply-to message data
   const replyToMessageData = discussionMessages.find(m => m.id === replyToMessage)
@@ -709,7 +814,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
   // Send discussion message mutation
   const sendDiscussionMessageMutation = useMutation({
-    mutationFn: async (data: { content: string; reply_to?: string }) => {
+    mutationFn: async (data: { content: string; reply_to?: string; portfolio_id?: string | null }) => {
       const { error } = await supabase
         .from('messages')
         .insert([{
@@ -717,7 +822,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           context_type: 'trade_idea',
           context_id: tradeId,
           user_id: user?.id,
-          reply_to: data.reply_to
+          reply_to: data.reply_to,
+          portfolio_id: data.portfolio_id || null
         }])
 
       if (error) throw error
@@ -726,6 +832,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       queryClient.invalidateQueries({ queryKey: ['messages', 'trade_idea', tradeId] })
       setDiscussionMessage('')
       setReplyToMessage(null)
+      setMessagePortfolioContext(null)
       scrollToBottom()
     }
   })
@@ -777,6 +884,39 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-ideas-feed'] })
       setShowVisibilityDropdown(false)
+    }
+  })
+
+  // Update assignee mutation
+  const updateAssigneeMutation = useMutation({
+    mutationFn: async (assigneeId: string | null) => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({ assigned_to: assigneeId })
+        .eq('id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setShowAssigneeDropdown(false)
+    }
+  })
+
+  // Update collaborators mutation
+  const updateCollaboratorsMutation = useMutation({
+    mutationFn: async (collaboratorIds: string[]) => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({ collaborators: collaboratorIds })
+        .eq('id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
     }
   })
 
@@ -911,12 +1051,39 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     }
   }, [showVisibilityDropdown])
 
+  // Close assignee dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(event.target as Node)) {
+        setShowAssigneeDropdown(false)
+      }
+    }
+    if (showAssigneeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAssigneeDropdown])
+
+  // Close collaborators dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (collaboratorsDropdownRef.current && !collaboratorsDropdownRef.current.contains(event.target as Node)) {
+        setShowCollaboratorsDropdown(false)
+      }
+    }
+    if (showCollaboratorsDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showCollaboratorsDropdown])
+
   const handleSendDiscussionMessage = () => {
     if (!discussionMessage.trim()) return
 
     sendDiscussionMessageMutation.mutate({
       content: discussionMessage.trim(),
-      reply_to: replyToMessage || undefined
+      reply_to: replyToMessage || undefined,
+      portfolio_id: messagePortfolioContext
     })
   }
 
@@ -1064,6 +1231,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             >
               <Edit2 className="h-4 w-4" />
               Details
+            </button>
+            <button
+              onClick={() => setActiveTab('discussion')}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
+                activeTab === 'discussion'
+                  ? "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+                  : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              )}
+            >
+              <MessageSquare className="h-4 w-4" />
+              Discussion
+              {discussionMessages.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-full">
+                  {discussionMessages.length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setActiveTab('proposals')}
@@ -1311,13 +1495,34 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               {/* Discussion Tab for Pair Trade */}
               {activeTab === 'discussion' && (
                 <div className="flex flex-col h-full">
+                  {/* Filter Bar */}
+                  <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">View:</span>
+                    <select
+                      value={discussionPortfolioFilter || 'all'}
+                      onChange={(e) => setDiscussionPortfolioFilter(e.target.value === 'all' ? null : e.target.value)}
+                      className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                    >
+                      <option value="all">All Messages</option>
+                      <option value="general">General Only</option>
+                      {labLinks.map(link => link.trade_lab?.portfolio && (
+                        <option key={link.trade_lab.portfolio.id} value={link.trade_lab.portfolio.id}>
+                          {link.trade_lab.portfolio.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      {filteredDiscussionMessages.length} {filteredDiscussionMessages.length === 1 ? 'message' : 'messages'}
+                    </span>
+                  </div>
+
                   {/* Messages List */}
                   <div className="flex-1 overflow-y-auto p-4">
-                    {discussionMessages.length > 0 ? (
+                    {filteredDiscussionMessages.length > 0 ? (
                       <div className="space-y-0.5">
-                        {discussionMessages.map((message, index) => {
-                          const prevMessage = index > 0 ? discussionMessages[index - 1] : null
-                          const isSameUser = prevMessage && prevMessage.user_id === message.user_id
+                        {filteredDiscussionMessages.map((message: any, index: number) => {
+                          const prevMessage = index > 0 ? filteredDiscussionMessages[index - 1] : null
+                          const isSameUser = prevMessage && (prevMessage as any).user_id === message.user_id
                           const showUserInfo = !isSameUser
                           const isSelected = selectedMessageId === message.id
 
@@ -1338,6 +1543,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       <span className="text-xs font-medium text-gray-900 dark:text-white">
                                         {getUserDisplayName(message.user)}
                                       </span>
+                                      {message.portfolio && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+                                          {message.portfolio.name}
+                                        </span>
+                                      )}
                                       {message.is_pinned && <Pin className="h-3 w-3 text-warning-500" />}
                                     </div>
                                     {message.reply_to && (
@@ -1410,6 +1620,27 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         <p className="text-xs text-blue-700 dark:text-blue-300 mt-1 line-clamp-2">{replyToMessageData.content}</p>
                       </div>
                     )}
+                    {/* Portfolio Context Selector */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Post to:</span>
+                      <select
+                        value={messagePortfolioContext || 'general'}
+                        onChange={(e) => setMessagePortfolioContext(e.target.value === 'general' ? null : e.target.value)}
+                        className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                      >
+                        <option value="general">General</option>
+                        {labLinks.map(link => link.trade_lab?.portfolio && (
+                          <option key={link.trade_lab.portfolio.id} value={link.trade_lab.portfolio.id}>
+                            {link.trade_lab.portfolio.name}
+                          </option>
+                        ))}
+                      </select>
+                      {messagePortfolioContext && (
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                          Only visible in {labLinks.find(l => l.trade_lab?.portfolio?.id === messagePortfolioContext)?.trade_lab?.portfolio?.name} context
+                        </span>
+                      )}
+                    </div>
                     <div className="flex space-x-2">
                       <div className="flex-1">
                         <UniversalSmartInput ref={discussionInputRef} value={discussionMessage} onChange={(value, metadata) => { setDiscussionMessage(value); setDiscussionMetadata(metadata) }} onKeyDown={handleDiscussionKeyDown} placeholder="Add to the discussion..." textareaClassName="text-sm" rows={2} minHeight="60px" enableMentions={true} enableHashtags={true} enableTemplates={false} enableDataFunctions={false} enableAI={false} />
@@ -2486,48 +2717,262 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         </div>
                       )}
                     </div>
+
+                    {/* Assigned To - Editable if user is creator */}
+                    <div className="flex items-center gap-1 mt-2 relative" ref={assigneeDropdownRef}>
+                      <User className="h-3 w-3" />
+                      {isOwner ? (
+                        <button
+                          onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                          className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <span>
+                            {(trade as any).assigned_user
+                              ? `Assigned to ${getUserDisplayName((trade as any).assigned_user)}`
+                              : 'Assign to someone'}
+                          </span>
+                          <ChevronDown className={clsx("h-3 w-3 transition-transform", showAssigneeDropdown && "rotate-180")} />
+                        </button>
+                      ) : (
+                        <span>
+                          {(trade as any).assigned_user
+                            ? `Assigned to ${getUserDisplayName((trade as any).assigned_user)}`
+                            : 'Not assigned'}
+                        </span>
+                      )}
+
+                      {showAssigneeDropdown && isOwner && (
+                        <div className="absolute left-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
+                          <button
+                            onClick={() => updateAssigneeMutation.mutate(null)}
+                            disabled={updateAssigneeMutation.isPending}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                              !trade.assigned_to && "bg-gray-50 dark:bg-gray-700"
+                            )}
+                          >
+                            <XCircle className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-600 dark:text-gray-300">Unassign</span>
+                          </button>
+                          {teamMembers?.filter(m => m.id !== user?.id).map(member => (
+                            <button
+                              key={member.id}
+                              onClick={() => updateAssigneeMutation.mutate(member.id)}
+                              disabled={updateAssigneeMutation.isPending}
+                              className={clsx(
+                                "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                                trade.assigned_to === member.id && "bg-primary-50 dark:bg-primary-900/20"
+                              )}
+                            >
+                              <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
+                                {getUserInitials(member)}
+                              </div>
+                              <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Collaborators / Co-analysts */}
+                    <div className="flex items-center gap-1 mt-2 relative" ref={collaboratorsDropdownRef}>
+                      <Users className="h-3 w-3" />
+                      {isOwner ? (
+                        <button
+                          onClick={() => setShowCollaboratorsDropdown(!showCollaboratorsDropdown)}
+                          className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <span>
+                            {((trade as any).collaborators?.length > 0)
+                              ? `${(trade as any).collaborators.length} co-analyst${(trade as any).collaborators.length > 1 ? 's' : ''}`
+                              : 'Add co-analysts'}
+                          </span>
+                          <ChevronDown className={clsx("h-3 w-3 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
+                        </button>
+                      ) : (
+                        <span>
+                          {((trade as any).collaborators?.length > 0)
+                            ? `${(trade as any).collaborators.length} co-analyst${(trade as any).collaborators.length > 1 ? 's' : ''}`
+                            : 'No co-analysts'}
+                        </span>
+                      )}
+
+                      {showCollaboratorsDropdown && isOwner && (
+                        <div className="absolute left-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
+                          {teamMembers?.filter(m => m.id !== user?.id && m.id !== trade.assigned_to).map(member => {
+                            const currentCollaborators: string[] = (trade as any).collaborators || []
+                            const isCollaborator = currentCollaborators.includes(member.id)
+                            return (
+                              <button
+                                key={member.id}
+                                onClick={() => {
+                                  const newCollaborators = isCollaborator
+                                    ? currentCollaborators.filter(id => id !== member.id)
+                                    : [...currentCollaborators, member.id]
+                                  updateCollaboratorsMutation.mutate(newCollaborators)
+                                }}
+                                disabled={updateCollaboratorsMutation.isPending}
+                                className={clsx(
+                                  "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                                  isCollaborator && "bg-primary-50 dark:bg-primary-900/20"
+                                )}
+                              >
+                                <div className={clsx(
+                                  "w-4 h-4 border rounded flex items-center justify-center",
+                                  isCollaborator
+                                    ? "border-primary-500 bg-primary-500 text-white"
+                                    : "border-gray-300 dark:border-gray-600"
+                                )}>
+                                  {isCollaborator && <Check className="h-3 w-3" />}
+                                </div>
+                                <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
+                                  {getUserInitials(member)}
+                                </div>
+                                <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
+                              </button>
+                            )
+                          })}
+                          {(!teamMembers || teamMembers.filter(m => m.id !== user?.id && m.id !== trade.assigned_to).length === 0) && (
+                            <div className="px-3 py-2 text-sm text-gray-500">No team members available</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* ========== DISCUSSION SECTION ========== */}
-                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                      Comments {discussionMessages.length > 0 && <span className="text-gray-400">· {discussionMessages.length}</span>}
-                    </h3>
+                </div>
+              )}
 
-                    {discussionMessages.length > 0 && (
-                      <div className="space-y-3 mb-4 max-h-36 overflow-y-auto">
-                        {discussionMessages.map((message) => (
-                          <div key={message.id} className="flex gap-2">
-                            <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">{getUserInitials(message.user)}</span>
+              {/* Discussion Tab for Single Trade */}
+              {activeTab === 'discussion' && (
+                <div className="flex flex-col h-full">
+                  {/* Messages List */}
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {discussionMessages.length > 0 ? (
+                      <div className="space-y-1">
+                        {discussionMessages.map((message: any) => (
+                          <div key={message.id} className="group flex gap-2 py-1 -mx-2 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <div className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="text-gray-600 dark:text-gray-300 text-[10px] font-medium">
+                                {getUserInitials(message.user)}
+                              </span>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-baseline gap-2">
-                                <span className="text-xs font-medium text-gray-900 dark:text-white">{getUserDisplayName(message.user)}</span>
-                                <span className="text-[10px] text-gray-400">{formatMessageTime(message.created_at)}</span>
+                              <div className="flex items-baseline gap-1.5 flex-wrap">
+                                <span className="text-xs font-medium text-gray-900 dark:text-white">
+                                  {getUserDisplayName(message.user)}
+                                </span>
+                                {message.portfolio && (
+                                  <span className="text-[10px] text-primary-600 dark:text-primary-400">
+                                    {message.portfolio.name}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                                  {formatMessageTime(message.created_at)}
+                                </span>
+                                {message.is_pinned && <Pin className="h-2.5 w-2.5 text-amber-500" />}
                               </div>
-                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
+                              {message.reply_to && (
+                                <div className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                                  <Reply className="h-2.5 w-2.5" />
+                                  <span>replied</span>
+                                </div>
+                              )}
+                              <div className="text-sm text-gray-700 dark:text-gray-300">
                                 <SmartInputRenderer content={message.content} inline />
-                              </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                              <button
+                                onClick={() => { setReplyToMessage(message.id); discussionInputRef.current?.focus() }}
+                                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                                title="Reply"
+                              >
+                                <Reply className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={() => toggleDiscussionPinMutation.mutate({ messageId: message.id, isPinned: message.is_pinned })}
+                                className="p-1 text-gray-400 hover:text-amber-500 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                                title={message.is_pinned ? 'Unpin' : 'Pin'}
+                              >
+                                <Pin className="h-3 w-3" />
+                              </button>
                             </div>
                           </div>
                         ))}
                         <div ref={messagesEndRef} />
                       </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
+                        <MessageCircle className="h-8 w-8 mb-2" />
+                        <p className="text-sm">No messages yet</p>
+                      </div>
                     )}
+                  </div>
 
-                    <div className="flex gap-2 items-center">
+                  {/* Message Input */}
+                  <div className="p-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+                    {replyToMessage && replyToMessageData && (
+                      <div className="mb-2 px-2 py-1.5 bg-gray-100 dark:bg-gray-700/50 rounded text-xs flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400 truncate">
+                          Replying to {getUserDisplayName(replyToMessageData.user)}
+                        </span>
+                        <button onClick={() => setReplyToMessage(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-2">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                    {/* Portfolio context chips */}
+                    {labLinks.length > 0 && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <button
+                          onClick={() => setMessagePortfolioContext(null)}
+                          className={clsx(
+                            "text-[10px] px-2 py-0.5 rounded-full transition-colors",
+                            messagePortfolioContext === null
+                              ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900"
+                              : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+                          )}
+                        >
+                          General
+                        </button>
+                        {labLinks.map(link => link.trade_lab?.portfolio && (
+                          <button
+                            key={link.trade_lab.portfolio.id}
+                            onClick={() => setMessagePortfolioContext(link.trade_lab!.portfolio!.id)}
+                            className={clsx(
+                              "text-[10px] px-2 py-0.5 rounded-full transition-colors",
+                              messagePortfolioContext === link.trade_lab.portfolio.id
+                                ? "bg-primary-600 text-white"
+                                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+                            )}
+                          >
+                            {link.trade_lab.portfolio.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
                       <input
                         ref={discussionInputRef as any}
                         type="text"
                         value={discussionMessage}
                         onChange={(e) => setDiscussionMessage(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendDiscussionMessage() }}}
-                        placeholder="Add a comment..."
-                        className="flex-1 h-9 px-3 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        placeholder="Write a message..."
+                        className="flex-1 h-8 px-3 text-sm rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
                       />
-                      <button onClick={handleSendDiscussionMessage} disabled={!discussionMessage.trim() || sendDiscussionMessageMutation.isPending} className={clsx("h-9 w-9 rounded-lg flex items-center justify-center transition-colors", discussionMessage.trim() ? "bg-primary-600 text-white hover:bg-primary-700" : "bg-gray-100 dark:bg-gray-800 text-gray-400")}>
-                        <Send className="h-4 w-4" />
+                      <button
+                        onClick={handleSendDiscussionMessage}
+                        disabled={!discussionMessage.trim() || sendDiscussionMessageMutation.isPending}
+                        className={clsx(
+                          "h-8 w-8 rounded-md flex items-center justify-center transition-colors",
+                          discussionMessage.trim()
+                            ? "bg-primary-600 text-white hover:bg-primary-700"
+                            : "bg-gray-100 dark:bg-gray-700 text-gray-400"
+                        )}
+                      >
+                        <Send className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
@@ -2592,26 +3037,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 return (
                   <div className="p-4 space-y-4">
                     {/* Header with count */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          Team Proposals {proposals.length > 0 && `(${proposals.length})`}
-                        </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {getStatusText()}
-                          {proposals.length === 1 && (
-                            <span className="ml-1">· Awaiting additional recommendations</span>
-                          )}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setShowProposalModal(true)}
-                      >
-                        <Plus className="h-3.5 w-3.5 mr-1" />
-                        Add Proposal
-                      </Button>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        Team Proposals {proposals.length > 0 && `(${proposals.length})`}
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        {getStatusText()}
+                        {proposals.length === 1 && (
+                          <span className="ml-1">· Awaiting additional recommendations</span>
+                        )}
+                      </p>
                     </div>
 
                     {/* PM Decision Actions (only in deciding stage for owner) */}
@@ -2665,231 +3100,304 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       </div>
                     )}
 
-                    {/* Empty state */}
-                    {proposals.length === 0 ? (
+                    {/* Portfolio Context Cards with Inline Proposal Inputs */}
+                    {portfolioContexts.length > 0 ? (
+                      <div className="space-y-4">
+                        {portfolioContexts.map((portfolio) => {
+                          const inlineProposal = inlineProposals[portfolio.id]
+                          const sizingMode = inlineProposal?.sizingMode || 'weight'
+                          const hasPosition = portfolio.currentShares > 0
+                          const isExpanded = expandedProposalInputs.has(portfolio.id)
+
+                          // Get existing proposals for this portfolio
+                          const portfolioProposals = proposals.filter(p => p.portfolio_id === portfolio.id)
+                          const userProposal = portfolioProposals.find(p => p.user_id === user?.id)
+                          const otherProposals = portfolioProposals.filter(p => p.user_id !== user?.id)
+
+                          // Sizing mode options
+                          const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
+                            { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
+                            { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                            { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
+                            { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
+                          ]
+
+                          return (
+                            <div
+                              key={portfolio.id}
+                              className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+                            >
+                              {/* Portfolio Header */}
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <Briefcase className="h-4 w-4 text-gray-400" />
+                                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                    {portfolio.name}
+                                  </span>
+                                  {portfolioProposals.length > 0 && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+                                      {portfolioProposals.length} {portfolioProposals.length === 1 ? 'proposal' : 'proposals'}
+                                    </span>
+                                  )}
+                                </div>
+                                {portfolio.benchmark && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    vs {portfolio.benchmark}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Current Position Context */}
+                              {hasPosition ? (
+                                <div className="p-2 rounded bg-gray-100 dark:bg-gray-700/50">
+                                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                                    Current Position
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-2 text-xs">
+                                    <div>
+                                      <div className="text-gray-500 dark:text-gray-400">Weight</div>
+                                      <div className="font-medium text-gray-900 dark:text-white">
+                                        {portfolio.currentWeight.toFixed(2)}%
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-gray-500 dark:text-gray-400">Shares</div>
+                                      <div className="font-medium text-gray-900 dark:text-white">
+                                        {portfolio.currentShares.toLocaleString()}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-gray-500 dark:text-gray-400">Bench Wt</div>
+                                      <div className="font-medium text-gray-900 dark:text-white">
+                                        {portfolio.benchmarkWeight !== null ? `${portfolio.benchmarkWeight.toFixed(2)}%` : '—'}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-gray-500 dark:text-gray-400">Active Wgt</div>
+                                      <div className={clsx(
+                                        "font-medium",
+                                        portfolio.activeWeight === null ? "text-gray-900 dark:text-white" :
+                                        portfolio.activeWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                        portfolio.activeWeight < 0 ? "text-red-600 dark:text-red-400" :
+                                        "text-gray-900 dark:text-white"
+                                      )}>
+                                        {portfolio.activeWeight !== null
+                                          ? `${portfolio.activeWeight >= 0 ? '+' : ''}${portfolio.activeWeight.toFixed(2)}%`
+                                          : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-gray-400 dark:text-gray-500">
+                                  No current position
+                                </div>
+                              )}
+
+                              {/* Your Proposal Section - Collapsible */}
+                              <button
+                                type="button"
+                                onClick={() => setExpandedProposalInputs(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(portfolio.id)) {
+                                    next.delete(portfolio.id)
+                                  } else {
+                                    next.add(portfolio.id)
+                                  }
+                                  return next
+                                })}
+                                className="w-full mt-2 flex items-center justify-between px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  )}
+                                  {userProposal ? (
+                                    <span className="text-primary-600 dark:text-primary-400">
+                                      Your Proposal: {userProposal.weight?.toFixed(2)}%
+                                    </span>
+                                  ) : inlineProposal?.value ? (
+                                    <span className="text-primary-600 dark:text-primary-400">
+                                      Draft: {inlineProposal.value}% ({sizingModes.find(m => m.value === sizingMode)?.label})
+                                    </span>
+                                  ) : (
+                                    'Add Your Proposal'
+                                  )}
+                                </span>
+                              </button>
+
+                              {/* Collapsible Proposal Input Section */}
+                              {isExpanded && (
+                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 space-y-3">
+                                  {/* Sizing Mode Selector */}
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                                      Proposal Type
+                                    </label>
+                                    <div className="grid grid-cols-4 gap-1">
+                                      {sizingModes.map((mode) => {
+                                        const isDisabled = mode.value === 'delta_benchmark' && portfolio.benchmarkWeight === null
+                                        return (
+                                          <button
+                                            key={mode.value}
+                                            type="button"
+                                            disabled={isDisabled}
+                                            onClick={() => setInlineProposals(prev => ({
+                                              ...prev,
+                                              [portfolio.id]: { ...prev[portfolio.id], sizingMode: mode.value, value: '' }
+                                            }))}
+                                            className={clsx(
+                                              "px-2 py-1.5 text-xs rounded border transition-colors",
+                                              sizingMode === mode.value
+                                                ? "bg-primary-100 dark:bg-primary-900/30 border-primary-500 text-primary-700 dark:text-primary-300"
+                                                : isDisabled
+                                                ? "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                                                : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                                            )}
+                                            title={isDisabled ? 'Benchmark data not available' : mode.label}
+                                          >
+                                            {mode.label}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* Value Input */}
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                      {sizingModes.find(m => m.value === sizingMode)?.label || 'Value'}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={inlineProposal?.value || ''}
+                                      onChange={(e) => setInlineProposals(prev => ({
+                                        ...prev,
+                                        [portfolio.id]: { ...prev[portfolio.id], value: e.target.value }
+                                      }))}
+                                      placeholder={sizingModes.find(m => m.value === sizingMode)?.placeholder || ''}
+                                      className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                    />
+                                  </div>
+
+                                  {/* Notes */}
+                                  <div>
+                                    <input
+                                      type="text"
+                                      value={inlineProposal?.notes || ''}
+                                      onChange={(e) => setInlineProposals(prev => ({
+                                        ...prev,
+                                        [portfolio.id]: { ...prev[portfolio.id], notes: e.target.value }
+                                      }))}
+                                      placeholder="Notes (optional)"
+                                      className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                    />
+                                  </div>
+
+                                  {/* Submit Button */}
+                                  <Button
+                                    size="sm"
+                                    onClick={async () => {
+                                      if (!user || !inlineProposal?.value) return
+                                      const numValue = parseFloat(inlineProposal.value)
+                                      if (isNaN(numValue)) return
+
+                                      // Calculate weight based on sizing mode
+                                      let weight: number | null = numValue
+                                      let dbSizingMode: TradeSizingMode = 'weight'
+
+                                      if (sizingMode === 'delta_weight') {
+                                        weight = portfolio.currentWeight + numValue
+                                        dbSizingMode = 'delta_weight'
+                                      } else if (sizingMode === 'active_weight' && portfolio.benchmarkWeight !== null) {
+                                        weight = portfolio.benchmarkWeight + numValue
+                                        dbSizingMode = 'delta_benchmark'
+                                      }
+
+                                      const context: ActionContext = {
+                                        actorId: user.id,
+                                        actorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '',
+                                        actorEmail: user.email || '',
+                                        actorRole: (user.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                                        requestId: crypto.randomUUID(),
+                                        uiSource: 'modal',
+                                      }
+
+                                      await upsertProposal({
+                                        trade_queue_item_id: tradeId,
+                                        portfolio_id: portfolio.id,
+                                        weight,
+                                        shares: null,
+                                        sizing_mode: dbSizingMode,
+                                        sizing_context: {
+                                          proposalType: sizingMode,
+                                          inputValue: numValue,
+                                          currentWeight: portfolio.currentWeight,
+                                        },
+                                        notes: inlineProposal.notes || null,
+                                      }, context)
+
+                                      refetchProposals()
+                                      setExpandedProposalInputs(prev => {
+                                        const next = new Set(prev)
+                                        next.delete(portfolio.id)
+                                        return next
+                                      })
+                                    }}
+                                    disabled={!inlineProposal?.value}
+                                    className="w-full"
+                                  >
+                                    <Scale className="h-3.5 w-3.5 mr-1" />
+                                    {userProposal ? 'Update Proposal' : 'Submit Proposal'}
+                                  </Button>
+                                </div>
+                              )}
+
+                              {/* Other Team Proposals for this Portfolio */}
+                              {otherProposals.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                                    Team Proposals ({otherProposals.length})
+                                  </div>
+                                  <div className="space-y-2">
+                                    {otherProposals.map((proposal) => {
+                                      const userName = proposal.users?.first_name && proposal.users?.last_name
+                                        ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                        : proposal.users?.email || 'Unknown'
+                                      return (
+                                        <div
+                                          key={proposal.id}
+                                          className="flex items-center justify-between p-2 rounded bg-gray-100 dark:bg-gray-700/50"
+                                        >
+                                          <span className="text-xs text-gray-600 dark:text-gray-400">
+                                            {userName}
+                                          </span>
+                                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                            {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
+                                          </span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : proposals.length === 0 ? (
                       <div className="text-center py-12">
                         <Users className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                          No proposals yet
+                          No portfolios linked
                         </p>
                         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                          Team members can submit their sizing proposals for this trade idea
+                          Link this trade idea to a portfolio to submit proposals
                         </p>
                       </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* Render grouped by portfolio when multiple portfolios exist */}
-                        {hasMultiplePortfolios ? (
-                          sortedPortfolioEntries.map(([portfolioId, { name: portfolioName, proposals: portfolioProposals }]) => (
-                            <div key={portfolioId} className="space-y-3">
-                              {/* Portfolio header */}
-                              <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-                                <Briefcase className="h-4 w-4 text-gray-400" />
-                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  {portfolioName}
-                                </h4>
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                  ({portfolioProposals.length})
-                                </span>
-                              </div>
-                              {/* Proposals for this portfolio */}
-                              {portfolioProposals.map((proposal) => {
-                                const userName = proposal.users?.first_name && proposal.users?.last_name
-                                  ? `${proposal.users.first_name} ${proposal.users.last_name}`
-                                  : proposal.users?.email || 'Unknown'
-                                const isCurrentUser = proposal.user_id === user?.id
-                                const hasShares = proposal.shares !== null && proposal.shares !== undefined
-
-                                const handleEditProposal = () => {
-                                  setProposalWeight(proposal.weight?.toString() || '')
-                                  setProposalShares(proposal.shares?.toString() || '')
-                                  setProposalNotes(proposal.notes || '')
-                                  setShowProposalModal(true)
-                                }
-
-                                return (
-                                  <div
-                                    key={proposal.id}
-                                    className={clsx(
-                                      "p-3 rounded-lg border transition-colors",
-                                      isCurrentUser
-                                        ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700"
-                                        : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                                    )}
-                                    onClick={isCurrentUser ? handleEditProposal : undefined}
-                                    role={isCurrentUser ? "button" : undefined}
-                                    tabIndex={isCurrentUser ? 0 : undefined}
-                                    onKeyDown={isCurrentUser ? (e) => e.key === 'Enter' && handleEditProposal() : undefined}
-                                  >
-                                    {/* Compact layout: User + Size on same row */}
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <div className={clsx(
-                                          "h-6 w-6 rounded-full flex items-center justify-center",
-                                          isCurrentUser
-                                            ? "bg-primary-100 dark:bg-primary-900/30"
-                                            : "bg-gray-200 dark:bg-gray-700"
-                                        )}>
-                                          <User className={clsx(
-                                            "h-3 w-3",
-                                            isCurrentUser
-                                              ? "text-primary-600 dark:text-primary-400"
-                                              : "text-gray-500 dark:text-gray-400"
-                                          )} />
-                                        </div>
-                                        <div className="flex items-baseline gap-2">
-                                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                            {userName}
-                                            {isCurrentUser && (
-                                              <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
-                                            )}
-                                          </span>
-                                          <span className="text-xs text-gray-400 dark:text-gray-500">
-                                            {formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })}
-                                            {proposal.updated_at !== proposal.created_at && ' (edited)'}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        {/* Size display */}
-                                        <div className="text-right">
-                                          <span className="text-lg font-semibold text-gray-900 dark:text-white">
-                                            {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
-                                          </span>
-                                          {hasShares && (
-                                            <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
-                                              ({proposal.shares!.toLocaleString()} sh)
-                                            </span>
-                                          )}
-                                        </div>
-                                        {isCurrentUser && (
-                                          <button
-                                            type="button"
-                                            className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleEditProposal()
-                                            }}
-                                            title="Edit your proposal"
-                                          >
-                                            <Pencil className="h-3 w-3" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Notes - only show if has value, compact */}
-                                    {proposal.notes && (
-                                      <p className="mt-2 text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
-                                        {proposal.notes}
-                                      </p>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          ))
-                        ) : (
-                          /* Single portfolio - render flat list */
-                          <div className="space-y-2">
-                            {sortedProposals.map((proposal) => {
-                              const userName = proposal.users?.first_name && proposal.users?.last_name
-                                ? `${proposal.users.first_name} ${proposal.users.last_name}`
-                                : proposal.users?.email || 'Unknown'
-                              const isCurrentUser = proposal.user_id === user?.id
-                              const hasShares = proposal.shares !== null && proposal.shares !== undefined
-
-                              const handleEditProposal = () => {
-                                setProposalWeight(proposal.weight?.toString() || '')
-                                setProposalShares(proposal.shares?.toString() || '')
-                                setProposalNotes(proposal.notes || '')
-                                setShowProposalModal(true)
-                              }
-
-                              return (
-                                <div
-                                  key={proposal.id}
-                                  className={clsx(
-                                    "p-3 rounded-lg border transition-colors",
-                                    isCurrentUser
-                                      ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700"
-                                      : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                                  )}
-                                  onClick={isCurrentUser ? handleEditProposal : undefined}
-                                  role={isCurrentUser ? "button" : undefined}
-                                  tabIndex={isCurrentUser ? 0 : undefined}
-                                  onKeyDown={isCurrentUser ? (e) => e.key === 'Enter' && handleEditProposal() : undefined}
-                                >
-                                  {/* Compact layout: User + Size on same row */}
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <div className={clsx(
-                                        "h-6 w-6 rounded-full flex items-center justify-center",
-                                        isCurrentUser
-                                          ? "bg-primary-100 dark:bg-primary-900/30"
-                                          : "bg-gray-200 dark:bg-gray-700"
-                                      )}>
-                                        <User className={clsx(
-                                          "h-3 w-3",
-                                          isCurrentUser
-                                            ? "text-primary-600 dark:text-primary-400"
-                                            : "text-gray-500 dark:text-gray-400"
-                                        )} />
-                                      </div>
-                                      <div className="flex items-baseline gap-2">
-                                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                          {userName}
-                                          {isCurrentUser && (
-                                            <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
-                                          )}
-                                        </span>
-                                        <span className="text-xs text-gray-400 dark:text-gray-500">
-                                          {formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })}
-                                          {proposal.updated_at !== proposal.created_at && ' (edited)'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      {/* Size display */}
-                                      <div className="text-right">
-                                        <span className="text-lg font-semibold text-gray-900 dark:text-white">
-                                          {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
-                                        </span>
-                                        {hasShares && (
-                                          <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
-                                            ({proposal.shares!.toLocaleString()} sh)
-                                          </span>
-                                        )}
-                                      </div>
-                                      {isCurrentUser && (
-                                        <button
-                                          type="button"
-                                          className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleEditProposal()
-                                          }}
-                                          title="Edit your proposal"
-                                        >
-                                          <Pencil className="h-3 w-3" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Notes - only show if has value, compact */}
-                                  {proposal.notes && (
-                                    <p className="mt-2 text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
-                                      {proposal.notes}
-                                    </p>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    ) : null}
 
                     {/* Cancelled Proposals */}
                     {rejectedProposals.length > 0 && (() => {
@@ -3030,17 +3538,178 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               })()}
 
               {/* Activity Tab for Single Trade */}
-              {activeTab === 'activity' && (
-                <div className="p-4">
-                  <EntityTimeline
-                    entityType="trade_idea"
-                    entityId={tradeId}
-                    showHeader={true}
-                    collapsible={false}
-                    excludeActions={['attach', 'detach']}
-                  />
-                </div>
-              )}
+              {activeTab === 'activity' && (() => {
+                // Calculate activity insights
+                const createdAt = new Date(trade.created_at)
+                const now = new Date()
+                const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
+
+                // Get unique participants
+                const participants = new Map<string, { name: string; role: string; avatar: string }>()
+
+                // Creator
+                if (trade.users) {
+                  participants.set(trade.created_by || 'creator', {
+                    name: getUserDisplayName(trade.users),
+                    role: 'Creator',
+                    avatar: getUserInitials(trade.users)
+                  })
+                }
+
+                // Assignee
+                if ((trade as any).assigned_user) {
+                  participants.set((trade as any).assigned_to, {
+                    name: getUserDisplayName((trade as any).assigned_user),
+                    role: 'Assignee',
+                    avatar: getUserInitials((trade as any).assigned_user)
+                  })
+                }
+
+                // Proposers from proposals
+                const proposalsData = proposals || []
+                proposalsData.forEach((p: any) => {
+                  const proposerData = p.users || p.user
+                  if (proposerData && !participants.has(p.user_id)) {
+                    participants.set(p.user_id, {
+                      name: getUserDisplayName(proposerData),
+                      role: 'Proposer',
+                      avatar: getUserInitials(proposerData)
+                    })
+                  }
+                })
+
+                // Stage journey
+                const stageOrder = ['idea', 'discussing', 'simulating', 'deciding', 'approved']
+                const stageLabels: Record<string, string> = {
+                  idea: 'Idea',
+                  discussing: 'Working On',
+                  simulating: 'Modeling',
+                  deciding: 'Deciding',
+                  approved: 'Committed'
+                }
+                const currentStageIndex = stageOrder.indexOf(trade.status) >= 0 ? stageOrder.indexOf(trade.status) :
+                  trade.status === 'working_on' ? 1 : trade.status === 'modeling' ? 2 : 0
+
+                return (
+                  <div className="p-4 space-y-6">
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">{daysSinceCreation}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Days Active</div>
+                      </div>
+                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">{proposalsData.length}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Proposals</div>
+                      </div>
+                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">{labLinks.length}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Portfolios</div>
+                      </div>
+                    </div>
+
+                    {/* Stage Journey */}
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Stage Journey</h4>
+                      <div className="flex items-center gap-1">
+                        {stageOrder.slice(0, -1).map((stage, index) => {
+                          const isCompleted = index < currentStageIndex
+                          const isCurrent = index === currentStageIndex
+                          return (
+                            <div key={stage} className="flex items-center flex-1">
+                              <div className={clsx(
+                                "flex-1 h-2 rounded-full transition-colors",
+                                isCompleted ? "bg-green-500" : isCurrent ? "bg-primary-500" : "bg-gray-200 dark:bg-gray-700"
+                              )} />
+                              {index < stageOrder.length - 2 && (
+                                <ChevronRight className={clsx(
+                                  "h-3 w-3 flex-shrink-0",
+                                  isCompleted ? "text-green-500" : "text-gray-300 dark:text-gray-600"
+                                )} />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        {stageOrder.slice(0, -1).map((stage, index) => {
+                          const isCurrent = index === currentStageIndex
+                          return (
+                            <span key={stage} className={clsx(
+                              "text-[10px]",
+                              isCurrent ? "font-medium text-primary-600 dark:text-primary-400" : "text-gray-400 dark:text-gray-500"
+                            )}>
+                              {stageLabels[stage]}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Participants */}
+                    {participants.size > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Participants</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from(participants.values()).map((p, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-full pl-1 pr-3 py-1">
+                              <div className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                {p.avatar}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-medium text-gray-900 dark:text-white leading-tight">{p.name}</span>
+                                <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">{p.role}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Key Dates */}
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Key Dates</h4>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Created</span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {format(createdAt, 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                        {trade.updated_at && trade.updated_at !== trade.created_at && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600 dark:text-gray-400">Last Updated</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {format(new Date(trade.updated_at), 'MMM d, yyyy')}
+                            </span>
+                          </div>
+                        )}
+                        {trade.decided_at && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600 dark:text-gray-400">Decision Made</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {format(new Date(trade.decided_at), 'MMM d, yyyy')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Detailed Timeline */}
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Activity Timeline</h4>
+                      <EntityTimeline
+                        entityType="trade_idea"
+                        entityId={tradeId}
+                        showHeader={false}
+                        collapsible={false}
+                        excludeActions={['attach', 'detach']}
+                        maxItems={20}
+                      />
+                    </div>
+                  </div>
+                )
+              })()}
             </>
           ) : null}
         </div>

@@ -173,6 +173,7 @@ export interface TradeQueueItem {
   // Ownership & timestamps
   created_by: string | null
   assigned_to: string | null  // Co-analyst/assignee who can also move stages
+  collaborators: string[] | null  // Array of user IDs who are co-analysts
   created_at: string
   updated_at: string
 

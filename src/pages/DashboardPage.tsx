@@ -264,9 +264,10 @@ export function DashboardPage() {
       console.log('🧪 Opening Trade Lab:', { labId, labName, portfolioId })
 
       // Navigate to trade-lab tab with the portfolio/lab ID
+      // Always use "Trade Lab" as the tab title for consistency
       handleSearchResult({
         id: labId || 'trade-lab',
-        title: labName || 'Trade Lab',
+        title: 'Trade Lab',
         type: 'trade-lab',
         data: { id: labId, portfolioId }
       })

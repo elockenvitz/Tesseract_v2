@@ -1077,6 +1077,7 @@ export interface IdeaLabLink {
     portfolio?: {
       id: string
       name: string
+      benchmark?: string | null
     }
   }
 }
@@ -1103,7 +1104,8 @@ export async function getIdeaLabLinks(
         portfolio_id,
         portfolios:portfolio_id (
           id,
-          name
+          name,
+          benchmark
         )
       )
     `)

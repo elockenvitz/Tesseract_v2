@@ -60,7 +60,7 @@ import { clsx } from 'clsx'
 import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../hooks/useTradeIdeaService'
 import { upsertProposal } from '../lib/services/trade-lab-service'
-import type { ActionContext } from '../types/trading'
+import type { ActionContext, TradeSizingMode } from '../types/trading'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
   idea: { label: 'Ideas', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', icon: Lightbulb },
@@ -128,9 +128,36 @@ export function TradeQueuePage() {
   const [proposalShares, setProposalShares] = useState<string>('')
   const [proposalNotes, setProposalNotes] = useState<string>('')
   const [isSubmittingProposal, setIsSubmittingProposal] = useState(false)
-  // Multi-portfolio proposal state: { [portfolioId]: { weight, shares, notes } }
-  const [portfolioProposals, setPortfolioProposals] = useState<Record<string, { weight: string; shares: string; notes: string }>>({})
-  const [linkedPortfolios, setLinkedPortfolios] = useState<Array<{ id: string; name: string }>>([])
+  // Sizing mode options for proposals
+  type ProposalSizingMode = 'weight' | 'delta_weight' | 'active_weight' | 'delta_benchmark'
+
+  // Multi-portfolio proposal state with sizing mode
+  interface PortfolioProposalState {
+    sizingMode: ProposalSizingMode
+    value: string
+    notes: string
+  }
+  const [portfolioProposals, setPortfolioProposals] = useState<Record<string, PortfolioProposalState>>({})
+
+  // Linked portfolios with holding context
+  interface LinkedPortfolioWithContext {
+    id: string
+    name: string
+    benchmark: string | null
+    // Current holding info for the asset
+    currentShares: number
+    currentPrice: number
+    currentValue: number
+    currentWeight: number
+    // Benchmark info (if available)
+    benchmarkWeight: number | null
+    activeWeight: number | null
+    // Portfolio totals for weight calculation
+    portfolioTotalValue: number
+  }
+  const [linkedPortfolios, setLinkedPortfolios] = useState<LinkedPortfolioWithContext[]>([])
+  // Track which portfolio proposal inputs are expanded in the modal
+  const [expandedProposalInputs, setExpandedProposalInputs] = useState<Set<string>>(new Set())
 
   // Track which proposal groups are expanded in Deciding column
   const [expandedProposalGroups, setExpandedProposalGroups] = useState<Set<string>>(new Set())
@@ -948,77 +975,118 @@ export function TradeQueuePage() {
     return () => document.removeEventListener('keydown', handleEscKey)
   }, [fullscreenColumn])
 
-  // Fetch linked portfolios when proposal modal opens
+  // Fetch linked portfolios with holding context when proposal modal opens
   useEffect(() => {
-    if (!proposalTradeId || !showProposalModal) {
+    if (!proposalTradeId || !showProposalModal || !proposalTrade) {
       setLinkedPortfolios([])
       setPortfolioProposals({})
+      setExpandedProposalInputs(new Set())
       return
     }
 
-    const fetchLinkedPortfolios = async () => {
+    const fetchLinkedPortfoliosWithContext = async () => {
+      const assetId = proposalTrade.asset_id
+
       // Get portfolios via trade_lab_idea_links -> trade_labs -> portfolios
       const { data: links, error } = await supabase
         .from('trade_lab_idea_links')
         .select(`
           trade_labs!inner (
             portfolio_id,
-            portfolios!inner (id, name)
+            portfolios!inner (id, name, benchmark)
           )
         `)
         .eq('trade_queue_item_id', proposalTradeId)
 
-      if (error) {
-        console.error('Failed to fetch linked portfolios:', error)
-        // Fall back to the trade's own portfolio
-        if (proposalTrade?.portfolio_id) {
-          const { data: portfolio } = await supabase
-            .from('portfolios')
-            .select('id, name')
-            .eq('id', proposalTrade.portfolio_id)
-            .single()
-          if (portfolio) {
-            setLinkedPortfolios([portfolio])
-            setPortfolioProposals({ [portfolio.id]: { weight: '', shares: '', notes: '' } })
-          }
-        }
-        return
-      }
+      let portfolioMap = new Map<string, { id: string; name: string; benchmark: string | null }>()
 
-      // Extract unique portfolios
-      const portfolioMap = new Map<string, { id: string; name: string }>()
-      links?.forEach((link: any) => {
-        const portfolio = link.trade_labs?.portfolios
-        if (portfolio) {
-          portfolioMap.set(portfolio.id, portfolio)
-        }
-      })
+      if (!error && links) {
+        links.forEach((link: any) => {
+          const portfolio = link.trade_labs?.portfolios
+          if (portfolio) {
+            portfolioMap.set(portfolio.id, { id: portfolio.id, name: portfolio.name, benchmark: portfolio.benchmark })
+          }
+        })
+      }
 
       // If no linked portfolios, fall back to trade's own portfolio
       if (portfolioMap.size === 0 && proposalTrade?.portfolio_id) {
         const { data: portfolio } = await supabase
           .from('portfolios')
-          .select('id, name')
+          .select('id, name, benchmark')
           .eq('id', proposalTrade.portfolio_id)
           .single()
         if (portfolio) {
-          portfolioMap.set(portfolio.id, portfolio)
+          portfolioMap.set(portfolio.id, { id: portfolio.id, name: portfolio.name, benchmark: portfolio.benchmark })
         }
       }
 
-      const portfolios = Array.from(portfolioMap.values())
-      setLinkedPortfolios(portfolios)
+      const portfolioIds = Array.from(portfolioMap.keys())
+      if (portfolioIds.length === 0) {
+        setLinkedPortfolios([])
+        setExpandedProposalInputs(new Set())
+        return
+      }
+
+      // Fetch all holdings for these portfolios to calculate total values and current positions
+      const { data: allHoldings } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id, asset_id, shares, price')
+        .in('portfolio_id', portfolioIds)
+
+      // Calculate portfolio totals and find current holding for this asset
+      const portfolioTotals = new Map<string, number>()
+      const assetHoldings = new Map<string, { shares: number; price: number; value: number }>()
+
+      allHoldings?.forEach((h: any) => {
+        const value = (h.shares || 0) * (h.price || 0)
+        portfolioTotals.set(h.portfolio_id, (portfolioTotals.get(h.portfolio_id) || 0) + value)
+
+        if (h.asset_id === assetId) {
+          assetHoldings.set(h.portfolio_id, {
+            shares: h.shares || 0,
+            price: h.price || 0,
+            value
+          })
+        }
+      })
+
+      // Build linked portfolios with context
+      const portfoliosWithContext: LinkedPortfolioWithContext[] = Array.from(portfolioMap.values()).map(p => {
+        const totalValue = portfolioTotals.get(p.id) || 0
+        const holding = assetHoldings.get(p.id)
+        const currentWeight = totalValue > 0 && holding ? (holding.value / totalValue) * 100 : 0
+
+        // TODO: Fetch benchmark weights when benchmark_holdings table is available
+        const benchmarkWeight = null
+        const activeWeight = benchmarkWeight !== null ? currentWeight - benchmarkWeight : null
+
+        return {
+          id: p.id,
+          name: p.name,
+          benchmark: p.benchmark,
+          currentShares: holding?.shares || 0,
+          currentPrice: holding?.price || 0,
+          currentValue: holding?.value || 0,
+          currentWeight,
+          benchmarkWeight,
+          activeWeight,
+          portfolioTotalValue: totalValue
+        }
+      })
+
+      setLinkedPortfolios(portfoliosWithContext)
 
       // Initialize proposal state for each portfolio
-      const initialProposals: Record<string, { weight: string; shares: string; notes: string }> = {}
-      portfolios.forEach(p => {
-        initialProposals[p.id] = { weight: '', shares: '', notes: '' }
+      const initialProposals: Record<string, PortfolioProposalState> = {}
+      portfoliosWithContext.forEach(p => {
+        initialProposals[p.id] = { sizingMode: 'weight', value: '', notes: '' }
       })
       setPortfolioProposals(initialProposals)
     }
 
-    fetchLinkedPortfolios()
-  }, [proposalTradeId, showProposalModal, proposalTrade?.portfolio_id])
+    fetchLinkedPortfoliosWithContext()
+  }, [proposalTradeId, showProposalModal, proposalTrade])
 
   if (isLoading) {
     return (
@@ -1066,17 +1134,6 @@ export function TradeQueuePage() {
               className="pl-10"
             />
           </div>
-
-          <select
-            value={filters.status || 'all'}
-            onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as TradeQueueStatus | 'all' }))}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-          >
-            <option value="all">All Statuses</option>
-            {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
-            ))}
-          </select>
 
           <select
             value={filters.action || 'all'}
@@ -1496,7 +1553,7 @@ export function TradeQueuePage() {
                               <Scale className={clsx("h-4 w-4", fourthColumnView === 'deciding' ? "text-amber-600" : "text-gray-400")} />
                               <span className={fourthColumnView === 'deciding' ? "font-medium text-amber-700 dark:text-amber-400" : ""}>Deciding</span>
                             </div>
-                            <Badge variant="secondary" className="text-xs">{itemsByStatus.deciding.length + pairTradesByStatus.deciding.length}</Badge>
+                            <Badge variant="secondary" className="text-xs">{(decidingProposals?.length || 0) + pairTradesByStatus.deciding.length}</Badge>
                           </button>
 
                           {/* Divider */}
@@ -1563,7 +1620,7 @@ export function TradeQueuePage() {
                       {/* Item count badge */}
                       <Badge variant="default" className="ml-auto">
                         {fourthColumnView === 'deciding'
-                          ? itemsByStatus.deciding.length + pairTradesByStatus.deciding.length
+                          ? (decidingProposals?.length || 0) + pairTradesByStatus.deciding.length
                           : fourthColumnView === 'executed'
                             ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
                             : fourthColumnView === 'rejected'
@@ -1758,17 +1815,6 @@ export function TradeQueuePage() {
                               <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                                 {group.proposals.length} {group.proposals.length === 1 ? 'proposal' : 'proposals'}
                               </span>
-                              <button
-                                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedTradeId(group.tradeId)
-                                  setSelectedTradeInitialTab('details')
-                                }}
-                                title="View details"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
-                              </button>
                             </div>
                             {/* Proposal Cards - Collapsed by default */}
                             {isExpanded && (
@@ -1935,91 +1981,247 @@ export function TradeQueuePage() {
               setProposalTrade(null)
               setPortfolioProposals({})
               setLinkedPortfolios([])
+              setExpandedProposalInputs(new Set())
             }}
           />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Submit Proposals for {proposalTrade.assets?.symbol}
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              {linkedPortfolios.length > 1
-                ? `This trade is linked to ${linkedPortfolios.length} portfolios. Enter your sizing proposal for each.`
-                : 'Enter your sizing proposal before moving to Deciding.'}
-            </p>
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 h-[70vh] flex flex-col">
+            {/* Fixed Header */}
+            <div className="flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Submit Proposal for {proposalTrade.assets?.symbol}
+                {proposalTrade.assets?.company_name && (
+                  <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                    {proposalTrade.assets.company_name}
+                  </span>
+                )}
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {linkedPortfolios.length > 1
+                  ? `This trade idea is linked to ${linkedPortfolios.length} portfolios. Review current positions and enter your sizing proposal for each.`
+                  : 'Review the current position and enter your sizing proposal.'}
+              </p>
+            </div>
 
+            {/* Scrollable Content */}
             {linkedPortfolios.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
                 <div className="animate-pulse">Loading portfolios...</div>
               </div>
             ) : (
-              <div className="space-y-4">
-                {linkedPortfolios.map((portfolio) => (
-                  <div
-                    key={portfolio.id}
-                    className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
-                  >
-                    <div className="flex items-center gap-2 mb-3">
-                      <Briefcase className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {portfolio.name}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                          Weight %
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={portfolioProposals[portfolio.id]?.weight || ''}
-                          onChange={(e) => setPortfolioProposals(prev => ({
-                            ...prev,
-                            [portfolio.id]: { ...prev[portfolio.id], weight: e.target.value }
-                          }))}
-                          placeholder="e.g. 5.0"
-                          className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                        />
+              <div className="flex-1 overflow-y-auto mt-4 space-y-4 pr-1">
+                {linkedPortfolios.map((portfolio) => {
+                  const proposal = portfolioProposals[portfolio.id]
+                  const sizingMode = proposal?.sizingMode || 'weight'
+                  const hasPosition = portfolio.currentShares > 0
+
+                  // Sizing mode options
+                  const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
+                    { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
+                    { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                    { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
+                    { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
+                  ]
+
+                  return (
+                    <div
+                      key={portfolio.id}
+                      className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+                    >
+                      {/* Portfolio Header */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {portfolio.name}
+                          </span>
+                        </div>
+                        {portfolio.benchmark && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            vs {portfolio.benchmark}
+                          </span>
+                        )}
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                          Shares
-                        </label>
-                        <input
-                          type="number"
-                          step="1"
-                          value={portfolioProposals[portfolio.id]?.shares || ''}
-                          onChange={(e) => setPortfolioProposals(prev => ({
-                            ...prev,
-                            [portfolio.id]: { ...prev[portfolio.id], shares: e.target.value }
-                          }))}
-                          placeholder="e.g. 1000"
-                          className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                        />
-                      </div>
+
+                      {/* Current Position Context */}
+                      {hasPosition ? (
+                        <div className="p-2 rounded bg-gray-100 dark:bg-gray-700/50">
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                            Current Position
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 text-xs">
+                            <div>
+                              <div className="text-gray-500 dark:text-gray-400">Weight</div>
+                              <div className="font-medium text-gray-900 dark:text-white">
+                                {portfolio.currentWeight.toFixed(2)}%
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 dark:text-gray-400">Shares</div>
+                              <div className="font-medium text-gray-900 dark:text-white">
+                                {portfolio.currentShares.toLocaleString()}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 dark:text-gray-400">Bench Wt</div>
+                              <div className="font-medium text-gray-900 dark:text-white">
+                                {portfolio.benchmarkWeight !== null ? `${portfolio.benchmarkWeight.toFixed(2)}%` : '—'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 dark:text-gray-400">Active Wgt</div>
+                              <div className={clsx(
+                                "font-medium",
+                                portfolio.activeWeight === null ? "text-gray-900 dark:text-white" :
+                                portfolio.activeWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                portfolio.activeWeight < 0 ? "text-red-600 dark:text-red-400" :
+                                "text-gray-900 dark:text-white"
+                              )}>
+                                {portfolio.activeWeight !== null
+                                  ? `${portfolio.activeWeight >= 0 ? '+' : ''}${portfolio.activeWeight.toFixed(2)}%`
+                                  : '—'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                          No current position
+                        </div>
+                      )}
+
+                      {/* Expandable Proposal Section */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedProposalInputs(prev => {
+                          const next = new Set(prev)
+                          if (next.has(portfolio.id)) {
+                            next.delete(portfolio.id)
+                          } else {
+                            next.add(portfolio.id)
+                          }
+                          return next
+                        })}
+                        className="w-full mt-2 flex items-center justify-between px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {expandedProposalInputs.has(portfolio.id) ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
+                          {proposal?.value ? (
+                            <span className="text-primary-600 dark:text-primary-400">
+                              Proposal: {proposal.value}% ({sizingModes.find(m => m.value === sizingMode)?.label})
+                            </span>
+                          ) : (
+                            'Add Proposal'
+                          )}
+                        </span>
+                        {proposal?.value && (
+                          <span className="text-green-600 dark:text-green-400">✓</span>
+                        )}
+                      </button>
+
+                      {/* Collapsible Proposal Input Section */}
+                      {expandedProposalInputs.has(portfolio.id) && (
+                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 space-y-3">
+                          {/* Sizing Mode Selector */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                              Proposal Type
+                            </label>
+                            <div className="grid grid-cols-4 gap-1">
+                              {sizingModes.map((mode) => {
+                                const isDisabled = mode.value === 'delta_benchmark' && portfolio.benchmarkWeight === null
+                                return (
+                                  <button
+                                    key={mode.value}
+                                    type="button"
+                                    disabled={isDisabled}
+                                    onClick={() => setPortfolioProposals(prev => ({
+                                      ...prev,
+                                      [portfolio.id]: { ...prev[portfolio.id], sizingMode: mode.value, value: '' }
+                                    }))}
+                                    className={clsx(
+                                      "px-2 py-1.5 text-xs rounded border transition-colors",
+                                      sizingMode === mode.value
+                                        ? "bg-primary-100 dark:bg-primary-900/30 border-primary-500 text-primary-700 dark:text-primary-300"
+                                        : isDisabled
+                                        ? "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                                        : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                                    )}
+                                    title={isDisabled ? 'Benchmark data not available' : mode.label}
+                                  >
+                                    {mode.label}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Value Input */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              {sizingModes.find(m => m.value === sizingMode)?.label || 'Value'}
+                            </label>
+                            <input
+                              type="text"
+                              value={proposal?.value || ''}
+                              onChange={(e) => setPortfolioProposals(prev => ({
+                                ...prev,
+                                [portfolio.id]: { ...prev[portfolio.id], value: e.target.value }
+                              }))}
+                              placeholder={sizingModes.find(m => m.value === sizingMode)?.placeholder || ''}
+                              className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            />
+                            {/* Helper text showing what the value means */}
+                            {proposal?.value && (
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                {sizingMode === 'weight' && `Target weight: ${proposal.value}%`}
+                                {sizingMode === 'delta_weight' && (
+                                  parseFloat(proposal.value) > 0
+                                    ? `Increase weight by ${proposal.value}% → ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
+                                    : parseFloat(proposal.value) < 0
+                                    ? `Decrease weight by ${Math.abs(parseFloat(proposal.value))}% → ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
+                                    : `No change from current ${portfolio.currentWeight.toFixed(2)}%`
+                                )}
+                                {sizingMode === 'active_weight' && portfolio.benchmarkWeight !== null &&
+                                  `Target active: ${proposal.value}% (weight: ${(portfolio.benchmarkWeight + parseFloat(proposal.value || '0')).toFixed(2)}%)`
+                                }
+                                {sizingMode === 'delta_benchmark' && portfolio.benchmarkWeight !== null && (
+                                  `Change vs bench by ${proposal.value}%`
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Notes */}
+                          <div>
+                            <input
+                              type="text"
+                              value={proposal?.notes || ''}
+                              onChange={(e) => setPortfolioProposals(prev => ({
+                                ...prev,
+                                [portfolio.id]: { ...prev[portfolio.id], notes: e.target.value }
+                              }))}
+                              placeholder="Notes (optional)"
+                              className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-2">
-                      <input
-                        type="text"
-                        value={portfolioProposals[portfolio.id]?.notes || ''}
-                        onChange={(e) => setPortfolioProposals(prev => ({
-                          ...prev,
-                          [portfolio.id]: { ...prev[portfolio.id], notes: e.target.value }
-                        }))}
-                        placeholder="Notes (optional)"
-                        className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      />
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
 
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  You can enter weight, shares, or both for each portfolio. Leave empty to skip.
+                  Select a proposal type and enter your sizing recommendation. Leave empty to skip a portfolio.
                 </p>
               </div>
             )}
 
-            <div className="mt-6 flex justify-end gap-3">
+            {/* Fixed Footer */}
+            <div className="flex-shrink-0 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -2050,12 +2252,60 @@ export function TradeQueuePage() {
                     // Create proposals for each portfolio that has data
                     for (const portfolio of linkedPortfolios) {
                       const proposal = portfolioProposals[portfolio.id]
-                      if (proposal && (proposal.weight || proposal.shares)) {
+                      if (proposal && proposal.value) {
+                        const numValue = parseFloat(proposal.value)
+                        if (isNaN(numValue)) continue
+
+                        // Convert sizing mode to database format and calculate weight
+                        let weight: number | null = null
+                        let sizingMode: TradeSizingMode = 'weight'
+
+                        switch (proposal.sizingMode) {
+                          case 'weight':
+                            weight = numValue
+                            sizingMode = 'weight'
+                            break
+                          case 'delta_weight':
+                            // Store the delta, calculate target weight for display
+                            weight = portfolio.currentWeight + numValue
+                            sizingMode = 'delta_weight'
+                            break
+                          case 'active_weight':
+                            // Active weight = target weight - benchmark weight
+                            // So target weight = active weight + benchmark weight
+                            if (portfolio.benchmarkWeight !== null) {
+                              weight = portfolio.benchmarkWeight + numValue
+                            }
+                            sizingMode = 'delta_benchmark'
+                            break
+                          case 'delta_benchmark':
+                            // Change vs benchmark
+                            if (portfolio.benchmarkWeight !== null && portfolio.activeWeight !== null) {
+                              // New active = current active + delta
+                              const newActive = portfolio.activeWeight + numValue
+                              weight = portfolio.benchmarkWeight + newActive
+                            }
+                            sizingMode = 'delta_benchmark'
+                            break
+                        }
+
+                        // Store sizing context for reference
+                        const sizingContext = {
+                          proposalType: proposal.sizingMode,
+                          inputValue: numValue,
+                          currentWeight: portfolio.currentWeight,
+                          currentShares: portfolio.currentShares,
+                          benchmarkWeight: portfolio.benchmarkWeight,
+                          activeWeight: portfolio.activeWeight,
+                        }
+
                         await upsertProposal({
                           trade_queue_item_id: proposalTradeId,
                           portfolio_id: portfolio.id,
-                          weight: proposal.weight ? parseFloat(proposal.weight) : null,
-                          shares: proposal.shares ? parseInt(proposal.shares, 10) : null,
+                          weight,
+                          shares: null, // Shares can be calculated from weight if needed
+                          sizing_mode: sizingMode,
+                          sizing_context: sizingContext,
                           notes: proposal.notes || null,
                         }, context)
                       }
@@ -2084,7 +2334,7 @@ export function TradeQueuePage() {
                 loading={isSubmittingProposal}
               >
                 <Scale className="h-4 w-4 mr-1.5" />
-                Move to Deciding
+                Submit Proposal
               </Button>
             </div>
           </div>
@@ -2617,8 +2867,13 @@ function ProposalCard({
       {/* PM Decision Actions - only show if not already decided */}
       {isPM && !isAlreadyDecided && (
         <div onClick={(e) => e.stopPropagation()}>
+          {/* Call to action banner */}
+          <div className="flex items-center gap-1.5 mt-2 mb-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+            <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Decision required</span>
+          </div>
           {!showOverrideInput && !showDeferPicker ? (
-            <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={handleAccept}
                 className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors"
@@ -2951,7 +3206,7 @@ function TradeQueueCard({
               >
                 <span className="text-primary-600 dark:text-primary-400 font-medium">{labInfo?.trackCounts?.total || labCount} portfolios</span>
                 {/* Show proposal count if any */}
-                {labInfo?.proposalCount && labInfo.proposalCount > 0 && (
+                {labInfo?.proposalCount !== undefined && labInfo.proposalCount > 0 && (
                   <>
                     <span className="text-gray-400 dark:text-gray-500">·</span>
                     <span className="text-amber-600 dark:text-amber-400">{labInfo.proposalCount} {labInfo.proposalCount === 1 ? 'proposal' : 'proposals'}</span>
@@ -2979,7 +3234,7 @@ function TradeQueueCard({
               >
                 <span className="text-primary-600 dark:text-primary-400 font-medium hover:underline">{labInfo?.portfolioNames?.[0] || labInfo?.labNames[0]}</span>
                 {/* Show proposal count if any */}
-                {labInfo?.proposalCount && labInfo.proposalCount > 0 && (
+                {labInfo?.proposalCount !== undefined && labInfo.proposalCount > 0 && (
                   <>
                     <span className="text-gray-400 dark:text-gray-500">·</span>
                     <span className="text-amber-600 dark:text-amber-400">{labInfo.proposalCount} {labInfo.proposalCount === 1 ? 'proposal' : 'proposals'}</span>
