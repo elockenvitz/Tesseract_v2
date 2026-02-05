@@ -28,7 +28,6 @@ import { FilesPage } from './FilesPage'
 import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
 import { TradePlanHistoryPage } from './TradePlanHistoryPage'
-// TradeLabPage is available for future use when ready to migrate from SimulationPage
 import { AssetAllocationPage } from './AssetAllocationPage'
 import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'

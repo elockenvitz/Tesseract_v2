@@ -5,7 +5,7 @@
  *
  * Architecture:
  * - Trade Labs: One per portfolio (hard rule, enforced by unique constraint)
- * - Views: My Drafts (private), Shared (invited members), Portfolio Working Set (all members)
+ * - Views: My Drafts (private workspace), Shared (invited members)
  * - Drafts: Trade ideas being composed, with autosave support
  */
 
@@ -25,13 +25,19 @@ import type {
   CreateTradeProposalInput,
   UpdateTradeProposalInput,
   CreateTradeEventInput,
+  TradeIdeaPortfolio,
+  PortfolioTrackCounts,
+  UpdatePortfolioTrackInput,
+  UpdatePortfolioTrackStageInput,
+  DecisionOutcome,
+  TradeStage,
 } from '../../types/trading'
 
 // ============================================================
 // Types
 // ============================================================
 
-export type TradeLabViewType = 'private' | 'shared' | 'portfolio'
+export type TradeLabViewType = 'private' | 'shared'
 export type TradeLabViewRole = 'owner' | 'editor' | 'viewer'
 export type VisibilityTier = 'active' | 'trash' | 'archive'
 
@@ -313,36 +319,6 @@ export async function getOrCreatePrivateView(
 export const getOrCreateMyDraftsView = getOrCreatePrivateView
 
 /**
- * Get or create Portfolio view for a lab
- */
-export async function getOrCreatePortfolioView(labId: string): Promise<TradeLabView> {
-  const { data: viewId, error } = await supabase.rpc('get_or_create_portfolio_view', {
-    p_lab_id: labId,
-  })
-
-  if (error) {
-    throw new Error(`Failed to get/create Portfolio view: ${error.message}`)
-  }
-
-  const { data: view, error: fetchError } = await supabase
-    .from('trade_lab_views')
-    .select('*')
-    .eq('id', viewId)
-    .single()
-
-  if (fetchError) {
-    throw new Error(`Failed to fetch view: ${fetchError.message}`)
-  }
-
-  return view as TradeLabView
-}
-
-/**
- * @deprecated Use getOrCreatePortfolioView instead
- */
-export const getOrCreatePortfolioWorkingSet = getOrCreatePortfolioView
-
-/**
  * Get all views for a lab that the user can access
  */
 export async function getViewsForLab(labId: string): Promise<TradeLabViewWithDetails[]> {
@@ -397,7 +373,7 @@ export async function createSharedView(params: CreateViewParams): Promise<TradeL
   const { labId, viewType, name, description, members, context } = params
 
   if (viewType !== 'shared') {
-    throw new Error('Use getOrCreatePrivateView for private views or getOrCreatePortfolioView for portfolio views')
+    throw new Error('Use getOrCreatePrivateView for private views')
   }
 
   // Create the view
@@ -1364,18 +1340,25 @@ export async function batchUpdateSimulationItems(
 // ============================================================
 
 /**
- * Get all proposals for a trade idea
+ * Get all proposals for a trade idea, optionally filtered by portfolio
  */
 export async function getProposalsForTradeIdea(
-  tradeQueueItemId: string
+  tradeQueueItemId: string,
+  portfolioId?: string
 ): Promise<TradeProposalWithUser[]> {
-  // First fetch proposals without join (no FK relationship to users)
-  const { data: proposals, error } = await supabase
+  // Build query
+  let query = supabase
     .from('trade_proposals')
     .select('*')
     .eq('trade_queue_item_id', tradeQueueItemId)
     .eq('is_active', true)
-    .order('created_at')
+
+  // Filter by portfolio if specified
+  if (portfolioId) {
+    query = query.eq('portfolio_id', portfolioId)
+  }
+
+  const { data: proposals, error } = await query.order('created_at')
 
   if (error) {
     throw new Error(`Failed to fetch proposals: ${error.message}`)
@@ -1385,8 +1368,9 @@ export async function getProposalsForTradeIdea(
     return []
   }
 
-  // Get unique user IDs
+  // Get unique user IDs and portfolio IDs
   const userIds = [...new Set(proposals.map((p: any) => p.user_id).filter(Boolean))]
+  const portfolioIds = [...new Set(proposals.map((p: any) => p.portfolio_id).filter(Boolean))]
 
   // Fetch user data separately
   let userMap: Record<string, { id: string; email: string; first_name: string | null; last_name: string | null }> = {}
@@ -1401,25 +1385,41 @@ export async function getProposalsForTradeIdea(
     }
   }
 
-  // Merge user data into proposals
+  // Fetch portfolio data separately
+  let portfolioMap: Record<string, { id: string; name: string }> = {}
+  if (portfolioIds.length > 0) {
+    const { data: portfolios } = await supabase
+      .from('portfolios')
+      .select('id, name')
+      .in('id', portfolioIds)
+
+    if (portfolios) {
+      portfolioMap = Object.fromEntries(portfolios.map((p: any) => [p.id, p]))
+    }
+  }
+
+  // Merge user and portfolio data into proposals
   return proposals.map((p: any) => ({
     ...p,
     users: userMap[p.user_id] || null,
+    portfolio: portfolioMap[p.portfolio_id] || null,
   })) as TradeProposalWithUser[]
 }
 
 /**
- * Get a user's active proposal for a trade idea
+ * Get a user's active proposal for a trade idea in a specific portfolio
  */
 export async function getUserProposalForTradeIdea(
   tradeQueueItemId: string,
-  userId: string
+  userId: string,
+  portfolioId: string
 ): Promise<TradeProposal | null> {
   const { data, error } = await supabase
     .from('trade_proposals')
     .select('*')
     .eq('trade_queue_item_id', tradeQueueItemId)
     .eq('user_id', userId)
+    .eq('portfolio_id', portfolioId)
     .eq('is_active', true)
     .maybeSingle()
 
@@ -1431,16 +1431,17 @@ export async function getUserProposalForTradeIdea(
 }
 
 /**
- * Create or update a user's proposal for a trade idea
+ * Create or update a user's proposal for a trade idea in a specific portfolio
  */
 export async function upsertProposal(
   input: CreateTradeProposalInput,
   context: ActionContext
 ): Promise<TradeProposal> {
-  // Check if user already has an active proposal
+  // Check if user already has an active proposal for this portfolio
   const existing = await getUserProposalForTradeIdea(
     input.trade_queue_item_id,
-    context.actorId
+    context.actorId,
+    input.portfolio_id
   )
 
   if (existing) {
@@ -1470,6 +1471,7 @@ export async function upsertProposal(
         event_type: 'proposal_updated',
         metadata: {
           proposal_id: data.id,
+          portfolio_id: input.portfolio_id,
           changes: { weight: input.weight, shares: input.shares },
         },
         proposal_id: data.id,
@@ -1486,6 +1488,7 @@ export async function upsertProposal(
       .insert({
         trade_queue_item_id: input.trade_queue_item_id,
         user_id: context.actorId,
+        portfolio_id: input.portfolio_id,
         lab_id: input.lab_id,
         weight: input.weight,
         shares: input.shares,
@@ -1508,6 +1511,7 @@ export async function upsertProposal(
         event_type: 'proposal_created',
         metadata: {
           proposal_id: data.id,
+          portfolio_id: input.portfolio_id,
           weight: input.weight,
           shares: input.shares,
         },
@@ -1769,4 +1773,315 @@ export async function moveToDecidingWithSnapshots(
       })),
     },
   }, context)
+}
+
+// ============================================================
+// Portfolio Track Management (Per-Portfolio Workflow)
+// ============================================================
+
+/**
+ * Get all portfolio tracks for a trade idea
+ */
+export async function getPortfolioTracksForIdea(
+  tradeQueueItemId: string
+): Promise<TradeIdeaPortfolio[]> {
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .select(`
+      *,
+      portfolio:portfolio_id (id, name)
+    `)
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .order('created_at')
+
+  if (error) {
+    throw new Error(`Failed to fetch portfolio tracks: ${error.message}`)
+  }
+
+  return (data || []) as TradeIdeaPortfolio[]
+}
+
+/**
+ * Get a specific portfolio track
+ */
+export async function getPortfolioTrack(
+  tradeQueueItemId: string,
+  portfolioId: string
+): Promise<TradeIdeaPortfolio | null> {
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .select(`
+      *,
+      portfolio:portfolio_id (id, name)
+    `)
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .eq('portfolio_id', portfolioId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Failed to fetch portfolio track: ${error.message}`)
+  }
+
+  return data as TradeIdeaPortfolio | null
+}
+
+/**
+ * Get aggregated portfolio track counts for a trade idea
+ */
+export async function getPortfolioTrackCounts(
+  tradeQueueItemId: string
+): Promise<PortfolioTrackCounts> {
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .select('decision_outcome')
+    .eq('trade_queue_item_id', tradeQueueItemId)
+
+  if (error) {
+    throw new Error(`Failed to fetch portfolio track counts: ${error.message}`)
+  }
+
+  const tracks = data || []
+  return {
+    total: tracks.length,
+    active: tracks.filter(t => t.decision_outcome === null).length,
+    committed: tracks.filter(t => t.decision_outcome === 'accepted').length,
+    deferred: tracks.filter(t => t.decision_outcome === 'deferred').length,
+    rejected: tracks.filter(t => t.decision_outcome === 'rejected').length,
+  }
+}
+
+/**
+ * Get portfolio track counts for multiple trade ideas (batch)
+ * Returns a map of tradeQueueItemId -> PortfolioTrackCounts
+ */
+export async function getPortfolioTrackCountsBatch(
+  tradeQueueItemIds: string[]
+): Promise<Map<string, PortfolioTrackCounts>> {
+  if (tradeQueueItemIds.length === 0) {
+    return new Map()
+  }
+
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .select('trade_queue_item_id, decision_outcome')
+    .in('trade_queue_item_id', tradeQueueItemIds)
+
+  if (error) {
+    throw new Error(`Failed to fetch portfolio track counts: ${error.message}`)
+  }
+
+  // Group by trade_queue_item_id and compute counts
+  const countsMap = new Map<string, PortfolioTrackCounts>()
+
+  // Initialize all IDs with zero counts
+  for (const id of tradeQueueItemIds) {
+    countsMap.set(id, { total: 0, active: 0, committed: 0, deferred: 0, rejected: 0 })
+  }
+
+  // Aggregate counts
+  for (const track of data || []) {
+    const counts = countsMap.get(track.trade_queue_item_id)!
+    counts.total++
+    if (track.decision_outcome === null) {
+      counts.active++
+    } else if (track.decision_outcome === 'accepted') {
+      counts.committed++
+    } else if (track.decision_outcome === 'deferred') {
+      counts.deferred++
+    } else if (track.decision_outcome === 'rejected') {
+      counts.rejected++
+    }
+  }
+
+  return countsMap
+}
+
+/**
+ * Update a portfolio track's decision (accept/defer/reject)
+ * This is the portfolio-scoped decision action
+ */
+export async function updatePortfolioTrackDecision(
+  input: UpdatePortfolioTrackInput,
+  context: ActionContext
+): Promise<TradeIdeaPortfolio> {
+  const { trade_queue_item_id, portfolio_id, decision_outcome, decision_reason, deferred_until } = input
+
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .update({
+      decision_outcome,
+      decision_reason: decision_reason || null,
+      decided_by: context.actorId,
+      decided_at: new Date().toISOString(),
+      deferred_until: decision_outcome === 'deferred' ? deferred_until : null,
+    })
+    .eq('trade_queue_item_id', trade_queue_item_id)
+    .eq('portfolio_id', portfolio_id)
+    .select(`
+      *,
+      portfolio:portfolio_id (id, name)
+    `)
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to update portfolio track decision: ${error.message}`)
+  }
+
+  // Log event with portfolio context
+  const eventType = `decision_${decision_outcome}` as TradeEventType
+  try {
+    await createTradeEvent({
+      trade_queue_item_id,
+      event_type: eventType,
+      metadata: {
+        portfolio_id,
+        decision_outcome,
+        decision_reason,
+        deferred_until,
+      },
+    }, context)
+  } catch (e) {
+    console.warn(`Failed to log ${eventType} event:`, e)
+  }
+
+  return data as TradeIdeaPortfolio
+}
+
+/**
+ * Update a portfolio track's stage
+ */
+export async function updatePortfolioTrackStage(
+  input: UpdatePortfolioTrackStageInput,
+  context: ActionContext
+): Promise<TradeIdeaPortfolio> {
+  const { trade_queue_item_id, portfolio_id, stage } = input
+
+  // Get current state
+  const existing = await getPortfolioTrack(trade_queue_item_id, portfolio_id)
+  if (!existing) {
+    throw new Error('Portfolio track not found')
+  }
+
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .update({ stage })
+    .eq('trade_queue_item_id', trade_queue_item_id)
+    .eq('portfolio_id', portfolio_id)
+    .select(`
+      *,
+      portfolio:portfolio_id (id, name)
+    `)
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to update portfolio track stage: ${error.message}`)
+  }
+
+  // Log stage change event
+  try {
+    await createTradeEvent({
+      trade_queue_item_id,
+      event_type: 'stage_changed',
+      metadata: {
+        portfolio_id,
+        from_stage: existing.stage,
+        to_stage: stage,
+      },
+    }, context)
+  } catch (e) {
+    console.warn('Failed to log stage_changed event:', e)
+  }
+
+  return data as TradeIdeaPortfolio
+}
+
+/**
+ * Create or ensure a portfolio track exists for a trade idea
+ * Used when linking an idea to a portfolio
+ */
+export async function ensurePortfolioTrack(
+  tradeQueueItemId: string,
+  portfolioId: string,
+  initialStage?: TradeStage
+): Promise<TradeIdeaPortfolio> {
+  // Get global stage from trade_queue_item if not provided
+  let stage = initialStage
+  if (!stage) {
+    const { data: item } = await supabase
+      .from('trade_queue_items')
+      .select('stage')
+      .eq('id', tradeQueueItemId)
+      .single()
+    stage = item?.stage || 'idea'
+  }
+
+  // Upsert the portfolio track
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .upsert(
+      {
+        trade_queue_item_id: tradeQueueItemId,
+        portfolio_id: portfolioId,
+        stage,
+      },
+      { onConflict: 'trade_queue_item_id,portfolio_id' }
+    )
+    .select(`
+      *,
+      portfolio:portfolio_id (id, name)
+    `)
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to ensure portfolio track: ${error.message}`)
+  }
+
+  return data as TradeIdeaPortfolio
+}
+
+/**
+ * Check if an idea has any active portfolio tracks
+ * Used to determine if idea should appear in active workflow views
+ */
+export async function hasActivePortfolioTracks(
+  tradeQueueItemId: string,
+  portfolioId?: string
+): Promise<boolean> {
+  let query = supabase
+    .from('trade_idea_portfolios')
+    .select('id', { count: 'exact', head: true })
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .is('decision_outcome', null)
+
+  if (portfolioId) {
+    query = query.eq('portfolio_id', portfolioId)
+  }
+
+  const { count, error } = await query
+
+  if (error) {
+    throw new Error(`Failed to check active tracks: ${error.message}`)
+  }
+
+  return (count || 0) > 0
+}
+
+/**
+ * Get trade ideas with active tracks for a specific portfolio
+ * Used for portfolio-scoped board views
+ */
+export async function getActiveTradeIdeaIdsForPortfolio(
+  portfolioId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('trade_idea_portfolios')
+    .select('trade_queue_item_id')
+    .eq('portfolio_id', portfolioId)
+    .is('decision_outcome', null)
+
+  if (error) {
+    throw new Error(`Failed to fetch active trade ideas: ${error.message}`)
+  }
+
+  return (data || []).map(d => d.trade_queue_item_id)
 }

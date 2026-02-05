@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, AlertTriangle, History, Clock, Scale, FileText } from 'lucide-react'
+import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -44,6 +44,11 @@ const parseEditingValue = (value: string, baseMode: SimpleSizingMode): { mode: T
   return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue }
 }
 
+interface PortfolioOption {
+  id: string
+  name: string
+}
+
 interface ProposalEditorModalProps {
   isOpen: boolean
   onClose: () => void
@@ -51,6 +56,8 @@ interface ProposalEditorModalProps {
   baseline?: BaselineHolding
   currentHolding?: SimulatedHolding
   labId?: string | null
+  portfolioId?: string  // Pre-selected portfolio (use this when context is clear)
+  availablePortfolios?: PortfolioOption[]  // Available portfolios for dropdown
   onSaved?: (proposal: TradeProposal) => void
 }
 
@@ -61,6 +68,8 @@ export function ProposalEditorModal({
   baseline,
   currentHolding,
   labId,
+  portfolioId: preselectedPortfolioId,
+  availablePortfolios = [],
   onSaved,
 }: ProposalEditorModalProps) {
   const { user } = useAuth()
@@ -72,11 +81,29 @@ export function ProposalEditorModal({
   const [notes, setNotes] = useState('')
   const [showHistory, setShowHistory] = useState(false)
 
-  // Fetch user's current proposal
+  // Portfolio selection state
+  // Priority: preselected > first available > trade idea's portfolio
+  const defaultPortfolioId = preselectedPortfolioId ||
+    (availablePortfolios.length > 0 ? availablePortfolios[0].id : tradeIdea.portfolio_id || '')
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>(defaultPortfolioId)
+
+  // Reset portfolio selection when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const newDefault = preselectedPortfolioId ||
+        (availablePortfolios.length > 0 ? availablePortfolios[0].id : tradeIdea.portfolio_id || '')
+      setSelectedPortfolioId(newDefault)
+    }
+  }, [isOpen, preselectedPortfolioId, availablePortfolios, tradeIdea.portfolio_id])
+
+  // Show portfolio selector if multiple portfolios available and not pre-selected
+  const showPortfolioSelector = !preselectedPortfolioId && availablePortfolios.length > 1
+
+  // Fetch user's current proposal for the selected portfolio
   const { data: existingProposal, isLoading: loadingProposal } = useQuery({
-    queryKey: ['proposal', tradeIdea.id, user?.id],
-    queryFn: () => getUserProposalForTradeIdea(tradeIdea.id, user!.id),
-    enabled: isOpen && !!user?.id,
+    queryKey: ['proposal', tradeIdea.id, user?.id, selectedPortfolioId],
+    queryFn: () => getUserProposalForTradeIdea(tradeIdea.id, user!.id, selectedPortfolioId),
+    enabled: isOpen && !!user?.id && !!selectedPortfolioId,
   })
 
   // Fetch proposal version history
@@ -131,8 +158,9 @@ export function ProposalEditorModal({
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      console.log('🔄 Starting proposal save...', { tradeIdea: tradeIdea.id, sizingMode, sizingValue })
+      console.log('🔄 Starting proposal save...', { tradeIdea: tradeIdea.id, sizingMode, sizingValue, portfolioId: selectedPortfolioId })
       if (!user) throw new Error('Not authenticated')
+      if (!selectedPortfolioId) throw new Error('Please select a portfolio')
 
       const { mode, numValue } = parseEditingValue(sizingValue, sizingMode)
 
@@ -158,6 +186,7 @@ export function ProposalEditorModal({
       const proposal = await upsertProposal(
         {
           trade_queue_item_id: tradeIdea.id,
+          portfolio_id: selectedPortfolioId,
           lab_id: labId,
           weight: resolvedWeight,
           shares: resolvedShares,
@@ -270,6 +299,40 @@ export function ProposalEditorModal({
 
         {/* Body */}
         <div className="p-4 space-y-4">
+          {/* Portfolio selector - show when multiple portfolios available */}
+          {showPortfolioSelector && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                Portfolio
+              </label>
+              <div className="flex items-center gap-2">
+                <Briefcase className="h-4 w-4 text-gray-400" />
+                <select
+                  value={selectedPortfolioId}
+                  onChange={(e) => setSelectedPortfolioId(e.target.value)}
+                  className="flex-1 h-9 px-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+                >
+                  {availablePortfolios.map(portfolio => (
+                    <option key={portfolio.id} value={portfolio.id}>
+                      {portfolio.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Select portfolio for this sizing proposal
+              </p>
+            </div>
+          )}
+
+          {/* Show single portfolio context when pre-selected */}
+          {preselectedPortfolioId && availablePortfolios.length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 rounded-lg px-3 py-2">
+              <Briefcase className="h-3.5 w-3.5" />
+              <span>Portfolio: <span className="font-medium text-gray-700 dark:text-gray-300">{availablePortfolios.find(p => p.id === preselectedPortfolioId)?.name || 'Unknown'}</span></span>
+            </div>
+          )}
+
           {/* Trade idea summary */}
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
             <div className="flex items-center gap-2">

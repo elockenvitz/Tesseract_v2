@@ -935,7 +935,7 @@ export async function getMyPlans(
 }
 
 /**
- * Get plans from collaborative views (shared views & portfolio working set)
+ * Get plans from collaborative views (shared views where user is a member)
  * These are plans the user contributed to via collaboration
  */
 export async function getCollaborativePlans(
@@ -952,45 +952,8 @@ export async function getCollaborativePlans(
     throw new Error(`Failed to get member views: ${viewError.message}`)
   }
 
-  // Get portfolio working set views for user's portfolios
-  const { data: portfolioMembers, error: pmError } = await supabase
-    .from('portfolio_members')
-    .select('portfolio_id')
-    .eq('user_id', userId)
-
-  if (pmError) {
-    throw new Error(`Failed to get portfolio memberships: ${pmError.message}`)
-  }
-
-  const portfolioIds = portfolioMembers.map((pm) => pm.portfolio_id)
-
-  // Get lab IDs for these portfolios
-  const { data: labs, error: labError } = await supabase
-    .from('trade_labs')
-    .select('id')
-    .in('portfolio_id', portfolioIds)
-
-  if (labError) {
-    throw new Error(`Failed to get labs: ${labError.message}`)
-  }
-
-  const labIds = labs?.map((l) => l.id) || []
-
-  // Get portfolio views
-  const { data: pwsViews, error: pwsError } = await supabase
-    .from('trade_lab_views')
-    .select('id')
-    .in('lab_id', labIds)
-    .eq('view_type', 'portfolio')
-
-  if (pwsError) {
-    throw new Error(`Failed to get PWS views: ${pwsError.message}`)
-  }
-
-  const collaborativeViewIds = [
-    ...memberViews.map((v) => v.view_id),
-    ...(pwsViews?.map((v) => v.id) || []),
-  ]
+  // Collaborative views are shared views where user is a member
+  const collaborativeViewIds = memberViews.map((v) => v.view_id)
 
   if (collaborativeViewIds.length === 0) {
     return []

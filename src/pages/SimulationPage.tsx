@@ -35,7 +35,8 @@ import {
   Scale,
   Wrench,
   AlertTriangle,
-  User
+  User,
+  Share2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -53,6 +54,7 @@ import { HoldingsComparison } from '../components/trading/HoldingsComparison'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { ProposalEditorModal } from '../components/trading/ProposalEditorModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
+import { ShareSimulationModal } from '../components/trading/ShareSimulationModal'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -218,7 +220,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // New: Portfolio-first workflow state
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(initialPortfolioId || null)
-  const [selectedViewType, setSelectedViewType] = useState<'private' | 'shared' | 'portfolio' | 'lists'>('private')
+  const [selectedViewType, setSelectedViewType] = useState<'private' | 'shared' | 'lists'>('private')
   const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false)
   const [portfolioSearchQuery, setPortfolioSearchQuery] = useState('')
   const portfolioDropdownRef = useRef<HTMLDivElement>(null)
@@ -229,6 +231,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [newSimPortfolioId, setNewSimPortfolioId] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [showAddTradeIdeaModal, setShowAddTradeIdeaModal] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
   const [proposalEditorIdea, setProposalEditorIdea] = useState<TradeQueueItemWithDetails | null>(null)
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
   const [holdingsGroupBy, setHoldingsGroupBy] = useState<'none' | 'sector' | 'action' | 'change'>('none')
@@ -2119,6 +2122,18 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 )}
               </>
             )}
+            {/* Share Simulation Button */}
+            {simulation && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowShareModal(true)}
+                title="Share this simulation"
+              >
+                <Share2 className="h-4 w-4 mr-1.5" />
+                Share
+              </Button>
+            )}
             {/* Create Trade List Button - only show for draft simulations with trades */}
             {simulation?.status === 'draft' && simulation.simulation_trades && simulation.simulation_trades.length > 0 && (
               <Button
@@ -2153,21 +2168,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 Workspace
                 {selectedViewType === 'private' && (
                   <span className="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal">Only you</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedViewType('portfolio')}
-                className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                  selectedViewType === 'portfolio'
-                    ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                )}
-              >
-                <Users className="h-4 w-4" />
-                Portfolio
-                {selectedViewType === 'portfolio' && (
-                  <span className="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal">Team</span>
                 )}
               </button>
               <button
@@ -2355,7 +2355,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             </div>
           </div>
         ) : (
-          /* Workbench View - always show for Workspace/Collaborate/Portfolio tabs */
+          /* Workbench View - always show for Workspace tab */
           <>
               {/* Trade Ideas Panel */}
               <div className={clsx(
@@ -3638,7 +3638,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       />
 
       {/* Proposal Editor Modal */}
-      {proposalEditorIdea && (
+      {proposalEditorIdea && selectedPortfolioId && (
         <ProposalEditorModal
           isOpen={!!proposalEditorIdea}
           onClose={() => setProposalEditorIdea(null)}
@@ -3649,7 +3649,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           currentHolding={metrics?.holdings_after?.find(
             h => h.asset_id === proposalEditorIdea.asset_id
           )}
-          labId={null}
+          labId={tradeLab?.id || null}
+          portfolioId={selectedPortfolioId}
+          availablePortfolios={portfolios?.map(p => ({ id: p.id, name: p.name })) || []}
           onSaved={() => {
             setProposalEditorIdea(null)
             // Optionally refetch proposals or update UI
@@ -3663,6 +3665,16 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           isOpen={!!selectedTradeId}
           tradeId={selectedTradeId}
           onClose={() => setSelectedTradeId(null)}
+        />
+      )}
+
+      {/* Share Simulation Modal */}
+      {simulation && (
+        <ShareSimulationModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          simulationId={simulation.id}
+          simulationName={simulation.name}
         />
       )}
     </div>

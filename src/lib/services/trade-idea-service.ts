@@ -383,11 +383,26 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     updates.deferred_until = null  // Clear defer date when restoring
   }
 
+  // Track if we're moving out of deciding (need to cancel proposals)
+  const movingOutOfDeciding = currentTrade.stage === 'deciding' && target.stage !== 'deciding'
+
   // Handle deferred_until date (only for deferred outcome)
-  if (target.outcome === 'deferred' && target.deferredUntil) {
-    updates.deferred_until = target.deferredUntil
+  if (target.outcome === 'deferred') {
+    if (target.deferredUntil) {
+      updates.deferred_until = target.deferredUntil
+    }
+    // Save current state so we know where to return when resurfacing
+    updates.previous_state = {
+      status: currentTrade.status,
+      stage: currentTrade.stage,
+      outcome: currentTrade.outcome,
+    }
   } else if (target.outcome !== 'deferred') {
     updates.deferred_until = null
+    // Clear previous_state when not deferring
+    if (currentTrade.outcome === 'deferred') {
+      updates.previous_state = null
+    }
   }
 
   // Perform update
@@ -398,6 +413,23 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
 
   if (error) {
     throw new Error(`Failed to move trade: ${error.message}`)
+  }
+
+  // Cancel all active proposals when moving out of deciding stage
+  if (movingOutOfDeciding) {
+    const { error: proposalError } = await supabase
+      .from('trade_proposals')
+      .update({
+        is_active: false,
+        updated_at: now,
+      })
+      .eq('trade_queue_item_id', tradeId)
+      .eq('is_active', true)
+
+    if (proposalError) {
+      console.error(`Failed to cancel proposals when moving out of deciding: ${proposalError.message}`)
+      // Non-blocking - log but don't fail the move
+    }
   }
 
   // Get display name for audit
@@ -432,6 +464,7 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
       from_outcome: currentTrade.outcome,
       to_outcome: target.outcome || null,
       note,
+      proposals_cancelled: movingOutOfDeciding,
     },
     orgId: getOrgId(context),
     teamId: undefined,

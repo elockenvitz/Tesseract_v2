@@ -6,7 +6,7 @@
  *
  * Architecture:
  * - ONE Trade Lab per Portfolio
- * - Views: My Drafts | Shared | Portfolio Working Set
+ * - Views: My Drafts (private workspace) | Shared views
  * - Drafts: Trade ideas being composed, autosave-enabled
  */
 
@@ -88,14 +88,10 @@ export function useTradeLab(options: UseTradeLabOptions = {}) {
   const privateView = viewsQuery.data?.find(
     (v) => v.view_type === 'private' && v.owner_id === user?.id
   )
-  const portfolioView = viewsQuery.data?.find(
-    (v) => v.view_type === 'portfolio'
-  )
   const sharedViews = viewsQuery.data?.filter((v) => v.view_type === 'shared') || []
 
-  // Legacy aliases for backwards compatibility
+  // Legacy alias for backwards compatibility
   const myDraftsView = privateView
-  const portfolioWorkingSet = portfolioView
 
   // ============================================================
   // Mutations
@@ -106,17 +102,6 @@ export function useTradeLab(options: UseTradeLabOptions = {}) {
     mutationFn: async () => {
       if (!labQuery.data?.id || !user?.id) throw new Error('Not ready')
       return tradeLabService.getOrCreateMyDraftsView(labQuery.data.id, user.id)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['trade-lab-views'] })
-    },
-  })
-
-  // Ensure Portfolio Working Set exists
-  const ensurePWSM = useMutation({
-    mutationFn: async () => {
-      if (!labQuery.data?.id) throw new Error('Lab not ready')
-      return tradeLabService.getOrCreatePortfolioWorkingSet(labQuery.data.id)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-lab-views'] })
@@ -217,20 +202,17 @@ export function useTradeLab(options: UseTradeLabOptions = {}) {
     lab: labQuery.data,
     isLoadingLab: labQuery.isLoading,
 
-    // Views (new names)
+    // Views
     views: viewsQuery.data || [],
     isLoadingViews: viewsQuery.isLoading,
     privateView,
-    portfolioView,
     sharedViews,
-    // Legacy aliases
+    // Legacy alias
     myDraftsView,
-    portfolioWorkingSet,
 
-    // Mutations (new names)
+    // Mutations
     ensurePrivateView: ensureMyDraftsM.mutate,
     ensurePrivateViewAsync: ensureMyDraftsM.mutateAsync,
-    ensurePortfolioView: ensurePWSM.mutate,
     createSharedView: createSharedViewM.mutate,
     createSharedViewAsync: createSharedViewM.mutateAsync,
     isCreatingView: createSharedViewM.isPending,
@@ -240,7 +222,6 @@ export function useTradeLab(options: UseTradeLabOptions = {}) {
     // Legacy aliases
     ensureMyDrafts: ensureMyDraftsM.mutate,
     ensureMyDraftsAsync: ensureMyDraftsM.mutateAsync,
-    ensurePortfolioWorkingSet: ensurePWSM.mutate,
 
     // Refetch
     refetch: invalidateLab,

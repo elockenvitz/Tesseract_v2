@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 // Types
 // =============================================================================
 
-export type TradeLabViewType = 'private' | 'shared' | 'portfolio'
+export type TradeLabViewType = 'private' | 'shared'
 export type TradeLabViewRole = 'owner' | 'editor' | 'viewer'
 export type TradePlanStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'sent' | 'acknowledged' | 'archived'
 
@@ -186,26 +186,6 @@ export const tradeLabService = {
     if (error) throw error
 
     // Fetch the full view
-    const { data: view, error: viewError } = await supabase
-      .from('trade_lab_views')
-      .select('*')
-      .eq('id', data)
-      .single()
-
-    if (viewError) throw viewError
-    return view as TradeLabView
-  },
-
-  /**
-   * Get or create the portfolio working set view
-   */
-  async getOrCreatePortfolioView(labId: string): Promise<TradeLabView> {
-    const { data, error } = await supabase.rpc('get_or_create_portfolio_view', {
-      p_lab_id: labId
-    })
-
-    if (error) throw error
-
     const { data: view, error: viewError } = await supabase
       .from('trade_lab_views')
       .select('*')

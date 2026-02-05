@@ -36,7 +36,8 @@ import {
   Pencil,
   Tag,
   Plus,
-  Check
+  Check,
+  Briefcase
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -46,8 +47,8 @@ import { ContextTagsInput, type ContextTag, type ContextTagEntityType } from '..
 import { useTradeExpressionCounts } from '../../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { EntityTimeline } from '../audit/EntityTimeline'
-import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, getProposalsForTradeIdea, upsertProposal, type IdeaLabLink, type TradeProposalWithUser } from '../../lib/services/trade-lab-service'
-import type { ActionContext } from '../../types/trading'
+import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, getProposalsForTradeIdea, upsertProposal, getPortfolioTracksForIdea, updatePortfolioTrackDecision, type IdeaLabLink, type TradeProposalWithUser } from '../../lib/services/trade-lab-service'
+import type { ActionContext, DecisionOutcome, TradeIdeaPortfolio, UpdatePortfolioTrackInput } from '../../types/trading'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import type {
@@ -62,6 +63,7 @@ interface TradeIdeaDetailModalProps {
   isOpen: boolean
   tradeId: string
   onClose: () => void
+  initialTab?: ModalTab
 }
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> = {
@@ -80,13 +82,21 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> 
   deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' },
 }
 
-export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDetailModalProps) {
+export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'details' }: TradeIdeaDetailModalProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const discussionInputRef = useRef<UniversalSmartInputRef>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const [activeTab, setActiveTab] = useState<ModalTab>('details')
+  const [activeTab, setActiveTab] = useState<ModalTab>(initialTab)
+
+  // Reset tab when modal opens or initialTab changes
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab)
+    }
+  }, [isOpen, initialTab])
+
   const [discussionMessage, setDiscussionMessage] = useState('')
   const [discussionMetadata, setDiscussionMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
@@ -98,6 +108,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
   const [proposalWeight, setProposalWeight] = useState<string>('')
   const [proposalShares, setProposalShares] = useState<string>('')
   const [proposalNotes, setProposalNotes] = useState<string>('')
+  const [proposalPortfolioId, setProposalPortfolioId] = useState<string>('')
   const [isSubmittingProposal, setIsSubmittingProposal] = useState(false)
   const [isLabsExpanded, setIsLabsExpanded] = useState(false)
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
@@ -147,6 +158,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
 
   // Portfolio management state
   const [isManagingPortfolios, setIsManagingPortfolios] = useState(false)
+
+  // Portfolio decision state (for portfolio-scoped Accept/Defer/Reject)
+  const [showPortfolioDecisionPicker, setShowPortfolioDecisionPicker] = useState(false)
+  const [pendingDecision, setPendingDecision] = useState<DecisionOutcome | null>(null)
+  const [selectedDecisionPortfolioId, setSelectedDecisionPortfolioId] = useState<string | null>(null)
 
   // Get expression counts for trade ideas
   const { data: expressionCounts } = useTradeExpressionCounts()
@@ -244,12 +260,40 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
     enabled: isOpen && !!trade,
   })
 
+  // Fetch portfolio tracks for decision status per portfolio
+  const { data: portfolioTracks = [], refetch: refetchPortfolioTracks } = useQuery({
+    queryKey: ['portfolio-tracks', tradeId],
+    queryFn: () => getPortfolioTracksForIdea(tradeId),
+    enabled: isOpen && !!trade,
+  })
+
   // Fetch proposals for this trade idea
   const { data: proposals = [], refetch: refetchProposals } = useQuery({
     queryKey: ['trade-proposals', tradeId],
     queryFn: () => {
       console.log('[TradeIdeaDetailModal] Fetching proposals for tradeId:', tradeId)
       return getProposalsForTradeIdea(tradeId)
+    },
+    enabled: isOpen && !!tradeId,
+  })
+
+  // Fetch rejected/inactive proposals for history
+  const { data: rejectedProposals = [] } = useQuery({
+    queryKey: ['trade-proposals-rejected', tradeId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('trade_proposals')
+        .select(`
+          *,
+          users:user_id (id, email, first_name, last_name),
+          portfolios:portfolio_id (id, name)
+        `)
+        .eq('trade_queue_item_id', tradeId)
+        .eq('is_active', false)
+        .order('updated_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
     },
     enabled: isOpen && !!tradeId,
   })
@@ -397,6 +441,38 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
     onSuccess: () => {
       refetchLabLinks()
       queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
+    },
+  })
+
+  // Mutation for portfolio-scoped decision (Accept/Defer/Reject per portfolio)
+  const portfolioDecisionMutation = useMutation({
+    mutationFn: async ({ portfolioId, decisionOutcome, reason }: { portfolioId: string; decisionOutcome: DecisionOutcome; reason?: string }) => {
+      const input: UpdatePortfolioTrackInput = {
+        trade_queue_item_id: tradeId,
+        portfolio_id: portfolioId,
+        decision_outcome: decisionOutcome,
+        decision_reason: reason || null,
+        deferred_until: decisionOutcome === 'deferred' ? deferUntilDate : null,
+      }
+      return updatePortfolioTrackDecision(input, {
+        actorId: user?.id || '',
+        actorRole: (user?.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+        actorName: [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || '',
+        actorEmail: user?.email || '',
+        uiSource: 'modal',
+        requestId: crypto.randomUUID(),
+      })
+    },
+    onSuccess: () => {
+      refetchPortfolioTracks()
+      queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      // Reset decision state
+      setShowPortfolioDecisionPicker(false)
+      setPendingDecision(null)
+      setSelectedDecisionPortfolioId(null)
+      setShowDeferModal(false)
+      setDeferUntilDate(null)
     },
   })
 
@@ -572,7 +648,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
     deleteTrade,
     restoreTrade,
     archiveTrade,
-    deferTrade,
+    deferTradeAsync,
     movePairTrade,
     updateTrade,
     isMoving,
@@ -1362,17 +1438,36 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
               {/* Single Trade Details Tab */}
               {activeTab === 'details' && (
                 <div className="p-4 space-y-4">
-                  {/* Deferred Banner */}
-                  {(trade.status === 'cancelled' || trade.outcome === 'deferred') && (
-                    <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-                        <span className="font-semibold text-gray-900 dark:text-white">
-                          Deferred{trade.deferred_until ? ` until ${format(new Date(trade.deferred_until), 'MMM d, yyyy')}` : ' indefinitely'}
-                        </span>
+                  {/* Deferred Banner - only show if not yet resurfaced */}
+                  {(trade.status === 'cancelled' || trade.outcome === 'deferred') && (() => {
+                    // Check if this is a resurfaced item (when local date >= intended deferred date)
+                    let isResurfaced = false
+                    if (trade.deferred_until) {
+                      const deferredUntil = new Date(trade.deferred_until)
+                      const now = new Date()
+                      // Extract intended date from UTC, compare with local date
+                      const deferredDateValue = new Date(deferredUntil.getUTCFullYear(), deferredUntil.getUTCMonth(), deferredUntil.getUTCDate()).getTime()
+                      const nowDateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+                      isResurfaced = nowDateValue >= deferredDateValue
+                    }
+                    if (isResurfaced) return null // Don't show deferred banner for resurfaced items
+
+                    return (
+                      <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            Deferred{trade.deferred_until ? (() => {
+                              // Parse date as UTC to display the intended date regardless of timezone
+                              const deferDate = new Date(trade.deferred_until)
+                              const utcDate = new Date(deferDate.getTime() + deferDate.getTimezoneOffset() * 60000)
+                              return ` until ${format(utcDate, 'MMM d, yyyy')}`
+                            })() : ' indefinitely'}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {/* ========== RATIONALE SECTION ========== */}
                   <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -2096,41 +2191,190 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                       )}
 
                       {/* SECTION 2: Decision (only in Deciding stage) */}
-                      {(trade.status === 'deciding' || trade.stage === 'deciding') && (
-                        <div>
-                          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                            Decision
-                          </h4>
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => updateStatusMutation.mutate('approved')} disabled={updateStatusMutation.isPending}>
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                              Accept
-                            </Button>
-                            <Button size="sm" variant="secondary" onClick={() => setShowDeferModal(true)} disabled={isDefering}>
-                              <Clock className="h-4 w-4 mr-1" />
-                              Defer
-                            </Button>
-                            <Button size="sm" variant="danger" onClick={() => updateStatusMutation.mutate('rejected')} disabled={updateStatusMutation.isPending}>
-                              <XCircle className="h-4 w-4 mr-1" />
-                              Reject
-                            </Button>
+                      {(trade.status === 'deciding' || trade.stage === 'deciding') && (() => {
+                        // Get active portfolio tracks (no decision yet)
+                        const activePortfolioTracks = portfolioTracks.filter(t => t.decision_outcome === null)
+                        const committedTracks = portfolioTracks.filter(t => t.decision_outcome === 'accepted')
+                        const deferredTracks = portfolioTracks.filter(t => t.decision_outcome === 'deferred')
+                        const rejectedTracks = portfolioTracks.filter(t => t.decision_outcome === 'rejected')
+
+                        // Build portfolio info from lab links
+                        const portfolioInfo = labLinks.reduce((acc, link) => {
+                          const pid = link.trade_lab?.portfolio_id
+                          const pname = link.trade_lab?.portfolio?.name || link.trade_lab?.name || 'Unknown'
+                          if (pid) acc[pid] = pname
+                          return acc
+                        }, {} as Record<string, string>)
+
+                        // Handler for decision button clicks
+                        const handleDecision = (decision: DecisionOutcome) => {
+                          if (activePortfolioTracks.length === 1) {
+                            // Single portfolio - decide directly
+                            if (decision === 'deferred') {
+                              setPendingDecision(decision)
+                              setSelectedDecisionPortfolioId(activePortfolioTracks[0].portfolio_id)
+                              setShowDeferModal(true)
+                            } else {
+                              portfolioDecisionMutation.mutate({
+                                portfolioId: activePortfolioTracks[0].portfolio_id,
+                                decisionOutcome: decision
+                              })
+                            }
+                          } else {
+                            // Multiple portfolios - show picker
+                            setPendingDecision(decision)
+                            setShowPortfolioDecisionPicker(true)
+                          }
+                        }
+
+                        // Handler for portfolio selection
+                        const handlePortfolioDecision = (portfolioId: string) => {
+                          if (!pendingDecision) return
+                          if (pendingDecision === 'deferred') {
+                            setSelectedDecisionPortfolioId(portfolioId)
+                            setShowPortfolioDecisionPicker(false)
+                            setShowDeferModal(true)
+                          } else {
+                            portfolioDecisionMutation.mutate({
+                              portfolioId,
+                              decisionOutcome: pendingDecision
+                            })
+                          }
+                        }
+
+                        return (
+                          <div>
+                            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                              Decision
+                            </h4>
+
+                            {/* Show portfolio track status summary */}
+                            {portfolioTracks.length > 0 && (
+                              <div className="mb-3 text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                                {activePortfolioTracks.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                    <span>{activePortfolioTracks.length} portfolio{activePortfolioTracks.length !== 1 ? 's' : ''} pending decision</span>
+                                  </div>
+                                )}
+                                {committedTracks.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                    <span>{committedTracks.length} committed: {committedTracks.map(t => portfolioInfo[t.portfolio_id] || 'Unknown').join(', ')}</span>
+                                  </div>
+                                )}
+                                {deferredTracks.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                                    <span>{deferredTracks.length} deferred: {deferredTracks.map(t => portfolioInfo[t.portfolio_id] || 'Unknown').join(', ')}</span>
+                                  </div>
+                                )}
+                                {rejectedTracks.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                                    <span>{rejectedTracks.length} rejected: {rejectedTracks.map(t => portfolioInfo[t.portfolio_id] || 'Unknown').join(', ')}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Decision buttons */}
+                            {activePortfolioTracks.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                  onClick={() => handleDecision('accepted')}
+                                  disabled={portfolioDecisionMutation.isPending}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                                  {activePortfolioTracks.length === 1 ? `Accept (${portfolioInfo[activePortfolioTracks[0].portfolio_id]})` : 'Accept...'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleDecision('deferred')}
+                                  disabled={portfolioDecisionMutation.isPending}
+                                >
+                                  <Clock className="h-4 w-4 mr-1" />
+                                  {activePortfolioTracks.length === 1 ? 'Defer' : 'Defer...'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="danger"
+                                  onClick={() => handleDecision('rejected')}
+                                  disabled={portfolioDecisionMutation.isPending}
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  {activePortfolioTracks.length === 1 ? 'Reject' : 'Reject...'}
+                                </Button>
+                              </div>
+                            )}
+
+                            {/* Portfolio picker dropdown */}
+                            {showPortfolioDecisionPicker && activePortfolioTracks.length > 1 && (
+                              <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                                  Select portfolio to {pendingDecision === 'accepted' ? 'accept' : pendingDecision === 'deferred' ? 'defer' : 'reject'} for:
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {activePortfolioTracks.map(track => (
+                                    <button
+                                      key={track.portfolio_id}
+                                      onClick={() => handlePortfolioDecision(track.portfolio_id)}
+                                      disabled={portfolioDecisionMutation.isPending}
+                                      className={clsx(
+                                        'px-3 py-1.5 text-sm rounded-md border transition-colors',
+                                        pendingDecision === 'accepted' && 'border-green-300 hover:bg-green-50 dark:hover:bg-green-900/20',
+                                        pendingDecision === 'deferred' && 'border-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700',
+                                        pendingDecision === 'rejected' && 'border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+                                      )}
+                                    >
+                                      {portfolioInfo[track.portfolio_id] || 'Unknown'}
+                                    </button>
+                                  ))}
+                                  <button
+                                    onClick={() => {
+                                      setShowPortfolioDecisionPicker(false)
+                                      setPendingDecision(null)
+                                    }}
+                                    className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* No active portfolios - all decisions made */}
+                            {activePortfolioTracks.length === 0 && portfolioTracks.length > 0 && (
+                              <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                                All portfolios have been decided
+                              </p>
+                            )}
+
+                            <button
+                              onClick={() => updateStatusMutation.mutate('simulating')}
+                              disabled={updateStatusMutation.isPending}
+                              className="mt-2 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 flex items-center gap-1"
+                            >
+                              <FlaskConical className="h-3 w-3" />
+                              Back to Modeling
+                            </button>
                           </div>
-                          <button
-                            onClick={() => updateStatusMutation.mutate('simulating')}
-                            disabled={updateStatusMutation.isPending}
-                            className="mt-2 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 flex items-center gap-1"
-                          >
-                            <FlaskConical className="h-3 w-3" />
-                            Back to Modeling
-                          </button>
-                        </div>
-                      )}
+                        )
+                      })()}
 
                       {/* SECTION 3: Remove */}
                       <div className="pt-2 border-t border-gray-100 dark:border-gray-700/50">
                         <div className="flex items-center gap-4">
                           <button
-                            onClick={() => setShowDeferModal(true)}
+                            onClick={() => {
+                              // Clear portfolio selection to use global defer path
+                              setSelectedDecisionPortfolioId(null)
+                              setPendingDecision(null)
+                              setShowDeferModal(true)
+                            }}
                             disabled={isDefering}
                             className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
                           >
@@ -2292,7 +2536,33 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
 
               {/* Proposals Tab for Single Trade */}
               {activeTab === 'proposals' && (() => {
-                // Sort proposals: current user first, then by updated_at descending
+                // Group proposals by portfolio
+                const proposalsByPortfolio = proposals.reduce((acc, proposal) => {
+                  const portfolioId = proposal.portfolio_id || 'unknown'
+                  const portfolioName = proposal.portfolio?.name || 'Unknown Portfolio'
+                  if (!acc[portfolioId]) {
+                    acc[portfolioId] = { name: portfolioName, proposals: [] }
+                  }
+                  acc[portfolioId].proposals.push(proposal)
+                  return acc
+                }, {} as Record<string, { name: string; proposals: typeof proposals }>)
+
+                // Sort proposals within each portfolio: current user first, then by updated_at
+                Object.values(proposalsByPortfolio).forEach(group => {
+                  group.proposals.sort((a, b) => {
+                    const aIsCurrentUser = a.user_id === user?.id
+                    const bIsCurrentUser = b.user_id === user?.id
+                    if (aIsCurrentUser && !bIsCurrentUser) return -1
+                    if (!aIsCurrentUser && bIsCurrentUser) return 1
+                    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+                  })
+                })
+
+                // Get sorted portfolio entries (by name)
+                const sortedPortfolioEntries = Object.entries(proposalsByPortfolio)
+                  .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+
+                // Flat sorted proposals for backward compat (when showing all)
                 const sortedProposals = [...proposals].sort((a, b) => {
                   const aIsCurrentUser = a.user_id === user?.id
                   const bIsCurrentUser = b.user_id === user?.id
@@ -2300,6 +2570,9 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                   if (!aIsCurrentUser && bIsCurrentUser) return 1
                   return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
                 })
+
+                // Check if we have multiple portfolios
+                const hasMultiplePortfolios = Object.keys(proposalsByPortfolio).length > 1
 
                 // Check if current user is PM/owner and trade is in deciding stage
                 const isDecidingStage = trade?.status === 'deciding' || trade?.stage === 'deciding'
@@ -2309,6 +2582,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                 const getStatusText = () => {
                   if (proposals.length === 0) return 'No proposals yet'
                   if (proposals.length === 1) return '1 active proposal'
+                  const portfolioCount = Object.keys(proposalsByPortfolio).length
+                  if (portfolioCount > 1) {
+                    return `${proposals.length} proposals across ${portfolioCount} portfolios`
+                  }
                   return `${proposals.length} active proposals`
                 }
 
@@ -2364,7 +2641,12 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => setShowDeferModal(true)}
+                            onClick={() => {
+                              // Clear portfolio selection to use global defer path
+                              setSelectedDecisionPortfolioId(null)
+                              setPendingDecision(null)
+                              setShowDeferModal(true)
+                            }}
                             disabled={updateStatusMutation.isPending}
                           >
                             <Clock className="h-3.5 w-3.5 mr-1" />
@@ -2395,132 +2677,354 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                         </p>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        {sortedProposals.map((proposal) => {
-                          const userName = proposal.users?.first_name && proposal.users?.last_name
-                            ? `${proposal.users.first_name} ${proposal.users.last_name}`
-                            : proposal.users?.email || 'Unknown'
-                          const isCurrentUser = proposal.user_id === user?.id
-                          const hasShares = proposal.shares !== null && proposal.shares !== undefined
-
-                          const handleEditProposal = () => {
-                            setProposalWeight(proposal.weight?.toString() || '')
-                            setProposalShares(proposal.shares?.toString() || '')
-                            setProposalNotes(proposal.notes || '')
-                            setShowProposalModal(true)
-                          }
-
-                          return (
-                            <div
-                              key={proposal.id}
-                              className={clsx(
-                                "p-4 rounded-lg border transition-colors",
-                                isCurrentUser
-                                  ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700"
-                                  : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                              )}
-                              onClick={isCurrentUser ? handleEditProposal : undefined}
-                              role={isCurrentUser ? "button" : undefined}
-                              tabIndex={isCurrentUser ? 0 : undefined}
-                              onKeyDown={isCurrentUser ? (e) => e.key === 'Enter' && handleEditProposal() : undefined}
-                            >
-                              {/* Header with user and date */}
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <div className={clsx(
-                                    "h-8 w-8 rounded-full flex items-center justify-center",
-                                    isCurrentUser
-                                      ? "bg-primary-100 dark:bg-primary-900/30"
-                                      : "bg-gray-200 dark:bg-gray-700"
-                                  )}>
-                                    <User className={clsx(
-                                      "h-4 w-4",
-                                      isCurrentUser
-                                        ? "text-primary-600 dark:text-primary-400"
-                                        : "text-gray-500 dark:text-gray-400"
-                                    )} />
-                                  </div>
-                                  <div>
-                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                      {userName}
-                                      {isCurrentUser && (
-                                        <span className="ml-1.5 text-xs text-primary-600 dark:text-primary-400">(You)</span>
-                                      )}
-                                    </span>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                      {formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })}
-                                      {proposal.updated_at !== proposal.created_at && (
-                                        <span className="ml-1">(edited)</span>
-                                      )}
-                                    </p>
-                                  </div>
-                                </div>
-                                {isCurrentUser && (
-                                  <button
-                                    type="button"
-                                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleEditProposal()
-                                    }}
-                                    title="Edit your proposal"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </div>
-
-                              {/* Recommended Size - PRIMARY FOCAL POINT */}
-                              <div className="mb-3">
-                                <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                                  Recommended Size
+                      <div className="space-y-4">
+                        {/* Render grouped by portfolio when multiple portfolios exist */}
+                        {hasMultiplePortfolios ? (
+                          sortedPortfolioEntries.map(([portfolioId, { name: portfolioName, proposals: portfolioProposals }]) => (
+                            <div key={portfolioId} className="space-y-3">
+                              {/* Portfolio header */}
+                              <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                <Briefcase className="h-4 w-4 text-gray-400" />
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  {portfolioName}
+                                </h4>
+                                <span className="text-xs text-gray-400 dark:text-gray-500">
+                                  ({portfolioProposals.length})
                                 </span>
-                                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
-                                  {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
-                                </p>
                               </div>
+                              {/* Proposals for this portfolio */}
+                              {portfolioProposals.map((proposal) => {
+                                const userName = proposal.users?.first_name && proposal.users?.last_name
+                                  ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                  : proposal.users?.email || 'Unknown'
+                                const isCurrentUser = proposal.user_id === user?.id
+                                const hasShares = proposal.shares !== null && proposal.shares !== undefined
 
-                              {/* Shares - only show if has value */}
-                              {hasShares && (
-                                <div className="mb-3">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                                    Shares
-                                  </span>
-                                  <p className="text-base font-medium text-gray-700 dark:text-gray-300 mt-0.5">
-                                    {proposal.shares!.toLocaleString()}
-                                  </p>
-                                </div>
-                              )}
+                                const handleEditProposal = () => {
+                                  setProposalWeight(proposal.weight?.toString() || '')
+                                  setProposalShares(proposal.shares?.toString() || '')
+                                  setProposalNotes(proposal.notes || '')
+                                  setShowProposalModal(true)
+                                }
 
-                              {/* Sizing mode badge */}
-                              {proposal.sizing_mode && (
-                                <div className="mb-3">
-                                  <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
-                                    {proposal.sizing_mode === 'weight' && 'Recommended Size'}
-                                    {proposal.sizing_mode === 'shares' && 'Share Count'}
-                                    {proposal.sizing_mode === 'delta_weight' && 'Weight Change'}
-                                    {proposal.sizing_mode === 'delta_shares' && 'Share Change'}
-                                    {proposal.sizing_mode === 'delta_benchmark' && 'vs Benchmark'}
-                                  </span>
-                                </div>
-                              )}
+                                return (
+                                  <div
+                                    key={proposal.id}
+                                    className={clsx(
+                                      "p-3 rounded-lg border transition-colors",
+                                      isCurrentUser
+                                        ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700"
+                                        : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                                    )}
+                                    onClick={isCurrentUser ? handleEditProposal : undefined}
+                                    role={isCurrentUser ? "button" : undefined}
+                                    tabIndex={isCurrentUser ? 0 : undefined}
+                                    onKeyDown={isCurrentUser ? (e) => e.key === 'Enter' && handleEditProposal() : undefined}
+                                  >
+                                    {/* Compact layout: User + Size on same row */}
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className={clsx(
+                                          "h-6 w-6 rounded-full flex items-center justify-center",
+                                          isCurrentUser
+                                            ? "bg-primary-100 dark:bg-primary-900/30"
+                                            : "bg-gray-200 dark:bg-gray-700"
+                                        )}>
+                                          <User className={clsx(
+                                            "h-3 w-3",
+                                            isCurrentUser
+                                              ? "text-primary-600 dark:text-primary-400"
+                                              : "text-gray-500 dark:text-gray-400"
+                                          )} />
+                                        </div>
+                                        <div className="flex items-baseline gap-2">
+                                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                            {userName}
+                                            {isCurrentUser && (
+                                              <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
+                                            )}
+                                          </span>
+                                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                                            {formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })}
+                                            {proposal.updated_at !== proposal.created_at && ' (edited)'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {/* Size display */}
+                                        <div className="text-right">
+                                          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                                            {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
+                                          </span>
+                                          {hasShares && (
+                                            <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                                              ({proposal.shares!.toLocaleString()} sh)
+                                            </span>
+                                          )}
+                                        </div>
+                                        {isCurrentUser && (
+                                          <button
+                                            type="button"
+                                            className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleEditProposal()
+                                            }}
+                                            title="Edit your proposal"
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
 
-                              {/* Sizing rationale (formerly Notes) */}
-                              {proposal.notes && (
-                                <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                                    Sizing Rationale
-                                  </span>
-                                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                                    {proposal.notes}
-                                  </p>
-                                </div>
-                              )}
+                                    {/* Notes - only show if has value, compact */}
+                                    {proposal.notes && (
+                                      <p className="mt-2 text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
+                                        {proposal.notes}
+                                      </p>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
-                          )
-                        })}
+                          ))
+                        ) : (
+                          /* Single portfolio - render flat list */
+                          <div className="space-y-2">
+                            {sortedProposals.map((proposal) => {
+                              const userName = proposal.users?.first_name && proposal.users?.last_name
+                                ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                : proposal.users?.email || 'Unknown'
+                              const isCurrentUser = proposal.user_id === user?.id
+                              const hasShares = proposal.shares !== null && proposal.shares !== undefined
+
+                              const handleEditProposal = () => {
+                                setProposalWeight(proposal.weight?.toString() || '')
+                                setProposalShares(proposal.shares?.toString() || '')
+                                setProposalNotes(proposal.notes || '')
+                                setShowProposalModal(true)
+                              }
+
+                              return (
+                                <div
+                                  key={proposal.id}
+                                  className={clsx(
+                                    "p-3 rounded-lg border transition-colors",
+                                    isCurrentUser
+                                      ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700"
+                                      : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                                  )}
+                                  onClick={isCurrentUser ? handleEditProposal : undefined}
+                                  role={isCurrentUser ? "button" : undefined}
+                                  tabIndex={isCurrentUser ? 0 : undefined}
+                                  onKeyDown={isCurrentUser ? (e) => e.key === 'Enter' && handleEditProposal() : undefined}
+                                >
+                                  {/* Compact layout: User + Size on same row */}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className={clsx(
+                                        "h-6 w-6 rounded-full flex items-center justify-center",
+                                        isCurrentUser
+                                          ? "bg-primary-100 dark:bg-primary-900/30"
+                                          : "bg-gray-200 dark:bg-gray-700"
+                                      )}>
+                                        <User className={clsx(
+                                          "h-3 w-3",
+                                          isCurrentUser
+                                            ? "text-primary-600 dark:text-primary-400"
+                                            : "text-gray-500 dark:text-gray-400"
+                                        )} />
+                                      </div>
+                                      <div className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                          {userName}
+                                          {isCurrentUser && (
+                                            <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
+                                          )}
+                                        </span>
+                                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                                          {formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })}
+                                          {proposal.updated_at !== proposal.created_at && ' (edited)'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {/* Size display */}
+                                      <div className="text-right">
+                                        <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                                          {proposal.weight !== null ? `${proposal.weight.toFixed(2)}%` : '—'}
+                                        </span>
+                                        {hasShares && (
+                                          <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                                            ({proposal.shares!.toLocaleString()} sh)
+                                          </span>
+                                        )}
+                                      </div>
+                                      {isCurrentUser && (
+                                        <button
+                                          type="button"
+                                          className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleEditProposal()
+                                          }}
+                                          title="Edit your proposal"
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Notes - only show if has value, compact */}
+                                  {proposal.notes && (
+                                    <p className="mt-2 text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
+                                      {proposal.notes}
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
+
+                    {/* Cancelled Proposals */}
+                    {rejectedProposals.length > 0 && (() => {
+                      // Group cancelled proposals by portfolio
+                      const cancelledByPortfolio = rejectedProposals.reduce((acc: Record<string, { name: string; proposals: typeof rejectedProposals }>, proposal: any) => {
+                        const portfolioId = proposal.portfolio_id || 'unknown'
+                        const portfolioName = proposal.portfolios?.name || 'Unknown Portfolio'
+                        if (!acc[portfolioId]) {
+                          acc[portfolioId] = { name: portfolioName, proposals: [] }
+                        }
+                        acc[portfolioId].proposals.push(proposal)
+                        return acc
+                      }, {})
+
+                      const hasMultipleCancelledPortfolios = Object.keys(cancelledByPortfolio).length > 1
+
+                      return (
+                        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center gap-2 mb-3">
+                            <XCircle className="h-4 w-4 text-gray-400" />
+                            <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Cancelled ({rejectedProposals.length})
+                            </h4>
+                          </div>
+                          <div className="space-y-3">
+                            {hasMultipleCancelledPortfolios ? (
+                              Object.entries(cancelledByPortfolio).map(([portfolioId, { name: portfolioName, proposals: portfolioProposals }]) => (
+                                <div key={portfolioId} className="space-y-2">
+                                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <Briefcase className="h-3 w-3" />
+                                    <span>{portfolioName}</span>
+                                  </div>
+                                  {portfolioProposals.map((proposal: any) => {
+                                    const userName = proposal.users?.first_name && proposal.users?.last_name
+                                      ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                      : proposal.users?.email || 'Unknown'
+                                    const isCurrentUser = proposal.user_id === user?.id
+
+                                    return (
+                                      <div
+                                        key={proposal.id}
+                                        className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm text-gray-600 dark:text-gray-400">
+                                              {userName}
+                                              {isCurrentUser && (
+                                                <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
+                                              )}
+                                            </span>
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                              {proposal.weight !== null ? `${Number(proposal.weight).toFixed(2)}%` : proposal.shares ? `${proposal.shares.toLocaleString()} sh` : '—'}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="inline-flex items-center px-1.5 py-0.5 text-xs rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                              Cancelled
+                                            </span>
+                                            {isCurrentUser && (
+                                              <button
+                                                onClick={() => {
+                                                  setProposalWeight(proposal.weight?.toString() || '')
+                                                  setProposalShares(proposal.shares?.toString() || '')
+                                                  setProposalNotes('')
+                                                  setProposalPortfolioId(proposal.portfolio_id || '')
+                                                  setShowProposalModal(true)
+                                                }}
+                                                className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                                              >
+                                                Re-propose
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ))
+                            ) : (
+                              rejectedProposals.map((proposal: any) => {
+                                const userName = proposal.users?.first_name && proposal.users?.last_name
+                                  ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                  : proposal.users?.email || 'Unknown'
+                                const portfolioName = proposal.portfolios?.name || 'Unknown Portfolio'
+                                const isCurrentUser = proposal.user_id === user?.id
+
+                                return (
+                                  <div
+                                    key={proposal.id}
+                                    className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                                          {userName}
+                                          {isCurrentUser && (
+                                            <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
+                                          )}
+                                        </span>
+                                        <span className="text-xs text-gray-400">·</span>
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">{portfolioName}</span>
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                          {proposal.weight !== null ? `${Number(proposal.weight).toFixed(2)}%` : proposal.shares ? `${proposal.shares.toLocaleString()} sh` : '—'}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center px-1.5 py-0.5 text-xs rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                          Cancelled
+                                        </span>
+                                        {isCurrentUser && (
+                                          <button
+                                            onClick={() => {
+                                              setProposalWeight(proposal.weight?.toString() || '')
+                                              setProposalShares(proposal.shares?.toString() || '')
+                                              setProposalNotes('')
+                                              setProposalPortfolioId(proposal.portfolio_id || '')
+                                              setShowProposalModal(true)
+                                            }}
+                                            className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                                          >
+                                            Re-propose
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })()}
@@ -2586,26 +3090,49 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
                 onClick={() => {
                   setShowDeferModal(false)
                   setDeferUntilDate(null)
+                  setSelectedDecisionPortfolioId(null)
+                  setPendingDecision(null)
                 }}
               >
                 Cancel
               </Button>
               <Button
-                onClick={() => {
-                  deferTrade({
-                    tradeId,
-                    deferredUntil: deferUntilDate,
-                    uiSource: 'modal',
-                  })
-                  setShowDeferModal(false)
-                  setDeferUntilDate(null)
-                  onClose()
+                onClick={async () => {
+                  // Use portfolio-scoped decision if a portfolio is selected
+                  if (selectedDecisionPortfolioId) {
+                    portfolioDecisionMutation.mutate({
+                      portfolioId: selectedDecisionPortfolioId,
+                      decisionOutcome: 'deferred',
+                    })
+                    // Note: mutation onSuccess will handle cleanup
+                  } else {
+                    // Global defer - wait for mutation to complete before closing
+                    await deferTradeAsync({
+                      tradeId,
+                      deferredUntil: deferUntilDate,
+                      uiSource: 'modal',
+                    })
+                    // Force immediate refetch to ensure UI updates
+                    await queryClient.invalidateQueries({
+                      queryKey: ['trade-queue-items'],
+                      refetchType: 'all'
+                    })
+                    await queryClient.refetchQueries({
+                      queryKey: ['trade-queue-items'],
+                      type: 'active'
+                    })
+                    setShowDeferModal(false)
+                    setDeferUntilDate(null)
+                    onClose()
+                  }
                 }}
-                disabled={isDefering}
-                loading={isDefering}
+                disabled={isDefering || portfolioDecisionMutation.isPending}
+                loading={isDefering || portfolioDecisionMutation.isPending}
               >
                 <Clock className="h-4 w-4 mr-1.5" />
-                Defer
+                Defer{selectedDecisionPortfolioId && labLinks.length > 0
+                  ? ` for ${labLinks.find(l => l.trade_lab?.portfolio_id === selectedDecisionPortfolioId)?.trade_lab?.portfolio?.name || 'portfolio'}`
+                  : ''}
               </Button>
             </div>
           </div>
@@ -2613,135 +3140,197 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose }: TradeIdeaDeta
       )}
 
       {/* Proposal Modal - shown when moving to Deciding */}
-      {showProposalModal && trade && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => {
-              setShowProposalModal(false)
-              setProposalWeight('')
-              setProposalShares('')
-              setProposalNotes('')
-            }}
-          />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Submit Your Proposal
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Before moving to Deciding, please submit your sizing proposal for {trade.assets?.symbol}.
-            </p>
+      {showProposalModal && trade && (() => {
+        // Get available portfolios from lab links
+        const availablePortfolios = labLinks
+          .map(link => link.trade_lab?.portfolio)
+          .filter((p): p is { id: string; name: string } => !!p?.id)
+          .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i) // dedupe
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Target Weight %
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={proposalWeight}
-                    onChange={(e) => setProposalWeight(e.target.value)}
-                    placeholder="e.g. 5.0"
-                    className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Target Shares
-                  </label>
-                  <input
-                    type="number"
-                    step="1"
-                    value={proposalShares}
-                    onChange={(e) => setProposalShares(e.target.value)}
-                    placeholder="e.g. 1000"
-                    className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  />
-                </div>
-              </div>
+        // If no linked portfolios, use trade's direct portfolio
+        if (availablePortfolios.length === 0 && trade.portfolio_id) {
+          // We'd need to fetch the portfolio name, for now use placeholder
+          availablePortfolios.push({ id: trade.portfolio_id, name: 'Portfolio' })
+        }
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Notes (optional)
-                </label>
-                <textarea
-                  value={proposalNotes}
-                  onChange={(e) => setProposalNotes(e.target.value)}
-                  placeholder="Add any notes about your sizing rationale..."
-                  rows={2}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
+        // Default to first portfolio if not selected
+        const effectivePortfolioId = proposalPortfolioId || availablePortfolios[0]?.id || ''
+        const showPortfolioSelector = availablePortfolios.length > 1
 
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                You can enter weight, shares, or both. At least one is recommended.
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/50"
+              onClick={() => {
+                setShowProposalModal(false)
+                setProposalWeight('')
+                setProposalShares('')
+                setProposalNotes('')
+                setProposalPortfolioId('')
+              }}
+            />
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Submit Your Proposal
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                {trade.stage === 'deciding'
+                  ? `Add your sizing proposal for ${trade.assets?.symbol}.`
+                  : `Before moving to Deciding, please submit your sizing proposal for ${trade.assets?.symbol}.`
+                }
               </p>
-            </div>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setShowProposalModal(false)
-                  setProposalWeight('')
-                  setProposalShares('')
-                  setProposalNotes('')
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  if (!user) return
-                  setIsSubmittingProposal(true)
-                  try {
-                    // Build action context
-                    const context: ActionContext = {
-                      actorId: user.id,
-                      actorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '',
-                      actorEmail: user.email,
-                      actorRole: (user.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
-                      requestId: crypto.randomUUID(),
-                      uiSource: 'modal',
-                    }
+              <div className="space-y-4">
+                {/* Portfolio selector - show when multiple portfolios */}
+                {showPortfolioSelector && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Portfolio
+                    </label>
+                    <select
+                      value={effectivePortfolioId}
+                      onChange={(e) => setProposalPortfolioId(e.target.value)}
+                      className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    >
+                      {availablePortfolios.map(portfolio => (
+                        <option key={portfolio.id} value={portfolio.id}>
+                          {portfolio.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Select which portfolio this proposal is for
+                    </p>
+                  </div>
+                )}
 
-                    // Upsert proposal
-                    await upsertProposal({
-                      trade_queue_item_id: tradeId,
-                      weight: proposalWeight ? parseFloat(proposalWeight) : null,
-                      shares: proposalShares ? parseInt(proposalShares, 10) : null,
-                      notes: proposalNotes || null,
-                    }, context)
+                {/* Single portfolio context display */}
+                {!showPortfolioSelector && availablePortfolios.length === 1 && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 rounded-lg px-3 py-2">
+                    <Briefcase className="h-3.5 w-3.5" />
+                    <span>Portfolio: <span className="font-medium text-gray-700 dark:text-gray-300">{availablePortfolios[0].name}</span></span>
+                  </div>
+                )}
 
-                    // Move to deciding
-                    await updateStatusMutation.mutateAsync('deciding')
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Target Weight %
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={proposalWeight}
+                      onChange={(e) => setProposalWeight(e.target.value)}
+                      placeholder="e.g. 5.0"
+                      className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Target Shares
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={proposalShares}
+                      onChange={(e) => setProposalShares(e.target.value)}
+                      placeholder="e.g. 1000"
+                      className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                  </div>
+                </div>
 
-                    // Refresh proposals
-                    queryClient.invalidateQueries({ queryKey: ['trade-proposals', tradeId] })
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Notes (optional)
+                  </label>
+                  <textarea
+                    value={proposalNotes}
+                    onChange={(e) => setProposalNotes(e.target.value)}
+                    placeholder="Add any notes about your sizing rationale..."
+                    rows={2}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
 
-                    // Close modal and reset
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  You can enter weight, shares, or both. At least one is recommended.
+                </p>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
                     setShowProposalModal(false)
                     setProposalWeight('')
                     setProposalShares('')
                     setProposalNotes('')
-                  } catch (error) {
-                    console.error('Failed to submit proposal:', error)
-                  } finally {
-                    setIsSubmittingProposal(false)
-                  }
-                }}
-                disabled={isSubmittingProposal}
-                loading={isSubmittingProposal}
-              >
-                <Scale className="h-4 w-4 mr-1.5" />
-                Submit & Move to Deciding
-              </Button>
+                    setProposalPortfolioId('')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!user) return
+                    if (!effectivePortfolioId) {
+                      alert('Please select a portfolio')
+                      return
+                    }
+                    setIsSubmittingProposal(true)
+                    try {
+                      // Build action context
+                      const context: ActionContext = {
+                        actorId: user.id,
+                        actorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '',
+                        actorEmail: user.email,
+                        actorRole: (user.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                        requestId: crypto.randomUUID(),
+                        uiSource: 'modal',
+                      }
+
+                      // Upsert proposal with selected portfolio
+                      await upsertProposal({
+                        trade_queue_item_id: tradeId,
+                        portfolio_id: effectivePortfolioId,
+                        weight: proposalWeight ? parseFloat(proposalWeight) : null,
+                        shares: proposalShares ? parseInt(proposalShares, 10) : null,
+                        notes: proposalNotes || null,
+                      }, context)
+
+                      // Only move to deciding if not already there
+                      if (trade.stage !== 'deciding') {
+                        await updateStatusMutation.mutateAsync('deciding')
+                      }
+
+                      // Refresh proposals
+                      queryClient.invalidateQueries({ queryKey: ['trade-proposals', tradeId] })
+
+                      // Close modal and reset
+                      setShowProposalModal(false)
+                      setProposalWeight('')
+                      setProposalShares('')
+                      setProposalNotes('')
+                      setProposalPortfolioId('')
+                    } catch (error) {
+                      console.error('Failed to submit proposal:', error)
+                    } finally {
+                      setIsSubmittingProposal(false)
+                    }
+                  }}
+                  disabled={isSubmittingProposal || !effectivePortfolioId}
+                  loading={isSubmittingProposal}
+                >
+                  <Scale className="h-4 w-4 mr-1.5" />
+                  {trade.stage === 'deciding' ? 'Submit Proposal' : 'Submit & Move to Deciding'}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (

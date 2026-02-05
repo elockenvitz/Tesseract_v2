@@ -35,6 +35,51 @@ export type DecisionOutcome = 'accepted' | 'deferred' | 'rejected'
 export type TradeOutcome = 'executed' | 'rejected' | 'deferred' | 'accepted'
 export type VisibilityTier = 'active' | 'trash' | 'archive'
 
+// Portfolio-scoped workflow track for a trade idea
+export interface TradeIdeaPortfolio {
+  id: string
+  trade_queue_item_id: string
+  portfolio_id: string
+  stage: TradeStage
+  decision_outcome: DecisionOutcome | null
+  decision_reason: string | null
+  decided_by: string | null
+  decided_at: string | null
+  deferred_until: string | null
+  created_at: string
+  updated_at: string
+  // Joined data
+  portfolio?: {
+    id: string
+    name: string
+  }
+}
+
+// Aggregated portfolio track counts for UI display
+export interface PortfolioTrackCounts {
+  total: number           // Total portfolios linked to this idea
+  active: number          // Portfolios with decision_outcome IS NULL
+  committed: number       // Portfolios with decision_outcome = 'accepted'
+  deferred: number        // Portfolios with decision_outcome = 'deferred'
+  rejected: number        // Portfolios with decision_outcome = 'rejected'
+}
+
+// Input for updating a portfolio track decision
+export interface UpdatePortfolioTrackInput {
+  trade_queue_item_id: string
+  portfolio_id: string
+  decision_outcome: DecisionOutcome
+  decision_reason?: string | null
+  deferred_until?: string | null
+}
+
+// Input for changing a portfolio track stage
+export interface UpdatePortfolioTrackStageInput {
+  trade_queue_item_id: string
+  portfolio_id: string
+  stage: TradeStage
+}
+
 // UI action context for activity logging
 export type UISource = 'drag_drop' | 'dropdown' | 'bulk_action' | 'api' | 'keyboard' | 'modal'
 
@@ -528,11 +573,12 @@ export interface TradeLabSimulationItem {
   created_by: string | null
 }
 
-// Trade Proposal - one current editable proposal per user per trade idea
+// Trade Proposal - one current editable proposal per user per trade idea per portfolio
 export interface TradeProposal {
   id: string
   trade_queue_item_id: string
   user_id: string
+  portfolio_id: string  // Required: Portfolio this proposal applies to
   lab_id: string | null
   weight: number | null
   shares: number | null
@@ -551,12 +597,17 @@ export interface TradeProposalWithUser extends TradeProposal {
     first_name: string | null
     last_name: string | null
   }
+  portfolio?: {
+    id: string
+    name: string
+  }
 }
 
 // Trade Proposal Version - snapshots for version history
 export interface TradeProposalVersion {
   id: string
   proposal_id: string
+  portfolio_id: string | null  // Portfolio context at time of snapshot
   version_number: number
   weight: number | null
   shares: number | null
@@ -592,6 +643,7 @@ export interface TradeEventWithActor extends TradeEvent {
 // Input types for creating/updating proposals
 export interface CreateTradeProposalInput {
   trade_queue_item_id: string
+  portfolio_id: string  // Required: Portfolio this proposal applies to
   lab_id?: string | null
   weight?: number | null
   shares?: number | null
