@@ -15,41 +15,42 @@ interface IdeaReactionsProps {
 }
 
 // Reaction configuration with icons and colors
+// Muted default (gray-400), hover reveals color, active state is full color
 const reactionConfig: Record<ReactionType, { icon: typeof ThumbsUp; label: string; color: string; activeColor: string }> = {
   like: {
     icon: ThumbsUp,
     label: 'Like',
-    color: 'text-gray-500 hover:text-blue-600',
+    color: 'text-gray-400 hover:text-blue-600 hover:bg-gray-100',
     activeColor: 'text-blue-600'
   },
   love: {
     icon: Heart,
     label: 'Love',
-    color: 'text-gray-500 hover:text-red-500',
+    color: 'text-gray-400 hover:text-red-500 hover:bg-gray-100',
     activeColor: 'text-red-500'
   },
   insightful: {
     icon: Sparkles,
     label: 'Insightful',
-    color: 'text-gray-500 hover:text-amber-500',
+    color: 'text-gray-400 hover:text-amber-500 hover:bg-gray-100',
     activeColor: 'text-amber-500'
   },
   bullish: {
     icon: TrendingUp,
     label: 'Bullish',
-    color: 'text-gray-500 hover:text-green-600',
+    color: 'text-gray-400 hover:text-green-600 hover:bg-gray-100',
     activeColor: 'text-green-600'
   },
   bearish: {
     icon: TrendingDown,
     label: 'Bearish',
-    color: 'text-gray-500 hover:text-red-600',
+    color: 'text-gray-400 hover:text-red-600 hover:bg-gray-100',
     activeColor: 'text-red-600'
   },
   question: {
     icon: HelpCircle,
     label: 'Question',
-    color: 'text-gray-500 hover:text-purple-600',
+    color: 'text-gray-400 hover:text-purple-600 hover:bg-gray-100',
     activeColor: 'text-purple-600'
   }
 }
@@ -134,8 +135,8 @@ export function IdeaReactions({
             onClick={() => handleReaction(reaction)}
             disabled={isToggling}
             className={clsx(
-              'flex items-center gap-0.5 transition-all',
-              effectiveVariant === 'compact' ? 'p-1' : 'px-2 py-1 rounded-full hover:bg-gray-100',
+              'flex items-center gap-0.5 transition-all rounded',
+              effectiveVariant === 'compact' ? 'p-1.5' : 'px-2 py-1 rounded-full',
               hasReacted ? config.activeColor : config.color,
               isToggling && 'opacity-50'
             )}

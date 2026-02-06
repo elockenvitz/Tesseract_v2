@@ -59,7 +59,8 @@ import type {
 import { clsx } from 'clsx'
 import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../hooks/useTradeIdeaService'
-import { upsertProposal } from '../lib/services/trade-lab-service'
+import { upsertProposal, requestAnalystInput } from '../lib/services/trade-lab-service'
+import { isCreatorOrCoAnalyst, getUserPortfolioRole, isPMForPortfolio } from '../lib/permissions/trade-idea-permissions'
 import type { ActionContext, TradeSizingMode } from '../types/trading'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
@@ -124,6 +125,7 @@ export function TradeQueuePage() {
   const [showProposalModal, setShowProposalModal] = useState(false)
   const [proposalTradeId, setProposalTradeId] = useState<string | null>(null)
   const [proposalTrade, setProposalTrade] = useState<TradeQueueItemWithDetails | null>(null)
+  const [proposalPairTrade, setProposalPairTrade] = useState<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] } | null>(null)
   const [proposalWeight, setProposalWeight] = useState<string>('')
   const [proposalShares, setProposalShares] = useState<string>('')
   const [proposalNotes, setProposalNotes] = useState<string>('')
@@ -156,6 +158,14 @@ export function TradeQueuePage() {
     portfolioTotalValue: number
   }
   const [linkedPortfolios, setLinkedPortfolios] = useState<LinkedPortfolioWithContext[]>([])
+  // Per-leg holdings context for pair trades (keyed by legId:portfolioId)
+  interface LegHoldingContext {
+    currentShares: number
+    currentWeight: number
+    benchmarkWeight: number | null
+    activeWeight: number | null
+  }
+  const [legHoldingsContext, setLegHoldingsContext] = useState<Record<string, LegHoldingContext>>({})
   // Track which portfolio proposal inputs are expanded in the modal
   const [expandedProposalInputs, setExpandedProposalInputs] = useState<Set<string>>(new Set())
 
@@ -189,6 +199,7 @@ export function TradeQueuePage() {
           trade_queue_votes (id, vote),
           pair_trades (id, name, description, rationale, urgency, status)
         `)
+        .eq('visibility_tier', 'active')
         .order('priority', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -218,14 +229,20 @@ export function TradeQueuePage() {
           users:created_by (id, email, first_name, last_name),
           trade_queue_items (
             id, asset_id, action, proposed_shares, proposed_weight, target_price,
-            pair_leg_type, status,
+            pair_leg_type, status, visibility_tier,
             assets (id, symbol, company_name, sector)
           )
         `)
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      return data as PairTradeWithDetails[]
+      // Filter out trashed legs from pair trades
+      return (data || []).filter(pt => pt != null).map(pairTrade => ({
+        ...pairTrade,
+        trade_queue_items: (pairTrade?.trade_queue_items || []).filter(
+          (leg: any) => leg?.visibility_tier === 'active'
+        )
+      })) as PairTradeWithDetails[]
     },
   })
 
@@ -324,6 +341,10 @@ export function TradeQueuePage() {
           is_active,
           created_at,
           updated_at,
+          sizing_context,
+          proposal_type,
+          analyst_input_requested,
+          analyst_input_requested_at,
           portfolios:portfolio_id (id, name),
           trade_queue_items:trade_queue_item_id (
             id,
@@ -331,6 +352,7 @@ export function TradeQueuePage() {
             rationale,
             created_by,
             assigned_to,
+            pair_trade_id,
             assets:asset_id (id, symbol, company_name)
           )
         `)
@@ -385,13 +407,83 @@ export function TradeQueuePage() {
   }, [decidingProposals])
 
   // Group proposals by trade idea for Deciding column rendering
-  const groupedDecidingProposals = useMemo(() => {
-    if (!decidingProposals) return []
-    return groupProposalsByTradeIdea(decidingProposals as ProposalData[])
+  // Separate single trade proposals from pair trade proposals
+  const { nonPairTradeProposals, pairTradeProposalGroups } = useMemo(() => {
+    if (!decidingProposals) return { nonPairTradeProposals: [], pairTradeProposalGroups: [] as Array<{ pairTradeId: string; proposals: ProposalData[] }> }
+
+    const singleProposals: ProposalData[] = []
+    const pairProposalsMap = new Map<string, ProposalData[]>()
+
+    decidingProposals.forEach((p: any) => {
+      // Check if this proposal has pair trade info in sizing_context
+      let sizingContext = p.sizing_context
+      if (typeof sizingContext === 'string') {
+        try { sizingContext = JSON.parse(sizingContext) } catch { sizingContext = null }
+      }
+
+      if (sizingContext?.isPairTrade && sizingContext?.pairTradeId) {
+        // This is a pair trade proposal - group by pairTradeId
+        const pairId = sizingContext.pairTradeId
+        if (!pairProposalsMap.has(pairId)) {
+          pairProposalsMap.set(pairId, [])
+        }
+        pairProposalsMap.get(pairId)!.push(p as ProposalData)
+      } else {
+        // Check if the trade item is part of a pair trade (legacy check)
+        const tradeItem = p.trade_queue_items
+        if (tradeItem?.pair_trade_id) {
+          // This is an old-format pair trade leg proposal - skip it for now
+          // (it will show in the pair trade card if the pair trade is in Deciding)
+        } else {
+          // Single trade proposal
+          singleProposals.push(p as ProposalData)
+        }
+      }
+    })
+
+    // Convert map to array
+    const pairGroups = Array.from(pairProposalsMap.entries()).map(([pairTradeId, proposals]) => ({
+      pairTradeId,
+      proposals
+    }))
+
+    return { nonPairTradeProposals: singleProposals, pairTradeProposalGroups: pairGroups }
   }, [decidingProposals])
 
-  // Check if current user is PM (can make decisions)
-  const isPM = user?.role === 'pm' || user?.role === 'admin'
+  const groupedDecidingProposals = useMemo(() => {
+    return groupProposalsByTradeIdea(nonPairTradeProposals as ProposalData[])
+  }, [nonPairTradeProposals])
+
+  // Fetch portfolios where current user is PM (for portfolio-specific decision permissions)
+  const { data: userPMPortfolios } = useQuery({
+    queryKey: ['user-pm-portfolios', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return new Set<string>()
+
+      const { data, error } = await supabase
+        .from('portfolio_team')
+        .select('portfolio_id')
+        .eq('user_id', user.id)
+        .eq('role', 'Portfolio Manager')
+
+      if (error) {
+        console.error('Failed to fetch user PM portfolios:', error)
+        return new Set<string>()
+      }
+
+      return new Set(data?.map(d => d.portfolio_id) || [])
+    },
+    enabled: !!user?.id,
+    staleTime: 60000, // 1 minute cache
+  })
+
+  // Helper to check if user is PM for a specific portfolio
+  const isPMForPortfolioId = useCallback((portfolioId: string) => {
+    // Admin always has PM access
+    if (user?.role === 'admin') return true
+    // Check portfolio-specific PM role
+    return userPMPortfolios?.has(portfolioId) || false
+  }, [userPMPortfolios, user?.role])
 
   // Get unique trade IDs from active proposals for track status lookup
   const proposalTradeIds = useMemo(() => {
@@ -621,6 +713,25 @@ export function TradeQueuePage() {
     },
   })
 
+  // Withdraw proposal mutation - for proposal owners to cancel their proposal
+  const withdrawProposalMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      // Set is_active = false to withdraw the proposal
+      const { error } = await supabase
+        .from('trade_proposals')
+        .update({ is_active: false })
+        .eq('id', proposalId)
+        .eq('user_id', user?.id) // Only allow owner to withdraw
+
+      if (error) throw error
+      return proposalId
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deciding-proposals'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-proposals'] })
+    },
+  })
+
   // Archived statuses (excluding cancelled/deferred which has its own view)
   const archivedStatuses: TradeQueueStatus[] = ['executed', 'rejected', 'approved', 'archived']
   // Deferred status (cancelled = deferred in legacy mapping)
@@ -665,9 +776,10 @@ export function TradeQueuePage() {
 
   // Filter and sort items (excluding archived)
   const filteredItems = useMemo(() => {
-    if (!tradeItems) return []
+    if (!tradeItems || !Array.isArray(tradeItems)) return []
 
     return tradeItems
+      .filter(item => item != null)
       .filter(item => {
         // Exclude archived, deferred, and deleted items from main view
         // BUT include deferred items whose deferred_until date has passed
@@ -779,21 +891,32 @@ export function TradeQueuePage() {
     )
   }, [simulations])
 
-  // Group pair trade items by pair_trade_id
+  // Group pair trade items by pair_id (or pair_trade_id for legacy data)
   const pairTradeGroups = useMemo(() => {
-    if (!filteredItems) return new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
+    if (!filteredItems || !Array.isArray(filteredItems)) return new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
 
     const groups = new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
 
-    filteredItems.forEach(item => {
-      if (item.pair_trade_id && item.pair_trades) {
-        if (!groups.has(item.pair_trade_id)) {
-          groups.set(item.pair_trade_id, {
-            pairTrade: item.pair_trades,
+    filteredItems.filter(item => item != null).forEach(item => {
+      // Support both pair_id (new) and pair_trade_id (legacy)
+      const pairId = item?.pair_id || item?.pair_trade_id
+      if (pairId) {
+        if (!groups.has(pairId)) {
+          // Generate pairTrade metadata from the first leg if no pair_trades join exists
+          const pairTradeData = item?.pair_trades || {
+            id: pairId,
+            name: 'Pair Trade',
+            description: null,
+            rationale: item?.rationale || null,
+            urgency: item?.urgency || 'medium',
+            status: item?.status
+          }
+          groups.set(pairId, {
+            pairTrade: pairTradeData,
             legs: []
           })
         }
-        groups.get(item.pair_trade_id)!.legs.push(item)
+        groups.get(pairId)!.legs.push(item)
       }
     })
 
@@ -852,8 +975,9 @@ export function TradeQueuePage() {
     }
 
     pairTradeGroups.forEach((group, pairTradeId) => {
+      if (!group?.pairTrade) return
       const status = group.pairTrade.status as TradeQueueStatus
-      if (groups[status]) {
+      if (status && groups[status]) {
         groups[status].push({ pairTradeId, ...group })
       }
     })
@@ -899,6 +1023,10 @@ export function TradeQueuePage() {
       return
     }
 
+    // Global stages that only creator/assigned/co-analysts can move
+    const globalStages: TradeQueueStatus[] = ['idea', 'discussing', 'working_on', 'simulating', 'modeling']
+    const isGlobalStageMove = globalStages.includes(targetStatus)
+
     // Handle pair trade drag - uses audited service
     if (dragType === 'pair-trade') {
       const pairTradeGroup = pairTradeGroups.get(itemId)
@@ -909,6 +1037,33 @@ export function TradeQueuePage() {
       }
 
       if (pairTradeGroup.pairTrade.status === targetStatus) {
+        setDraggedItem(null)
+        return
+      }
+
+      // Permission check for global stage movement
+      // Only creator, assigned analyst, or co-analysts can move through global stages
+      if (isGlobalStageMove) {
+        const firstLeg = pairTradeGroup.legs[0]
+        if (firstLeg && user?.id) {
+          const canMove = isCreatorOrCoAnalyst(user.id, {
+            created_by: firstLeg.created_by,
+            assigned_to: firstLeg.assigned_to,
+            collaborators: firstLeg.collaborators,
+          })
+          if (!canMove) {
+            console.warn('Permission denied: Only creator, assigned analyst, or co-analysts can move trade ideas through global stages')
+            setDraggedItem(null)
+            return
+          }
+        }
+      }
+
+      // When moving to deciding, show proposal modal first
+      if (targetStatus === 'deciding') {
+        setProposalPairTrade({ pairTradeId: itemId, pairTrade: pairTradeGroup.pairTrade, legs: pairTradeGroup.legs })
+        setProposalTradeId(itemId)
+        setShowProposalModal(true)
         setDraggedItem(null)
         return
       }
@@ -933,6 +1088,21 @@ export function TradeQueuePage() {
       return
     }
 
+    // Permission check for global stage movement
+    // Only creator, assigned analyst, or co-analysts can move through global stages
+    if (isGlobalStageMove && user?.id) {
+      const canMove = isCreatorOrCoAnalyst(user.id, {
+        created_by: item.created_by,
+        assigned_to: item.assigned_to,
+        collaborators: item.collaborators,
+      })
+      if (!canMove) {
+        console.warn('Permission denied: Only creator, assigned analyst, or co-analysts can move trade ideas through global stages')
+        setDraggedItem(null)
+        return
+      }
+    }
+
     // When moving to deciding, show proposal modal first
     if (targetStatus === 'deciding') {
       setProposalTradeId(itemId)
@@ -945,7 +1115,7 @@ export function TradeQueuePage() {
     // Use audited service for trade move
     moveTrade({ tradeId: itemId, targetStatus, uiSource: 'drag_drop' })
     setDraggedItem(null)
-  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade])
+  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id])
 
   const handleSort = useCallback((field: typeof sortBy) => {
     if (sortBy === field) {
@@ -977,15 +1147,19 @@ export function TradeQueuePage() {
 
   // Fetch linked portfolios with holding context when proposal modal opens
   useEffect(() => {
-    if (!proposalTradeId || !showProposalModal || !proposalTrade) {
+    if (!proposalTradeId || !showProposalModal || (!proposalTrade && !proposalPairTrade)) {
       setLinkedPortfolios([])
       setPortfolioProposals({})
       setExpandedProposalInputs(new Set())
+      setLegHoldingsContext({})
       return
     }
 
     const fetchLinkedPortfoliosWithContext = async () => {
-      const assetId = proposalTrade.asset_id
+      // For pair trades, use first leg's asset_id for holdings lookup
+      const assetId = proposalTrade?.asset_id || proposalPairTrade?.legs[0]?.asset_id
+      // For pair trades, use first leg's id for link lookup
+      const linkLookupId = proposalTrade ? proposalTradeId : proposalPairTrade?.legs[0]?.id
 
       // Get portfolios via trade_lab_idea_links -> trade_labs -> portfolios
       const { data: links, error } = await supabase
@@ -996,7 +1170,7 @@ export function TradeQueuePage() {
             portfolios!inner (id, name, benchmark)
           )
         `)
-        .eq('trade_queue_item_id', proposalTradeId)
+        .eq('trade_queue_item_id', linkLookupId)
 
       let portfolioMap = new Map<string, { id: string; name: string; benchmark: string | null }>()
 
@@ -1025,6 +1199,7 @@ export function TradeQueuePage() {
       if (portfolioIds.length === 0) {
         setLinkedPortfolios([])
         setExpandedProposalInputs(new Set())
+        setLegHoldingsContext({})
         return
       }
 
@@ -1034,27 +1209,50 @@ export function TradeQueuePage() {
         .select('portfolio_id, asset_id, shares, price')
         .in('portfolio_id', portfolioIds)
 
-      // Calculate portfolio totals and find current holding for this asset
+      // Calculate portfolio totals
       const portfolioTotals = new Map<string, number>()
-      const assetHoldings = new Map<string, { shares: number; price: number; value: number }>()
+      // For pair trades, track holdings per asset per portfolio
+      const allAssetHoldings = new Map<string, { shares: number; price: number; value: number }>() // key: portfolioId:assetId
 
       allHoldings?.forEach((h: any) => {
         const value = (h.shares || 0) * (h.price || 0)
         portfolioTotals.set(h.portfolio_id, (portfolioTotals.get(h.portfolio_id) || 0) + value)
 
-        if (h.asset_id === assetId) {
-          assetHoldings.set(h.portfolio_id, {
-            shares: h.shares || 0,
-            price: h.price || 0,
-            value
-          })
-        }
+        // Store by portfolioId:assetId
+        allAssetHoldings.set(`${h.portfolio_id}:${h.asset_id}`, {
+          shares: h.shares || 0,
+          price: h.price || 0,
+          value
+        })
       })
 
-      // Build linked portfolios with context
-      const portfoliosWithContext: LinkedPortfolioWithContext[] = Array.from(portfolioMap.values()).map(p => {
+      // Build per-leg holdings context for pair trades
+      if (proposalPairTrade) {
+        const legContext: Record<string, LegHoldingContext> = {}
+        for (const leg of proposalPairTrade.legs) {
+          for (const [portfolioId] of portfolioMap) {
+            const totalValue = portfolioTotals.get(portfolioId) || 0
+            const holding = allAssetHoldings.get(`${portfolioId}:${leg.asset_id}`)
+            const currentWeight = totalValue > 0 && holding ? (holding.value / totalValue) * 100 : 0
+            // TODO: Fetch benchmark weights when benchmark_holdings table is available
+            const benchmarkWeight = null
+            const activeWeight = benchmarkWeight !== null ? currentWeight - benchmarkWeight : null
+
+            legContext[`${leg.id}:${portfolioId}`] = {
+              currentShares: holding?.shares || 0,
+              currentWeight,
+              benchmarkWeight,
+              activeWeight
+            }
+          }
+        }
+        setLegHoldingsContext(legContext)
+      }
+
+      // Build linked portfolios with context (for single trade, use first asset)
+      const allPortfoliosWithContext: LinkedPortfolioWithContext[] = Array.from(portfolioMap.values()).map(p => {
         const totalValue = portfolioTotals.get(p.id) || 0
-        const holding = assetHoldings.get(p.id)
+        const holding = allAssetHoldings.get(`${p.id}:${assetId}`)
         const currentWeight = totalValue > 0 && holding ? (holding.value / totalValue) * 100 : 0
 
         // TODO: Fetch benchmark weights when benchmark_holdings table is available
@@ -1075,18 +1273,54 @@ export function TradeQueuePage() {
         }
       })
 
+      // Filter portfolios based on user visibility
+      // - Creator, assigned analyst, co-analysts see ALL linked portfolios
+      // - PMs only see portfolios they manage
+      let portfoliosWithContext = allPortfoliosWithContext
+      if (user?.id) {
+        const tradeIdea = proposalTrade || proposalPairTrade?.legs[0]
+        if (tradeIdea) {
+          const isCreatorOrAnalyst = isCreatorOrCoAnalyst(user.id, {
+            created_by: tradeIdea.created_by,
+            assigned_to: tradeIdea.assigned_to,
+            collaborators: tradeIdea.collaborators,
+          })
+
+          // If user is not creator/assigned/co-analyst, filter to only their PM portfolios
+          if (!isCreatorOrAnalyst) {
+            const visiblePortfolios: LinkedPortfolioWithContext[] = []
+            for (const portfolio of allPortfoliosWithContext) {
+              const isPM = await isPMForPortfolio(user.id, portfolio.id)
+              if (isPM) {
+                visiblePortfolios.push(portfolio)
+              }
+            }
+            portfoliosWithContext = visiblePortfolios
+          }
+        }
+      }
+
       setLinkedPortfolios(portfoliosWithContext)
 
-      // Initialize proposal state for each portfolio
+      // Initialize proposal state for each portfolio (or each leg+portfolio for pair trades)
       const initialProposals: Record<string, PortfolioProposalState> = {}
-      portfoliosWithContext.forEach(p => {
-        initialProposals[p.id] = { sizingMode: 'weight', value: '', notes: '' }
-      })
+      if (proposalPairTrade) {
+        // For pair trades, key by legId:portfolioId
+        proposalPairTrade.legs.forEach(leg => {
+          portfoliosWithContext.forEach(p => {
+            initialProposals[`${leg.id}:${p.id}`] = { sizingMode: 'weight', value: '', notes: '' }
+          })
+        })
+      } else {
+        portfoliosWithContext.forEach(p => {
+          initialProposals[p.id] = { sizingMode: 'weight', value: '', notes: '' }
+        })
+      }
       setPortfolioProposals(initialProposals)
     }
 
     fetchLinkedPortfoliosWithContext()
-  }, [proposalTradeId, showProposalModal, proposalTrade])
+  }, [proposalTradeId, showProposalModal, proposalTrade, proposalPairTrade])
 
   if (isLoading) {
     return (
@@ -1287,7 +1521,12 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
+                            expressionCounts={expressionCounts}
                             onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onLabClick={handleLabClick}
+                            canMoveLeft={false}
+                            canMoveRight={true}
+                            onMoveRight={() => movePairTrade({ pairTradeId, targetStatus: 'discussing', uiSource: 'arrow_button' })}
                           />
                         ))}
                         {/* Individual Trade Cards */}
@@ -1366,7 +1605,13 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
+                            expressionCounts={expressionCounts}
                             onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onLabClick={handleLabClick}
+                            canMoveLeft={true}
+                            canMoveRight={true}
+                            onMoveLeft={() => movePairTrade({ pairTradeId, targetStatus: 'idea', uiSource: 'arrow_button' })}
+                            onMoveRight={() => movePairTrade({ pairTradeId, targetStatus: 'simulating', uiSource: 'arrow_button' })}
                           />
                         ))}
                         {/* Individual Trade Cards */}
@@ -1446,7 +1691,17 @@ export function TradeQueuePage() {
                             isDragging={draggedItem === pairTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
+                            expressionCounts={expressionCounts}
                             onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onLabClick={handleLabClick}
+                            canMoveLeft={true}
+                            canMoveRight={true}
+                            onMoveLeft={() => movePairTrade({ pairTradeId, targetStatus: 'discussing', uiSource: 'arrow_button' })}
+                            onMoveRight={() => {
+                              setProposalPairTrade({ pairTradeId, pairTrade, legs })
+                              setProposalTradeId(pairTradeId)
+                              setShowProposalModal(true)
+                            }}
                           />
                         ))}
                         {/* Individual Trade Cards */}
@@ -1553,7 +1808,7 @@ export function TradeQueuePage() {
                               <Scale className={clsx("h-4 w-4", fourthColumnView === 'deciding' ? "text-amber-600" : "text-gray-400")} />
                               <span className={fourthColumnView === 'deciding' ? "font-medium text-amber-700 dark:text-amber-400" : ""}>Deciding</span>
                             </div>
-                            <Badge variant="secondary" className="text-xs">{(decidingProposals?.length || 0) + pairTradesByStatus.deciding.length}</Badge>
+                            <Badge variant="secondary" className="text-xs">{groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.length}</Badge>
                           </button>
 
                           {/* Divider */}
@@ -1620,7 +1875,7 @@ export function TradeQueuePage() {
                       {/* Item count badge */}
                       <Badge variant="default" className="ml-auto">
                         {fourthColumnView === 'deciding'
-                          ? (decidingProposals?.length || 0) + pairTradesByStatus.deciding.length
+                          ? groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.length
                           : fourthColumnView === 'executed'
                             ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
                             : fourthColumnView === 'rejected'
@@ -1751,9 +2006,12 @@ export function TradeQueuePage() {
                             pairTrade={pairTrade}
                             legs={legs}
                             isDragging={draggedItem === pairTradeId}
+                            expressionCounts={expressionCounts}
+                            proposals={proposalsByTradeId}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
-                            onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('proposals') }}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                         {/* Approved outcome: trades that were approved */}
@@ -1764,9 +2022,11 @@ export function TradeQueuePage() {
                             pairTrade={pairTrade}
                             legs={legs}
                             isDragging={draggedItem === pairTradeId}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
                             onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                         {fourthColumnView === 'rejected' && pairTradesByStatus.rejected.map(({ pairTradeId, pairTrade, legs }) => (
@@ -1776,9 +2036,11 @@ export function TradeQueuePage() {
                             pairTrade={pairTrade}
                             legs={legs}
                             isDragging={draggedItem === pairTradeId}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
                             onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                         {fourthColumnView === 'deferred' && pairTradesByStatus.cancelled.map(({ pairTradeId, pairTrade, legs }) => (
@@ -1788,9 +2050,11 @@ export function TradeQueuePage() {
                             pairTrade={pairTrade}
                             legs={legs}
                             isDragging={draggedItem === pairTradeId}
+                            expressionCounts={expressionCounts}
                             onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                             onDragEnd={handleDragEnd}
                             onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
+                            onLabClick={handleLabClick}
                           />
                         ))}
                         {/* Deciding View: Show Proposal Cards grouped by Trade Idea */}
@@ -1819,8 +2083,8 @@ export function TradeQueuePage() {
                             {/* Proposal Cards - Collapsed by default */}
                             {isExpanded && (
                               <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-2 space-y-2">
-                                {group.proposals.map(proposal => {
-                                  const tradeItem = proposal.trade_queue_items || proposal.trade_queue_item
+                                {group.proposals.filter(p => p != null).map(proposal => {
+                                  const tradeItem = proposal?.trade_queue_items || proposal?.trade_queue_item
                                   const trackStatusKey = `${proposal.trade_queue_item_id}-${proposal.portfolio_id}`
                                   const trackStatus = portfolioTrackStatuses?.get(trackStatusKey)
                                   return (
@@ -1828,7 +2092,7 @@ export function TradeQueuePage() {
                                     key={proposal.id}
                                     proposal={proposal}
                                     isMyProposal={proposal.user_id === user?.id}
-                                    isPM={isPM}
+                                    isPM={isPMForPortfolioId(proposal.portfolio_id)}
                                     portfolioTrackStatus={trackStatus}
                                     onAccept={(proposalId, overrideWeight) => {
                                       proposalDecisionMutation.mutate({
@@ -1851,6 +2115,24 @@ export function TradeQueuePage() {
                                         deferUntil,
                                       })
                                     }}
+                                    onWithdraw={(proposalId) => {
+                                      withdrawProposalMutation.mutate(proposalId)
+                                    }}
+                                    onRequestAnalystInput={async (proposalId) => {
+                                      try {
+                                        await requestAnalystInput(proposalId, {
+                                          actorId: user!.id,
+                                          actorName: [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || '',
+                                          actorEmail: user?.email,
+                                          actorRole: (user?.role as 'analyst' | 'pm' | 'admin' | 'system') || 'pm',
+                                          requestId: crypto.randomUUID(),
+                                          uiSource: 'proposal_card',
+                                        })
+                                        queryClient.invalidateQueries({ queryKey: ['deciding-proposals'] })
+                                      } catch (error) {
+                                        console.error('Failed to request analyst input:', error)
+                                      }
+                                    }}
                                     onClick={() => {
                                       setSelectedTradeId(group.tradeId)
                                       setSelectedTradeInitialTab('proposals')
@@ -1861,6 +2143,160 @@ export function TradeQueuePage() {
                             )}
                           </div>
                         )})}
+
+                        {/* Pair Trade Proposals in Deciding View */}
+                        {fourthColumnView === 'deciding' && pairTradeProposalGroups.map(group => {
+                          const isExpanded = expandedProposalGroups.has(group.pairTradeId)
+                          // Get pair trade info from pairTradeGroups
+                          const pairTradeInfo = pairTradeGroups.get(group.pairTradeId)
+                          const pairTradeName = pairTradeInfo?.pairTrade?.name || 'Pair Trade'
+
+                          return (
+                            <div key={group.pairTradeId} className="rounded-lg border border-purple-200 dark:border-purple-700 overflow-hidden">
+                              {/* Pair Trade Header - Collapsible */}
+                              <div
+                                className="flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleProposalGroup(group.pairTradeId)
+                                }}
+                              >
+                                <ChevronRight className={clsx(
+                                  "h-4 w-4 text-purple-400 transition-transform",
+                                  isExpanded && "rotate-90"
+                                )} />
+                                <Link2 className="h-4 w-4 text-purple-500" />
+                                <span className="font-bold text-purple-900 dark:text-purple-100">{pairTradeName}</span>
+                                <span className="text-xs text-purple-500 dark:text-purple-400 tabular-nums ml-auto">
+                                  {group.proposals.length} {group.proposals.length === 1 ? 'proposal' : 'proposals'}
+                                </span>
+                              </div>
+                              {/* Proposal Cards - Collapsed by default */}
+                              {isExpanded && (
+                                <div className="border-t border-purple-200 dark:border-purple-700 bg-gray-50 dark:bg-gray-800/50 p-2 space-y-2">
+                                  {group.proposals.map(proposal => {
+                                    // Parse sizing_context to get all legs
+                                    let sizingContext = proposal.sizing_context
+                                    if (typeof sizingContext === 'string') {
+                                      try { sizingContext = JSON.parse(sizingContext) } catch { sizingContext = null }
+                                    }
+                                    const legs = sizingContext?.legs || []
+                                    const portfolioName = proposal.portfolios?.name || 'Unknown Portfolio'
+                                    const proposerName = proposal.users?.first_name && proposal.users?.last_name
+                                      ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                      : proposal.users?.email?.split('@')[0] || 'Unknown'
+                                    const isMyProposal = proposal.user_id === user?.id
+
+                                    return (
+                                      <div
+                                        key={proposal.id}
+                                        className={clsx(
+                                          "bg-white dark:bg-gray-800 rounded-lg border p-3 transition-all cursor-pointer hover:shadow-md",
+                                          isMyProposal
+                                            ? "border-primary-300 dark:border-primary-700 ring-1 ring-primary-200 dark:ring-primary-800"
+                                            : "border-gray-200 dark:border-gray-700"
+                                        )}
+                                        onClick={() => {
+                                          setSelectedTradeId(group.pairTradeId)
+                                          setSelectedTradeInitialTab('proposals')
+                                        }}
+                                      >
+                                        {/* Header: Legs for Portfolio */}
+                                        <div className="flex items-start justify-between mb-2">
+                                          <div className="flex-1">
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                                              {legs.map((leg: any, idx: number) => (
+                                                <span key={idx} className="flex items-center gap-1">
+                                                  <span className={clsx(
+                                                    "font-bold uppercase",
+                                                    leg.action === 'buy' ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                                                  )}>
+                                                    {leg.action === 'buy' ? 'BUY' : 'SELL'}
+                                                  </span>
+                                                  <span className="font-bold text-gray-900 dark:text-white">{leg.symbol}</span>
+                                                  {leg.weight != null && (
+                                                    <span className="text-gray-500 dark:text-gray-400">
+                                                      {leg.weight.toFixed(1)}%
+                                                    </span>
+                                                  )}
+                                                </span>
+                                              ))}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                              <span className="text-gray-400">for</span>
+                                              <Briefcase className="h-3 w-3" />
+                                              <span className="font-medium text-gray-600 dark:text-gray-300">{portfolioName}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Proposer + Waiting Status */}
+                                        <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mb-2">
+                                          <User className="h-3 w-3" />
+                                          <span className="font-medium text-gray-700 dark:text-gray-300">{proposerName}</span>
+                                          {isMyProposal && !isPMForPortfolioId(proposal.portfolio_id) && (
+                                            <span className="ml-1 text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                                              Waiting for PM
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* PM Decision Actions */}
+                                        {isPMForPortfolioId(proposal.portfolio_id) && (
+                                          <div onClick={(e) => e.stopPropagation()}>
+                                            <div className="flex items-center gap-1.5 mt-2 mb-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+                                              <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                              <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Decision required</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                              <button
+                                                onClick={() => {
+                                                  proposalDecisionMutation.mutate({
+                                                    proposalId: proposal.id,
+                                                    decision: 'accept',
+                                                  })
+                                                }}
+                                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors"
+                                              >
+                                                <Check className="h-3 w-3" />
+                                                Accept
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  proposalDecisionMutation.mutate({
+                                                    proposalId: proposal.id,
+                                                    decision: 'reject',
+                                                  })
+                                                }}
+                                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors"
+                                              >
+                                                <XCircle className="h-3 w-3" />
+                                                Reject
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Withdraw button for own proposals */}
+                                        {isMyProposal && !isPMForPortfolioId(proposal.portfolio_id) && (
+                                          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
+                                            <button
+                                              onClick={() => withdrawProposalMutation.mutate(proposal.id)}
+                                              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                                            >
+                                              <Trash2 className="h-3 w-3" />
+                                              Withdraw proposal
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
 
                         {/* Non-Deciding Views: Show Trade Cards */}
                         {fourthColumnView !== 'deciding' && (
@@ -1896,7 +2332,8 @@ export function TradeQueuePage() {
                         {/* Empty States */}
                         {fourthColumnView === 'deciding' &&
                           pairTradesByStatus.deciding.length === 0 &&
-                          groupedDecidingProposals.length === 0 && (
+                          groupedDecidingProposals.length === 0 &&
+                          pairTradeProposalGroups.length === 0 && (
                             <div className="flex flex-col items-center justify-center py-12 text-center">
                               <Scale className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-4" />
                               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No trade proposals pending decision</p>
@@ -1971,7 +2408,7 @@ export function TradeQueuePage() {
       )}
 
       {/* Proposal Modal - shown when moving to Deciding */}
-      {showProposalModal && proposalTrade && (
+      {showProposalModal && (proposalTrade || proposalPairTrade) && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/50"
@@ -1979,6 +2416,7 @@ export function TradeQueuePage() {
               setShowProposalModal(false)
               setProposalTradeId(null)
               setProposalTrade(null)
+              setProposalPairTrade(null)
               setPortfolioProposals({})
               setLinkedPortfolios([])
               setExpandedProposalInputs(new Set())
@@ -1987,23 +2425,304 @@ export function TradeQueuePage() {
           <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 h-[70vh] flex flex-col">
             {/* Fixed Header */}
             <div className="flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                Submit Proposal for {proposalTrade.assets?.symbol}
-                {proposalTrade.assets?.company_name && (
-                  <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-                    {proposalTrade.assets.company_name}
-                  </span>
-                )}
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {linkedPortfolios.length > 1
-                  ? `This trade idea is linked to ${linkedPortfolios.length} portfolios. Review current positions and enter your sizing proposal for each.`
-                  : 'Review the current position and enter your sizing proposal.'}
-              </p>
+              {proposalPairTrade ? (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                      <Link2 className="h-4 w-4" />
+                      <span className="text-sm">Pair Trade</span>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      Submit Proposal
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm mb-2">
+                    <span className="text-green-600 dark:text-green-400 font-medium">
+                      BUY: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'long' || (l.pair_leg_type === null && l.action === 'buy')).map(l => l.assets?.symbol).join(', ') || '—'}
+                    </span>
+                    <span className="text-gray-400">/</span>
+                    <span className="text-red-600 dark:text-red-400 font-medium">
+                      SELL: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'short' || (l.pair_leg_type === null && l.action === 'sell')).map(l => l.assets?.symbol).join(', ') || '—'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Moving this pair trade to Deciding. Add sizing proposals for each leg.
+                  </p>
+                </>
+              ) : proposalTrade ? (
+                <>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                    Submit Proposal for {proposalTrade.assets?.symbol}
+                    {proposalTrade.assets?.company_name && (
+                      <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                        {proposalTrade.assets.company_name}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {linkedPortfolios.length > 1
+                      ? `This trade idea is linked to ${linkedPortfolios.length} portfolios. Review current positions and enter your sizing proposal for each.`
+                      : 'Review the current position and enter your sizing proposal.'}
+                  </p>
+                </>
+              ) : null}
             </div>
 
             {/* Scrollable Content */}
-            {linkedPortfolios.length === 0 ? (
+            {proposalPairTrade ? (
+              /* Pair Trade Proposal Content - show portfolio sizing for each leg */
+              linkedPortfolios.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                  <div className="animate-pulse">Loading portfolios...</div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto mt-4 space-y-4 pr-1">
+                  {/* Organize by portfolio, showing legs within each */}
+                  {linkedPortfolios.map((portfolio) => {
+                    const longLegs = proposalPairTrade.legs.filter(l => l.pair_leg_type === 'long' || (l.pair_leg_type === null && l.action === 'buy'))
+                    const shortLegs = proposalPairTrade.legs.filter(l => l.pair_leg_type === 'short' || (l.pair_leg_type === null && l.action === 'sell'))
+
+                    // Check if any leg in this portfolio has a proposal
+                    const hasAnyProposal = proposalPairTrade.legs.some(leg => {
+                      const proposal = portfolioProposals[`${leg.id}:${portfolio.id}`]
+                      return proposal?.value
+                    })
+
+                    const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
+                      { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
+                      { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                      { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
+                      { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
+                    ]
+
+                    return (
+                      <div
+                        key={portfolio.id}
+                        className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+                      >
+                        {/* Portfolio Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Briefcase className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              {portfolio.name}
+                            </span>
+                          </div>
+                          {hasAnyProposal && (
+                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
+                          )}
+                        </div>
+
+                        {/* Legs Grid - Buy and Sell side by side */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Buy Side */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <TrendingUp className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                              <span className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase">Buy</span>
+                            </div>
+                            {longLegs.map((leg) => {
+                              const proposalKey = `${leg.id}:${portfolio.id}`
+                              const proposal = portfolioProposals[proposalKey]
+                              const sizingMode = proposal?.sizingMode || 'weight'
+                              const legContext = legHoldingsContext[proposalKey]
+
+                              return (
+                                <div key={leg.id} className="p-2 rounded border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-sm font-semibold text-green-700 dark:text-green-300">
+                                      {leg.assets?.symbol}
+                                    </span>
+                                    {proposal?.value && (
+                                      <span className="text-xs text-green-600 dark:text-green-400">
+                                        {proposal.value}%
+                                      </span>
+                                    )}
+                                  </div>
+                                  {/* Current Position Context */}
+                                  <div className="grid grid-cols-3 gap-1 mb-1.5 text-[10px]">
+                                    <div>
+                                      <span className="text-gray-500 dark:text-gray-400">Port: </span>
+                                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                                        {legContext?.currentWeight?.toFixed(2) ?? '0.00'}%
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500 dark:text-gray-400">Bench: </span>
+                                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : '—'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500 dark:text-gray-400">Active: </span>
+                                      <span className={clsx(
+                                        "font-medium",
+                                        legContext?.activeWeight === null ? "text-gray-700 dark:text-gray-300" :
+                                        legContext.activeWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                        legContext.activeWeight < 0 ? "text-red-600 dark:text-red-400" :
+                                        "text-gray-700 dark:text-gray-300"
+                                      )}>
+                                        {legContext?.activeWeight !== null
+                                          ? `${legContext.activeWeight >= 0 ? '+' : ''}${legContext.activeWeight.toFixed(2)}%`
+                                          : '—'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {/* Sizing Mode Selector */}
+                                  <div className="grid grid-cols-4 gap-0.5 mb-1.5">
+                                    {sizingModes.map((mode) => {
+                                      const isDisabled = (mode.value === 'active_weight' || mode.value === 'delta_benchmark') && legContext?.benchmarkWeight === null
+                                      return (
+                                        <button
+                                          key={mode.value}
+                                          type="button"
+                                          disabled={isDisabled}
+                                          onClick={() => setPortfolioProposals(prev => ({
+                                            ...prev,
+                                            [proposalKey]: { ...prev[proposalKey], sizingMode: mode.value, value: '' }
+                                          }))}
+                                          className={clsx(
+                                            "px-0.5 py-0.5 text-[10px] rounded border transition-colors truncate",
+                                            sizingMode === mode.value
+                                              ? "bg-green-100 dark:bg-green-900/30 border-green-500 text-green-700 dark:text-green-300"
+                                              : isDisabled
+                                              ? "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 cursor-not-allowed"
+                                              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-green-400"
+                                          )}
+                                          title={isDisabled ? 'No benchmark data' : mode.label}
+                                        >
+                                          {mode.label}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={proposal?.value || ''}
+                                    onChange={(e) => setPortfolioProposals(prev => ({
+                                      ...prev,
+                                      [proposalKey]: { ...prev[proposalKey], sizingMode: sizingMode, value: e.target.value }
+                                    }))}
+                                    placeholder={sizingModes.find(m => m.value === sizingMode)?.placeholder || ''}
+                                    className="w-full h-6 px-2 text-xs border border-green-300 dark:border-green-700 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                                  />
+                                </div>
+                              )
+                            })}
+                            {longLegs.length === 0 && (
+                              <div className="text-xs text-gray-400 italic p-2">No long positions</div>
+                            )}
+                          </div>
+
+                          {/* Sell Side */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <TrendingDown className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+                              <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Sell</span>
+                            </div>
+                            {shortLegs.map((leg) => {
+                              const proposalKey = `${leg.id}:${portfolio.id}`
+                              const proposal = portfolioProposals[proposalKey]
+                              const sizingMode = proposal?.sizingMode || 'weight'
+                              const legContext = legHoldingsContext[proposalKey]
+
+                              return (
+                                <div key={leg.id} className="p-2 rounded border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                                      {leg.assets?.symbol}
+                                    </span>
+                                    {proposal?.value && (
+                                      <span className="text-xs text-red-600 dark:text-red-400">
+                                        {proposal.value}%
+                                      </span>
+                                    )}
+                                  </div>
+                                  {/* Current Position Context */}
+                                  <div className="grid grid-cols-3 gap-1 mb-1.5 text-[10px]">
+                                    <div>
+                                      <span className="text-gray-500 dark:text-gray-400">Port: </span>
+                                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                                        {legContext?.currentWeight?.toFixed(2) ?? '0.00'}%
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500 dark:text-gray-400">Bench: </span>
+                                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : '—'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500 dark:text-gray-400">Active: </span>
+                                      <span className={clsx(
+                                        "font-medium",
+                                        legContext?.activeWeight === null ? "text-gray-700 dark:text-gray-300" :
+                                        legContext.activeWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                        legContext.activeWeight < 0 ? "text-red-600 dark:text-red-400" :
+                                        "text-gray-700 dark:text-gray-300"
+                                      )}>
+                                        {legContext?.activeWeight !== null
+                                          ? `${legContext.activeWeight >= 0 ? '+' : ''}${legContext.activeWeight.toFixed(2)}%`
+                                          : '—'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {/* Sizing Mode Selector */}
+                                  <div className="grid grid-cols-4 gap-0.5 mb-1.5">
+                                    {sizingModes.map((mode) => {
+                                      const isDisabled = (mode.value === 'active_weight' || mode.value === 'delta_benchmark') && legContext?.benchmarkWeight === null
+                                      return (
+                                        <button
+                                          key={mode.value}
+                                          type="button"
+                                          disabled={isDisabled}
+                                          onClick={() => setPortfolioProposals(prev => ({
+                                            ...prev,
+                                            [proposalKey]: { ...prev[proposalKey], sizingMode: mode.value, value: '' }
+                                          }))}
+                                          className={clsx(
+                                            "px-0.5 py-0.5 text-[10px] rounded border transition-colors truncate",
+                                            sizingMode === mode.value
+                                              ? "bg-red-100 dark:bg-red-900/30 border-red-500 text-red-700 dark:text-red-300"
+                                              : isDisabled
+                                              ? "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 cursor-not-allowed"
+                                              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-red-400"
+                                          )}
+                                          title={isDisabled ? 'No benchmark data' : mode.label}
+                                        >
+                                          {mode.label}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={proposal?.value || ''}
+                                    onChange={(e) => setPortfolioProposals(prev => ({
+                                      ...prev,
+                                      [proposalKey]: { ...prev[proposalKey], sizingMode: sizingMode, value: e.target.value }
+                                    }))}
+                                    placeholder={sizingModes.find(m => m.value === sizingMode)?.placeholder || ''}
+                                    className="w-full h-6 px-2 text-xs border border-red-300 dark:border-red-700 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                </div>
+                              )
+                            })}
+                            {shortLegs.length === 0 && (
+                              <div className="text-xs text-gray-400 italic p-2">No short positions</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Enter sizing proposals for each leg within each portfolio. Leave empty to skip.
+                  </p>
+                </div>
+              )
+            ) : linkedPortfolios.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
                 <div className="animate-pulse">Loading portfolios...</div>
               </div>
@@ -2228,12 +2947,15 @@ export function TradeQueuePage() {
                   setShowProposalModal(false)
                   setProposalTradeId(null)
                   setProposalTrade(null)
+                  setProposalPairTrade(null)
                   setPortfolioProposals({})
                   setLinkedPortfolios([])
                 }}
               >
                 Cancel
               </Button>
+              {/* Regular trade submit button */}
+              {!proposalPairTrade && (
               <Button
                 onClick={async () => {
                   if (!user || !proposalTradeId) return
@@ -2255,6 +2977,10 @@ export function TradeQueuePage() {
                       if (proposal && proposal.value) {
                         const numValue = parseFloat(proposal.value)
                         if (isNaN(numValue)) continue
+
+                        // Determine proposal_type based on user's role for this portfolio
+                        const userRole = await getUserPortfolioRole(user.id, portfolio.id)
+                        const proposalType = userRole === 'pm' ? 'pm_initiated' : 'analyst'
 
                         // Convert sizing mode to database format and calculate weight
                         let weight: number | null = null
@@ -2307,6 +3033,7 @@ export function TradeQueuePage() {
                           sizing_mode: sizingMode,
                           sizing_context: sizingContext,
                           notes: proposal.notes || null,
+                          proposal_type: proposalType,
                         }, context)
                       }
                     }
@@ -2322,6 +3049,7 @@ export function TradeQueuePage() {
                     setShowProposalModal(false)
                     setProposalTradeId(null)
                     setProposalTrade(null)
+                    setProposalPairTrade(null)
                     setPortfolioProposals({})
                     setLinkedPortfolios([])
                   } catch (error) {
@@ -2336,6 +3064,165 @@ export function TradeQueuePage() {
                 <Scale className="h-4 w-4 mr-1.5" />
                 Submit Proposal
               </Button>
+              )}
+              {/* Pair Trade Submit - creates ONE proposal per portfolio for the pair trade */}
+              {proposalPairTrade && (
+                <Button
+                  onClick={async () => {
+                    if (!user) return
+                    setIsSubmittingProposal(true)
+                    try {
+                      // Build action context
+                      const context: ActionContext = {
+                        actorId: user.id,
+                        actorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '',
+                        actorEmail: user.email,
+                        actorRole: (user.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                        requestId: crypto.randomUUID(),
+                        uiSource: 'modal',
+                      }
+
+                      // Create ONE proposal per portfolio for the entire pair trade
+                      for (const portfolio of linkedPortfolios) {
+                        // First, delete any old per-leg proposals for this portfolio
+                        // This ensures we have a clean state for the new unified proposal
+                        const legIds = proposalPairTrade.legs.map(l => l.id)
+                        await supabase
+                          .from('trade_proposals')
+                          .delete()
+                          .in('trade_queue_item_id', legIds)
+                          .eq('portfolio_id', portfolio.id)
+                          .eq('user_id', user.id)
+
+                        // Determine proposal_type based on user's role for this portfolio
+                        const userRole = await getUserPortfolioRole(user.id, portfolio.id)
+                        const proposalType = userRole === 'pm' ? 'pm_initiated' : 'analyst'
+
+                        // Collect sizing for ALL legs in this portfolio
+                        const legSizing: Array<{
+                          legId: string
+                          symbol: string
+                          action: 'buy' | 'sell'
+                          weight: number | null
+                          sizingMode: string
+                          inputValue: number | null
+                        }> = []
+
+                        let hasAnySizing = false
+
+                        for (const leg of proposalPairTrade.legs) {
+                          const proposalKey = `${leg.id}:${portfolio.id}`
+                          const proposal = portfolioProposals[proposalKey]
+                          const legContext = legHoldingsContext[proposalKey]
+                          const isLong = leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+
+                          if (proposal && proposal.value) {
+                            const numValue = parseFloat(proposal.value)
+                            if (!isNaN(numValue)) {
+                              hasAnySizing = true
+
+                              const currentWeight = legContext?.currentWeight ?? 0
+                              const benchmarkWeight = legContext?.benchmarkWeight ?? null
+                              const activeWeight = legContext?.activeWeight ?? null
+
+                              let weight: number | null = null
+                              let sizingMode = proposal.sizingMode
+
+                              switch (proposal.sizingMode) {
+                                case 'weight':
+                                  weight = numValue
+                                  break
+                                case 'delta_weight':
+                                  weight = currentWeight + numValue
+                                  break
+                                case 'active_weight':
+                                  if (benchmarkWeight !== null) {
+                                    weight = benchmarkWeight + numValue
+                                  }
+                                  break
+                                case 'delta_benchmark':
+                                  if (benchmarkWeight !== null && activeWeight !== null) {
+                                    weight = benchmarkWeight + (activeWeight + numValue)
+                                  }
+                                  break
+                              }
+
+                              legSizing.push({
+                                legId: leg.id,
+                                symbol: leg.assets?.symbol || '?',
+                                action: isLong ? 'buy' : 'sell',
+                                weight,
+                                sizingMode,
+                                inputValue: numValue,
+                              })
+                            }
+                          } else {
+                            // Include leg even without sizing so it shows in display
+                            legSizing.push({
+                              legId: leg.id,
+                              symbol: leg.assets?.symbol || '?',
+                              action: isLong ? 'buy' : 'sell',
+                              weight: null,
+                              sizingMode: 'weight',
+                              inputValue: null,
+                            })
+                          }
+                        }
+
+                        // Only create proposal if we have at least one leg with sizing
+                        if (hasAnySizing) {
+                          // Use first leg as the reference trade_queue_item_id
+                          const firstLeg = proposalPairTrade.legs[0]
+
+                          // Store all leg sizing in the sizing_context
+                          const sizingContext = {
+                            isPairTrade: true,
+                            pairTradeId: proposalPairTrade.pairTradeId,
+                            legs: legSizing,
+                          }
+
+                          await upsertProposal({
+                            trade_queue_item_id: firstLeg.id,
+                            portfolio_id: portfolio.id,
+                            weight: null, // Weight is per-leg, stored in sizing_context
+                            shares: null,
+                            sizing_mode: 'weight' as TradeSizingMode,
+                            sizing_context: sizingContext,
+                            notes: null,
+                            proposal_type: proposalType,
+                          }, context)
+                        }
+                      }
+
+                      // Don't move the pair trade - it stays in its current stage
+                      // The proposal cards will appear in the Deciding column
+
+                      // Invalidate caches
+                      queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
+                      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+                      queryClient.invalidateQueries({ queryKey: ['deciding-proposals'] })
+                      queryClient.invalidateQueries({ queryKey: ['trade-proposals', proposalPairTrade.legs[0]?.id] })
+
+                      // Close modal and reset
+                      setShowProposalModal(false)
+                      setProposalTradeId(null)
+                      setProposalTrade(null)
+                      setProposalPairTrade(null)
+                      setPortfolioProposals({})
+                      setLinkedPortfolios([])
+                    } catch (error) {
+                      console.error('Failed to submit pair trade proposals:', error)
+                    } finally {
+                      setIsSubmittingProposal(false)
+                    }
+                  }}
+                  disabled={isSubmittingProposal || linkedPortfolios.length === 0}
+                  loading={isSubmittingProposal}
+                >
+                  <Scale className="h-4 w-4 mr-1.5" />
+                  Submit Proposal
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -2351,9 +3238,16 @@ interface PairTradeCardProps {
   pairTrade: any
   legs: TradeQueueItemWithDetails[]
   isDragging: boolean
+  expressionCounts?: Map<string, { count: number; labNames: string[]; labIds: string[]; portfolioIds: string[]; portfolioNames: string[]; proposalCount?: number; portfolioProposalCounts?: Map<string, number>; trackCounts?: { total: number; committed: number } }>
+  proposals?: Map<string, ProposalData[]>  // Proposals by leg ID
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: () => void
   onPairClick: (pairId: string) => void
+  onLabClick?: (labId: string, labName: string, portfolioId: string) => void
+  canMoveLeft?: boolean
+  canMoveRight?: boolean
+  onMoveLeft?: () => void
+  onMoveRight?: () => void
 }
 
 function PairTradeCard({
@@ -2361,19 +3255,104 @@ function PairTradeCard({
   pairTrade,
   legs,
   isDragging,
+  proposals,
+  expressionCounts,
   onDragStart,
   onDragEnd,
-  onPairClick
+  onPairClick,
+  onLabClick,
+  canMoveLeft,
+  canMoveRight,
+  onMoveLeft,
+  onMoveRight
 }: PairTradeCardProps) {
-  // Sort legs: long first, then short
-  const sortedLegs = [...legs].sort((a, b) => {
-    if (a.pair_leg_type === 'long' && b.pair_leg_type === 'short') return -1
-    if (a.pair_leg_type === 'short' && b.pair_leg_type === 'long') return 1
-    return 0
-  })
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [showLabsDropdown, setShowLabsDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const longLeg = sortedLegs.find(l => l.pair_leg_type === 'long')
-  const shortLeg = sortedLegs.find(l => l.pair_leg_type === 'short')
+  // Helper to determine if a leg is long (buy) or short (sell)
+  const isLongLeg = (leg: TradeQueueItemWithDetails) =>
+    leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+  const isShortLeg = (leg: TradeQueueItemWithDetails) =>
+    leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && leg.action === 'sell')
+
+  // Separate long and short legs
+  const longLegs = legs.filter(isLongLeg)
+  const shortLegs = legs.filter(isShortLeg)
+
+  const longSymbols = longLegs.map(l => l.assets?.symbol).filter(Boolean).join(', ') || '?'
+  const shortSymbols = shortLegs.map(l => l.assets?.symbol).filter(Boolean).join(', ') || '?'
+
+  // Get info from first leg for author, time, visibility
+  const firstLeg = legs[0]
+  const creatorName = firstLeg?.users?.first_name
+    ? `${firstLeg.users.first_name}${firstLeg.users.last_name ? ' ' + firstLeg.users.last_name[0] + '.' : ''}`
+    : firstLeg?.users?.email?.split('@')[0] || 'Unknown'
+
+  // Format relative time
+  const getRelativeTime = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  // Aggregate comments and votes from all legs
+  const totalComments = legs.reduce((sum, leg) => sum + (leg.trade_queue_comments?.length || 0), 0)
+  const totalApproves = legs.reduce((sum, leg) => sum + (leg.vote_summary?.approve || 0), 0)
+  const totalRejects = legs.reduce((sum, leg) => sum + (leg.vote_summary?.reject || 0), 0)
+
+  // Get lab info from first leg (all legs should be in same labs)
+  const labInfo = firstLeg ? expressionCounts?.get(firstLeg.id) : undefined
+  const labCount = labInfo?.count || 0
+  const hasMultipleLabs = labCount > 1
+
+  // Collect all proposals for this pair trade's legs
+  const pairTradeProposals = useMemo(() => {
+    if (!proposals) return []
+    const allProposals: ProposalData[] = []
+    for (const leg of legs) {
+      const legProposals = proposals.get(leg.id) || []
+      allProposals.push(...legProposals)
+    }
+    return allProposals
+  }, [proposals, legs])
+
+  // Group proposals by portfolio for display
+  const proposalsByPortfolio = useMemo(() => {
+    const map = new Map<string, { portfolioName: string; proposals: ProposalData[] }>()
+    for (const p of pairTradeProposals) {
+      const portfolioId = p.portfolio_id
+      const portfolioName = (p as any).portfolios?.name || 'Unknown'
+      if (!map.has(portfolioId)) {
+        map.set(portfolioId, { portfolioName, proposals: [] })
+      }
+      map.get(portfolioId)!.proposals.push(p)
+    }
+    return map
+  }, [pairTradeProposals])
+
+  const hasProposals = pairTradeProposals.length > 0
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowLabsDropdown(false)
+      }
+    }
+    if (showLabsDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showLabsDropdown])
 
   return (
     <div
@@ -2382,71 +3361,297 @@ function PairTradeCard({
       onDragEnd={onDragEnd}
       onClick={() => onPairClick(pairTradeId)}
       className={clsx(
-        "bg-white dark:bg-gray-800 rounded-lg border-2 shadow-sm transition-all cursor-pointer",
+        "relative group bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer",
         isDragging && "opacity-50 rotate-2 scale-105",
-        "border-purple-300 dark:border-purple-700 hover:shadow-md hover:border-purple-400 dark:hover:border-purple-600"
+        "border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600"
       )}
     >
+      {/* Left arrow - move to previous status */}
+      {canMoveLeft && onMoveLeft && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveLeft()
+          }}
+          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full p-1 shadow-md hover:bg-gray-50 dark:hover:bg-gray-600"
+          title="Move to previous stage"
+        >
+          <ChevronLeft className="h-4 w-4 text-gray-600 dark:text-gray-300" />
+        </button>
+      )}
+
+      {/* Right arrow - move to next status */}
+      {canMoveRight && onMoveRight && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveRight()
+          }}
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full p-1 shadow-md hover:bg-gray-50 dark:hover:bg-gray-600"
+          title="Move to next stage"
+        >
+          <ChevronRight className="h-4 w-4 text-gray-600 dark:text-gray-300" />
+        </button>
+      )}
+
       <div className="p-3">
-        {/* Pairs Trade Header */}
-        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-purple-100 dark:border-purple-800">
-          <GripVertical className="h-4 w-4 text-gray-400 cursor-grab" />
-          <Link2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-          <span className="font-semibold text-purple-700 dark:text-purple-300 truncate flex-1">
-            {pairTrade.name || 'Pairs Trade'}
+        {/* Line 1: Chain link icon + BUY tickers / SELL tickers */}
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5 text-sm flex-1 min-w-0">
+            <Link2 className="h-4 w-4 text-purple-500 dark:text-purple-400 flex-shrink-0" />
+            <span className="font-semibold text-green-600 dark:text-green-400">BUY</span>
+            <span className="font-semibold text-gray-900 dark:text-white truncate">{longSymbols}</span>
+            <span className="text-gray-400 dark:text-gray-500">/</span>
+            <span className="font-semibold text-red-600 dark:text-red-400">SELL</span>
+            <span className="font-semibold text-gray-900 dark:text-white truncate">{shortSymbols}</span>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded(!isExpanded)
+            }}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+          >
+            <ChevronDown className={clsx("h-4 w-4 text-gray-400 transition-transform", isExpanded && "rotate-180")} />
+          </button>
+        </div>
+
+        {/* Line 2: Portfolio + Urgency (like TradeQueueCard) */}
+        <div className="flex items-center gap-2 mb-2 relative" ref={dropdownRef}>
+          {labCount > 0 ? (
+            // In trade labs
+            hasMultipleLabs ? (
+              // Multiple labs - dropdown with progress
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowLabsDropdown(!showLabsDropdown)
+                }}
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex items-center gap-1"
+              >
+                <span className="text-primary-600 dark:text-primary-400 font-medium">{labInfo?.trackCounts?.total || labCount} portfolios</span>
+                <ChevronDown className={clsx("h-3 w-3 transition-transform", showLabsDropdown && "rotate-180")} />
+              </button>
+            ) : (
+              // Single lab - link directly
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (labInfo && onLabClick) {
+                    onLabClick(labInfo.labIds[0], labInfo.labNames[0], labInfo.portfolioIds[0])
+                  }
+                }}
+                className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"
+              >
+                <span className="text-primary-600 dark:text-primary-400 font-medium hover:underline">{labInfo?.portfolioNames?.[0] || labInfo?.labNames[0]}</span>
+              </button>
+            )
+          ) : firstLeg?.portfolios?.name ? (
+            // Not in labs but has portfolio
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="font-medium">{firstLeg.portfolios.name}</span>
+            </span>
+          ) : null}
+
+          <span className={clsx(
+            "text-xs px-2 py-0.5 rounded-full",
+            URGENCY_CONFIG[pairTrade.urgency as TradeUrgency]?.color || URGENCY_CONFIG.medium.color
+          )}>
+            {pairTrade.urgency || 'medium'}
           </span>
-        </div>
 
-        {/* Legs Display */}
-        <div className="space-y-2">
-          {/* Long Leg */}
-          {longLeg && (
-            <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
-              <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-              <span className="text-xs font-medium text-green-700 dark:text-green-300 uppercase">Long</span>
-              <span className="font-semibold text-gray-900 dark:text-white">{longLeg.assets?.symbol}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{longLeg.assets?.company_name}</span>
-              {longLeg.proposed_weight && (
-                <span className="text-xs font-medium text-green-600 dark:text-green-400">+{longLeg.proposed_weight.toFixed(1)}%</span>
-              )}
-              {longLeg.proposed_shares && !longLeg.proposed_weight && (
-                <span className="text-xs font-medium text-green-600 dark:text-green-400">+{longLeg.proposed_shares.toLocaleString()}</span>
-              )}
+          {/* Labs dropdown */}
+          {showLabsDropdown && labInfo && labCount > 0 && (
+            <div
+              className="absolute left-0 top-full mt-0.5 z-50 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-200 dark:border-gray-700 py-0.5 min-w-[160px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {labInfo.portfolioNames?.map((portfolioName, idx) => {
+                const portfolioId = labInfo.portfolioIds[idx]
+                const proposalCount = labInfo.portfolioProposalCounts?.get(portfolioId) || 0
+                const hasProposals = proposalCount > 0
+
+                return (
+                  <button
+                    key={labInfo.labIds[idx]}
+                    onClick={() => {
+                      onLabClick?.(labInfo.labIds[idx], labInfo.labNames[idx], portfolioId)
+                      setShowLabsDropdown(false)
+                    }}
+                    className={clsx(
+                      "w-full flex items-center justify-between gap-1.5 px-2 py-1 text-xs text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                      hasProposals
+                        ? "text-amber-600 dark:text-amber-400 font-medium"
+                        : "text-gray-700 dark:text-gray-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Briefcase className={clsx(
+                        "h-3 w-3 flex-shrink-0",
+                        hasProposals ? "text-amber-500" : "text-gray-400"
+                      )} />
+                      <span className="truncate">{portfolioName}</span>
+                    </div>
+                    {hasProposals && (
+                      <span className="text-amber-600 dark:text-amber-400 tabular-nums flex-shrink-0">
+                        {proposalCount}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
-
-          {/* Short Leg */}
-          {shortLeg && (
-            <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
-              <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-              <span className="text-xs font-medium text-red-700 dark:text-red-300 uppercase">Short</span>
-              <span className="font-semibold text-gray-900 dark:text-white">{shortLeg.assets?.symbol}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{shortLeg.assets?.company_name}</span>
-              {shortLeg.proposed_weight && (
-                <span className="text-xs font-medium text-red-600 dark:text-red-400">-{shortLeg.proposed_weight.toFixed(1)}%</span>
-              )}
-              {shortLeg.proposed_shares && !shortLeg.proposed_weight && (
-                <span className="text-xs font-medium text-red-600 dark:text-red-400">-{shortLeg.proposed_shares.toLocaleString()}</span>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Rationale preview */}
+        {/* Rationale - prominent like TradeQueueCard */}
         {pairTrade.rationale && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-2">
+          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mb-2 leading-relaxed">
             {pairTrade.rationale}
           </p>
         )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
-          <span className={clsx("text-xs px-2 py-0.5 rounded-full", URGENCY_CONFIG[pairTrade.urgency as TradeUrgency]?.color || URGENCY_CONFIG.medium.color)}>
-            {pairTrade.urgency || 'medium'}
-          </span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {legs.length} legs
-          </span>
+        {/* Collapsible Legs Display */}
+        {isExpanded && (
+          <div className="space-y-2 mb-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+            {/* Buy Legs */}
+            {longLegs.map(leg => (
+              <div key={leg.id} className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
+                <span className="text-xs font-medium text-green-700 dark:text-green-300 uppercase">Buy</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{leg.assets?.company_name}</span>
+                {leg.proposed_weight && (
+                  <span className="text-xs font-medium text-green-600 dark:text-green-400">+{leg.proposed_weight.toFixed(1)}%</span>
+                )}
+                {leg.proposed_shares && !leg.proposed_weight && (
+                  <span className="text-xs font-medium text-green-600 dark:text-green-400">+{leg.proposed_shares.toLocaleString()}</span>
+                )}
+              </div>
+            ))}
+
+            {/* Sell Legs */}
+            {shortLegs.map(leg => (
+              <div key={leg.id} className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
+                <span className="text-xs font-medium text-red-700 dark:text-red-300 uppercase">Sell</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{leg.assets?.company_name}</span>
+                {leg.proposed_weight && (
+                  <span className="text-xs font-medium text-red-600 dark:text-red-400">-{leg.proposed_weight.toFixed(1)}%</span>
+                )}
+                {leg.proposed_shares && !leg.proposed_weight && (
+                  <span className="text-xs font-medium text-red-600 dark:text-red-400">-{leg.proposed_shares.toLocaleString()}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Proposals Section - shown when pair trade has proposals (in Deciding) */}
+        {hasProposals && (
+          <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 -mx-3 px-3 pb-2">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                {pairTradeProposals.length} Proposal{pairTradeProposals.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {Array.from(proposalsByPortfolio.entries()).map(([portfolioId, { portfolioName, proposals: portfolioProposals }]) => (
+                <div key={portfolioId} className="text-xs bg-white dark:bg-gray-800 rounded p-2 border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Briefcase className="h-3 w-3 text-gray-400" />
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{portfolioName}</span>
+                  </div>
+                  {/* Show all legs from sizing_context */}
+                  {portfolioProposals.map(p => {
+                    // sizing_context may be a string (from DB) or object
+                    let sizingContext = p.sizing_context
+                    if (typeof sizingContext === 'string') {
+                      try {
+                        sizingContext = JSON.parse(sizingContext)
+                      } catch {
+                        sizingContext = null
+                      }
+                    }
+                    const isPairTrade = sizingContext?.isPairTrade
+                    const contextLegs = sizingContext?.legs
+
+                    if (isPairTrade && contextLegs && contextLegs.length > 0) {
+                      // Pair trade proposal - show all legs
+                      return (
+                        <div key={p.id} className="flex flex-wrap gap-x-3 gap-y-1">
+                          {contextLegs.map((leg, idx) => (
+                            <span key={idx} className={clsx(
+                              "font-medium",
+                              leg.action === 'buy' ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                            )}>
+                              {leg.action === 'buy' ? 'BUY' : 'SELL'} {leg.symbol}: {leg.weight != null ? `${leg.weight.toFixed(1)}%` : '—'}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    } else {
+                      // Single trade proposal fallback
+                      const tradeItem = p.trade_queue_items
+                      const symbol = tradeItem?.assets?.symbol || '?'
+                      const weight = p.weight
+                      return (
+                        <span key={p.id} className="text-gray-600 dark:text-gray-400">
+                          {symbol}: {weight?.toFixed(1) ?? '?'}%
+                        </span>
+                      )
+                    }
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer: Author + Time + Visibility + Comments/Votes (like TradeQueueCard) */}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <User className="h-3 w-3" />
+            <span>{creatorName}</span>
+            <span className="text-gray-300 dark:text-gray-600">•</span>
+            <span>{firstLeg ? getRelativeTime(firstLeg.created_at) : ''}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Visibility indicator */}
+            {firstLeg?.sharing_visibility && firstLeg.sharing_visibility !== 'private' ? (
+              <div className="flex items-center gap-1 text-blue-500 dark:text-blue-400" title="Shared with portfolio members">
+                <Users className="h-3 w-3" />
+                <span className="text-[10px]">Portfolio</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1" title="Private - only visible to you">
+                <Lock className="h-3 w-3" />
+                <span className="text-[10px]">Private</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              {totalComments > 0 && (
+                <span className="flex items-center gap-0.5">
+                  <MessageSquare className="h-3 w-3" />
+                  {totalComments}
+                </span>
+              )}
+              {totalApproves > 0 && (
+                <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
+                  <ThumbsUp className="h-3 w-3" />
+                  {totalApproves}
+                </span>
+              )}
+              {totalRejects > 0 && (
+                <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
+                  <ThumbsDown className="h-3 w-3" />
+                  {totalRejects}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2468,6 +3673,23 @@ interface ProposalData {
   is_active: boolean
   created_at: string
   updated_at: string
+  // Proposal type fields
+  proposal_type?: 'analyst' | 'pm_initiated'
+  analyst_input_requested?: boolean
+  analyst_input_requested_at?: string | null
+  sizing_context?: {
+    isPairTrade?: boolean
+    pairTradeId?: string
+    legs?: Array<{
+      legId: string
+      symbol: string
+      action: 'buy' | 'sell'
+      weight: number | null
+      sizingMode?: string
+      inputValue?: number | null
+    }>
+    [key: string]: unknown
+  } | null
   // Joined data from Supabase
   portfolios?: { id: string; name: string } | null
   users?: { id: string; email: string; first_name: string | null; last_name: string | null } | null
@@ -2477,6 +3699,7 @@ interface ProposalData {
     rationale: string | null
     created_by: string | null
     assigned_to: string | null
+    pair_trade_id?: string | null
     assets: { id: string; symbol: string; company_name: string } | null
   } | null
   // Aliases for backward compatibility
@@ -2740,6 +3963,8 @@ interface ProposalCardProps {
   onAccept: (proposalId: string, overrideWeight?: number) => void
   onReject: (proposalId: string, reason?: string) => void
   onDefer: (proposalId: string, deferUntil: string) => void
+  onWithdraw?: (proposalId: string) => void
+  onRequestAnalystInput?: (proposalId: string) => void
   onClick: () => void
 }
 
@@ -2751,6 +3976,8 @@ function ProposalCard({
   onAccept,
   onReject,
   onDefer,
+  onWithdraw,
+  onRequestAnalystInput,
   onClick,
 }: ProposalCardProps) {
   const [showOverrideInput, setShowOverrideInput] = useState(false)
@@ -2759,9 +3986,9 @@ function ProposalCard({
   const [deferDate, setDeferDate] = useState('')
 
   // Use plural Supabase join names, fall back to singular aliases
-  const tradeItem = proposal.trade_queue_items || proposal.trade_queue_item
+  const tradeItem = proposal?.trade_queue_items || proposal?.trade_queue_item
   const asset = tradeItem?.assets
-  const userData = proposal.users || proposal.user
+  const userData = proposal?.users || proposal?.user
   const proposerName = userData?.first_name && userData?.last_name
     ? `${userData.first_name} ${userData.last_name}`
     : userData?.email?.split('@')[0] || 'Unknown'
@@ -2851,10 +4078,28 @@ function ProposalCard({
         </div>
       </div>
 
-      {/* Proposer */}
-      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mb-2">
+      {/* Proposer + Waiting Status */}
+      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mb-2 flex-wrap">
         <User className="h-3 w-3" />
         <span className="font-medium text-gray-700 dark:text-gray-300">{proposerName}</span>
+        {/* PM-initiated proposal badge */}
+        {proposal.proposal_type === 'pm_initiated' && (
+          <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-1.5 py-0.5 rounded">
+            PM Decision
+          </span>
+        )}
+        {/* Analyst input requested indicator */}
+        {proposal.analyst_input_requested && (
+          <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+            <Users className="h-2.5 w-2.5" />
+            Awaiting Analyst
+          </span>
+        )}
+        {isMyProposal && !isPM && !isAlreadyDecided && proposal.proposal_type !== 'pm_initiated' && (
+          <span className="ml-1 text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+            Waiting for PM
+          </span>
+        )}
       </div>
 
       {/* Notes (if any) */}
@@ -2867,6 +4112,16 @@ function ProposalCard({
       {/* PM Decision Actions - only show if not already decided */}
       {isPM && !isAlreadyDecided && (
         <div onClick={(e) => e.stopPropagation()}>
+          {/* Request Analyst Input button for PM-initiated proposals */}
+          {isMyProposal && proposal.proposal_type === 'pm_initiated' && !proposal.analyst_input_requested && onRequestAnalystInput && (
+            <button
+              onClick={() => onRequestAnalystInput(proposal.id)}
+              className="w-full mb-2 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-900/50 transition-colors"
+            >
+              <Users className="h-3 w-3" />
+              Request Analyst Input
+            </button>
+          )}
           {/* Call to action banner */}
           <div className="flex items-center gap-1.5 mt-2 mb-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
             <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
@@ -2960,6 +4215,19 @@ function ProposalCard({
           )}
         </div>
       )}
+
+      {/* Withdraw option for proposal owner - only if not already decided */}
+      {isMyProposal && !isAlreadyDecided && onWithdraw && (
+        <div onClick={(e) => e.stopPropagation()} className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => onWithdraw(proposal.id)}
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <Trash2 className="h-3 w-3" />
+            Withdraw Proposal
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -2979,10 +4247,12 @@ function groupProposalsByTradeIdea(proposals: ProposalData[]): GroupedProposals[
   const grouped = new Map<string, GroupedProposals>()
 
   proposals.forEach(proposal => {
+    if (!proposal) return // Skip null proposals
+
     const tradeId = proposal.trade_queue_item_id
     const existing = grouped.get(tradeId)
     // Use plural Supabase join names, fall back to singular aliases
-    const tradeItem = proposal.trade_queue_items || proposal.trade_queue_item
+    const tradeItem = proposal?.trade_queue_items || proposal?.trade_queue_item
 
     if (existing) {
       existing.proposals.push(proposal)
@@ -3002,15 +4272,15 @@ function groupProposalsByTradeIdea(proposals: ProposalData[]): GroupedProposals[
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
     .map(group => ({
       ...group,
-      proposals: group.proposals.sort((a, b) => {
+      proposals: group.proposals.filter(p => p != null).sort((a, b) => {
         // Owner proposals first, then by updated_at
-        const aTradeItem = a.trade_queue_items || a.trade_queue_item
-        const bTradeItem = b.trade_queue_items || b.trade_queue_item
-        const aIsOwner = a.user_id === aTradeItem?.created_by
-        const bIsOwner = b.user_id === bTradeItem?.created_by
+        const aTradeItem = a?.trade_queue_items || a?.trade_queue_item
+        const bTradeItem = b?.trade_queue_items || b?.trade_queue_item
+        const aIsOwner = a?.user_id === aTradeItem?.created_by
+        const bIsOwner = b?.user_id === bTradeItem?.created_by
         if (aIsOwner && !bIsOwner) return -1
         if (!aIsOwner && bIsOwner) return 1
-        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        return new Date(b?.updated_at || 0).getTime() - new Date(a?.updated_at || 0).getTime()
       }),
     }))
 }
@@ -3157,12 +4427,12 @@ function TradeQueueCard({
       )}
 
       <div className="p-3">
-        {/* Pairs Trade Indicator */}
+        {/* Pair Trade Indicator */}
         {item.pair_trade_id && item.pair_trades && (
           <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-purple-50 dark:bg-purple-900/20 rounded-md border border-purple-200 dark:border-purple-800">
             <Link2 className="h-3 w-3 text-purple-600 dark:text-purple-400" />
             <span className="text-xs font-medium text-purple-700 dark:text-purple-300 truncate">
-              {item.pair_trades.name || 'Pairs Trade'}
+              {item.pair_trades.name || 'Pair Trade'}
             </span>
             {item.pair_leg_type && (
               <span className={clsx(

@@ -77,6 +77,7 @@ async function fetchFeedPage(
       ? supabase
           .from('trade_queue_items')
           .select('*')
+          .eq('visibility_tier', 'active')
           .gte('created_at', timeFilter)
           .order('created_at', { ascending: false })
           .limit(PAGE_SIZE * 3)

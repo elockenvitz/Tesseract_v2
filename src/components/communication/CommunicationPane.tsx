@@ -6,6 +6,7 @@ import { MessagingSection } from './MessagingSection'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { ThoughtsSection } from './ThoughtsSection'
 import { clsx } from 'clsx'
+import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 
 interface CommunicationPaneProps {
   isOpen: boolean
@@ -26,6 +27,11 @@ interface CommunicationPaneProps {
   isFocusMode?: boolean
   onNotificationClick?: (notification: any) => void
   onOpenSettings?: () => void
+  // Sidebar store state for thoughts view
+  sidebarMode?: SidebarMode
+  selectedItem?: SelectedItem | null
+  onBackToCapture?: () => void
+  onOpenInspector?: (type: InspectableItemType, id: string) => void
 }
 
 export function CommunicationPane({
@@ -46,7 +52,11 @@ export function CommunicationPane({
   onFocusMode,
   isFocusMode = false,
   onNotificationClick,
-  onOpenSettings
+  onOpenSettings,
+  sidebarMode = 'capture',
+  selectedItem,
+  onBackToCapture,
+  onOpenInspector
 }: CommunicationPaneProps) {
 
   const handleBackToConversations = () => {
@@ -159,6 +169,10 @@ export function CommunicationPane({
             initialContextId={contextId}
             initialContextTitle={contextTitle}
             onClose={onToggle}
+            sidebarMode={sidebarMode}
+            selectedItem={selectedItem}
+            onBackToCapture={onBackToCapture}
+            onOpenInspector={onOpenInspector}
           />
         )
       default:

@@ -5,6 +5,7 @@ import type {
   FeedItem,
   QuickThoughtItem,
   TradeIdeaItem,
+  PairTradeItem,
   NoteItem,
   ThesisUpdateItem,
   ContentAggregationOptions,
@@ -62,6 +63,7 @@ export function useContentAggregation(options: ContentAggregationOptions = {}) {
                 portfolios (id, name)
               `)
               .eq('status', 'idea')
+              .eq('visibility_tier', 'active')
               .gte('created_at', timeFilter)
               .order('created_at', { ascending: false })
               .limit(limit)
@@ -178,9 +180,24 @@ export function useContentAggregation(options: ContentAggregationOptions = {}) {
         }
       }
 
-      // Process trade ideas
+      // Process trade ideas - group by pair_id if present
       if (tradeIdeasResult.data) {
+        // Separate paired and non-paired trades
+        const pairedTrades = new Map<string, typeof tradeIdeasResult.data>()
+        const singleTrades: typeof tradeIdeasResult.data = []
+
         for (const trade of tradeIdeasResult.data) {
+          if (trade.pair_id) {
+            const existing = pairedTrades.get(trade.pair_id) || []
+            existing.push(trade)
+            pairedTrades.set(trade.pair_id, existing)
+          } else {
+            singleTrades.push(trade)
+          }
+        }
+
+        // Add single trades as individual TradeIdeaItem
+        for (const trade of singleTrades) {
           allItems.push({
             id: trade.id,
             type: 'trade_idea',
@@ -192,9 +209,46 @@ export function useContentAggregation(options: ContentAggregationOptions = {}) {
             rationale: trade.rationale,
             status: trade.status,
             pair_id: trade.pair_id,
+            sharing_visibility: trade.sharing_visibility,
             asset: tradeIdeasAssetsMap.get(trade.asset_id),
             portfolio: trade.portfolios
           } as TradeIdeaItem)
+        }
+
+        // Add paired trades as PairTradeItem
+        for (const [pairId, trades] of pairedTrades) {
+          // Use the first trade for common properties
+          const firstTrade = trades[0]
+          const longLegs = trades
+            .filter(t => t.action === 'buy')
+            .map(t => ({
+              id: t.id,
+              action: 'buy' as const,
+              asset: tradeIdeasAssetsMap.get(t.asset_id) || { id: t.asset_id, symbol: '?', company_name: 'Unknown' }
+            }))
+          const shortLegs = trades
+            .filter(t => t.action === 'sell')
+            .map(t => ({
+              id: t.id,
+              action: 'sell' as const,
+              asset: tradeIdeasAssetsMap.get(t.asset_id) || { id: t.asset_id, symbol: '?', company_name: 'Unknown' }
+            }))
+
+          allItems.push({
+            id: pairId, // Use pair_id as the item id
+            type: 'pair_trade',
+            pair_id: pairId,
+            content: firstTrade.rationale || '',
+            created_at: firstTrade.created_at,
+            author: mapUserToAuthor(tradeIdeasUsersMap.get(firstTrade.created_by)),
+            urgency: firstTrade.urgency,
+            rationale: firstTrade.rationale,
+            status: firstTrade.status,
+            sharing_visibility: firstTrade.sharing_visibility,
+            long_legs: longLegs,
+            short_legs: shortLegs,
+            portfolio: firstTrade.portfolios
+          } as PairTradeItem)
         }
       }
 

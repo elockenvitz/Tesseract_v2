@@ -1332,6 +1332,7 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
 
 /**
  * Move a pair trade and all its legs to a new stage/outcome
+ * Supports both pair_trades table records AND pair trades created via pair_id grouping
  */
 export async function movePairTrade(params: {
   pairTradeId: string
@@ -1341,32 +1342,51 @@ export async function movePairTrade(params: {
 }): Promise<void> {
   const { pairTradeId, target, context, note } = params
 
-  // Get current pair trade
+  // First, try to get from pair_trades table
   const { data: pairTrade, error: fetchError } = await supabase
     .from('pair_trades')
     .select('*, trade_queue_items (id, stage, outcome)')
     .eq('id', pairTradeId)
     .single()
 
-  if (fetchError || !pairTrade) {
-    throw new Error(`Pair trade not found: ${pairTradeId}`)
-  }
+  // If not found in pair_trades, try to find legs by pair_id
+  let legsFromPairId: { id: string; stage: string; outcome: string | null; status: string }[] = []
+  let fromStatus: string | null = null
+  let isPairIdOnly = false
 
-  const fromStatus = pairTrade.status
+  if (fetchError || !pairTrade) {
+    // Try to find legs grouped by pair_id
+    const { data: legs, error: legsQueryError } = await supabase
+      .from('trade_queue_items')
+      .select('id, stage, outcome, status')
+      .eq('pair_id', pairTradeId)
+
+    if (legsQueryError || !legs || legs.length === 0) {
+      throw new Error(`Pair trade not found: ${pairTradeId}`)
+    }
+
+    legsFromPairId = legs
+    fromStatus = legs[0].status
+    isPairIdOnly = true
+  } else {
+    fromStatus = pairTrade.status
+  }
 
   const now = new Date().toISOString()
 
-  // Update pair trade
-  const { error: pairError } = await supabase
-    .from('pair_trades')
-    .update({
-      status: stageToLegacyStatus(target.stage, target.outcome || null),
-      updated_at: now,
-    })
-    .eq('id', pairTradeId)
+  // Update pair_trades table only if we found a record there
+  if (!isPairIdOnly && pairTrade) {
+    const { error: pairError } = await supabase
+      .from('pair_trades')
+      .update({
+        status: stageToLegacyStatus(target.stage, target.outcome || null),
+        updated_at: now,
+      })
+      .eq('id', pairTradeId)
 
-  if (pairError) {
-    throw new Error(`Failed to update pair trade: ${pairError.message}`)
+    if (pairError) {
+      throw new Error(`Failed to update pair trade: ${pairError.message}`)
+    }
   }
 
   // Update all legs
@@ -1389,10 +1409,11 @@ export async function movePairTrade(params: {
     }
   }
 
+  // Update legs - use pair_id if that's how they're grouped, otherwise pair_trade_id
   const { error: legsError } = await supabase
     .from('trade_queue_items')
     .update(legUpdates)
-    .eq('pair_trade_id', pairTradeId)
+    .eq(isPairIdOnly ? 'pair_id' : 'pair_trade_id', pairTradeId)
 
   if (legsError) {
     throw new Error(`Failed to update pair trade legs: ${legsError.message}`)
@@ -1403,12 +1424,13 @@ export async function movePairTrade(params: {
   const actionType = isOutcomeSet ? 'set_outcome' : 'move_stage'
 
   // Emit audit event for pair trade
+  const legCount = isPairIdOnly ? legsFromPairId.length : (pairTrade?.trade_queue_items?.length || 0)
   await emitAuditEvent({
     actor: { id: context.actorId, type: 'user', role: context.actorRole },
     entity: {
       type: 'pair_trade',
       id: pairTradeId,
-      displayName: pairTrade.name || 'Pair Trade',
+      displayName: pairTrade?.name || 'Pair Trade',
     },
     action: { type: actionType, category: 'state_change' },
     state: {
@@ -1419,8 +1441,9 @@ export async function movePairTrade(params: {
     metadata: {
       request_id: context.requestId,
       ui_source: context.uiSource,
-      leg_count: pairTrade.trade_queue_items?.length || 0,
+      leg_count: legCount,
       note,
+      is_pair_id_only: isPairIdOnly,
     },
     orgId: getOrgId(context),
     teamId: undefined,
@@ -1429,7 +1452,8 @@ export async function movePairTrade(params: {
   })
 
   // Emit audit events for each leg
-  for (const leg of pairTrade.trade_queue_items || []) {
+  const legsToAudit = isPairIdOnly ? legsFromPairId : (pairTrade?.trade_queue_items || [])
+  for (const leg of legsToAudit) {
     await emitAuditEvent({
       actor: { id: context.actorId, type: 'user', role: context.actorRole },
       entity: {
@@ -1701,6 +1725,244 @@ export async function reopenDecision(params: {
     actorRole: context.actorRole,
     metadata: {
       previous_outcome: trade.decision_outcome,
+    },
+  })
+}
+
+// ============================================================
+// Pair Trade Leg Management
+// ============================================================
+
+export interface AddPairTradeLegParams {
+  pairId: string
+  portfolioId: string
+  assetId: string
+  action: 'buy' | 'sell'
+  pairLegType: 'long' | 'short'
+  userId: string
+  // Optional - copy from existing legs or provide custom values
+  rationale?: string | null
+  urgency?: string
+  stage?: TradeStage
+  proposedWeight?: number | null
+  proposedShares?: number | null
+}
+
+/**
+ * Add a new leg to an existing pair trade
+ */
+export async function addPairTradeLeg(params: AddPairTradeLegParams): Promise<{
+  id: string
+  asset_id: string
+  action: string
+  pair_leg_type: string
+  proposed_weight: number | null
+  proposed_shares: number | null
+  assets: { id: string; symbol: string; company_name: string } | null
+}> {
+  const {
+    pairId,
+    portfolioId,
+    assetId,
+    action,
+    pairLegType,
+    userId,
+    rationale,
+    urgency = 'medium',
+    stage = 'idea',
+    proposedWeight,
+    proposedShares,
+  } = params
+
+  const now = new Date().toISOString()
+
+  // Check if pairId refers to a pair_trades record or a legacy pair_id
+  const { data: pairTradeRecord } = await supabase
+    .from('pair_trades')
+    .select('id')
+    .eq('id', pairId)
+    .maybeSingle()
+
+  // Set the appropriate column based on whether this is a pair_trades record
+  const pairColumns = pairTradeRecord
+    ? { pair_trade_id: pairId } // FK to pair_trades table
+    : { pair_id: pairId } // Legacy pair grouping UUID
+
+  // Check for duplicate - asset should not already exist in this pair trade
+  const duplicateQuery = pairTradeRecord
+    ? supabase
+        .from('trade_queue_items')
+        .select('id, assets (symbol)')
+        .eq('pair_trade_id', pairId)
+        .eq('asset_id', assetId)
+        .eq('visibility_tier', 'active')
+        .maybeSingle()
+    : supabase
+        .from('trade_queue_items')
+        .select('id, assets (symbol)')
+        .eq('pair_id', pairId)
+        .eq('asset_id', assetId)
+        .eq('visibility_tier', 'active')
+        .maybeSingle()
+
+  const { data: existingLeg } = await duplicateQuery
+
+  if (existingLeg) {
+    const symbol = (existingLeg.assets as any)?.symbol || 'This asset'
+    throw new Error(`${symbol} is already in this pair trade`)
+  }
+
+  const { data, error } = await supabase
+    .from('trade_queue_items')
+    .insert({
+      ...pairColumns,
+      portfolio_id: portfolioId,
+      asset_id: assetId,
+      action,
+      pair_leg_type: pairLegType,
+      rationale,
+      urgency,
+      stage,
+      status: stage, // Keep legacy status in sync
+      proposed_weight: proposedWeight,
+      proposed_shares: proposedShares,
+      created_by: userId,
+      created_at: now,
+      updated_at: now,
+    })
+    .select('id, asset_id, action, pair_leg_type, proposed_weight, proposed_shares, assets (id, symbol, company_name)')
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to add pair trade leg: ${error.message}`)
+  }
+
+  // Emit audit event (don't fail if audit fails)
+  try {
+    await emitAuditEvent({
+      actor: { id: userId, type: 'user', role: 'analyst' },
+      entity: {
+        type: 'trade_idea',
+        id: data.id,
+        displayName: `${pairLegType} leg`,
+      },
+      action: { type: 'create', category: 'lifecycle' },
+      metadata: {
+        pair_id: pairId,
+        asset_id: assetId,
+        pair_leg_type: pairLegType,
+      },
+    })
+  } catch (auditError) {
+    console.error('[addPairTradeLeg] Audit event failed:', auditError)
+  }
+
+  return data
+}
+
+/**
+ * Remove a leg from a pair trade
+ */
+export async function removePairTradeLeg(legId: string, userId: string): Promise<void> {
+  // First fetch the leg to get pair_id for audit
+  const { data: leg, error: fetchError } = await supabase
+    .from('trade_queue_items')
+    .select('id, pair_id, asset_id, pair_leg_type, assets (symbol)')
+    .eq('id', legId)
+    .single()
+
+  if (fetchError || !leg) {
+    throw new Error(`Leg not found: ${legId}`)
+  }
+
+  // Soft delete - must set both visibility_tier and deleted_at to satisfy constraint
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update({
+      visibility_tier: 'trash',
+      deleted_at: now,
+      deleted_by: userId,
+      updated_at: now,
+    })
+    .eq('id', legId)
+
+  if (error) {
+    throw new Error(`Failed to remove pair trade leg: ${error.message}`)
+  }
+
+  // Emit audit event (don't fail if audit fails)
+  try {
+    const symbol = (leg.assets as any)?.symbol || 'Unknown'
+    await emitAuditEvent({
+      actor: { id: userId, type: 'user', role: 'analyst' },
+      entity: {
+        type: 'trade_idea',
+        id: legId,
+        displayName: `${symbol} leg`,
+      },
+      action: { type: 'delete', category: 'lifecycle' },
+      metadata: {
+        pair_id: leg.pair_id,
+        asset_id: leg.asset_id,
+        pair_leg_type: leg.pair_leg_type,
+        symbol,
+      },
+    })
+  } catch (auditError) {
+    console.error('[removePairTradeLeg] Audit event failed:', auditError)
+  }
+}
+
+export interface UpdatePairTradeLegParams {
+  legId: string
+  userId: string
+  updates: {
+    proposedWeight?: number | null
+    proposedShares?: number | null
+    targetPrice?: number | null
+    stopLoss?: number | null
+    takeProfit?: number | null
+    pairLegType?: 'long' | 'short'
+  }
+}
+
+/**
+ * Update properties of a pair trade leg
+ */
+export async function updatePairTradeLeg(params: UpdatePairTradeLegParams): Promise<void> {
+  const { legId, userId, updates } = params
+
+  const now = new Date().toISOString()
+  const updatePayload: Record<string, any> = {
+    updated_at: now,
+  }
+
+  if (updates.proposedWeight !== undefined) updatePayload.proposed_weight = updates.proposedWeight
+  if (updates.proposedShares !== undefined) updatePayload.proposed_shares = updates.proposedShares
+  if (updates.targetPrice !== undefined) updatePayload.target_price = updates.targetPrice
+  if (updates.stopLoss !== undefined) updatePayload.stop_loss = updates.stopLoss
+  if (updates.takeProfit !== undefined) updatePayload.take_profit = updates.takeProfit
+  if (updates.pairLegType !== undefined) updatePayload.pair_leg_type = updates.pairLegType
+
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update(updatePayload)
+    .eq('id', legId)
+
+  if (error) {
+    throw new Error(`Failed to update pair trade leg: ${error.message}`)
+  }
+
+  // Emit audit event
+  await emitAuditEvent({
+    eventType: 'pair_leg_updated',
+    entityType: 'trade_idea',
+    entityId: legId,
+    actorId: userId,
+    actorRole: 'analyst',
+    metadata: {
+      updated_fields: Object.keys(updates),
     },
   })
 }

@@ -75,6 +75,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
           assets (id, symbol, company_name, sector),
           portfolios (id, name)
         `)
+        .eq('visibility_tier', 'active')
         .in('status', ['draft', 'proposed', 'discussing'])
         .order('created_at', { ascending: false })
         .limit(10)

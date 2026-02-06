@@ -9,7 +9,8 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { clsx } from 'clsx'
-import { ContextSelector, type CapturedContext } from './ContextSelector'
+import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
+import type { CapturedContext } from './ContextSelector'
 
 interface Attachment {
   name: string
@@ -131,6 +132,7 @@ export function QuickThoughtCapture({
   const [dateValue, setDateValue] = useState<string>('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
+  const [contextTags, setContextTags] = useState<ContextTag[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -245,6 +247,21 @@ export function QuickThoughtCapture({
         .single()
 
       if (error) throw error
+
+      // Link context tags (topics) to the quick thought
+      if (data && contextTags.length > 0) {
+        const topicTags = contextTags.filter(t => t.entity_type === 'topic')
+        if (topicTags.length > 0) {
+          await supabase
+            .from('quick_thought_topics')
+            .insert(topicTags.map(tag => ({
+              quick_thought_id: data.id,
+              topic_id: tag.entity_id,
+              created_by: user.id,
+            })))
+        }
+      }
+
       return data
     },
     onSuccess: () => {
@@ -264,6 +281,7 @@ export function QuickThoughtCapture({
       setDateType(null)
       setDateValue('')
       setTags([])
+      setContextTags([])
       setAttachments([])
       setChartAttachment(undefined)
       setShowAdvanced(false)
@@ -473,12 +491,14 @@ export function QuickThoughtCapture({
         </p>
       </div>
 
-      {/* Context selector - attach to asset, project, portfolio, etc. */}
+      {/* Context tags - link to assets, themes, topics, etc. */}
       <div className="mb-3">
-        <ContextSelector
-          value={capturedContext || null}
-          onChange={(ctx) => onContextChange?.(ctx)}
+        <ContextTagsInput
+          value={contextTags}
+          onChange={setContextTags}
+          placeholder="Link to assets, themes, topics..."
           compact={compact}
+          allowCreate={true}
         />
       </div>
 

@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { Lightbulb, Sparkles, BarChart3, ChevronDown, ChevronUp } from 'lucide-react'
 import { IdeaCard } from './IdeaCard'
 import { TradeIdeaCard } from './cards/TradeIdeaCard'
+import { PairTradeCard } from './cards/PairTradeCard'
 import { NoteCard } from './cards/NoteCard'
 import { ThesisUpdateCard } from './cards/ThesisUpdateCard'
 import { InsightCard } from './cards/InsightCard'
@@ -35,6 +36,29 @@ interface MasonryGridProps {
   showCharts?: boolean
   // Map of trade idea ID -> lab inclusion info
   labInclusionsMap?: Map<string, LabInclusionInfo>
+
+  // ===== NEW PROPS FOR UX SPEC =====
+  /**
+   * Current scope filter. When "mine", hides author row on cards.
+   */
+  scope?: 'mine' | 'team' | 'following' | 'all'
+  /**
+   * Whether view is filtered to a single type.
+   * When true, shows compact type badge on cards.
+   */
+  isFilteredToSingleType?: boolean
+  /**
+   * Current user ID for determining edit permissions.
+   */
+  currentUserId?: string
+  // Action callbacks for cards
+  onPromote?: (item: ScoredFeedItem) => void
+  onBookmark?: (item: ScoredFeedItem) => void
+  onEdit?: (item: ScoredFeedItem) => void
+  onArchive?: (item: ScoredFeedItem) => void
+  onSetRevisit?: (item: ScoredFeedItem) => void
+  onCopyLink?: (item: ScoredFeedItem) => void
+  onPromotedClick?: (ideaId: string) => void
 }
 
 export function MasonryGrid({
@@ -52,7 +76,18 @@ export function MasonryGrid({
   showReactions = true,
   showBookmarks = true,
   showCharts = true,
-  labInclusionsMap
+  labInclusionsMap,
+  // New props
+  scope,
+  isFilteredToSingleType = false,
+  currentUserId,
+  onPromote,
+  onBookmark,
+  onEdit,
+  onArchive,
+  onSetRevisit,
+  onCopyLink,
+  onPromotedClick
 }: MasonryGridProps) {
   // Track which cards are flipped to show charts
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set())
@@ -177,6 +212,16 @@ export function MasonryGrid({
           />
         )
         break
+      case 'pair_trade':
+        cardContent = (
+          <PairTradeCard
+            item={item as any}
+            onLabClick={onLabClick}
+            labInclusions={labInclusionsMap?.get(item.id)}
+            {...commonProps}
+          />
+        )
+        break
       case 'note':
         cardContent = (
           <NoteCard
@@ -205,9 +250,23 @@ export function MasonryGrid({
         )
         break
       default:
+        // Default card (quick_thought, message, etc.)
+        // Determine if current user can edit (creator only)
+        const canEdit = currentUserId ? item.author?.id === currentUserId : false
+
         cardContent = (
           <IdeaCard
-            item={item}
+            item={item as any}
+            scope={scope}
+            isFilteredToSingleType={isFilteredToSingleType}
+            canEdit={canEdit}
+            onPromote={onPromote ? () => onPromote(item) : undefined}
+            onBookmark={onBookmark ? () => onBookmark(item) : undefined}
+            onEdit={onEdit && canEdit ? () => onEdit(item) : undefined}
+            onArchive={onArchive ? () => onArchive(item) : undefined}
+            onSetRevisit={onSetRevisit ? () => onSetRevisit(item) : undefined}
+            onCopyLink={onCopyLink ? () => onCopyLink(item) : undefined}
+            onPromotedClick={onPromotedClick}
             {...commonProps}
           />
         )
@@ -229,7 +288,7 @@ export function MasonryGrid({
     }
 
     return cardContent
-  }, [onItemClick, onAuthorClick, onAssetClick, onPortfolioClick, onLabClick, onSourceClick, onTagClick, onGenerateIdea, showReactions, showBookmarks, showCharts, flippedCards, toggleFlip, expandedCards, toggleExpand, labInclusionsMap])
+  }, [onItemClick, onAuthorClick, onAssetClick, onPortfolioClick, onLabClick, onSourceClick, onTagClick, onGenerateIdea, showReactions, showBookmarks, showCharts, flippedCards, toggleFlip, expandedCards, toggleExpand, labInclusionsMap, scope, isFilteredToSingleType, currentUserId, onPromote, onBookmark, onEdit, onArchive, onSetRevisit, onCopyLink, onPromotedClick])
 
   if (isLoading) {
     return (

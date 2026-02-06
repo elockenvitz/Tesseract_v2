@@ -365,23 +365,40 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     // Optimistic update for instant UI feedback
     onMutate: async (params) => {
       await queryClient.cancelQueries({ queryKey: ['pair-trades'] })
+      await queryClient.cancelQueries({ queryKey: ['trade-queue-items'] })
       const previousItems = queryClient.getQueryData(['pair-trades'])
+      const previousTradeItems = queryClient.getQueryData(['trade-queue-items'])
       const newStatus = params.targetStatus || params.stage
 
+      // Update pair_trades cache
       queryClient.setQueriesData({ queryKey: ['pair-trades'] }, (old: any) => {
-        if (!old) return old
-        return old.map((item: any) =>
-          item.id === params.pairTradeId
+        if (!old || !Array.isArray(old)) return old
+        return old.filter(item => item != null).map((item: any) =>
+          item?.id === params.pairTradeId
             ? { ...item, status: newStatus, workflow_stage: params.stage || newStatus }
             : item
         )
       })
 
-      return { previousItems }
+      // Also update trade_queue_items cache for legs
+      queryClient.setQueriesData({ queryKey: ['trade-queue-items'] }, (old: any) => {
+        if (!old || !Array.isArray(old)) return old
+        return old.filter(item => item != null).map((item: any) => {
+          if (item?.pair_id === params.pairTradeId || item?.pair_trade_id === params.pairTradeId) {
+            return { ...item, status: newStatus, stage: params.stage || newStatus }
+          }
+          return item
+        })
+      })
+
+      return { previousItems, previousTradeItems }
     },
     onError: (error, params, context) => {
       if (context?.previousItems) {
         queryClient.setQueryData(['pair-trades'], context.previousItems)
+      }
+      if (context?.previousTradeItems) {
+        queryClient.setQueryData(['trade-queue-items'], context.previousTradeItems)
       }
       toast.error(error instanceof Error ? error.message : 'Failed to move pair trade')
     },

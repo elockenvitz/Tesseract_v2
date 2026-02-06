@@ -8,6 +8,7 @@ import { CommunicationPane } from '../communication/CommunicationPane'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
+import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -52,6 +53,15 @@ export function Layout({
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
+
+  // Global sidebar store for thoughts capture/inspect modes
+  const {
+    sidebarMode,
+    selectedItem,
+    openCaptureSidebar,
+    openInspector,
+    backToCapture
+  } = useSidebarStore()
 
   // Wrap cite function to exit focus mode after citing
   const cite = useCallback((content: string, fieldName?: string) => {
@@ -110,6 +120,8 @@ export function Layout({
   }
 
   const handleShowThoughts = () => {
+    // Use sidebar store to open in capture mode
+    openCaptureSidebar()
     setCommPaneView('thoughts')
     if (!isCommPaneOpen) {
       toggleCommPane()
@@ -226,12 +238,14 @@ export function Layout({
   useEffect(() => {
     const handleOpenThoughtsCapture = (event: CustomEvent) => {
       const { contextType, contextId, contextTitle } = event.detail || {}
-      console.log('💭 Opening thoughts capture:', { contextType, contextId, contextTitle })
 
       // Set context if provided
       if (contextType && contextId) {
         setCommPaneContext({ contextType, contextId, contextTitle })
       }
+
+      // Use store to open in capture mode
+      openCaptureSidebar()
 
       // Switch to thoughts view
       setCommPaneView('thoughts')
@@ -244,7 +258,30 @@ export function Layout({
 
     window.addEventListener('openThoughtsCapture', handleOpenThoughtsCapture as EventListener)
     return () => window.removeEventListener('openThoughtsCapture', handleOpenThoughtsCapture as EventListener)
-  }, [isCommPaneOpen, toggleCommPane])
+  }, [isCommPaneOpen, toggleCommPane, openCaptureSidebar])
+
+  // Listen for custom event to open thought detail (from Ideas tab)
+  useEffect(() => {
+    const handleOpenThoughtDetail = (event: CustomEvent) => {
+      const { thoughtId, itemType } = event.detail || {}
+      if (!thoughtId) return
+
+      // Use store to open in inspect mode
+      const type = (itemType || 'quick_thought') as InspectableItemType
+      openInspector(type, thoughtId)
+
+      // Switch to thoughts view
+      setCommPaneView('thoughts')
+
+      // Open the comm pane if not already open
+      if (!isCommPaneOpen) {
+        toggleCommPane()
+      }
+    }
+
+    window.addEventListener('openThoughtDetail', handleOpenThoughtDetail as EventListener)
+    return () => window.removeEventListener('openThoughtDetail', handleOpenThoughtDetail as EventListener)
+  }, [isCommPaneOpen, toggleCommPane, openInspector])
 
   // Determine communication context from active tab
   const getCommContext = () => {
@@ -434,6 +471,10 @@ export function Layout({
         onFocusMode={handleFocusMode}
         isFocusMode={isFocusMode}
         onNotificationClick={handleNotificationClick}
+        sidebarMode={sidebarMode}
+        selectedItem={selectedItem}
+        onBackToCapture={backToCapture}
+        onOpenInspector={openInspector}
         onOpenSettings={() => {
           // Dispatch event to open settings modal in Header
           window.dispatchEvent(new CustomEvent('openSettings'))

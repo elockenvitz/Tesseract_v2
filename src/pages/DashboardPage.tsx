@@ -277,6 +277,25 @@ export function DashboardPage() {
     return () => window.removeEventListener('openTradeLab', handleOpenTradeLab as EventListener)
   }, [])
 
+  // Listen for custom event to open Ideas tab with filters (e.g., from "View all" in sidebar)
+  useEffect(() => {
+    const handleOpenIdeasTab = (event: CustomEvent) => {
+      const { filters } = event.detail || {}
+      console.log('💡 Opening Ideas tab with filters:', filters)
+
+      // Navigate to idea-generator tab with initial filters
+      handleSearchResult({
+        id: 'idea-generator',
+        title: 'Ideas',
+        type: 'idea-generator',
+        data: { initialFilters: filters }
+      })
+    }
+
+    window.addEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
+    return () => window.removeEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
+  }, [])
+
   // Memoize active tab to prevent unnecessary recalculations
   const activeTab = useMemo(() =>
     tabs.find(tab => tab.id === activeTabId),
@@ -312,7 +331,7 @@ export function DashboardPage() {
       case 'list':
         return <ListTab list={activeTab.data} onAssetSelect={handleSearchResult} />
       case 'idea-generator':
-        return <IdeaGeneratorPage onItemSelect={handleSearchResult} />
+        return <IdeaGeneratorPage onItemSelect={handleSearchResult} initialFilters={activeTab.data?.initialFilters} />
       case 'workflows':
         return <WorkflowsPage />
       case 'projects-list':

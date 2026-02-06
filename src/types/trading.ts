@@ -189,7 +189,8 @@ export interface TradeQueueItem {
   executed_at: string | null
 
   // Pair trade linkage
-  pair_trade_id: string | null
+  pair_id: string | null  // Groups multiple legs into a single pair trade
+  pair_trade_id: string | null  // Legacy: links to pair_trades table
   pair_leg_type: PairLegType | null
 
   // Risk & Planning fields
@@ -574,6 +575,9 @@ export interface TradeLabSimulationItem {
   created_by: string | null
 }
 
+// Proposal type - distinguishes analyst proposals from PM-initiated decisions
+export type ProposalType = 'analyst' | 'pm_initiated'
+
 // Trade Proposal - one current editable proposal per user per trade idea per portfolio
 export interface TradeProposal {
   id: string
@@ -587,6 +591,9 @@ export interface TradeProposal {
   sizing_context: Record<string, unknown>
   notes: string | null
   is_active: boolean
+  proposal_type: ProposalType  // 'analyst' or 'pm_initiated'
+  analyst_input_requested: boolean  // For PM-initiated proposals, whether analyst input is requested
+  analyst_input_requested_at: string | null  // When analyst input was requested
   created_at: string
   updated_at: string
 }
@@ -651,6 +658,7 @@ export interface CreateTradeProposalInput {
   sizing_mode?: TradeSizingMode | null
   sizing_context?: Record<string, unknown>
   notes?: string | null
+  proposal_type?: ProposalType  // 'analyst' (default) or 'pm_initiated'
 }
 
 export interface UpdateTradeProposalInput {

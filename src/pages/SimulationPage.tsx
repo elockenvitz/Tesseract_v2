@@ -552,6 +552,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const linkedIdeaIds = linkedIds?.map(l => l.trade_queue_item_id) || []
 
       // Fetch ideas that either have direct portfolio_id match or are linked via trade_lab
+      // Only show active ideas (not in trash or archive)
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select(`
@@ -561,6 +562,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           pair_trades (id, name, description, rationale, urgency, status),
           users:created_by (id, email, first_name, last_name)
         `)
+        .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'approved', 'deciding'])
         .or(`portfolio_id.eq.${selectedPortfolioId}${linkedIdeaIds.length > 0 ? `,id.in.(${linkedIdeaIds.join(',')})` : ''}`)
         .order('priority', { ascending: false })

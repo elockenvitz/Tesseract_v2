@@ -179,6 +179,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
           )
         `)
         .eq('status', 'idea')
+        .eq('visibility_tier', 'active')
         .order('created_at', { ascending: false })
         .limit(limit)
 
@@ -318,12 +319,16 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     },
   })
 
-  // Trade idea mutations - soft delete by setting status to 'deleted'
+  // Trade idea mutations - soft delete by setting visibility_tier to 'trash'
   const deleteTradeIdea = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from('trade_queue_items')
-        .update({ status: 'deleted' })
+        .update({
+          status: 'deleted',
+          visibility_tier: 'trash',
+          deleted_at: new Date().toISOString()
+        })
         .eq('id', id)
 
       if (error) throw error
@@ -338,7 +343,11 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     mutationFn: async (pairId: string) => {
       const { error } = await supabase
         .from('trade_queue_items')
-        .update({ status: 'deleted' })
+        .update({
+          status: 'deleted',
+          visibility_tier: 'trash',
+          deleted_at: new Date().toISOString()
+        })
         .eq('pair_id', pairId)
 
       if (error) throw error

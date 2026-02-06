@@ -1,6 +1,6 @@
 // Unified types for the Ideas feed system
 
-export type ItemType = 'quick_thought' | 'trade_idea' | 'note' | 'thesis_update' | 'insight' | 'message'
+export type ItemType = 'quick_thought' | 'trade_idea' | 'pair_trade' | 'note' | 'thesis_update' | 'insight' | 'message'
 export type ReactionType = 'like' | 'love' | 'insightful' | 'bearish' | 'bullish' | 'question'
 export type Sentiment = 'bullish' | 'bearish' | 'neutral' | 'curious' | 'concerned' | 'excited'
 export type TradeAction = 'buy' | 'sell'
@@ -88,6 +88,32 @@ export interface TradeIdeaItem extends BaseIdeaItem {
   }
 }
 
+export interface PairTradeLeg {
+  id: string
+  action: TradeAction
+  asset: {
+    id: string
+    symbol: string
+    company_name: string
+    current_price?: number
+  }
+}
+
+export interface PairTradeItem extends BaseIdeaItem {
+  type: 'pair_trade'
+  pair_id: string
+  urgency: TradeUrgency
+  rationale?: string
+  status: string
+  sharing_visibility?: 'private' | 'team' | 'public' | null
+  long_legs: PairTradeLeg[]
+  short_legs: PairTradeLeg[]
+  portfolio?: {
+    id: string
+    name: string
+  }
+}
+
 export interface NoteItem extends BaseIdeaItem {
   type: 'note'
   title: string
@@ -123,7 +149,7 @@ export interface InsightItem extends BaseIdeaItem {
   source: 'ai' | 'user' | 'system'
 }
 
-export type FeedItem = QuickThoughtItem | TradeIdeaItem | NoteItem | ThesisUpdateItem | InsightItem
+export type FeedItem = QuickThoughtItem | TradeIdeaItem | PairTradeItem | NoteItem | ThesisUpdateItem | InsightItem
 
 export interface ScoredFeedItem extends FeedItem {
   score: number

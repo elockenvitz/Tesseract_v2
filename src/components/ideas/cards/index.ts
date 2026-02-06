@@ -1,4 +1,5 @@
 export { TradeIdeaCard } from './TradeIdeaCard'
+export { PairTradeCard } from './PairTradeCard'
 export { NoteCard } from './NoteCard'
 export { ThesisUpdateCard } from './ThesisUpdateCard'
 export { InsightCard } from './InsightCard'

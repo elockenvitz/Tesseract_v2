@@ -55,10 +55,10 @@ export function BookmarkButton({
         onClick={handleClick}
         disabled={isToggling}
         className={clsx(
-          'p-1 transition-colors',
+          'p-1.5 rounded transition-colors',
           isBookmarked
-            ? 'text-amber-500'
-            : 'text-gray-400 hover:text-amber-500',
+            ? 'text-amber-500'  // Keep bookmarked state prominent
+            : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100',  // Muted default, reveal on hover
           isToggling && 'opacity-50',
           className
         )}

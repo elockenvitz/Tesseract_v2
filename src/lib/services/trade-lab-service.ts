@@ -1457,6 +1457,7 @@ export async function upsertProposal(
         sizing_context: input.sizing_context || {},
         notes: input.notes,
         lab_id: input.lab_id,
+        proposal_type: input.proposal_type || existing.proposal_type,
       })
       .eq('id', existing.id)
       .select()
@@ -1498,6 +1499,7 @@ export async function upsertProposal(
         sizing_context: input.sizing_context || {},
         notes: input.notes,
         is_active: true,
+        proposal_type: input.proposal_type || 'analyst',
       })
       .select()
       .single()
@@ -1516,6 +1518,7 @@ export async function upsertProposal(
           portfolio_id: input.portfolio_id,
           weight: input.weight,
           shares: input.shares,
+          proposal_type: input.proposal_type || 'analyst',
         },
         proposal_id: data.id,
       }, context)
@@ -1552,6 +1555,62 @@ export async function deleteProposal(
 
   if (error) {
     throw new Error(`Failed to delete proposal: ${error.message}`)
+  }
+}
+
+/**
+ * Request analyst input on a PM-initiated proposal
+ * Only PMs can request analyst input on their own proposals
+ */
+export async function requestAnalystInput(
+  proposalId: string,
+  context: ActionContext
+): Promise<void> {
+  // Verify this is a PM-initiated proposal owned by the current user
+  const { data: proposal, error: fetchError } = await supabase
+    .from('trade_proposals')
+    .select('id, user_id, proposal_type, trade_queue_item_id')
+    .eq('id', proposalId)
+    .single()
+
+  if (fetchError || !proposal) {
+    throw new Error('Proposal not found')
+  }
+
+  if (proposal.user_id !== context.actorId) {
+    throw new Error('Cannot request analyst input on another user\'s proposal')
+  }
+
+  if (proposal.proposal_type !== 'pm_initiated') {
+    throw new Error('Can only request analyst input on PM-initiated proposals')
+  }
+
+  // Update the proposal with analyst input requested
+  const { error } = await supabase
+    .from('trade_proposals')
+    .update({
+      analyst_input_requested: true,
+      analyst_input_requested_at: new Date().toISOString(),
+    })
+    .eq('id', proposalId)
+
+  if (error) {
+    throw new Error(`Failed to request analyst input: ${error.message}`)
+  }
+
+  // Log event
+  try {
+    await createTradeEvent({
+      trade_queue_item_id: proposal.trade_queue_item_id,
+      event_type: 'proposal_updated',
+      metadata: {
+        proposal_id: proposalId,
+        action: 'analyst_input_requested',
+      },
+      proposal_id: proposalId,
+    }, context)
+  } catch (e) {
+    console.warn('Failed to log analyst_input_requested event:', e)
   }
 }
 

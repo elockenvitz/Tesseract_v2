@@ -3,8 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import {
   X,
-  TrendingUp,
-  TrendingDown,
   MessageSquare,
   Send,
   Edit2,
@@ -28,13 +26,9 @@ import {
   Lock,
   Users,
   Target,
-  TrendingDown as StopLoss,
-  TrendingUp as TakeProfit,
   Gauge,
-  Timer,
   Save,
   Pencil,
-  Tag,
   Plus,
   Check,
   Briefcase
@@ -47,8 +41,8 @@ import { ContextTagsInput, type ContextTag, type ContextTagEntityType } from '..
 import { useTradeExpressionCounts } from '../../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { EntityTimeline } from '../audit/EntityTimeline'
-import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, getProposalsForTradeIdea, upsertProposal, getPortfolioTracksForIdea, updatePortfolioTrackDecision, type IdeaLabLink, type TradeProposalWithUser } from '../../lib/services/trade-lab-service'
-import type { ActionContext, DecisionOutcome, TradeIdeaPortfolio, UpdatePortfolioTrackInput, TradeSizingMode } from '../../types/trading'
+import { getIdeaLabLinks, updateIdeaLinkSizing, linkIdeaToLab, unlinkIdeaFromLab, getProposalsForTradeIdea, upsertProposal, getPortfolioTracksForIdea, updatePortfolioTrackDecision } from '../../lib/services/trade-lab-service'
+import type { ActionContext, DecisionOutcome, UpdatePortfolioTrackInput, TradeSizingMode } from '../../types/trading'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import type {
@@ -56,6 +50,7 @@ import type {
   TradeQueueStatus
 } from '../../types/trading'
 import { clsx } from 'clsx'
+import { PairTradeLegEditor } from './PairTradeLegEditor'
 
 type ModalTab = 'details' | 'discussion' | 'proposals' | 'activity'
 
@@ -98,7 +93,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   }, [isOpen, initialTab])
 
   const [discussionMessage, setDiscussionMessage] = useState('')
-  const [discussionMetadata, setDiscussionMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [, setDiscussionMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   // Portfolio context for discussion messages
@@ -198,15 +193,26 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const assigneeDropdownRef = useRef<HTMLDivElement>(null)
   const collaboratorsDropdownRef = useRef<HTMLDivElement>(null)
 
-  // Get expression counts for trade ideas
-  const { data: expressionCounts } = useTradeExpressionCounts()
+  // Pair trade specific edit states
+  const [isEditingPairReferenceLevels, setIsEditingPairReferenceLevels] = useState(false)
+  const [editedPairReferenceLevels, setEditedPairReferenceLevels] = useState<Record<string, {
+    targetPrice: string
+    stopLoss: string
+    takeProfit: string
+  }>>({})
+  const [isEditingPairConviction, setIsEditingPairConviction] = useState(false)
+  const [editedPairConviction, setEditedPairConviction] = useState<'low' | 'medium' | 'high' | null>(null)
+  const [editedPairTimeHorizon, setEditedPairTimeHorizon] = useState<'short' | 'medium' | 'long' | null>(null)
 
-  // Fetch trade details - check both pair_trades and trade_queue_items
+  // Get expression counts for trade ideas (prefetch)
+  useTradeExpressionCounts()
+
+  // Fetch trade details - check pair_trades, trade_queue_items by id, and trade_queue_items by pair_id
   const { data: tradeData, isLoading } = useQuery({
     queryKey: ['trade-detail', tradeId],
     queryFn: async () => {
-      // First try to fetch as a pair trade
-      const { data: pairTrade, error: pairError } = await supabase
+      // First try to fetch as a pair trade from pair_trades table
+      const { data: pairTrade } = await supabase
         .from('pair_trades')
         .select(`
           *,
@@ -224,7 +230,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         return { type: 'pair' as const, data: pairTrade }
       }
 
-      // Fall back to individual trade item
+      // Try to fetch individual trade item by id
       const { data: tradeItem, error: tradeError } = await supabase
         .from('trade_queue_items')
         .select(`
@@ -238,9 +244,46 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         .maybeSingle()
 
       if (tradeError) throw tradeError
-      if (!tradeItem) return null
+      if (tradeItem) {
+        return { type: 'single' as const, data: tradeItem as TradeQueueItemWithDetails }
+      }
 
-      return { type: 'single' as const, data: tradeItem as TradeQueueItemWithDetails }
+      // Finally, try to fetch as a pair trade by pair_id (for pair trades without pair_trades table entry)
+      const { data: pairLegs, error: pairLegsError } = await supabase
+        .from('trade_queue_items')
+        .select(`
+          *,
+          assets (id, symbol, company_name, sector),
+          portfolios (id, name, portfolio_id),
+          users:created_by (id, email, first_name, last_name),
+          assigned_user:assigned_to (id, email, first_name, last_name)
+        `)
+        .eq('pair_id', tradeId)
+        .eq('visibility_tier', 'active')
+
+      if (pairLegsError) throw pairLegsError
+      if (pairLegs && pairLegs.length > 0) {
+        // Build a synthetic pair trade object from the legs
+        const firstLeg = pairLegs[0]
+        return {
+          type: 'pair_from_legs' as const,
+          data: {
+            id: tradeId,
+            name: 'Pairs Trade',
+            rationale: firstLeg.rationale,
+            urgency: firstLeg.urgency,
+            status: firstLeg.status,
+            created_at: firstLeg.created_at,
+            created_by: firstLeg.created_by,
+            portfolios: firstLeg.portfolios,
+            users: firstLeg.users,
+            sharing_visibility: firstLeg.sharing_visibility,
+            legs: pairLegs
+          }
+        }
+      }
+
+      return null
     },
     enabled: isOpen,
   })
@@ -248,6 +291,262 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Extract trade for backwards compatibility with existing UI
   const trade = tradeData?.type === 'single' ? tradeData.data : null
   const pairTrade = tradeData?.type === 'pair' ? tradeData.data : null
+  const pairFromLegs = tradeData?.type === 'pair_from_legs' ? tradeData.data : null
+
+  // Combined pair trade data (from either source)
+  const isPairTrade = !!(pairTrade || pairFromLegs)
+  const pairTradeData = pairTrade || pairFromLegs
+
+  // State for pair trade sizing mode
+  const [pairTradeSizingMode, setPairTradeSizingMode] = useState<'absolute' | 'relative_current' | 'relative_benchmark'>('absolute')
+
+  // Per-leg targets for pair trade - stores ABSOLUTE values internally
+  const [pairTradeLegTargets, setPairTradeLegTargets] = useState<Record<string, {
+    absoluteWeight: number | null
+    absoluteShares: number | null
+    sourceField: 'weight' | 'shares' | null
+  }>>({})
+
+  // Active input tracking for pair trade sizing
+  const [pairTradeActiveInput, setPairTradeActiveInput] = useState<{
+    legId: string
+    field: 'weight' | 'shares'
+    rawValue: string
+  } | null>(null)
+
+  // Fetch portfolio holdings for pair trade legs (for sizing context)
+  const pairTradeLegAssetIds = isPairTrade
+    ? (pairTradeData?.trade_queue_items || pairTradeData?.legs || []).map((leg: any) => leg.asset_id).filter(Boolean)
+    : []
+  const pairTradePortfolioId = pairTradeData?.portfolio_id || pairTradeData?.portfolios?.id || ''
+
+  const { data: pairTradeHoldings } = useQuery({
+    queryKey: ['pair-trade-holdings', pairTradeLegAssetIds, pairTradePortfolioId],
+    queryFn: async () => {
+      if (pairTradeLegAssetIds.length === 0) return { holdings: {}, portfolioAum: 0 }
+
+      // Get current prices from assets table for all leg assets
+      const { data: assetPrices, error: priceError } = await supabase
+        .from('assets')
+        .select('id, current_price')
+        .in('id', pairTradeLegAssetIds)
+
+      if (priceError) throw priceError
+
+      // Build price map
+      const priceMap: Record<string, number> = {}
+      assetPrices?.forEach(a => {
+        priceMap[a.id] = a.current_price || 0
+      })
+
+      // Get holdings for leg assets in the portfolio (if portfolio exists)
+      let assetHoldings: { asset_id: string; shares: number; price: number }[] = []
+      let portfolioAum = 0
+
+      if (pairTradePortfolioId) {
+        const { data: holdings, error: holdingsError } = await supabase
+          .from('portfolio_holdings')
+          .select('asset_id, shares, price')
+          .eq('portfolio_id', pairTradePortfolioId)
+          .in('asset_id', pairTradeLegAssetIds)
+
+        if (holdingsError) throw holdingsError
+        assetHoldings = holdings || []
+
+        // Get total portfolio value (AUM)
+        const { data: allHoldings, error: allError } = await supabase
+          .from('portfolio_holdings')
+          .select('shares, price')
+          .eq('portfolio_id', pairTradePortfolioId)
+
+        if (allError) throw allError
+
+        portfolioAum = allHoldings?.reduce((sum, h) => sum + (h.shares * h.price), 0) || 0
+      }
+
+      // Build holdings map by asset_id, using asset prices as fallback
+      const holdingsMap: Record<string, { shares: number; price: number; weight: number; marketValue: number }> = {}
+
+      // First, add entries for all leg assets with prices from assets table
+      pairTradeLegAssetIds.forEach(assetId => {
+        const price = priceMap[assetId] || 0
+        holdingsMap[assetId] = {
+          shares: 0,
+          price,
+          marketValue: 0,
+          weight: 0,
+        }
+      })
+
+      // Then overlay with actual holdings data if available
+      assetHoldings?.forEach(h => {
+        const price = h.price || priceMap[h.asset_id] || 0
+        const marketValue = h.shares * price
+        holdingsMap[h.asset_id] = {
+          shares: h.shares,
+          price,
+          marketValue,
+          weight: portfolioAum > 0 ? (marketValue / portfolioAum) * 100 : 0,
+        }
+      })
+
+      return { holdings: holdingsMap, portfolioAum }
+    },
+    enabled: isOpen && isPairTrade && pairTradeLegAssetIds.length > 0,
+  })
+
+  // Initialize pair trade leg targets from leg data
+  useEffect(() => {
+    if (isPairTrade && pairTradeData) {
+      const legs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+      const targets: Record<string, { absoluteWeight: number | null; absoluteShares: number | null; sourceField: 'weight' | 'shares' | null }> = {}
+      legs.forEach((leg: any) => {
+        if (leg.proposed_weight !== null || leg.proposed_shares !== null) {
+          targets[leg.id] = {
+            absoluteWeight: leg.proposed_weight,
+            absoluteShares: leg.proposed_shares,
+            sourceField: leg.proposed_weight !== null ? 'weight' : (leg.proposed_shares !== null ? 'shares' : null),
+          }
+        }
+      })
+      setPairTradeLegTargets(targets)
+    }
+  }, [isPairTrade, pairTradeData])
+
+  // Helper: Get display value for pair trade leg weight based on sizing mode
+  const getPairTradeDisplayWeight = (legId: string, assetId: string): string => {
+    const target = pairTradeLegTargets[legId]
+    if (target?.absoluteWeight === null || target?.absoluteWeight === undefined) return ''
+
+    const holding = pairTradeHoldings?.holdings?.[assetId]
+    const currentWeight = holding?.weight || 0
+    const benchWeight = 0 // TODO: fetch from benchmark
+
+    switch (pairTradeSizingMode) {
+      case 'absolute':
+        return target.absoluteWeight.toFixed(2)
+      case 'relative_current':
+        return (target.absoluteWeight - currentWeight).toFixed(2)
+      case 'relative_benchmark':
+        return (target.absoluteWeight - benchWeight).toFixed(2)
+      default:
+        return target.absoluteWeight.toFixed(2)
+    }
+  }
+
+  // Helper: Get display value for pair trade leg shares based on sizing mode
+  const getPairTradeDisplayShares = (legId: string, assetId: string): string => {
+    const target = pairTradeLegTargets[legId]
+    if (target?.absoluteShares === null || target?.absoluteShares === undefined) return ''
+
+    const holding = pairTradeHoldings?.holdings?.[assetId]
+    const currentShares = holding?.shares || 0
+    const price = holding?.price || 0
+    const portfolioAum = pairTradeHoldings?.portfolioAum || 0
+    const benchWeight = 0 // TODO: fetch from benchmark
+    const benchShares = (price > 0 && portfolioAum > 0) ? Math.round((benchWeight / 100) * portfolioAum / price) : 0
+
+    switch (pairTradeSizingMode) {
+      case 'absolute':
+        return Math.round(target.absoluteShares).toString()
+      case 'relative_current':
+        return Math.round(target.absoluteShares - currentShares).toString()
+      case 'relative_benchmark':
+        return Math.round(target.absoluteShares - benchShares).toString()
+      default:
+        return Math.round(target.absoluteShares).toString()
+    }
+  }
+
+  // Helper: Update pair trade leg target with auto-calculation
+  const updatePairTradeLegTarget = (legId: string, assetId: string, field: 'weight' | 'shares', value: string) => {
+    const holding = pairTradeHoldings?.holdings?.[assetId]
+    const price = holding?.price || 0
+    const portfolioAum = pairTradeHoldings?.portfolioAum || 0
+    const currentWeight = holding?.weight || 0
+    const currentShares = holding?.shares || 0
+    const benchWeight = 0 // TODO: fetch from benchmark
+
+    // If clearing the value, reset both fields
+    if (!value || value.trim() === '') {
+      setPairTradeLegTargets(prev => ({
+        ...prev,
+        [legId]: { absoluteWeight: null, absoluteShares: null, sourceField: null }
+      }))
+      return
+    }
+
+    const numValue = parseFloat(value)
+    if (isNaN(numValue)) return
+
+    let absoluteWeight: number | null = null
+    let absoluteShares: number | null = null
+
+    if (field === 'weight') {
+      // Convert input to absolute weight based on sizing mode
+      switch (pairTradeSizingMode) {
+        case 'absolute':
+          absoluteWeight = numValue
+          break
+        case 'relative_current':
+          absoluteWeight = currentWeight + numValue
+          break
+        case 'relative_benchmark':
+          absoluteWeight = benchWeight + numValue
+          break
+      }
+      // Auto-calculate shares from absolute weight
+      if (absoluteWeight !== null && portfolioAum > 0 && price > 0) {
+        absoluteShares = Math.round((absoluteWeight / 100) * portfolioAum / price)
+      }
+    } else {
+      // Convert input to absolute shares based on sizing mode
+      const benchShares = (price > 0 && portfolioAum > 0) ? Math.round((benchWeight / 100) * portfolioAum / price) : 0
+
+      switch (pairTradeSizingMode) {
+        case 'absolute':
+          absoluteShares = numValue
+          break
+        case 'relative_current':
+          absoluteShares = currentShares + numValue
+          break
+        case 'relative_benchmark':
+          absoluteShares = benchShares + numValue
+          break
+      }
+      // Auto-calculate weight from absolute shares
+      if (absoluteShares !== null && portfolioAum > 0 && price > 0) {
+        absoluteWeight = (absoluteShares * price / portfolioAum) * 100
+      }
+    }
+
+    setPairTradeLegTargets(prev => ({
+      ...prev,
+      [legId]: { absoluteWeight, absoluteShares, sourceField: field }
+    }))
+  }
+
+  // Helper: Compute pair trade sizing summary
+  const pairTradeSizingSummary = useMemo(() => {
+    const legs = pairTradeData?.trade_queue_items || pairTradeData?.legs || []
+    let netWeight = 0
+    let grossWeight = 0
+    let longCount = 0
+    let shortCount = 0
+
+    legs.forEach((leg: any) => {
+      const target = pairTradeLegTargets[leg.id]
+      const weight = target?.absoluteWeight || 0
+      const isLong = leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+
+      netWeight += weight
+      grossWeight += Math.abs(weight)
+      if (isLong) longCount++
+      else shortCount++
+    })
+
+    return { netWeight, grossWeight, longCount, shortCount }
+  }, [pairTradeData, pairTradeLegTargets])
 
   // Fetch team members for assignment dropdowns
   const { data: teamMembers } = useQuery({
@@ -264,45 +563,6 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     enabled: isOpen,
     staleTime: 60000, // Cache for 1 minute
   })
-
-  // Fetch portfolio holdings for this asset to determine position context
-  const { data: portfolioPositions } = useQuery({
-    queryKey: ['portfolio-positions', trade?.asset_id],
-    queryFn: async () => {
-      if (!trade?.asset_id) return new Map<string, number>()
-
-      const { data, error } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id, shares')
-        .eq('asset_id', trade.asset_id)
-
-      if (error) throw error
-
-      // Create a map of portfolio_id -> shares
-      const positionMap = new Map<string, number>()
-      data?.forEach((holding: any) => {
-        positionMap.set(holding.portfolio_id, holding.shares || 0)
-      })
-      return positionMap
-    },
-    enabled: isOpen && !!trade?.asset_id,
-  })
-
-  // Helper to get position context label
-  const getPositionContext = (portfolioId: string): string => {
-    const shares = portfolioPositions?.get(portfolioId) || 0
-    const isBuy = trade?.action === 'buy' || trade?.action === 'add'
-
-    if (isBuy) {
-      if (shares > 0) return 'add to position'
-      if (shares < 0) return 'cover short'
-      return 'new position'
-    } else {
-      if (shares > 0) return 'reduce position'
-      if (shares < 0) return 'add to short'
-      return 'new short'
-    }
-  }
 
   // Fetch lab links with per-portfolio sizing
   const { data: labLinks = [], refetch: refetchLabLinks } = useQuery({
@@ -920,8 +1180,186 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     }
   })
 
+  // Update pair trade thesis mutation
+  // For pair_trades table: updates thesis_summary field
+  // For pair_id-only trades: updates rationale on all legs (temporary until schema supports shared thesis)
+  const updatePairTradeRationaleMutation = useMutation({
+    mutationFn: async (newThesis: string | null) => {
+      const isPairTradesTable = tradeData?.type === 'pair'
+
+      if (isPairTradesTable) {
+        // Update the pair_trades table thesis_summary field
+        const { error } = await supabase
+          .from('pair_trades')
+          .update({ thesis_summary: newThesis, updated_at: new Date().toISOString() })
+          .eq('id', tradeId)
+        if (error) throw error
+      } else {
+        // For pair_id-only trades, update rationale on all legs
+        // NOTE: This is temporary - ideally would have a shared thesis field
+        const { error } = await supabase
+          .from('trade_queue_items')
+          .update({ rationale: newThesis, updated_at: new Date().toISOString() })
+          .eq('pair_id', tradeId)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setIsEditingRationale(false)
+      setEditedRationale('')
+    }
+  })
+
+  // Update pair trade urgency mutation (updates all legs)
+  const updatePairTradeUrgencyMutation = useMutation({
+    mutationFn: async (newUrgency: string) => {
+      // Update all legs with this pair_id
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({ urgency: newUrgency, updated_at: new Date().toISOString() })
+        .eq('pair_id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+    }
+  })
+
+  // Update pair trade visibility mutation (updates all legs)
+  const updatePairTradeVisibilityMutation = useMutation({
+    mutationFn: async (newVisibility: 'private' | 'team') => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({ sharing_visibility: newVisibility, updated_at: new Date().toISOString() })
+        .eq('pair_id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setShowVisibilityDropdown(false)
+    }
+  })
+
+  // Update pair trade assignee mutation (updates all legs)
+  const updatePairTradeAssigneeMutation = useMutation({
+    mutationFn: async (assigneeId: string | null) => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({ assigned_to: assigneeId, updated_at: new Date().toISOString() })
+        .eq('pair_id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setShowAssigneeDropdown(false)
+    }
+  })
+
+  // Update pair trade collaborators mutation (updates all legs)
+  const updatePairTradeCollaboratorsMutation = useMutation({
+    mutationFn: async (collaboratorIds: string[]) => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({ collaborators: collaboratorIds, updated_at: new Date().toISOString() })
+        .eq('pair_id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setShowCollaboratorsDropdown(false)
+    }
+  })
+
+  // Update pair trade reference levels per leg
+  const updatePairTradeReferenceLevelsMutation = useMutation({
+    mutationFn: async (levels: Record<string, { targetPrice: number | null; stopLoss: number | null; takeProfit: number | null }>) => {
+      const updates = Object.entries(levels).map(([legId, legLevels]) =>
+        supabase
+          .from('trade_queue_items')
+          .update({
+            target_price: legLevels.targetPrice,
+            stop_loss: legLevels.stopLoss,
+            take_profit: legLevels.takeProfit,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', legId)
+      )
+      const results = await Promise.all(updates)
+      const errors = results.filter(r => r.error)
+      if (errors.length > 0) throw new Error('Failed to update some reference levels')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setIsEditingPairReferenceLevels(false)
+      setEditedPairReferenceLevels({})
+    }
+  })
+
+  // Update pair trade conviction and time horizon (updates all legs to keep in sync)
+  const updatePairTradeConvictionMutation = useMutation({
+    mutationFn: async (params: { conviction: string | null; timeHorizon: string | null }) => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({
+          conviction: params.conviction,
+          time_horizon: params.timeHorizon,
+          updated_at: new Date().toISOString()
+        })
+        .eq('pair_id', tradeId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setIsEditingPairConviction(false)
+      setEditedPairConviction(null)
+      setEditedPairTimeHorizon(null)
+    }
+  })
+
+  // Update pair trade sizing per leg
+  const updatePairTradeSizingMutation = useMutation({
+    mutationFn: async (sizing: Record<string, { proposedWeight: number | null; proposedShares: number | null }>) => {
+      const updates = Object.entries(sizing).map(([legId, legSizing]) =>
+        supabase
+          .from('trade_queue_items')
+          .update({
+            proposed_weight: legSizing.proposedWeight,
+            proposed_shares: legSizing.proposedShares,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', legId)
+      )
+      const results = await Promise.all(updates)
+      const errors = results.filter(r => r.error)
+      if (errors.length > 0) throw new Error('Failed to update some sizing values')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      setIsEditingPairSizing(false)
+      setEditedPairSizing({})
+    }
+  })
+
   // Ownership check for edit permissions
   const isOwner = trade?.created_by === user?.id
+  // For pair trades, check ownership from either pair_trades table or first leg
+  const isPairTradeOwner = pairTradeData?.created_by === user?.id ||
+    (pairTradeData?.legs?.[0]?.created_by === user?.id) ||
+    (pairTradeData?.trade_queue_items?.[0]?.created_by === user?.id)
 
   // Edit handlers
   const startEditRationale = () => {
@@ -1197,19 +1635,32 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               </div>
             )}
             {/* Pair Trade Header */}
-            {pairTrade && (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1 px-2 py-1 rounded font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                  <Link2 className="h-4 w-4" />
-                  <span className="text-sm">Pair Trade</span>
+            {isPairTrade && pairTradeData && (() => {
+              // Calculate leg counts
+              const legs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+              const longLegs = legs.filter((leg: any) =>
+                leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+              )
+              const shortLegs = legs.filter((leg: any) =>
+                leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && leg.action === 'sell')
+              )
+
+              return (
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {/* Purple pair trade badge - larger */}
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 flex-shrink-0">
+                    <Link2 className="h-5 w-5" />
+                    <span className="text-base">Pair Trade</span>
+                  </div>
+                  {/* Leg count badge */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-xs text-gray-600 dark:text-gray-300 flex-shrink-0">
+                    <span className="text-green-600 dark:text-green-400 font-medium">{longLegs.length} Long</span>
+                    <span className="text-gray-400">·</span>
+                    <span className="text-red-600 dark:text-red-400 font-medium">{shortLegs.length} Short</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="font-bold text-lg text-gray-900 dark:text-white">
-                    {pairTrade.name || 'Pairs Trade'}
-                  </span>
-                </div>
-              </div>
-            )}
+              )
+            })()}
             <button
               onClick={onClose}
               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -1288,123 +1739,743 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
               <div className="h-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
             </div>
-          ) : pairTrade ? (
+          ) : isPairTrade && pairTradeData ? (
             <>
               {/* Pair Trade Details Tab */}
               {activeTab === 'details' && (
-                <div className="p-4 space-y-6">
-                  {/* Status and Urgency */}
-                  <div className="flex items-center gap-3">
-                    <span className={clsx("px-3 py-1 rounded-full text-sm font-medium", STATUS_CONFIG[pairTrade.status as TradeQueueStatus]?.color || 'bg-gray-100 text-gray-800')}>
-                      {STATUS_CONFIG[pairTrade.status as TradeQueueStatus]?.label || pairTrade.status}
-                    </span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Urgency: <span className="font-medium capitalize">{pairTrade.urgency}</span>
-                    </span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Portfolio: <span className="font-medium">{pairTrade.portfolios?.name}</span>
-                    </span>
+                <div className="p-4 space-y-4">
+                  {/* ========== PAIR THESIS SECTION ========== */}
+                  <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Pair Thesis</h3>
+                    {isEditingRationale ? (
+                      <>
+                        <textarea
+                          autoFocus
+                          value={editedRationale}
+                          onChange={(e) => setEditedRationale(e.target.value)}
+                          placeholder="Why this pair trade? What's the catalyst or thesis?"
+                          rows={4}
+                          className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 resize-none border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent leading-relaxed"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setIsEditingRationale(false)
+                              setEditedRationale('')
+                            }
+                          }}
+                        />
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => {
+                              setIsEditingRationale(false)
+                              setEditedRationale('')
+                            }}
+                            disabled={updatePairTradeRationaleMutation.isPending}
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => updatePairTradeRationaleMutation.mutate(editedRationale || null)}
+                            disabled={updatePairTradeRationaleMutation.isPending}
+                            className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+                          >
+                            {updatePairTradeRationaleMutation.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="group">
+                        {(pairTradeData.thesis_summary || pairTradeData.rationale) ? (
+                          <div className="flex gap-2">
+                            <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                              {pairTradeData.thesis_summary || pairTradeData.rationale}
+                            </p>
+                            {isPairTradeOwner && (
+                              <button
+                                onClick={() => {
+                                  setEditedRationale(pairTradeData.thesis_summary || pairTradeData.rationale || '')
+                                  setIsEditingRationale(true)
+                                }}
+                                className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ) : isPairTradeOwner ? (
+                          <button
+                            onClick={() => {
+                              setEditedRationale('')
+                              setIsEditingRationale(true)
+                            }}
+                            className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                          >
+                            + Add thesis
+                          </button>
+                        ) : (
+                          <p className="text-sm text-gray-400 italic">No thesis</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Pair Legs */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Trade Legs</h3>
-                    {pairTrade.trade_queue_items?.filter((leg: any) => leg.pair_leg_type === 'long').map((leg: any) => (
-                      <div key={leg.id} className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 border border-green-200 dark:border-green-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-                          <span className="text-xs font-medium text-green-700 dark:text-green-300 uppercase">Long</span>
-                          <span className="font-semibold text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400">{leg.assets?.company_name}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          {leg.proposed_weight && (
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400">Target Weight: </span>
-                              <span className="font-medium text-green-600 dark:text-green-400">+{leg.proposed_weight.toFixed(2)}%</span>
-                            </div>
+                  {/* ========== URGENCY SECTION ========== */}
+                  <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Urgency</h3>
+                    <div className="flex gap-2">
+                      {(['low', 'medium', 'high', 'urgent'] as const).map((level) => (
+                        <button
+                          key={level}
+                          onClick={() => isPairTradeOwner && updatePairTradeUrgencyMutation.mutate(level)}
+                          disabled={!isPairTradeOwner || updatePairTradeUrgencyMutation.isPending}
+                          className={clsx(
+                            "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+                            pairTradeData.urgency === level
+                              ? level === 'urgent' ? "bg-red-500 text-white"
+                                : level === 'high' ? "bg-orange-500 text-white"
+                                : level === 'medium' ? "bg-blue-500 text-white"
+                                : "bg-gray-500 text-white"
+                              : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400",
+                            isPairTradeOwner && "hover:ring-2 hover:ring-offset-1 cursor-pointer",
+                            !isPairTradeOwner && "cursor-default"
                           )}
-                          {leg.proposed_shares && (
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400">Shares: </span>
-                              <span className="font-medium text-green-600 dark:text-green-400">+{leg.proposed_shares.toLocaleString()}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {pairTrade.trade_queue_items?.filter((leg: any) => leg.pair_leg_type === 'short').map((leg: any) => (
-                      <div key={leg.id} className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 border border-red-200 dark:border-red-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-                          <span className="text-xs font-medium text-red-700 dark:text-red-300 uppercase">Short</span>
-                          <span className="font-semibold text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400">{leg.assets?.company_name}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          {leg.proposed_weight && (
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400">Target Weight: </span>
-                              <span className="font-medium text-red-600 dark:text-red-400">-{leg.proposed_weight.toFixed(2)}%</span>
-                            </div>
-                          )}
-                          {leg.proposed_shares && (
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400">Shares: </span>
-                              <span className="font-medium text-red-600 dark:text-red-400">-{leg.proposed_shares.toLocaleString()}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Rationale */}
-                  {pairTrade.rationale && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Rationale
-                      </h3>
-                      <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{pairTrade.rationale}</p>
+                        >
+                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                        </button>
+                      ))}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Status Actions */}
-                  {pairTrade.status !== 'approved' && pairTrade.status !== 'cancelled' && pairTrade.status !== 'rejected' && (
-                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                        Actions
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {/* Move to Modeling */}
-                        {(pairTrade.status === 'idea' || pairTrade.status === 'discussing' || pairTrade.status === 'working_on') && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => updatePairTradeStatusMutation.mutate('simulating')}
-                            disabled={updatePairTradeStatusMutation.isPending}
-                          >
-                            <FlaskConical className="h-4 w-4 mr-1" />
-                            Start Modeling
-                          </Button>
+                  {/* ========== TRADE LEGS SECTION ========== */}
+                  <PairTradeLegEditor
+                    legs={(pairTradeData.trade_queue_items || pairTradeData.legs || []).map((leg: any) => ({
+                      id: leg.id,
+                      asset_id: leg.asset_id,
+                      assets: leg.assets,
+                      action: leg.action,
+                      pair_leg_type: leg.pair_leg_type,
+                      proposed_weight: leg.proposed_weight,
+                      proposed_shares: leg.proposed_shares,
+                      target_price: leg.target_price,
+                      stop_loss: leg.stop_loss,
+                      take_profit: leg.take_profit,
+                    }))}
+                    pairId={tradeId}
+                    portfolioId={pairTradeData.portfolio_id || pairTradeData.portfolios?.id || ''}
+                    userId={user?.id || ''}
+                    isOwner={isPairTradeOwner}
+                    onLegsChanged={() => {
+                      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+                    }}
+                  />
+
+                  {/* ========== PORTFOLIO SIZING SECTION ========== */}
+                  <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <button
+                        onClick={() => setIsLabsExpanded(!isLabsExpanded)}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
+                      >
+                        {isLabsExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <Scale className="h-3.5 w-3.5" />
+                        Portfolio Sizing
+                      </button>
+                      {isLabsExpanded && (
+                        <div className="flex rounded-md border border-gray-200 dark:border-gray-600 overflow-hidden">
+                          {[
+                            { value: 'absolute', label: 'Target %' },
+                            { value: 'relative_current', label: '+/− Current' },
+                            { value: 'relative_benchmark', label: '+/− Bench' },
+                          ].map((mode) => (
+                            <button
+                              key={mode.value}
+                              type="button"
+                              onClick={() => {
+                                setPairTradeActiveInput(null) // Clear so display recalculates with new mode
+                                setPairTradeSizingMode(mode.value as 'absolute' | 'relative_current' | 'relative_benchmark')
+                              }}
+                              className={clsx(
+                                "px-2 py-0.5 text-[10px] font-medium transition-colors border-r last:border-r-0 border-gray-200 dark:border-gray-600",
+                                pairTradeSizingMode === mode.value
+                                  ? "bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300"
+                                  : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                              )}
+                            >
+                              {mode.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {isLabsExpanded && (
+                      <div className="mt-3">
+                        {/* Portfolio block */}
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                          <div className="bg-gray-50 dark:bg-gray-700/50 px-3 py-2 border-b border-gray-200 dark:border-gray-600">
+                            <span className="font-medium text-sm text-gray-800 dark:text-gray-200">
+                              {pairTradeData.portfolios?.name || 'Primary Portfolio'}
+                            </span>
+                            {pairTradeHoldings?.portfolioAum ? (
+                              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                                AUM: ${(pairTradeHoldings.portfolioAum / 1000).toFixed(0)}K
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                                  <th className="text-left py-2 px-2 font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Leg</th>
+                                  <th className="text-right py-2 px-1.5 font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    <div className="flex flex-col items-end">
+                                      <span>Current</span>
+                                      <span className="text-[9px] font-normal text-gray-400">Weight</span>
+                                    </div>
+                                  </th>
+                                  <th className="text-right py-2 px-1.5 font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    <div className="flex flex-col items-end">
+                                      <span>Bench</span>
+                                      <span className="text-[9px] font-normal text-gray-400">Weight</span>
+                                    </div>
+                                  </th>
+                                  <th className="text-right py-2 px-1.5 font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    <div className="flex flex-col items-end">
+                                      <span>Active</span>
+                                      <span className="text-[9px] font-normal text-gray-400">Weight</span>
+                                    </div>
+                                  </th>
+                                  <th className="text-right py-2 px-1.5 font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    <div className="flex flex-col items-end">
+                                      <span>Current</span>
+                                      <span className="text-[9px] font-normal text-gray-400">Shares</span>
+                                    </div>
+                                  </th>
+                                  <th className="text-center py-2 px-1.5 font-semibold text-primary-600 dark:text-primary-400 whitespace-nowrap bg-primary-50/50 dark:bg-primary-900/20">
+                                    <div className="flex flex-col items-center">
+                                      <span>{pairTradeSizingMode === 'absolute' ? 'Target' : '+/−'}</span>
+                                      <span className="text-[9px] font-normal">Weight %</span>
+                                    </div>
+                                  </th>
+                                  <th className="text-center py-2 px-1.5 font-semibold text-primary-600 dark:text-primary-400 whitespace-nowrap bg-primary-50/50 dark:bg-primary-900/20">
+                                    <div className="flex flex-col items-center">
+                                      <span>Target</span>
+                                      <span className="text-[9px] font-normal">Shares</span>
+                                    </div>
+                                  </th>
+                                  <th className="w-8"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(pairTradeData.trade_queue_items || pairTradeData.legs)?.map((leg: any, idx: number) => {
+                                  const isLong = leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+                                  const holding = pairTradeHoldings?.holdings?.[leg.asset_id]
+                                  const currentWeight = holding?.weight || 0
+                                  const benchWeight = 0 // TODO: fetch from benchmark
+                                  const activeWeight = currentWeight - benchWeight
+                                  const target = pairTradeLegTargets[leg.id]
+                                  const hasChanges = target && (
+                                    target.absoluteWeight !== leg.proposed_weight ||
+                                    target.absoluteShares !== leg.proposed_shares
+                                  )
+
+                                  return (
+                                    <tr
+                                      key={leg.id}
+                                      className={clsx(
+                                        "border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50/50 dark:hover:bg-gray-700/30 group",
+                                        idx % 2 === 1 && "bg-gray-25 dark:bg-gray-800/30"
+                                      )}
+                                    >
+                                      <td className="py-1.5 px-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className={clsx(
+                                            "text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded",
+                                            isLong ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                          )}>
+                                            {isLong ? 'Long' : 'Short'}
+                                          </span>
+                                          <span className="font-medium text-gray-800 dark:text-gray-200">{leg.assets?.symbol}</span>
+                                        </div>
+                                      </td>
+                                      <td className="text-right py-1.5 px-1.5 tabular-nums">
+                                        <span className={clsx("font-medium", currentWeight > 0 ? "text-gray-700 dark:text-gray-300" : "text-gray-400")}>
+                                          {currentWeight > 0 ? currentWeight.toFixed(2) + '%' : '—'}
+                                        </span>
+                                      </td>
+                                      <td className="text-right py-1.5 px-1.5 text-gray-400 dark:text-gray-500 tabular-nums">
+                                        {benchWeight > 0 ? `${benchWeight.toFixed(2)}%` : '—'}
+                                      </td>
+                                      <td className="text-right py-1.5 px-1.5 tabular-nums">
+                                        <span className={clsx(
+                                          "font-medium",
+                                          activeWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                          activeWeight < 0 ? "text-red-600 dark:text-red-400" : "text-gray-400"
+                                        )}>
+                                          {activeWeight !== 0 ? (activeWeight > 0 ? '+' : '') + activeWeight.toFixed(2) + '%' : '—'}
+                                        </span>
+                                      </td>
+                                      <td className="text-right py-1.5 px-1.5 tabular-nums">
+                                        <span className={clsx(
+                                          (holding?.shares || 0) > 0 ? "text-gray-700 dark:text-gray-300 font-medium" : "text-gray-400"
+                                        )}>
+                                          {(holding?.shares || 0) > 0 ? (holding?.shares || 0).toLocaleString() : '—'}
+                                        </span>
+                                      </td>
+                                      <td className="py-1 px-1 bg-primary-50/30 dark:bg-primary-900/10">
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          placeholder={pairTradeSizingMode === 'absolute' ? (currentWeight > 0 ? currentWeight.toFixed(1) : (isLong ? '2.0' : '-2.0')) : (isLong ? '+0.5' : '-0.5')}
+                                          value={
+                                            pairTradeActiveInput?.legId === leg.id && pairTradeActiveInput?.field === 'weight'
+                                              ? pairTradeActiveInput.rawValue
+                                              : getPairTradeDisplayWeight(leg.id, leg.asset_id)
+                                          }
+                                          onFocus={() => setPairTradeActiveInput({
+                                            legId: leg.id,
+                                            field: 'weight',
+                                            rawValue: getPairTradeDisplayWeight(leg.id, leg.asset_id)
+                                          })}
+                                          onChange={(e) => {
+                                            setPairTradeActiveInput({ legId: leg.id, field: 'weight', rawValue: e.target.value })
+                                            updatePairTradeLegTarget(leg.id, leg.asset_id, 'weight', e.target.value)
+                                          }}
+                                          onBlur={() => setPairTradeActiveInput(null)}
+                                          className={clsx(
+                                            "text-center text-xs h-6 w-full min-w-[50px] rounded border px-1 focus:outline-none focus:ring-1",
+                                            target?.sourceField === 'weight'
+                                              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold focus:border-blue-500 focus:ring-blue-500"
+                                              : target?.sourceField === 'shares' && target?.absoluteWeight !== null
+                                                ? "border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 italic font-normal"
+                                                : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-medium focus:border-primary-500 focus:ring-primary-500"
+                                          )}
+                                        />
+                                      </td>
+                                      <td className="py-1 px-1 bg-primary-50/30 dark:bg-primary-900/10">
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          placeholder={holding?.shares ? Math.round(holding.shares).toString() : '—'}
+                                          value={
+                                            pairTradeActiveInput?.legId === leg.id && pairTradeActiveInput?.field === 'shares'
+                                              ? pairTradeActiveInput.rawValue
+                                              : getPairTradeDisplayShares(leg.id, leg.asset_id)
+                                          }
+                                          onFocus={() => setPairTradeActiveInput({
+                                            legId: leg.id,
+                                            field: 'shares',
+                                            rawValue: getPairTradeDisplayShares(leg.id, leg.asset_id)
+                                          })}
+                                          onChange={(e) => {
+                                            setPairTradeActiveInput({ legId: leg.id, field: 'shares', rawValue: e.target.value })
+                                            updatePairTradeLegTarget(leg.id, leg.asset_id, 'shares', e.target.value)
+                                          }}
+                                          onBlur={() => setPairTradeActiveInput(null)}
+                                          className={clsx(
+                                            "text-center text-xs h-6 w-full min-w-[55px] rounded border px-1 focus:outline-none focus:ring-1",
+                                            target?.sourceField === 'shares'
+                                              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold focus:border-blue-500 focus:ring-blue-500"
+                                              : target?.sourceField === 'weight' && target?.absoluteShares !== null
+                                                ? "border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 italic font-normal"
+                                                : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-medium focus:border-primary-500 focus:ring-primary-500"
+                                          )}
+                                        />
+                                      </td>
+                                      <td className="py-1 px-1">
+                                        {hasChanges && (
+                                          <button
+                                            onClick={() => {
+                                              const sizing: Record<string, { proposedWeight: number | null; proposedShares: number | null }> = {
+                                                [leg.id]: {
+                                                  proposedWeight: target?.absoluteWeight ?? null,
+                                                  proposedShares: target?.absoluteShares ? Math.round(target.absoluteShares) : null,
+                                                }
+                                              }
+                                              updatePairTradeSizingMutation.mutate(sizing)
+                                            }}
+                                            disabled={updatePairTradeSizingMutation.isPending}
+                                            className="p-0.5 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                                            title="Save sizing"
+                                          >
+                                            <Check className="h-3.5 w-3.5" />
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          {/* Summary row */}
+                          <div className="bg-gray-50 dark:bg-gray-700/50 px-3 py-2 border-t border-gray-200 dark:border-gray-600 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-4">
+                              <span className="text-gray-500 dark:text-gray-400">
+                                {pairTradeSizingSummary.longCount} Long · {pairTradeSizingSummary.shortCount} Short
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 tabular-nums">
+                              <div>
+                                <span className="text-gray-400">Net: </span>
+                                <span className={clsx(
+                                  "font-medium",
+                                  pairTradeSizingSummary.netWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                  pairTradeSizingSummary.netWeight < 0 ? "text-red-600 dark:text-red-400" : "text-gray-500"
+                                )}>
+                                  {pairTradeSizingSummary.netWeight > 0 ? '+' : ''}{pairTradeSizingSummary.netWeight.toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Gross: </span>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">
+                                  {pairTradeSizingSummary.grossWeight.toFixed(2)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {/* Helper text */}
+                        <p className="text-[10px] text-gray-400 mt-2">
+                          {pairTradeSizingMode === 'absolute' && 'Enter target weight % or shares — the other auto-calculates.'}
+                          {pairTradeSizingMode === 'relative_current' && 'Enter +/− change from current — the other auto-calculates.'}
+                          {pairTradeSizingMode === 'relative_benchmark' && 'Enter +/− vs benchmark — the other auto-calculates.'}
+                          {(!pairTradeHoldings?.portfolioAum || pairTradeHoldings.portfolioAum === 0) && (
+                            <span className="text-amber-500 ml-1">(Portfolio AUM needed for share calculation)</span>
+                          )}
+                        </p>
+                        {/* Add to portfolio */}
+                        <div className="mt-3">
+                          <button className="text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 transition-colors">
+                            <Plus className="h-3 w-3" />
+                            Add to portfolio
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== REFERENCE LEVELS SECTION (collapsible, editable) ========== */}
+                  <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => setIsSizingExpanded(!isSizingExpanded)}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
+                      >
+                        {isSizingExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <Target className="h-3.5 w-3.5" />
+                        Reference Levels
+                      </button>
+                      {isPairTradeOwner && !isEditingPairReferenceLevels && isSizingExpanded && (
+                        <button
+                          onClick={() => {
+                            const legs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+                            const initial: Record<string, { targetPrice: string; stopLoss: string; takeProfit: string }> = {}
+                            legs.forEach((leg: any) => {
+                              initial[leg.id] = {
+                                targetPrice: leg.target_price?.toString() || '',
+                                stopLoss: leg.stop_loss?.toString() || '',
+                                takeProfit: leg.take_profit?.toString() || '',
+                              }
+                            })
+                            setEditedPairReferenceLevels(initial)
+                            setIsEditingPairReferenceLevels(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {isSizingExpanded && (
+                      <div className="mt-2">
+                        {isEditingPairReferenceLevels ? (
+                          <div className="space-y-2">
+                            <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                                    <th className="text-left py-1.5 px-2 font-semibold text-gray-600 dark:text-gray-300">Leg</th>
+                                    <th className="text-center py-1.5 px-1 font-medium text-gray-500 dark:text-gray-400 w-20">Entry</th>
+                                    <th className="text-center py-1.5 px-1 font-medium text-gray-500 dark:text-gray-400 w-20">Stop</th>
+                                    <th className="text-center py-1.5 px-1 font-medium text-gray-500 dark:text-gray-400 w-20">Target</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(pairTradeData.trade_queue_items || pairTradeData.legs)?.map((leg: any, idx: number) => {
+                                    const isLong = leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+                                    const edited = editedPairReferenceLevels[leg.id] || { targetPrice: '', stopLoss: '', takeProfit: '' }
+                                    return (
+                                      <tr key={leg.id} className={clsx("border-t border-gray-100 dark:border-gray-700/50", idx % 2 === 1 && "bg-gray-25 dark:bg-gray-800/30")}>
+                                        <td className="py-1.5 px-2">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className={clsx("text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded", isLong ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
+                                              {isLong ? 'Long' : 'Short'}
+                                            </span>
+                                            <span className="font-medium text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
+                                          </div>
+                                        </td>
+                                        <td className="py-1 px-1">
+                                          <input type="text" inputMode="decimal" placeholder="150.00" value={edited.targetPrice}
+                                            onChange={(e) => setEditedPairReferenceLevels(prev => ({ ...prev, [leg.id]: { ...prev[leg.id], targetPrice: e.target.value } }))}
+                                            className="text-center text-xs h-6 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
+                                          />
+                                        </td>
+                                        <td className="py-1 px-1">
+                                          <input type="text" inputMode="decimal" placeholder="140.00" value={edited.stopLoss}
+                                            onChange={(e) => setEditedPairReferenceLevels(prev => ({ ...prev, [leg.id]: { ...prev[leg.id], stopLoss: e.target.value } }))}
+                                            className="text-center text-xs h-6 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
+                                          />
+                                        </td>
+                                        <td className="py-1 px-1">
+                                          <input type="text" inputMode="decimal" placeholder="180.00" value={edited.takeProfit}
+                                            onChange={(e) => setEditedPairReferenceLevels(prev => ({ ...prev, [leg.id]: { ...prev[leg.id], takeProfit: e.target.value } }))}
+                                            className="text-center text-xs h-6 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
+                                          />
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="ghost" onClick={() => { setIsEditingPairReferenceLevels(false); setEditedPairReferenceLevels({}) }} disabled={updatePairTradeReferenceLevelsMutation.isPending}>
+                                Cancel
+                              </Button>
+                              <Button size="sm" onClick={() => {
+                                const levels: Record<string, { targetPrice: number | null; stopLoss: number | null; takeProfit: number | null }> = {}
+                                Object.entries(editedPairReferenceLevels).forEach(([legId, vals]) => {
+                                  levels[legId] = {
+                                    targetPrice: vals.targetPrice ? parseFloat(vals.targetPrice) : null,
+                                    stopLoss: vals.stopLoss ? parseFloat(vals.stopLoss) : null,
+                                    takeProfit: vals.takeProfit ? parseFloat(vals.takeProfit) : null,
+                                  }
+                                })
+                                updatePairTradeReferenceLevelsMutation.mutate(levels)
+                              }} disabled={updatePairTradeReferenceLevelsMutation.isPending} loading={updatePairTradeReferenceLevelsMutation.isPending}>
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                                  <th className="text-left py-1.5 px-2 font-semibold text-gray-600 dark:text-gray-300">Leg</th>
+                                  <th className="text-center py-1.5 px-1 font-medium text-gray-500 dark:text-gray-400 w-20">Entry</th>
+                                  <th className="text-center py-1.5 px-1 font-medium text-red-500 dark:text-red-400 w-20">Stop</th>
+                                  <th className="text-center py-1.5 px-1 font-medium text-green-500 dark:text-green-400 w-20">Target</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(pairTradeData.trade_queue_items || pairTradeData.legs)?.map((leg: any, idx: number) => {
+                                  const isLong = leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+                                  return (
+                                    <tr key={leg.id} className={clsx("border-t border-gray-100 dark:border-gray-700/50", idx % 2 === 1 && "bg-gray-25 dark:bg-gray-800/30")}>
+                                      <td className="py-1.5 px-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className={clsx("text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded", isLong ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
+                                            {isLong ? 'Long' : 'Short'}
+                                          </span>
+                                          <span className="font-medium text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
+                                        </div>
+                                      </td>
+                                      <td className="text-center py-1 px-1 w-20 tabular-nums text-gray-700 dark:text-gray-300">
+                                        {leg.target_price ? `$${leg.target_price.toFixed(2)}` : '—'}
+                                      </td>
+                                      <td className="text-center py-1 px-1 w-20 tabular-nums text-red-600 dark:text-red-400">
+                                        {leg.stop_loss ? `$${leg.stop_loss.toFixed(2)}` : '—'}
+                                      </td>
+                                      <td className="text-center py-1 px-1 w-20 tabular-nums text-green-600 dark:text-green-400">
+                                        {leg.take_profit ? `$${leg.take_profit.toFixed(2)}` : '—'}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
-                        {/* Move to Deciding */}
-                        {(pairTrade.status === 'simulating' || pairTrade.status === 'modeling') && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => updatePairTradeStatusMutation.mutate('deciding')}
-                            disabled={updatePairTradeStatusMutation.isPending}
-                          >
-                            <Scale className="h-4 w-4 mr-1" />
-                            Move to Deciding
-                          </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== CONVICTION & TIME HORIZON SECTION (collapsible, editable) ========== */}
+                  <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => setIsRiskExpanded(!isRiskExpanded)}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
+                      >
+                        {isRiskExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <Gauge className="h-3.5 w-3.5" />
+                        Conviction & Time Horizon
+                      </button>
+                      {isPairTradeOwner && !isEditingPairConviction && isRiskExpanded && (
+                        <button
+                          onClick={() => {
+                            const firstLeg = (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]
+                            setEditedPairConviction(firstLeg?.conviction || null)
+                            setEditedPairTimeHorizon(firstLeg?.time_horizon || null)
+                            setIsEditingPairConviction(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {isRiskExpanded && (
+                      <div className="mt-3">
+                        {isEditingPairConviction ? (
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Conviction</label>
+                              <div className="flex gap-2">
+                                {(['low', 'medium', 'high'] as const).map((level) => (
+                                  <button
+                                    key={level}
+                                    onClick={() => setEditedPairConviction(editedPairConviction === level ? null : level)}
+                                    className={clsx(
+                                      "flex-1 py-1.5 px-3 text-xs font-medium rounded border transition-colors",
+                                      editedPairConviction === level
+                                        ? level === 'low' ? "bg-gray-100 border-gray-400 text-gray-700"
+                                        : level === 'medium' ? "bg-blue-100 border-blue-400 text-blue-700"
+                                        : "bg-green-100 border-green-400 text-green-700"
+                                        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    )}
+                                  >
+                                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Time Horizon</label>
+                              <div className="flex gap-2">
+                                {(['short', 'medium', 'long'] as const).map((horizon) => (
+                                  <button
+                                    key={horizon}
+                                    onClick={() => setEditedPairTimeHorizon(editedPairTimeHorizon === horizon ? null : horizon)}
+                                    className={clsx(
+                                      "flex-1 py-1.5 px-3 text-xs font-medium rounded border transition-colors",
+                                      editedPairTimeHorizon === horizon
+                                        ? "bg-primary-100 border-primary-400 text-primary-700"
+                                        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    )}
+                                  >
+                                    {horizon.charAt(0).toUpperCase() + horizon.slice(1)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="ghost" onClick={() => {
+                                setIsEditingPairConviction(false)
+                                setEditedPairConviction(null)
+                                setEditedPairTimeHorizon(null)
+                              }} disabled={updatePairTradeConvictionMutation.isPending}>
+                                Cancel
+                              </Button>
+                              <Button size="sm" onClick={() => updatePairTradeConvictionMutation.mutate({
+                                conviction: editedPairConviction,
+                                timeHorizon: editedPairTimeHorizon
+                              })} disabled={updatePairTradeConvictionMutation.isPending} loading={updatePairTradeConvictionMutation.isPending}>
+                                <Save className="h-3.5 w-3.5 mr-1" />
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 block">Conviction</span>
+                              <span className={clsx(
+                                "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                                (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction === 'low' && "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+                                (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction === 'medium' && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+                                (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction === 'high' && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+                                !(pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction && "text-gray-400"
+                              )}>
+                                {(pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction ? (pairTradeData.trade_queue_items || pairTradeData.legs)[0].conviction.charAt(0).toUpperCase() + (pairTradeData.trade_queue_items || pairTradeData.legs)[0].conviction.slice(1) : '—'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 block">Time Horizon</span>
+                              <span className={clsx(
+                                "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                                (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.time_horizon && "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300",
+                                !(pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.time_horizon && "text-gray-400"
+                              )}>
+                                {(pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.time_horizon ? (pairTradeData.trade_queue_items || pairTradeData.legs)[0].time_horizon.charAt(0).toUpperCase() + (pairTradeData.trade_queue_items || pairTradeData.legs)[0].time_horizon.slice(1) : '—'}
+                              </span>
+                            </div>
+                          </div>
                         )}
-                        {/* Decision actions (only in deciding stage) */}
-                        {pairTrade.status === 'deciding' && (
-                          <>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== ACTIONS - SEGMENTED SECTIONS ========== */}
+                  {pairTradeData.status !== 'approved' && pairTradeData.status !== 'cancelled' && pairTradeData.status !== 'rejected' && pairTradeData.status !== 'archived' && (
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
+
+                      {/* SECTION 1: Move Forward (not shown in Deciding) */}
+                      {pairTradeData.status !== 'deciding' && (
+                        <div>
+                          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                            Move Forward
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {(pairTradeData.status === 'idea') && (
+                              <>
+                                <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('discussing')} disabled={updatePairTradeStatusMutation.isPending}>
+                                  <Wrench className="h-4 w-4 mr-1" />
+                                  Working On
+                                </Button>
+                                <Button size="sm" onClick={() => updatePairTradeStatusMutation.mutate('simulating')} disabled={updatePairTradeStatusMutation.isPending}>
+                                  <FlaskConical className="h-4 w-4 mr-1" />
+                                  Modeling
+                                </Button>
+                                <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('deciding')} disabled={updatePairTradeStatusMutation.isPending}>
+                                  <Scale className="h-4 w-4 mr-1" />
+                                  Deciding
+                                </Button>
+                              </>
+                            )}
+                            {(pairTradeData.status === 'discussing' || pairTradeData.status === 'working_on') && (
+                              <>
+                                <Button size="sm" onClick={() => updatePairTradeStatusMutation.mutate('simulating')} disabled={updatePairTradeStatusMutation.isPending}>
+                                  <FlaskConical className="h-4 w-4 mr-1" />
+                                  Modeling
+                                </Button>
+                                <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('deciding')} disabled={updatePairTradeStatusMutation.isPending}>
+                                  <Scale className="h-4 w-4 mr-1" />
+                                  Deciding
+                                </Button>
+                              </>
+                            )}
+                            {(pairTradeData.status === 'simulating' || pairTradeData.status === 'modeling') && (
+                              <Button size="sm" onClick={() => updatePairTradeStatusMutation.mutate('deciding')} disabled={updatePairTradeStatusMutation.isPending}>
+                                <Scale className="h-4 w-4 mr-1" />
+                                Deciding
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SECTION 2: Decision (only in Deciding stage) */}
+                      {pairTradeData.status === 'deciding' && (
+                        <div>
+                          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                            Decision
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
                             <Button
                               size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
                               onClick={() => updatePairTradeStatusMutation.mutate('approved')}
                               disabled={updatePairTradeStatusMutation.isPending}
                             >
@@ -1429,64 +2500,247 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               <XCircle className="h-4 w-4 mr-1" />
                               Reject
                             </Button>
-                          </>
-                        )}
-                        {/* Archive (for non-deciding stages) */}
-                        {pairTrade.status !== 'deciding' && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                          </div>
+                          <button
+                            onClick={() => updatePairTradeStatusMutation.mutate('simulating')}
+                            disabled={updatePairTradeStatusMutation.isPending}
+                            className="mt-2 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 flex items-center gap-1"
+                          >
+                            <FlaskConical className="h-3 w-3" />
+                            Back to Modeling
+                          </button>
+                        </div>
+                      )}
+
+                      {/* SECTION 3: Remove */}
+                      <div className="pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                        <div className="flex items-center gap-4">
+                          <button
                             onClick={() => updatePairTradeStatusMutation.mutate('cancelled')}
                             disabled={updatePairTradeStatusMutation.isPending}
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                          >
+                            Defer
+                          </button>
+                          <button
+                            onClick={() => updatePairTradeStatusMutation.mutate('cancelled')}
+                            disabled={updatePairTradeStatusMutation.isPending}
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
                           >
                             Archive
-                          </Button>
-                        )}
+                          </button>
+                          <button
+                            onClick={() => updatePairTradeStatusMutation.mutate('deleted')}
+                            disabled={updatePairTradeStatusMutation.isPending}
+                            className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Restore Actions for Archived Pair Trades */}
-                  {(pairTrade.status === 'approved' || pairTrade.status === 'cancelled' || pairTrade.status === 'rejected') && (
+                  {/* Restore Actions for Archived/Deferred Pair Trades */}
+                  {(pairTradeData.status === 'approved' || pairTradeData.status === 'cancelled' || pairTradeData.status === 'rejected' || pairTradeData.status === 'archived') && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                        Restore Pair Trade
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        This pair trade is archived. You can restore it to an active status.
-                      </p>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                        Restore
+                      </h4>
                       <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => updatePairTradeStatusMutation.mutate('idea')}
-                          disabled={updatePairTradeStatusMutation.isPending}
-                        >
-                          <RotateCcw className="h-4 w-4 mr-1" />
-                          Restore as Idea
+                        <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('idea')} disabled={updatePairTradeStatusMutation.isPending}>
+                          Ideas
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => updatePairTradeStatusMutation.mutate('discussing')}
-                          disabled={updatePairTradeStatusMutation.isPending}
-                        >
-                          <MessageSquare className="h-4 w-4 mr-1" />
-                          Restore as Discussing
+                        <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('discussing')} disabled={updatePairTradeStatusMutation.isPending}>
+                          Working On
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('simulating')} disabled={updatePairTradeStatusMutation.isPending}>
+                          Modeling
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => updatePairTradeStatusMutation.mutate('deleted')} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
                         </Button>
                       </div>
                     </div>
                   )}
 
-                  {/* Metadata */}
-                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 text-xs text-gray-500 dark:text-gray-400">
+                  {/* Restore Actions for Deleted Pair Trades */}
+                  {pairTradeData.status === 'deleted' && (
+                    <div className="border-t border-red-200 dark:border-red-800/50 pt-4 bg-red-50/50 dark:bg-red-900/10 -mx-4 px-4 pb-4 rounded-b-lg">
+                      <h3 className="text-sm font-semibold text-red-700 dark:text-red-300 mb-3">Restore Deleted Pair Trade</h3>
+                      <p className="text-xs text-red-600 dark:text-red-400 mb-3">This pair trade was deleted. You can restore it to an active status.</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('idea')} disabled={updatePairTradeStatusMutation.isPending}>
+                          <RotateCcw className="h-4 w-4 mr-1" />
+                          Restore to Ideas
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('discussing')} disabled={updatePairTradeStatusMutation.isPending}>
+                          <Wrench className="h-4 w-4 mr-1" />
+                          Restore to Working On
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== METADATA SECTION ========== */}
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
                     <div className="flex items-center gap-1">
                       <User className="h-3 w-3" />
-                      Created by {pairTrade.users ? getUserDisplayName(pairTrade.users) : 'Unknown'}
+                      Created by {pairTradeData.users ? getUserDisplayName(pairTradeData.users) : 'Unknown'}
                     </div>
                     <div className="flex items-center gap-1 mt-1">
                       <Clock className="h-3 w-3" />
-                      {formatDistanceToNow(new Date(pairTrade.created_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(pairTradeData.created_at), { addSuffix: true })}
+                    </div>
+
+                    {/* Visibility - Editable if owner */}
+                    <div className="flex items-center gap-1 mt-2 relative" ref={visibilityDropdownRef}>
+                      {pairTradeData.sharing_visibility && pairTradeData.sharing_visibility !== 'private' ? (
+                        <Users className="h-3 w-3 text-blue-500" />
+                      ) : (
+                        <Lock className="h-3 w-3" />
+                      )}
+                      {isPairTradeOwner ? (
+                        <button onClick={() => setShowVisibilityDropdown(!showVisibilityDropdown)} className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                          <span>{pairTradeData.sharing_visibility && pairTradeData.sharing_visibility !== 'private' ? 'Portfolio members can see' : 'Private - only you'}</span>
+                          <ChevronDown className={clsx("h-3 w-3 transition-transform", showVisibilityDropdown && "rotate-180")} />
+                        </button>
+                      ) : (
+                        <span>{pairTradeData.sharing_visibility && pairTradeData.sharing_visibility !== 'private' ? 'Portfolio members can see' : 'Private'}</span>
+                      )}
+
+                      {showVisibilityDropdown && isPairTradeOwner && (
+                        <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[200px]">
+                          <button onClick={() => updatePairTradeVisibilityMutation.mutate('private')} disabled={updatePairTradeVisibilityMutation.isPending} className={clsx("w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", (!pairTradeData.sharing_visibility || pairTradeData.sharing_visibility === 'private') && "bg-gray-50 dark:bg-gray-700")}>
+                            <Lock className="h-4 w-4 text-gray-500" />
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">Private</div>
+                              <div className="text-xs text-gray-500">Only visible to you</div>
+                            </div>
+                          </button>
+                          <button onClick={() => updatePairTradeVisibilityMutation.mutate('team')} disabled={updatePairTradeVisibilityMutation.isPending} className={clsx("w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", pairTradeData.sharing_visibility === 'team' && "bg-gray-50 dark:bg-gray-700")}>
+                            <Users className="h-4 w-4 text-blue-500" />
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">Portfolio</div>
+                              <div className="text-xs text-gray-500">Members of selected portfolios can see</div>
+                            </div>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Assigned To - Editable if owner */}
+                    <div className="flex items-center gap-1 mt-2 relative" ref={assigneeDropdownRef}>
+                      <User className="h-3 w-3" />
+                      {isPairTradeOwner ? (
+                        <button
+                          onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                          className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <span>
+                            {pairTradeData.assigned_user
+                              ? `Assigned to ${getUserDisplayName(pairTradeData.assigned_user)}`
+                              : 'Assign to someone'}
+                          </span>
+                          <ChevronDown className={clsx("h-3 w-3 transition-transform", showAssigneeDropdown && "rotate-180")} />
+                        </button>
+                      ) : (
+                        <span>
+                          {pairTradeData.assigned_user
+                            ? `Assigned to ${getUserDisplayName(pairTradeData.assigned_user)}`
+                            : 'Not assigned'}
+                        </span>
+                      )}
+
+                      {showAssigneeDropdown && isPairTradeOwner && (
+                        <div className="absolute left-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
+                          <button
+                            onClick={() => updatePairTradeAssigneeMutation.mutate(null)}
+                            disabled={updatePairTradeAssigneeMutation.isPending}
+                            className={clsx(
+                              "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                              !pairTradeData.assigned_to && "bg-gray-50 dark:bg-gray-700"
+                            )}
+                          >
+                            <XCircle className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-600 dark:text-gray-300">Unassign</span>
+                          </button>
+                          {teamMembers?.filter(m => m.id !== user?.id).map(member => (
+                            <button
+                              key={member.id}
+                              onClick={() => updatePairTradeAssigneeMutation.mutate(member.id)}
+                              disabled={updatePairTradeAssigneeMutation.isPending}
+                              className={clsx(
+                                "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                                pairTradeData.assigned_to === member.id && "bg-primary-50 dark:bg-primary-900/20"
+                              )}
+                            >
+                              <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
+                                {getUserInitials(member)}
+                              </div>
+                              <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Collaborators / Co-analysts */}
+                    <div className="flex items-center gap-1 mt-2 relative" ref={collaboratorsDropdownRef}>
+                      <Users className="h-3 w-3" />
+                      {isPairTradeOwner ? (
+                        <button
+                          onClick={() => setShowCollaboratorsDropdown(!showCollaboratorsDropdown)}
+                          className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <span>
+                            {(pairTradeData.collaborators?.length > 0)
+                              ? `${pairTradeData.collaborators.length} co-analyst${pairTradeData.collaborators.length > 1 ? 's' : ''}`
+                              : 'Add co-analysts'}
+                          </span>
+                          <ChevronDown className={clsx("h-3 w-3 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
+                        </button>
+                      ) : (
+                        <span>
+                          {(pairTradeData.collaborators?.length > 0)
+                            ? `${pairTradeData.collaborators.length} co-analyst${pairTradeData.collaborators.length > 1 ? 's' : ''}`
+                            : 'No co-analysts'}
+                        </span>
+                      )}
+
+                      {showCollaboratorsDropdown && isPairTradeOwner && (
+                        <div className="absolute left-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
+                          {teamMembers?.filter(m => m.id !== user?.id && m.id !== pairTradeData.assigned_to).map(member => {
+                            const currentCollaborators: string[] = pairTradeData.collaborators || []
+                            const isCollaborator = currentCollaborators.includes(member.id)
+                            return (
+                              <button
+                                key={member.id}
+                                onClick={() => {
+                                  const newCollaborators = isCollaborator
+                                    ? currentCollaborators.filter(id => id !== member.id)
+                                    : [...currentCollaborators, member.id]
+                                  updatePairTradeCollaboratorsMutation.mutate(newCollaborators)
+                                }}
+                                disabled={updatePairTradeCollaboratorsMutation.isPending}
+                                className={clsx(
+                                  "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
+                                  isCollaborator && "bg-primary-50 dark:bg-primary-900/20"
+                                )}
+                              >
+                                <div className={clsx(
+                                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium",
+                                  isCollaborator ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300" : "bg-gray-200 dark:bg-gray-700"
+                                )}>
+                                  {isCollaborator ? <Check className="h-3 w-3" /> : getUserInitials(member)}
+                                </div>
+                                <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1882,7 +3136,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             <button
                               key={mode.value}
                               type="button"
-                              onClick={() => setSizingMode(mode.value as SizingMode)}
+                              onClick={() => {
+                                setActiveInput(null) // Clear so display recalculates with new mode
+                                setSizingMode(mode.value as SizingMode)
+                              }}
                               className={clsx(
                                 "px-2 py-0.5 text-[10px] font-medium transition-colors border-r last:border-r-0 border-gray-200 dark:border-gray-600",
                                 sizingMode === mode.value
