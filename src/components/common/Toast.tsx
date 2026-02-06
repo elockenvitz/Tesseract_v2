@@ -10,22 +10,34 @@ import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 export interface Toast {
   id: string
   type: ToastType
   message: string
   description?: string
   duration?: number
+  action?: ToastAction
+}
+
+export interface ToastOptions {
+  description?: string
+  duration?: number
+  action?: ToastAction
 }
 
 interface ToastContextType {
   toasts: Toast[]
-  showToast: (type: ToastType, message: string, description?: string, duration?: number) => void
+  showToast: (type: ToastType, message: string, options?: ToastOptions) => void
   hideToast: (id: string) => void
-  success: (message: string, description?: string) => void
-  error: (message: string, description?: string) => void
-  info: (message: string, description?: string) => void
-  warning: (message: string, description?: string) => void
+  success: (message: string, options?: string | ToastOptions) => void
+  error: (message: string, options?: string | ToastOptions) => void
+  info: (message: string, options?: string | ToastOptions) => void
+  warning: (message: string, options?: string | ToastOptions) => void
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined)
@@ -51,9 +63,17 @@ export function ToastProvider({ children, maxToasts = 5 }: ToastProviderProps) {
   }, [])
 
   const showToast = useCallback(
-    (type: ToastType, message: string, description?: string, duration: number = 5000) => {
+    (type: ToastType, message: string, options?: ToastOptions) => {
       const id = `toast-${Date.now()}-${Math.random()}`
-      const newToast: Toast = { id, type, message, description, duration }
+      const duration = options?.duration ?? 5000
+      const newToast: Toast = {
+        id,
+        type,
+        message,
+        description: options?.description,
+        duration,
+        action: options?.action
+      }
 
       setToasts((prev) => {
         const updated = [...prev, newToast]
@@ -71,23 +91,30 @@ export function ToastProvider({ children, maxToasts = 5 }: ToastProviderProps) {
     [maxToasts, hideToast]
   )
 
+  // Helper to normalize options - supports both string (description) and ToastOptions
+  const normalizeOptions = (options?: string | ToastOptions): ToastOptions | undefined => {
+    if (!options) return undefined
+    if (typeof options === 'string') return { description: options }
+    return options
+  }
+
   const success = useCallback(
-    (message: string, description?: string) => showToast('success', message, description),
+    (message: string, options?: string | ToastOptions) => showToast('success', message, normalizeOptions(options)),
     [showToast]
   )
 
   const error = useCallback(
-    (message: string, description?: string) => showToast('error', message, description, 7000),
+    (message: string, options?: string | ToastOptions) => showToast('error', message, { ...normalizeOptions(options), duration: 7000 }),
     [showToast]
   )
 
   const info = useCallback(
-    (message: string, description?: string) => showToast('info', message, description),
+    (message: string, options?: string | ToastOptions) => showToast('info', message, normalizeOptions(options)),
     [showToast]
   )
 
   const warning = useCallback(
-    (message: string, description?: string) => showToast('warning', message, description),
+    (message: string, options?: string | ToastOptions) => showToast('warning', message, normalizeOptions(options)),
     [showToast]
   )
 
@@ -128,7 +155,7 @@ interface ToastItemProps {
 }
 
 function ToastItem({ toast, onClose }: ToastItemProps) {
-  const { id, type, message, description } = toast
+  const { id, type, message, description, action } = toast
 
   const config = {
     success: {
@@ -191,6 +218,17 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
           <p className={`text-sm font-medium ${textColor}`}>{message}</p>
           {description && (
             <p className={`text-xs mt-1 ${textColor} opacity-80`}>{description}</p>
+          )}
+          {action && (
+            <button
+              onClick={() => {
+                action.onClick()
+                onClose(id)
+              }}
+              className={`text-xs mt-2 font-medium ${iconColor} hover:underline focus:outline-none focus:underline`}
+            >
+              {action.label} →
+            </button>
           )}
         </div>
         <button

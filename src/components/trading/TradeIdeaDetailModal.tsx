@@ -119,6 +119,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [inlineProposals, setInlineProposals] = useState<Record<string, InlineProposalState>>({})
   const [expandedProposalInputs, setExpandedProposalInputs] = useState<Set<string>>(new Set())
 
+  // Pair trade proposal editing state
+  const [editingPairProposalId, setEditingPairProposalId] = useState<string | null>(null)
+  const [editedPairProposalLegs, setEditedPairProposalLegs] = useState<Array<{ assetId: string; symbol: string; action: string; weight: number | null; sizingMode: string }>>([])
+  const [isSavingPairProposal, setIsSavingPairProposal] = useState(false)
+  // Track which field is the "source" for each leg (the field user entered, others are auto-calc)
+  // Key format: `${portfolioId}-${legIdx}`, value: 'target' | 'deltaPort' | 'deltaBench'
+  const [pairProposalSourceFields, setPairProposalSourceFields] = useState<Record<string, 'target' | 'deltaPort' | 'deltaBench'>>({})
+
   // Portfolio context with holdings info
   interface PortfolioContext {
     id: string
@@ -203,6 +211,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [isEditingPairConviction, setIsEditingPairConviction] = useState(false)
   const [editedPairConviction, setEditedPairConviction] = useState<'low' | 'medium' | 'high' | null>(null)
   const [editedPairTimeHorizon, setEditedPairTimeHorizon] = useState<'short' | 'medium' | 'long' | null>(null)
+  const [showTeamProposals, setShowTeamProposals] = useState(false)
 
   // Get expression counts for trade ideas (prefetch)
   useTradeExpressionCounts()
@@ -245,6 +254,45 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
       if (tradeError) throw tradeError
       if (tradeItem) {
+        // If this trade item has a pair_id, fetch all legs of the pair trade
+        if (tradeItem.pair_id) {
+          const { data: pairLegs, error: pairLegsError } = await supabase
+            .from('trade_queue_items')
+            .select(`
+              *,
+              assets (id, symbol, company_name, sector),
+              portfolios (id, name, portfolio_id),
+              users:created_by (id, email, first_name, last_name),
+              assigned_user:assigned_to (id, email, first_name, last_name)
+            `)
+            .eq('pair_id', tradeItem.pair_id)
+            .eq('visibility_tier', 'active')
+
+          if (!pairLegsError && pairLegs && pairLegs.length > 1) {
+            // Build a synthetic pair trade object from the legs
+            const firstLeg = pairLegs[0]
+            return {
+              type: 'pair_from_legs' as const,
+              data: {
+                id: tradeItem.pair_id,
+                name: 'Pairs Trade',
+                rationale: firstLeg.rationale,
+                urgency: firstLeg.urgency,
+                status: firstLeg.status,
+                stage: firstLeg.stage,
+                created_at: firstLeg.created_at,
+                created_by: firstLeg.created_by,
+                portfolios: firstLeg.portfolios,
+                users: firstLeg.users,
+                sharing_visibility: firstLeg.sharing_visibility,
+                assigned_to: firstLeg.assigned_to,
+                assigned_user: firstLeg.assigned_user,
+                collaborators: firstLeg.collaborators,
+                legs: pairLegs
+              }
+            }
+          }
+        }
         return { type: 'single' as const, data: tradeItem as TradeQueueItemWithDetails }
       }
 
@@ -578,20 +626,92 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     enabled: isOpen && !!trade,
   })
 
-  // Fetch proposals for this trade idea
+  // Get all leg IDs for pair trades (needed for fetching proposals)
+  const pairTradeLegIds = useMemo(() => {
+    if (!pairTradeData) return []
+    const legs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+    return legs.map((leg: any) => leg.id).filter(Boolean)
+  }, [pairTradeData])
+
+  // Fetch proposals for this trade idea (for pair trades, fetch for all leg IDs)
   const { data: proposals = [], refetch: refetchProposals } = useQuery({
-    queryKey: ['trade-proposals', tradeId],
-    queryFn: () => {
-      console.log('[TradeIdeaDetailModal] Fetching proposals for tradeId:', tradeId)
+    queryKey: ['trade-proposals', tradeId, pairTradeLegIds],
+    queryFn: async () => {
+      console.log('[TradeIdeaDetailModal] Fetching proposals for tradeId:', tradeId, 'isPairTrade:', isPairTrade, 'legIds:', pairTradeLegIds)
+
+      // For pair trades, fetch proposals for all leg IDs
+      if (isPairTrade && pairTradeLegIds.length > 0) {
+        const { data, error } = await supabase
+          .from('trade_proposals')
+          .select(`
+            *,
+            users:user_id (id, email, first_name, last_name),
+            portfolio:portfolio_id (id, name)
+          `)
+          .in('trade_queue_item_id', pairTradeLegIds)
+          .eq('is_active', true)
+          .order('created_at')
+
+        if (error) throw error
+
+        // Fetch portfolio team roles for all proposers
+        const proposals = data || []
+        if (proposals.length > 0) {
+          const userIds = [...new Set(proposals.map((p: any) => p.user_id))]
+          const portfolioIds = [...new Set(proposals.map((p: any) => p.portfolio_id).filter(Boolean))]
+
+          if (userIds.length > 0 && portfolioIds.length > 0) {
+            const { data: teamMembers } = await supabase
+              .from('portfolio_team')
+              .select('user_id, portfolio_id, role')
+              .in('user_id', userIds)
+              .in('portfolio_id', portfolioIds)
+
+            const teamRoleMap: Record<string, string> = {}
+            if (teamMembers) {
+              teamMembers.forEach((m: any) => {
+                teamRoleMap[`${m.user_id}-${m.portfolio_id}`] = m.role
+              })
+            }
+
+            // Merge portfolio_role into user data
+            return proposals.map((p: any) => ({
+              ...p,
+              users: p.users ? { ...p.users, portfolio_role: teamRoleMap[`${p.user_id}-${p.portfolio_id}`] || null } : null
+            }))
+          }
+        }
+
+        return proposals
+      }
+
+      // For single trades, use the standard function
       return getProposalsForTradeIdea(tradeId)
     },
-    enabled: isOpen && !!tradeId,
+    enabled: isOpen && !!tradeId && (!isPairTrade || pairTradeLegIds.length > 0),
   })
 
-  // Fetch rejected/inactive proposals for history
+  // Fetch rejected/inactive proposals for history (handle pair trades)
   const { data: rejectedProposals = [] } = useQuery({
-    queryKey: ['trade-proposals-rejected', tradeId],
+    queryKey: ['trade-proposals-rejected', tradeId, pairTradeLegIds],
     queryFn: async () => {
+      // For pair trades, fetch for all leg IDs
+      if (isPairTrade && pairTradeLegIds.length > 0) {
+        const { data, error } = await supabase
+          .from('trade_proposals')
+          .select(`
+            *,
+            users:user_id (id, email, first_name, last_name),
+            portfolios:portfolio_id (id, name)
+          `)
+          .in('trade_queue_item_id', pairTradeLegIds)
+          .eq('is_active', false)
+          .order('updated_at', { ascending: false })
+
+        if (error) throw error
+        return data || []
+      }
+
       const { data, error } = await supabase
         .from('trade_proposals')
         .select(`
@@ -606,7 +726,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       if (error) throw error
       return data || []
     },
-    enabled: isOpen && !!tradeId,
+    enabled: isOpen && !!tradeId && (!isPairTrade || pairTradeLegIds.length > 0),
   })
 
   // Debug: Log proposals when they change
@@ -663,6 +783,65 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       })
     },
     enabled: isOpen && !!trade?.asset_id && linkedPortfolioIds.length > 0,
+  })
+
+  // For pair trades: Get unique portfolio IDs from proposals
+  const pairTradeProposalPortfolioIds = useMemo(() => {
+    if (!isPairTrade || !proposals.length) return []
+    const uniqueIds = [...new Set(proposals.map(p => p.portfolio_id).filter(Boolean))] as string[]
+    return uniqueIds
+  }, [isPairTrade, proposals])
+
+  // Fetch holdings for all pair trade leg assets across all proposal portfolios
+  const { data: pairTradePortfolioHoldings } = useQuery({
+    queryKey: ['pair-trade-portfolio-holdings', pairTradeLegAssetIds, pairTradeProposalPortfolioIds],
+    queryFn: async () => {
+      if (pairTradeLegAssetIds.length === 0 || pairTradeProposalPortfolioIds.length === 0) return {}
+
+      // Get holdings for all leg assets in all proposal portfolios
+      const { data: holdings, error: holdingsError } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id, asset_id, shares, price')
+        .in('portfolio_id', pairTradeProposalPortfolioIds)
+        .in('asset_id', pairTradeLegAssetIds)
+
+      if (holdingsError) throw holdingsError
+
+      // Get total portfolio values for weight calculation
+      const { data: allHoldings, error: allError } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id, shares, price')
+        .in('portfolio_id', pairTradeProposalPortfolioIds)
+
+      if (allError) throw allError
+
+      // Calculate totals per portfolio
+      const portfolioTotals: Record<string, number> = {}
+      allHoldings?.forEach(h => {
+        portfolioTotals[h.portfolio_id] = (portfolioTotals[h.portfolio_id] || 0) + (h.shares * h.price)
+      })
+
+      // Build nested map: portfolioId -> assetId -> holding data
+      const result: Record<string, Record<string, { shares: number; price: number; weight: number; marketValue: number }>> = {}
+
+      pairTradeProposalPortfolioIds.forEach(portfolioId => {
+        result[portfolioId] = {}
+        const portfolioAum = portfolioTotals[portfolioId] || 0
+
+        pairTradeLegAssetIds.forEach(assetId => {
+          const holding = holdings?.find(h => h.portfolio_id === portfolioId && h.asset_id === assetId)
+          const shares = holding?.shares || 0
+          const price = holding?.price || 0
+          const marketValue = shares * price
+          const weight = portfolioAum > 0 ? (marketValue / portfolioAum) * 100 : 0
+
+          result[portfolioId][assetId] = { shares, price, weight, marketValue }
+        })
+      })
+
+      return result
+    },
+    enabled: isOpen && isPairTrade && pairTradeLegAssetIds.length > 0 && pairTradeProposalPortfolioIds.length > 0,
   })
 
   // Initialize portfolioTargets from labLinks when they load
@@ -1644,20 +1823,22 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               const shortLegs = legs.filter((leg: any) =>
                 leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && leg.action === 'sell')
               )
+              const buySymbols = longLegs.map((l: any) => l.assets?.symbol || '?').join(', ')
+              const sellSymbols = shortLegs.map((l: any) => l.assets?.symbol || '?').join(', ')
 
               return (
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {/* Purple pair trade badge - larger */}
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 flex-shrink-0">
-                    <Link2 className="h-5 w-5" />
-                    <span className="text-base">Pair Trade</span>
+                <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                  {/* Pair Trade badge */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 flex-shrink-0">
+                    <Link2 className="h-4 w-4" />
+                    <span className="text-sm">Pair Trade</span>
                   </div>
-                  {/* Leg count badge */}
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-xs text-gray-600 dark:text-gray-300 flex-shrink-0">
-                    <span className="text-green-600 dark:text-green-400 font-medium">{longLegs.length} Long</span>
-                    <span className="text-gray-400">·</span>
-                    <span className="text-red-600 dark:text-red-400 font-medium">{shortLegs.length} Short</span>
-                  </div>
+                  {/* Trade structure */}
+                  <span className="font-semibold uppercase text-base text-green-600 dark:text-green-400">BUY</span>
+                  <span className="font-bold text-lg text-gray-900 dark:text-white">{buySymbols}</span>
+                  <span className="text-gray-400 dark:text-gray-500">·</span>
+                  <span className="font-semibold uppercase text-base text-red-600 dark:text-red-400">SELL</span>
+                  <span className="font-bold text-lg text-gray-900 dark:text-white">{sellSymbols}</span>
                 </div>
               )
             })()}
@@ -1992,7 +2173,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                             "text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded",
                                             isLong ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                           )}>
-                                            {isLong ? 'Long' : 'Short'}
+                                            {isLong ? 'BUY' : 'SELL'}
                                           </span>
                                           <span className="font-medium text-gray-800 dark:text-gray-200">{leg.assets?.symbol}</span>
                                         </div>
@@ -2111,7 +2292,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           <div className="bg-gray-50 dark:bg-gray-700/50 px-3 py-2 border-t border-gray-200 dark:border-gray-600 flex items-center justify-between text-xs">
                             <div className="flex items-center gap-4">
                               <span className="text-gray-500 dark:text-gray-400">
-                                {pairTradeSizingSummary.longCount} Long · {pairTradeSizingSummary.shortCount} Short
+                                {pairTradeSizingSummary.longCount} Buy · {pairTradeSizingSummary.shortCount} Sell
                               </span>
                             </div>
                             <div className="flex items-center gap-4 tabular-nums">
@@ -2209,7 +2390,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                         <td className="py-1.5 px-2">
                                           <div className="flex items-center gap-1.5">
                                             <span className={clsx("text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded", isLong ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
-                                              {isLong ? 'Long' : 'Short'}
+                                              {isLong ? 'BUY' : 'SELL'}
                                             </span>
                                             <span className="font-medium text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
                                           </div>
@@ -2276,7 +2457,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       <td className="py-1.5 px-2">
                                         <div className="flex items-center gap-1.5">
                                           <span className={clsx("text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded", isLong ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
-                                            {isLong ? 'Long' : 'Short'}
+                                            {isLong ? 'BUY' : 'SELL'}
                                           </span>
                                           <span className="font-medium text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
                                         </div>
@@ -2904,6 +3085,699 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   </div>
                 </div>
               )}
+
+              {/* Proposals Tab for Pair Trade - PM Review Mode */}
+              {activeTab === 'proposals' && (() => {
+                // Get pair trade legs
+                const pairLegs = pairTradeData?.trade_queue_items || pairTradeData?.legs || []
+
+                // Group proposals by portfolio
+                const proposalsByPortfolio = proposals.reduce((acc, proposal) => {
+                  const portfolioId = proposal.portfolio_id || 'unknown'
+                  if (!acc[portfolioId]) {
+                    acc[portfolioId] = {
+                      name: proposal.portfolio?.name || 'Unknown Portfolio',
+                      myProposal: null as typeof proposal | null,
+                      otherProposals: [] as typeof proposals
+                    }
+                  }
+                  if (proposal.user_id === user?.id) {
+                    acc[portfolioId].myProposal = proposal
+                  } else {
+                    acc[portfolioId].otherProposals.push(proposal)
+                  }
+                  return acc
+                }, {} as Record<string, { name: string; myProposal: typeof proposals[0] | null; otherProposals: typeof proposals }>)
+
+                // Sizing mode options (kept for edit mode)
+                const pairSizingModes: { value: ProposalSizingMode; label: string }[] = [
+                  { value: 'weight', label: 'Weight %' },
+                  { value: 'delta_weight', label: '± Weight' },
+                  { value: 'active_weight', label: 'Active Wgt' },
+                  { value: 'delta_benchmark', label: '± Bench' },
+                ]
+
+                // Calculate exposure summary from pair legs
+                const exposureSummary = pairLegs.reduce((acc, leg: any) => {
+                  const isLong = leg.action === 'buy' || leg.action === 'add' || leg.pair_leg_type === 'long'
+                  const weight = leg.proposed_weight || 0
+                  if (weight > 0) acc.hasSizing = true
+                  if (isLong) {
+                    acc.longExposure += weight
+                    acc.buySymbols.push(leg.assets?.symbol || '?')
+                  } else {
+                    acc.shortExposure += weight
+                    acc.sellSymbols.push(leg.assets?.symbol || '?')
+                  }
+                  return acc
+                }, { longExposure: 0, shortExposure: 0, buySymbols: [] as string[], sellSymbols: [] as string[], hasSizing: false })
+
+                const netExposure = exposureSummary.longExposure - exposureSummary.shortExposure
+                const grossExposure = exposureSummary.longExposure + exposureSummary.shortExposure
+                const hasSizing = exposureSummary.hasSizing
+
+                // Separate legs into buys and sells
+                const buyLegs = pairLegs.filter((leg: any) => leg.action === 'buy' || leg.action === 'add' || leg.pair_leg_type === 'long')
+                const sellLegs = pairLegs.filter((leg: any) => leg.action === 'sell' || leg.action === 'reduce' || leg.pair_leg_type === 'short')
+
+                return (
+                  <div className="flex flex-col h-full">
+                    {/* Scrollable content area */}
+                    <div className="flex-1 overflow-y-auto space-y-4 p-4">
+                      {/* ═══════════════════════════════════════════════════════════════
+                          PROPOSALS GROUPED BY PORTFOLIO
+                      ═══════════════════════════════════════════════════════════════ */}
+                      {Object.entries(proposalsByPortfolio).map(([portfolioId, { name: portfolioName, myProposal, otherProposals }]) => {
+                        // Combine all proposals for this portfolio
+                        const allPortfolioProposals = [myProposal, ...otherProposals].filter(Boolean) as typeof proposals
+
+                        if (allPortfolioProposals.length === 0) return null
+
+                        return (
+                          <div key={portfolioId} className="space-y-2">
+                            {/* Portfolio Header */}
+                            <div className="flex items-center gap-2">
+                              <Briefcase className="h-4 w-4 text-gray-400" />
+                              <span className="font-medium text-sm text-gray-900 dark:text-white">{portfolioName}</span>
+                              <span className="text-xs text-gray-500">({allPortfolioProposals.length} proposal{allPortfolioProposals.length !== 1 ? 's' : ''})</span>
+                            </div>
+
+                            {/* Proposals for this portfolio */}
+                            <div className="space-y-2">
+                              {allPortfolioProposals.map((proposal) => {
+                                const isMyProposal = proposal.user_id === user?.id
+                                const isExpanded = expandedProposalInputs.has(`pair-${portfolioId}-${proposal.id}`)
+                                const isEditing = editingPairProposalId === proposal.id
+
+                                // Get proposal legs
+                                const sizingCtx = proposal.sizing_context as any
+                                let proposalLegs = sizingCtx?.legs || []
+                                const currentSizingMode = sizingCtx?.sizingMode || sizingCtx?.proposalType || proposalLegs[0]?.sizingMode || proposal.sizing_mode || 'weight'
+
+                                // Build legs from pair trade data if not in sizing_context
+                                if (proposalLegs.length === 0 && pairLegs.length > 0) {
+                                  proposalLegs = pairLegs.map((leg: any) => ({
+                                    assetId: leg.asset_id || leg.assets?.id,
+                                    symbol: leg.assets?.symbol || '?',
+                                    action: leg.action || 'buy',
+                                    weight: proposal.weight,
+                                    sizingMode: currentSizingMode,
+                                  }))
+                                }
+
+                                // Get proposer info
+                                const proposerName = proposal.users?.first_name && proposal.users?.last_name
+                                  ? `${proposal.users.first_name} ${proposal.users.last_name.charAt(0)}.`
+                                  : proposal.users?.first_name || proposal.users?.email?.split('@')[0] || 'Unknown'
+
+                                // Get portfolio-specific role
+                                const portfolioRole = (proposal.users as any)?.portfolio_role
+                                const isPM = portfolioRole?.toLowerCase().includes('manager') || portfolioRole?.toLowerCase().includes('pm')
+                                const roleLabel = portfolioRole || (isPM ? 'Portfolio Manager' : 'Analyst')
+
+                                // Get proposal timestamp
+                                const proposalTime = proposal.created_at
+                                  ? formatDistanceToNow(new Date(proposal.created_at), { addSuffix: true })
+                                  : null
+
+                                // Calculate proposal-level Net/Gross exposure
+                                const proposalExposure = proposalLegs.reduce((acc: { long: number; short: number }, leg: any) => {
+                                  const weight = leg.weight || 0
+                                  if (leg.action === 'buy' || leg.action === 'add') {
+                                    acc.long += weight
+                                  } else {
+                                    acc.short += weight
+                                  }
+                                  return acc
+                                }, { long: 0, short: 0 })
+                                const proposalNet = proposalExposure.long - proposalExposure.short
+                                const proposalGross = proposalExposure.long + proposalExposure.short
+                                const hasSizingData = proposalLegs.some((leg: any) => leg.weight != null && leg.weight !== 0)
+
+                                return (
+                                  <div key={proposal.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                                    {/* Proposal Header - Clickable to expand/collapse */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedProposalInputs(prev => {
+                                        const next = new Set(prev)
+                                        const key = `pair-${portfolioId}-${proposal.id}`
+                                        if (next.has(key)) next.delete(key)
+                                        else next.add(key)
+                                        return next
+                                      })}
+                                      className="w-full text-left bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                    >
+                                      {/* Row 1: Proposer Attribution */}
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                          {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                                          <span className="font-medium text-sm text-gray-900 dark:text-white">{proposerName}</span>
+                                          <span className="text-xs text-gray-500 dark:text-gray-400">·</span>
+                                          <span className={clsx(
+                                            "text-xs font-medium",
+                                            isPM ? "text-primary-600 dark:text-primary-400" : "text-gray-500 dark:text-gray-400"
+                                          )}>
+                                            {roleLabel}
+                                          </span>
+                                          <span className="text-xs text-gray-400">({portfolioName})</span>
+                                        </div>
+                                        {proposalTime && (
+                                          <span className="text-xs text-gray-400">{proposalTime}</span>
+                                        )}
+                                      </div>
+
+                                      {/* Row 2: Net/Gross Summary */}
+                                      <div className="flex items-center gap-4 pl-6">
+                                        <div className="flex items-center gap-2 text-xs">
+                                          <span className="text-gray-500 dark:text-gray-400">Net:</span>
+                                          <span className={clsx(
+                                            "font-semibold tabular-nums",
+                                            !hasSizingData ? "text-gray-400" :
+                                            proposalNet > 0 ? "text-green-600 dark:text-green-400" :
+                                            proposalNet < 0 ? "text-red-600 dark:text-red-400" :
+                                            "text-gray-600 dark:text-gray-300"
+                                          )}>
+                                            {hasSizingData ? `${proposalNet >= 0 ? '+' : ''}${proposalNet.toFixed(2)}%` : 'Not sized'}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs">
+                                          <span className="text-gray-500 dark:text-gray-400">Gross:</span>
+                                          <span className={clsx(
+                                            "font-semibold tabular-nums",
+                                            hasSizingData ? "text-gray-700 dark:text-gray-200" : "text-gray-400"
+                                          )}>
+                                            {hasSizingData ? `${proposalGross.toFixed(2)}%` : '—'}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                                          <span>{proposalLegs.filter((l: any) => l.action === 'buy' || l.action === 'add').length}B</span>
+                                          <span>/</span>
+                                          <span>{proposalLegs.filter((l: any) => l.action === 'sell' || l.action === 'reduce').length}S</span>
+                                        </div>
+                                      </div>
+                                    </button>
+
+                            {/* Expanded Sizing Details (Edit Mode) */}
+                            {isExpanded && (
+                              <div className="px-3 py-3 border-t border-gray-100 dark:border-gray-700/50 space-y-3">
+                                {(() => {
+                                  const legs = isEditing ? editedPairProposalLegs : proposalLegs
+                                  const buyProposalLegs = legs.filter((leg: any) => leg.action === 'buy' || leg.action === 'add')
+                                  const sellProposalLegs = legs.filter((leg: any) => leg.action === 'sell' || leg.action === 'reduce')
+                                  const hasBenchmark = false // TODO: set to true when benchmark_holdings available
+
+                                  // ═══════════════════════════════════════════════════════════════
+                                  // UNIFIED SIZING INPUT PARSER
+                                  // Supports: 1.5, +0.5, -0.25, @1.0, @+0.5, @-0.25, 50bp, @+25bp
+                                  // ═══════════════════════════════════════════════════════════════
+                                  type SizingIntent = {
+                                    isValid: boolean
+                                    error?: string
+                                    basis: 'portfolio' | 'active'
+                                    operation: 'set' | 'delta'
+                                    value: number // always in percentage
+                                    interpretation: string
+                                  }
+
+                                  const parseSizingInput = (input: string, currentWeight: number, benchmarkWeight: number | null, currentActiveWeight: number | null): SizingIntent => {
+                                    const trimmed = input.trim()
+                                    if (!trimmed) {
+                                      return { isValid: false, basis: 'portfolio', operation: 'set', value: 0, interpretation: '' }
+                                    }
+
+                                    // Check for @ prefix (active weight basis)
+                                    const isActiveBasis = trimmed.startsWith('@')
+                                    const withoutAt = isActiveBasis ? trimmed.slice(1) : trimmed
+
+                                    // Check for explicit sign (delta operation)
+                                    const hasExplicitSign = withoutAt.startsWith('+') || withoutAt.startsWith('-')
+                                    const isDelta = hasExplicitSign
+
+                                    // Extract numeric part (handle %, bp suffixes)
+                                    let numericPart = withoutAt.replace(/[+\-]/g, '')
+                                    let multiplier = 1
+
+                                    if (numericPart.endsWith('bp')) {
+                                      numericPart = numericPart.slice(0, -2)
+                                      multiplier = 0.01 // basis points to percent
+                                    } else if (numericPart.endsWith('%')) {
+                                      numericPart = numericPart.slice(0, -1)
+                                    }
+
+                                    const numValue = parseFloat(numericPart)
+                                    if (isNaN(numValue)) {
+                                      return { isValid: false, error: 'Invalid number', basis: 'portfolio', operation: 'set', value: 0, interpretation: '' }
+                                    }
+
+                                    // Apply sign for delta operations
+                                    let finalValue = numValue * multiplier
+                                    if (isDelta && withoutAt.startsWith('-')) {
+                                      finalValue = -finalValue
+                                    }
+
+                                    // Validate active basis requires benchmark
+                                    if (isActiveBasis && benchmarkWeight === null) {
+                                      return { isValid: false, error: 'Benchmark unavailable', basis: 'active', operation: isDelta ? 'delta' : 'set', value: finalValue, interpretation: '' }
+                                    }
+
+                                    // Build interpretation string
+                                    let interpretation = ''
+                                    if (isActiveBasis) {
+                                      if (isDelta) {
+                                        interpretation = finalValue >= 0
+                                          ? `Increase Active by ${Math.abs(finalValue).toFixed(2)}%`
+                                          : `Decrease Active by ${Math.abs(finalValue).toFixed(2)}%`
+                                      } else {
+                                        interpretation = `Set Active to ${finalValue >= 0 ? '+' : ''}${finalValue.toFixed(2)}%`
+                                      }
+                                    } else {
+                                      if (isDelta) {
+                                        interpretation = finalValue >= 0
+                                          ? `Add ${Math.abs(finalValue).toFixed(2)}% to position`
+                                          : `Reduce position by ${Math.abs(finalValue).toFixed(2)}%`
+                                      } else {
+                                        interpretation = `Set weight to ${finalValue.toFixed(2)}%`
+                                      }
+                                    }
+
+                                    return {
+                                      isValid: true,
+                                      basis: isActiveBasis ? 'active' : 'portfolio',
+                                      operation: isDelta ? 'delta' : 'set',
+                                      value: finalValue,
+                                      interpretation,
+                                    }
+                                  }
+
+                                  // Compute target weight from parsed intent
+                                  const computeTargetWeight = (intent: SizingIntent, currentWeight: number, benchmarkWeight: number | null, currentActiveWeight: number | null): number | null => {
+                                    if (!intent.isValid) return null
+
+                                    if (intent.basis === 'active') {
+                                      if (benchmarkWeight === null) return null
+                                      if (intent.operation === 'delta') {
+                                        // Δ Active: new active = current active + delta, target = bench + new active
+                                        const newActive = (currentActiveWeight || 0) + intent.value
+                                        return benchmarkWeight + newActive
+                                      } else {
+                                        // Set Active: target = bench + active
+                                        return benchmarkWeight + intent.value
+                                      }
+                                    } else {
+                                      if (intent.operation === 'delta') {
+                                        // Δ Portfolio: target = current + delta
+                                        return currentWeight + intent.value
+                                      } else {
+                                        // Set Target: target = value
+                                        return intent.value
+                                      }
+                                    }
+                                  }
+
+                                  // Format delta with sign
+                                  const formatDelta = (val: number | null) => {
+                                    if (val == null) return '—'
+                                    return `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`
+                                  }
+
+                                  const renderLegRow = (leg: any, idx: number, isBuy: boolean) => {
+                                    const legIdx = legs.findIndex((l: any) => l === leg)
+                                    const pairLeg = pairLegs[legIdx] || pairLegs.find((pl: any) => pl.assets?.symbol === leg.symbol)
+                                    const assetId = leg.assetId || pairLeg?.asset_id || pairLeg?.assets?.id
+                                    const companyName = pairLeg?.assets?.company_name || ''
+                                    const holding = pairTradePortfolioHoldings?.[portfolioId]?.[assetId]
+                                    const currentWeight = holding?.weight || 0
+                                    const benchmarkWeight: number | null = null // TODO: fetch from benchmark_holdings
+                                    const currentActiveWeight = benchmarkWeight !== null ? currentWeight - benchmarkWeight : null
+                                    const targetWeight = leg.weight
+
+                                    // Derived values
+                                    const deltaPortfolio = targetWeight != null ? targetWeight - currentWeight : null
+                                    const targetActiveWeight = targetWeight != null && benchmarkWeight !== null ? targetWeight - benchmarkWeight : null
+
+                                    // Get the raw input string for this leg (stored in sizing_input field or fall back to weight)
+                                    const sizingInputKey = `sizing-${portfolioId}-${legIdx}`
+                                    const rawInput = pairProposalSourceFields[sizingInputKey] || (targetWeight != null ? targetWeight.toFixed(2) : '')
+
+                                    // Parse current input for interpretation display
+                                    const parsedIntent = parseSizingInput(rawInput, currentWeight, benchmarkWeight, currentActiveWeight)
+
+                                    // Handle sizing input change
+                                    const handleSizingInput = (value: string) => {
+                                      // Store raw input for display
+                                      setPairProposalSourceFields(prev => ({ ...prev, [sizingInputKey]: value }))
+
+                                      // Parse and compute target weight
+                                      const intent = parseSizingInput(value, currentWeight, benchmarkWeight, currentActiveWeight)
+                                      const newTargetWeight = computeTargetWeight(intent, currentWeight, benchmarkWeight, currentActiveWeight)
+
+                                      setEditedPairProposalLegs(prev => prev.map((l, i) => i === legIdx ? { ...l, weight: newTargetWeight } : l))
+                                    }
+
+                                    return (
+                                      <tr key={idx} className={clsx("border-b last:border-0", isBuy ? "border-green-100 dark:border-green-800/20" : "border-red-100 dark:border-red-800/20")}>
+                                        {/* Asset: Ticker + Company Name */}
+                                        <td className="py-2 px-2">
+                                          <div className="flex flex-col">
+                                            <span className="font-semibold text-gray-900 dark:text-white">{leg.symbol}</span>
+                                            {companyName && (
+                                              <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[90px]">{companyName}</span>
+                                            )}
+                                          </div>
+                                        </td>
+
+                                        {/* Current Weight */}
+                                        <td className="text-right py-2 px-2 tabular-nums text-xs">
+                                          <span className="text-gray-600 dark:text-gray-300">{currentWeight.toFixed(2)}%</span>
+                                        </td>
+
+                                        {/* Benchmark Weight */}
+                                        <td className="text-right py-2 px-2 tabular-nums text-xs">
+                                          <span className="text-gray-400">{benchmarkWeight !== null ? `${benchmarkWeight.toFixed(2)}%` : '—'}</span>
+                                        </td>
+
+                                        {/* Sizing Input (THE SINGLE EDITABLE FIELD) */}
+                                        <td className="text-right py-1.5 px-2">
+                                          {isEditing ? (
+                                            <div className="flex flex-col items-end">
+                                              <input
+                                                type="text"
+                                                className={clsx(
+                                                  "w-24 h-7 px-2 text-xs text-right border rounded bg-white dark:bg-gray-700 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 font-medium",
+                                                  parsedIntent.error
+                                                    ? "border-red-400 dark:border-red-600 text-red-600 dark:text-red-400"
+                                                    : "border-primary-300 dark:border-primary-600 text-primary-600 dark:text-primary-400"
+                                                )}
+                                                value={rawInput}
+                                                onChange={(e) => handleSizingInput(e.target.value)}
+                                                placeholder="1.5, +0.5, @1.0"
+                                              />
+                                              {/* Interpretation line */}
+                                              {rawInput && (
+                                                <span className={clsx(
+                                                  "text-[9px] mt-0.5 text-right truncate max-w-[96px]",
+                                                  parsedIntent.error ? "text-red-500" : "text-gray-400 dark:text-gray-500"
+                                                )}>
+                                                  {parsedIntent.error || parsedIntent.interpretation}
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="text-xs font-medium text-primary-600 dark:text-primary-400 tabular-nums">
+                                              {targetWeight != null ? `${targetWeight.toFixed(2)}%` : '—'}
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* Target Weight (derived) */}
+                                        <td className="text-right py-2 px-2 tabular-nums">
+                                          <span className="font-semibold text-sm text-gray-900 dark:text-white">
+                                            {targetWeight != null ? `${targetWeight.toFixed(2)}%` : '—'}
+                                          </span>
+                                        </td>
+
+                                        {/* Δ Portfolio (derived) */}
+                                        <td className="text-right py-2 px-2 tabular-nums">
+                                          <span className={clsx(
+                                            "text-xs font-medium",
+                                            deltaPortfolio != null && deltaPortfolio > 0 ? "text-green-600 dark:text-green-400" :
+                                            deltaPortfolio != null && deltaPortfolio < 0 ? "text-red-600 dark:text-red-400" :
+                                            "text-gray-400"
+                                          )}>
+                                            {formatDelta(deltaPortfolio)}
+                                          </span>
+                                        </td>
+
+                                        {/* Active Weight (derived) */}
+                                        <td className="text-right py-2 px-2 tabular-nums">
+                                          <span className={clsx(
+                                            "text-xs",
+                                            targetActiveWeight != null && targetActiveWeight > 0 ? "text-green-600 dark:text-green-400" :
+                                            targetActiveWeight != null && targetActiveWeight < 0 ? "text-red-600 dark:text-red-400" :
+                                            "text-gray-400"
+                                          )}>
+                                            {targetActiveWeight != null ? formatDelta(targetActiveWeight) : '—'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    )
+                                  }
+
+                                  // Calculate pair trade totals for summary
+                                  const calcTotals = () => {
+                                    let longTotal = 0, shortTotal = 0
+                                    legs.forEach((leg: any) => {
+                                      if (leg.weight != null) {
+                                        if (leg.action === 'buy' || leg.action === 'add') {
+                                          longTotal += leg.weight
+                                        } else {
+                                          shortTotal += leg.weight
+                                        }
+                                      }
+                                    })
+                                    return { longTotal, shortTotal, net: longTotal - shortTotal, gross: longTotal + shortTotal }
+                                  }
+                                  const totals = calcTotals()
+
+                                  return (
+                                    <div className="space-y-3">
+                                      {/* Sizing hint - only when editing */}
+                                      {isEditing && (
+                                        <div className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded px-2 py-1.5">
+                                          <span className="font-medium">Sizing:</span>{' '}
+                                          <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">1.5</code> target % ·{' '}
+                                          <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">+0.5</code> add % ·{' '}
+                                          <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">@1.0</code> active % ·{' '}
+                                          <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">@+0.5</code> Δ active
+                                        </div>
+                                      )}
+
+                                      {/* Live totals summary */}
+                                      {(totals.longTotal > 0 || totals.shortTotal > 0) && (
+                                        <div className="flex items-center gap-4 text-xs px-1">
+                                          <span className="text-gray-500">Long: <span className="font-medium text-green-600 dark:text-green-400">{totals.longTotal.toFixed(2)}%</span></span>
+                                          <span className="text-gray-500">Short: <span className="font-medium text-red-600 dark:text-red-400">{totals.shortTotal.toFixed(2)}%</span></span>
+                                          <span className="text-gray-500">Net: <span className={clsx("font-medium", totals.net >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400")}>{totals.net >= 0 ? '+' : ''}{totals.net.toFixed(2)}%</span></span>
+                                          <span className="text-gray-500">Gross: <span className="font-medium text-gray-700 dark:text-gray-300">{totals.gross.toFixed(2)}%</span></span>
+                                        </div>
+                                      )}
+
+                                      {/* BUYS */}
+                                      {buyProposalLegs.length > 0 && (
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <div className="w-1 h-3 bg-green-500 rounded-full"></div>
+                                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 uppercase tracking-wider">Buys</span>
+                                          </div>
+                                          <div className="bg-green-50 dark:bg-green-900/10 rounded-lg border border-green-200 dark:border-green-800/30 overflow-hidden overflow-x-auto">
+                                            <table className="w-full text-xs">
+                                              <thead>
+                                                <tr className="border-b border-green-200 dark:border-green-800/30 bg-green-100/50 dark:bg-green-900/20">
+                                                  <th className="text-left py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Asset</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Current</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Bench</th>
+                                                  <th className="text-center py-1.5 px-2 font-medium text-primary-600 dark:text-primary-400">Sizing</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Target</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-500 dark:text-gray-500">Δ Port</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-500 dark:text-gray-500">Active</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {buyProposalLegs.map((leg: any, idx: number) => renderLegRow(leg, idx, true))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* SELLS */}
+                                      {sellProposalLegs.length > 0 && (
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <div className="w-1 h-3 bg-red-500 rounded-full"></div>
+                                            <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">Sells</span>
+                                          </div>
+                                          <div className="bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800/30 overflow-hidden overflow-x-auto">
+                                            <table className="w-full text-xs">
+                                              <thead>
+                                                <tr className="border-b border-red-200 dark:border-red-800/30 bg-red-100/50 dark:bg-red-900/20">
+                                                  <th className="text-left py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Asset</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Current</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Bench</th>
+                                                  <th className="text-center py-1.5 px-2 font-medium text-primary-600 dark:text-primary-400">Sizing</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">Target</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-500 dark:text-gray-500">Δ Port</th>
+                                                  <th className="text-right py-1.5 px-2 font-medium text-gray-500 dark:text-gray-500">Active</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {sellProposalLegs.map((leg: any, idx: number) => renderLegRow(leg, idx, false))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+
+                                {/* Proposal Actions */}
+                                <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700/50">
+                                  {/* Left: Edit/Withdraw (own proposals only) */}
+                                  <div className="flex items-center gap-2">
+                                    {isMyProposal && (
+                                      isEditing ? (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => { setEditingPairProposalId(null); setEditedPairProposalLegs([]); setPairProposalSourceFields({}) }}
+                                            disabled={isSavingPairProposal}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            disabled={isSavingPairProposal}
+                                            onClick={async () => {
+                                              setIsSavingPairProposal(true)
+                                              try {
+                                                const context: ActionContext = {
+                                                  actorId: user!.id,
+                                                  actorName: [user!.first_name, user!.last_name].filter(Boolean).join(' ') || user!.email || '',
+                                                  actorEmail: user!.email || '',
+                                                  actorRole: (user!.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                                                  requestId: crypto.randomUUID(),
+                                                  uiSource: 'modal',
+                                                }
+                                                const editSizingMode = editedPairProposalLegs[0]?.sizingMode || currentSizingMode
+                                                await upsertProposal({
+                                                  trade_queue_item_id: proposal.trade_queue_item_id,
+                                                  portfolio_id: proposal.portfolio_id,
+                                                  weight: null,
+                                                  shares: null,
+                                                  sizing_mode: editSizingMode as TradeSizingMode,
+                                                  sizing_context: {
+                                                    isPairTrade: true,
+                                                    sizingMode: editSizingMode,
+                                                    legs: editedPairProposalLegs.map(leg => ({
+                                                      assetId: leg.assetId,
+                                                      symbol: leg.symbol,
+                                                      action: leg.action,
+                                                      weight: leg.weight,
+                                                      sizingMode: leg.sizingMode,
+                                                    })),
+                                                  },
+                                                  notes: proposal.notes,
+                                                }, context)
+                                                refetchProposals()
+                                                setEditingPairProposalId(null)
+                                                setEditedPairProposalLegs([])
+                                                setPairProposalSourceFields({})
+                                              } finally {
+                                                setIsSavingPairProposal(false)
+                                              }
+                                            }}
+                                          >
+                                            <Save className="h-3.5 w-3.5 mr-1" />
+                                            Save
+                                          </Button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => {
+                                              setEditingPairProposalId(proposal.id)
+                                              setEditedPairProposalLegs(proposalLegs.map((leg: any) => ({
+                                                assetId: leg.assetId,
+                                                symbol: leg.symbol,
+                                                action: leg.action,
+                                                weight: leg.weight,
+                                                sizingMode: leg.sizingMode || currentSizingMode,
+                                              })))
+                                            }}
+                                          >
+                                            <Pencil className="h-3.5 w-3.5 mr-1" />
+                                            Edit
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className="hover:!text-red-600 hover:!border-red-400 hover:!bg-red-50 dark:hover:!text-red-400 dark:hover:!border-red-600 dark:hover:!bg-red-900/20"
+                                            onClick={async () => {
+                                              const { error } = await supabase.from('trade_proposals').update({ is_active: false }).eq('id', proposal.id).eq('user_id', user?.id)
+                                              if (!error) refetchProposals()
+                                            }}
+                                          >
+                                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                                            Withdraw
+                                          </Button>
+                                        </>
+                                      )
+                                    )}
+                                  </div>
+
+                                  {/* Right: Accept/Reject (proposal-level decisions) */}
+                                  {!isEditing && (
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="hover:!text-red-600 hover:!border-red-400 hover:!bg-red-50 dark:hover:!text-red-400 dark:hover:!border-red-600 dark:hover:!bg-red-900/20"
+                                        onClick={async () => {
+                                          // TODO: Implement proposal rejection
+                                          console.log('Reject proposal:', proposal.id)
+                                        }}
+                                      >
+                                        <XCircle className="h-3.5 w-3.5 mr-1" />
+                                        Reject
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+                                        onClick={async () => {
+                                          // TODO: Implement proposal acceptance
+                                          console.log('Accept proposal:', proposal.id)
+                                        }}
+                                      >
+                                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                        Accept
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Legacy support: Keep original structure for portfolios without proposals */}
+              {activeTab === 'proposals' && Object.keys(proposals.reduce((acc, p) => { acc[p.portfolio_id || 'unknown'] = true; return acc }, {} as Record<string, boolean>)).length === 0 && (() => {
+                const pairLegs = pairTradeData?.trade_queue_items || pairTradeData?.legs || []
+
+                return (
+                  <div className="p-4">
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      <Scale className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm font-medium">No proposals yet</p>
+                      <p className="text-xs mt-1">Team members can submit sizing proposals for this pair trade</p>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Activity Tab for Pair Trade */}
               {activeTab === 'activity' && (
@@ -4357,6 +5231,408 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       </div>
                     )}
 
+                    {/* Pair Trade Proposals Section - shows when modal is displaying a pair trade */}
+                    {(() => {
+                      // Show all proposals when viewing a pair trade modal
+                      // OR proposals that have isPairTrade flag in sizing_context
+                      const pairTradeProposals = isPairTrade
+                        ? proposals // Show ALL proposals when modal is a pair trade
+                        : proposals.filter(p => {
+                            const ctx = p.sizing_context as any
+                            return ctx?.isPairTrade === true && ctx?.legs?.length > 0
+                          })
+
+                      console.log('[TradeIdeaDetailModal] Pair trade proposals section:', {
+                        isPairTrade,
+                        proposalsCount: proposals.length,
+                        pairTradeProposalsCount: pairTradeProposals.length,
+                        proposals,
+                        pairTradeData,
+                        pairTradeLegIds,
+                        userId: user?.id
+                      })
+
+                      // If isPairTrade but no proposals, show a message instead of returning null
+                      if (pairTradeProposals.length === 0) {
+                        if (isPairTrade) {
+                          return (
+                            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                              <Scale className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No proposals yet for this pair trade</p>
+                              <p className="text-xs mt-1">Debug: isPairTrade={String(isPairTrade)}, proposals.length={proposals.length}</p>
+                            </div>
+                          )
+                        }
+                        return null
+                      }
+
+                      // Group by portfolio
+                      const proposalsByPortfolio = pairTradeProposals.reduce((acc, proposal) => {
+                        const portfolioId = proposal.portfolio_id || 'unknown'
+                        if (!acc[portfolioId]) {
+                          acc[portfolioId] = {
+                            name: proposal.portfolio?.name || 'Unknown Portfolio',
+                            myProposal: null as typeof proposal | null,
+                            otherProposals: [] as typeof pairTradeProposals
+                          }
+                        }
+                        if (proposal.user_id === user?.id) {
+                          acc[portfolioId].myProposal = proposal
+                        } else {
+                          acc[portfolioId].otherProposals.push(proposal)
+                        }
+                        return acc
+                      }, {} as Record<string, { name: string; myProposal: typeof pairTradeProposals[0] | null; otherProposals: typeof pairTradeProposals }>)
+
+                      return (
+                        <div className="space-y-4">
+                          {Object.entries(proposalsByPortfolio).map(([portfolioId, { name: portfolioName, myProposal, otherProposals }]) => (
+                            <div key={portfolioId} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                              {/* Portfolio Header */}
+                              <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center gap-2">
+                                  <Briefcase className="h-4 w-4 text-gray-500" />
+                                  <span className="font-medium text-gray-900 dark:text-white">{portfolioName}</span>
+                                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                                    Pair Trade
+                                  </span>
+                                  {(myProposal || otherProposals.length > 0) && (
+                                    <span className="ml-auto text-xs text-gray-500">
+                                      {(myProposal ? 1 : 0) + otherProposals.length} proposal{((myProposal ? 1 : 0) + otherProposals.length) !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="p-4 space-y-4">
+                                {/* Your Proposal - Editable */}
+                                {myProposal && (() => {
+                                  const sizingCtx = myProposal.sizing_context as any
+                                  let legs = sizingCtx?.legs || []
+                                  const sizingMode = sizingCtx?.sizingMode || sizingCtx?.proposalType || legs[0]?.sizingMode || myProposal.sizing_mode || 'weight'
+
+                                  // If no legs in sizing_context but we're in a pair trade modal,
+                                  // build legs from the pair trade data with proposal weight
+                                  if (legs.length === 0 && isPairTrade && pairTradeData) {
+                                    const pairLegs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+                                    legs = pairLegs.map((leg: any) => ({
+                                      assetId: leg.asset_id || leg.assets?.id,
+                                      symbol: leg.assets?.symbol || leg.symbol || '?',
+                                      action: leg.action || 'buy',
+                                      weight: myProposal.weight, // Use proposal weight for all legs (basic fallback)
+                                      sizingMode: sizingMode,
+                                    }))
+                                  }
+
+                                  const getSizingModeLabel = (mode: string) => {
+                                    switch (mode) {
+                                      case 'weight': return 'Weight %'
+                                      case 'delta_weight': return '± Weight'
+                                      case 'active_weight': return 'Active Wgt'
+                                      case 'delta_benchmark': return '± Bench'
+                                      default: return 'Weight %'
+                                    }
+                                  }
+
+                                  return (
+                                    <div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg border border-primary-200 dark:border-primary-800 p-4">
+                                      <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
+                                            <User className="h-3.5 w-3.5 text-primary-600 dark:text-primary-400" />
+                                          </div>
+                                          <span className="text-sm font-medium text-gray-900 dark:text-white">Your Proposal</span>
+                                          <span className="text-xs px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+                                            {getSizingModeLabel(sizingMode)}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {editingPairProposalId === myProposal.id ? (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                className="h-7 text-xs"
+                                                onClick={() => {
+                                                  setEditingPairProposalId(null)
+                                                  setEditedPairProposalLegs([])
+                                                }}
+                                                disabled={isSavingPairProposal}
+                                              >
+                                                Cancel
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="primary"
+                                                className="h-7 text-xs"
+                                                disabled={isSavingPairProposal}
+                                                onClick={async () => {
+                                                  setIsSavingPairProposal(true)
+                                                  try {
+                                                    const context: ActionContext = {
+                                                      actorId: user!.id,
+                                                      actorName: [user!.first_name, user!.last_name].filter(Boolean).join(' ') || user!.email || '',
+                                                      actorEmail: user!.email || '',
+                                                      actorRole: (user!.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                                                      requestId: crypto.randomUUID(),
+                                                      uiSource: 'modal',
+                                                    }
+                                                    await upsertProposal({
+                                                      trade_queue_item_id: tradeId,
+                                                      portfolio_id: myProposal.portfolio_id,
+                                                      weight: null,
+                                                      shares: null,
+                                                      sizing_mode: sizingMode as TradeSizingMode,
+                                                      sizing_context: {
+                                                        isPairTrade: true,
+                                                        sizingMode,
+                                                        legs: editedPairProposalLegs.map(leg => ({
+                                                          assetId: leg.assetId,
+                                                          symbol: leg.symbol,
+                                                          action: leg.action,
+                                                          weight: leg.weight,
+                                                          sizingMode: leg.sizingMode,
+                                                        })),
+                                                      },
+                                                      notes: myProposal.notes,
+                                                    }, context)
+                                                    refetchProposals()
+                                                    setEditingPairProposalId(null)
+                                                    setEditedPairProposalLegs([])
+                                                  } finally {
+                                                    setIsSavingPairProposal(false)
+                                                  }
+                                                }}
+                                              >
+                                                <Save className="h-3 w-3 mr-1" />
+                                                Save
+                                              </Button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                className="h-7 text-xs"
+                                                onClick={() => {
+                                                  setEditingPairProposalId(myProposal.id)
+                                                  setEditedPairProposalLegs(legs.map((leg: any) => ({
+                                                    assetId: leg.assetId,
+                                                    symbol: leg.symbol,
+                                                    action: leg.action,
+                                                    weight: leg.weight,
+                                                    sizingMode: leg.sizingMode || sizingMode,
+                                                  })))
+                                                }}
+                                              >
+                                                <Pencil className="h-3 w-3 mr-1" />
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                                                onClick={async () => {
+                                                  const { error } = await supabase
+                                                    .from('trade_proposals')
+                                                    .update({ is_active: false })
+                                                    .eq('id', myProposal.id)
+                                                    .eq('user_id', user?.id)
+                                                  if (!error) refetchProposals()
+                                                }}
+                                              >
+                                                <XCircle className="h-3 w-3 mr-1" />
+                                                Withdraw
+                                              </Button>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Legs with sizing */}
+                                      <div className="space-y-2">
+                                        {editingPairProposalId === myProposal.id ? (
+                                          // Edit mode - editable inputs
+                                          editedPairProposalLegs.map((leg, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 border-2 border-primary-300 dark:border-primary-700">
+                                              <span className={clsx(
+                                                "px-2 py-1 rounded text-xs font-bold uppercase min-w-[50px] text-center",
+                                                leg.action === 'buy' || leg.action === 'add'
+                                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                              )}>
+                                                {leg.action}
+                                              </span>
+                                              <span className="font-bold text-gray-900 dark:text-white min-w-[60px]">
+                                                {leg.symbol}
+                                              </span>
+                                              <div className="flex-1" />
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                  {getSizingModeLabel(leg.sizingMode)}:
+                                                </span>
+                                                <input
+                                                  type="number"
+                                                  step="0.01"
+                                                  className="w-20 h-7 px-2 text-sm font-semibold text-right rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                                  value={leg.weight ?? ''}
+                                                  onChange={(e) => {
+                                                    const val = e.target.value === '' ? null : parseFloat(e.target.value)
+                                                    setEditedPairProposalLegs(prev => prev.map((l, i) =>
+                                                      i === idx ? { ...l, weight: val } : l
+                                                    ))
+                                                  }}
+                                                  placeholder="0.00"
+                                                />
+                                                <span className="text-xs text-gray-500">%</span>
+                                              </div>
+                                            </div>
+                                          ))
+                                        ) : (
+                                          // View mode - display only
+                                          legs.map((leg: any, idx: number) => (
+                                            <div key={idx} className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                                              <span className={clsx(
+                                                "px-2 py-1 rounded text-xs font-bold uppercase min-w-[50px] text-center",
+                                                leg.action === 'buy' || leg.action === 'add'
+                                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                              )}>
+                                                {leg.action}
+                                              </span>
+                                              <span className="font-bold text-gray-900 dark:text-white min-w-[60px]">
+                                                {leg.symbol}
+                                              </span>
+                                              <div className="flex-1" />
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                  {getSizingModeLabel(leg.sizingMode || sizingMode)}:
+                                                </span>
+                                                <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                                                  {leg.weight != null ? `${leg.weight.toFixed(2)}%` : '—'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+
+                                      {/* Notes */}
+                                      {myProposal.notes && (
+                                        <div className="mt-3 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Notes</div>
+                                          <div className="text-sm text-gray-700 dark:text-gray-300">{myProposal.notes}</div>
+                                        </div>
+                                      )}
+
+                                      {/* Timestamp */}
+                                      <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                                        Submitted {new Date(myProposal.created_at).toLocaleDateString()} at {new Date(myProposal.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        {myProposal.updated_at !== myProposal.created_at && (
+                                          <span className="ml-2">
+                                            · Updated {new Date(myProposal.updated_at).toLocaleDateString()}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+
+                                {/* Other Team Proposals */}
+                                {otherProposals.length > 0 && (
+                                  <div>
+                                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                                      Team Proposals ({otherProposals.length})
+                                    </div>
+                                    <div className="space-y-2">
+                                      {otherProposals.map(proposal => {
+                                        const sizingCtx = proposal.sizing_context as any
+                                        let legs = sizingCtx?.legs || []
+                                        const sizingMode = sizingCtx?.sizingMode || sizingCtx?.proposalType || legs[0]?.sizingMode || proposal.sizing_mode || 'weight'
+                                        const userName = proposal.users?.first_name && proposal.users?.last_name
+                                          ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                                          : proposal.users?.email?.split('@')[0] || 'Unknown'
+
+                                        // Build legs from pair trade data if not in sizing_context
+                                        if (legs.length === 0 && isPairTrade && pairTradeData) {
+                                          const pairLegs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+                                          legs = pairLegs.map((leg: any) => ({
+                                            assetId: leg.asset_id || leg.assets?.id,
+                                            symbol: leg.assets?.symbol || leg.symbol || '?',
+                                            action: leg.action || 'buy',
+                                            weight: proposal.weight,
+                                            sizingMode: sizingMode,
+                                          }))
+                                        }
+
+                                        const getSizingModeLabel = (mode: string) => {
+                                          switch (mode) {
+                                            case 'weight': return 'Wgt'
+                                            case 'delta_weight': return '±Wgt'
+                                            case 'active_weight': return 'Act'
+                                            case 'delta_benchmark': return '±Bch'
+                                            default: return 'Wgt'
+                                          }
+                                        }
+
+                                        return (
+                                          <div key={proposal.id} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                                <User className="h-3 w-3 text-gray-500 dark:text-gray-400" />
+                                              </div>
+                                              <span className="text-sm font-medium text-gray-900 dark:text-white">{userName}</span>
+                                              <span className="text-xs text-gray-400 ml-auto">
+                                                {new Date(proposal.created_at).toLocaleDateString()}
+                                              </span>
+                                            </div>
+
+                                            {/* Compact legs display */}
+                                            <div className="grid grid-cols-2 gap-2">
+                                              {legs.map((leg: any, idx: number) => (
+                                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                                  <span className={clsx(
+                                                    "text-xs font-bold uppercase",
+                                                    leg.action === 'buy' || leg.action === 'add'
+                                                      ? "text-green-600 dark:text-green-400"
+                                                      : "text-red-600 dark:text-red-400"
+                                                  )}>
+                                                    {leg.action === 'buy' || leg.action === 'add' ? 'B' : 'S'}
+                                                  </span>
+                                                  <span className="font-medium text-gray-900 dark:text-white">{leg.symbol}</span>
+                                                  <span className="text-gray-500 dark:text-gray-400 ml-auto tabular-nums">
+                                                    {leg.weight != null ? `${leg.weight.toFixed(2)}%` : '—'}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+
+                                            {proposal.notes && (
+                                              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic truncate">
+                                                "{proposal.notes}"
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* No proposals yet message */}
+                                {!myProposal && otherProposals.length === 0 && (
+                                  <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                                    <Scale className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                    <p className="text-sm">No proposals yet for this portfolio</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+
                     {/* Portfolio Context Cards with Inline Proposal Inputs */}
                     {portfolioContexts.length > 0 ? (
                       <div className="space-y-4">
@@ -4471,11 +5747,25 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   ) : (
                                     <ChevronRight className="h-3.5 w-3.5" />
                                   )}
-                                  {userProposal ? (
-                                    <span className="text-primary-600 dark:text-primary-400">
-                                      Your Proposal: {userProposal.weight?.toFixed(2)}%
-                                    </span>
-                                  ) : inlineProposal?.value ? (
+                                  {userProposal ? (() => {
+                                    // Check if this is a pair trade proposal
+                                    const sizingCtx = userProposal.sizing_context as any
+                                    const isPairTrade = sizingCtx?.isPairTrade === true
+                                    const legs = sizingCtx?.legs || []
+
+                                    if (isPairTrade && legs.length > 0) {
+                                      return (
+                                        <span className="text-primary-600 dark:text-primary-400">
+                                          Your Proposal: Pair Trade ({legs.length} legs)
+                                        </span>
+                                      )
+                                    }
+                                    return (
+                                      <span className="text-primary-600 dark:text-primary-400">
+                                        Your Proposal: {userProposal.weight?.toFixed(2)}%
+                                      </span>
+                                    )
+                                  })() : inlineProposal?.value ? (
                                     <span className="text-primary-600 dark:text-primary-400">
                                       Draft: {inlineProposal.value}% ({sizingModes.find(m => m.value === sizingMode)?.label})
                                     </span>
@@ -4623,6 +5913,48 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       const userName = proposal.users?.first_name && proposal.users?.last_name
                                         ? `${proposal.users.first_name} ${proposal.users.last_name}`
                                         : proposal.users?.email || 'Unknown'
+
+                                      // Check if this is a pair trade proposal
+                                      const sizingCtx = proposal.sizing_context as any
+                                      const isPairTrade = sizingCtx?.isPairTrade === true
+                                      const legs = sizingCtx?.legs || []
+
+                                      if (isPairTrade && legs.length > 0) {
+                                        return (
+                                          <div
+                                            key={proposal.id}
+                                            className="p-2 rounded bg-gray-100 dark:bg-gray-700/50 space-y-2"
+                                          >
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-xs text-gray-600 dark:text-gray-400">
+                                                {userName}
+                                              </span>
+                                              <span className="text-xs font-medium text-purple-600 dark:text-purple-400">
+                                                Pair Trade
+                                              </span>
+                                            </div>
+                                            <div className="space-y-1">
+                                              {legs.map((leg: any, idx: number) => (
+                                                <div key={idx} className="flex items-center justify-between text-xs">
+                                                  <span className="flex items-center gap-1">
+                                                    <span className={clsx(
+                                                      "font-bold uppercase",
+                                                      leg.action === 'buy' ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                                                    )}>
+                                                      {leg.action}
+                                                    </span>
+                                                    <span className="font-medium text-gray-900 dark:text-white">{leg.symbol}</span>
+                                                  </span>
+                                                  <span className="text-gray-600 dark:text-gray-400">
+                                                    {leg.weight != null ? `${leg.weight.toFixed(2)}%` : '—'}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )
+                                      }
+
                                       return (
                                         <div
                                           key={proposal.id}

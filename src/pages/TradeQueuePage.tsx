@@ -2197,7 +2197,8 @@ export function TradeQueuePage() {
                                             : "border-gray-200 dark:border-gray-700"
                                         )}
                                         onClick={() => {
-                                          setSelectedTradeId(group.pairTradeId)
+                                          // Use trade_queue_item_id, not pairTradeId, so the modal can find the proposal
+                                          setSelectedTradeId(proposal.trade_queue_item_id)
                                           setSelectedTradeInitialTab('proposals')
                                         }}
                                       >

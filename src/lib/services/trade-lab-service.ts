@@ -1375,11 +1375,11 @@ export async function getProposalsForTradeIdea(
   const portfolioIds = [...new Set(proposals.map((p: any) => p.portfolio_id).filter(Boolean))]
 
   // Fetch user data separately
-  let userMap: Record<string, { id: string; email: string; first_name: string | null; last_name: string | null }> = {}
+  let userMap: Record<string, { id: string; email: string; first_name: string | null; last_name: string | null; user_type: string | null }> = {}
   if (userIds.length > 0) {
     const { data: users } = await supabase
       .from('users')
-      .select('id, email, first_name, last_name')
+      .select('id, email, first_name, last_name, user_type')
       .in('id', userIds)
 
     if (users) {
@@ -1400,12 +1400,31 @@ export async function getProposalsForTradeIdea(
     }
   }
 
-  // Merge user and portfolio data into proposals
-  return proposals.map((p: any) => ({
-    ...p,
-    users: userMap[p.user_id] || null,
-    portfolio: portfolioMap[p.portfolio_id] || null,
-  })) as TradeProposalWithUser[]
+  // Fetch portfolio team roles (from Portfolio Team page settings)
+  let teamRoleMap: Record<string, string> = {}
+  if (userIds.length > 0 && portfolioIds.length > 0) {
+    const { data: teamMembers } = await supabase
+      .from('portfolio_team')
+      .select('user_id, portfolio_id, role')
+      .in('user_id', userIds)
+      .in('portfolio_id', portfolioIds)
+
+    if (teamMembers) {
+      teamRoleMap = Object.fromEntries(
+        teamMembers.map((m: any) => [`${m.user_id}-${m.portfolio_id}`, m.role])
+      )
+    }
+  }
+
+  // Merge user, portfolio, and team role data into proposals
+  return proposals.map((p: any) => {
+    const portfolioRole = teamRoleMap[`${p.user_id}-${p.portfolio_id}`] || null
+    return {
+      ...p,
+      users: userMap[p.user_id] ? { ...userMap[p.user_id], portfolio_role: portfolioRole } : null,
+      portfolio: portfolioMap[p.portfolio_id] || null,
+    }
+  }) as TradeProposalWithUser[]
 }
 
 /**

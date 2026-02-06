@@ -243,7 +243,16 @@ export function PromoteToTradeIdeaModal({
         })
 
         setPromotedTradeIdeaId(result.tradeIdeaId)
-        success('Trade Idea created')
+        success('Trade Idea created', {
+          action: {
+            label: 'View in Queue',
+            onClick: () => {
+              window.dispatchEvent(new CustomEvent('openTradeQueue', {
+                detail: { selectedTradeId: result.tradeIdeaId }
+              }))
+            }
+          }
+        })
         onSuccess?.(result.tradeIdeaId)
       } else {
         // Pair trade - create multiple trade_queue_items directly

@@ -665,9 +665,9 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   const returnPercentage = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header - Fixed */}
+      <div className="flex items-start justify-between mb-6 flex-shrink-0">
         <div className="flex items-start space-x-8 flex-1">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-1">
@@ -686,8 +686,8 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <Card padding="none">
+      {/* Tabs - Card fills remaining space */}
+      <Card padding="none" className="flex-1 flex flex-col overflow-hidden min-h-0">
         <div className="border-b border-gray-200">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
             <button
@@ -786,8 +786,8 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
           </nav>
         </div>
 
-        {/* Tab Content */}
-        <div className="p-6">
+        {/* Tab Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

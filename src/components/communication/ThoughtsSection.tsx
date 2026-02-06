@@ -93,8 +93,18 @@ export function ThoughtsSection({
     }, 100)
   }
 
-  const handleTradeIdeaSuccess = () => {
-    success('Trade idea added.', 'Decision queued in Priorities.')
+  const handleTradeIdeaSuccess = (tradeIdeaId?: string) => {
+    success('Trade idea added.', {
+      description: 'Decision queued in Priorities.',
+      action: tradeIdeaId ? {
+        label: 'View in Queue',
+        onClick: () => {
+          window.dispatchEvent(new CustomEvent('openTradeQueue', {
+            detail: { selectedTradeId: tradeIdeaId }
+          }))
+        }
+      } : undefined
+    })
 
     setCaptureMode('collapsed')
     setCapturedContext(null)

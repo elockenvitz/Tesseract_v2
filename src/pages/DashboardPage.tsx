@@ -296,6 +296,24 @@ export function DashboardPage() {
     return () => window.removeEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
   }, [])
 
+  // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)
+  useEffect(() => {
+    const handleOpenTradeQueue = (event: CustomEvent) => {
+      const { selectedTradeId } = event.detail || {}
+      console.log('📋 Opening Trade Queue:', { selectedTradeId })
+
+      handleSearchResult({
+        id: 'trade-queue',
+        title: 'Trade Queue',
+        type: 'trade-queue',
+        data: selectedTradeId ? { selectedTradeId } : undefined
+      })
+    }
+
+    window.addEventListener('openTradeQueue', handleOpenTradeQueue as EventListener)
+    return () => window.removeEventListener('openTradeQueue', handleOpenTradeQueue as EventListener)
+  }, [])
+
   // Memoize active tab to prevent unnecessary recalculations
   const activeTab = useMemo(() =>
     tabs.find(tab => tab.id === activeTabId),

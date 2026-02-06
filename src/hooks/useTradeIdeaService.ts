@@ -458,9 +458,18 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         contextTags: params.contextTags,
       })
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       invalidateQueries()
-      toast.success('Trade idea created')
+      toast.success('Trade idea created', {
+        action: {
+          label: 'View in Queue',
+          onClick: () => {
+            window.dispatchEvent(new CustomEvent('openTradeQueue', {
+              detail: { selectedTradeId: result.id }
+            }))
+          }
+        }
+      })
       options.onCreateSuccess?.()
     },
     onError: (error) => {
@@ -498,9 +507,18 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         context: buildActionContext(user, params.uiSource),
       })
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       invalidateQueries()
-      toast.success('Pair trade created')
+      toast.success('Pair trade created', {
+        action: {
+          label: 'View in Queue',
+          onClick: () => {
+            window.dispatchEvent(new CustomEvent('openTradeQueue', {
+              detail: { selectedTradeId: result.id }
+            }))
+          }
+        }
+      })
       options.onCreatePairTradeSuccess?.()
     },
     onError: (error) => {

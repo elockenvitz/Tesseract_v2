@@ -14,7 +14,7 @@ import { inferProvenance, type Provenance } from '../../lib/provenance'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 
 interface QuickTradeIdeaCaptureProps {
-  onSuccess?: () => void
+  onSuccess?: (tradeIdeaId?: string) => void
   onCancel?: () => void
   compact?: boolean
   autoFocus?: boolean
@@ -501,7 +501,7 @@ export function QuickTradeIdeaCapture({
 
       return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-ideas-feed'] })
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts'] })
@@ -524,7 +524,9 @@ export function QuickTradeIdeaCapture({
       setSelectedPortfolioIds([])
       setVisibility('private')
       setSubmitError(null)
-      onSuccess?.()
+      // Pass the first trade idea ID to the callback
+      const firstTradeId = data?.[0]?.id
+      onSuccess?.(firstTradeId)
     },
     onError: (error: Error) => {
       // Log error for debugging (dev only)
