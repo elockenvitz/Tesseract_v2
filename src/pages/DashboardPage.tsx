@@ -277,6 +277,20 @@ export function DashboardPage() {
     return () => window.removeEventListener('openTradeLab', handleOpenTradeLab as EventListener)
   }, [])
 
+  // Listen for custom event to open Trade Plans tab
+  useEffect(() => {
+    const handleOpenTradePlans = () => {
+      handleSearchResult({
+        id: 'trade-plans',
+        title: 'Trade Plans',
+        type: 'trade-plans',
+        data: {}
+      })
+    }
+    window.addEventListener('openTradePlans', handleOpenTradePlans)
+    return () => window.removeEventListener('openTradePlans', handleOpenTradePlans)
+  }, [])
+
   // Listen for custom event to open Ideas tab with filters (e.g., from "View all" in sidebar)
   useEffect(() => {
     const handleOpenIdeasTab = (event: CustomEvent) => {
@@ -495,9 +509,6 @@ export function DashboardPage() {
       case 'text-template':
         // Text template - go to templates tab
         return <TemplatesTab initialTab="text" initialTemplateId={activeTab.data?.id} />
-      case 'simulation':
-        // Simulation - open in trade lab
-        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} />
       case 'team':
         // Team - go to organization page with team view
         return <OrganizationPage

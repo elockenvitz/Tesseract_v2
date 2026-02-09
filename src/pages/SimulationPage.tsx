@@ -75,6 +75,17 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { useToast } from '../components/common/Toast'
 import { useTradePlans as useTradeLists, usePlanStats as useListStats, useWorkbench } from '../hooks/useTradeLab'
 import type { TradePlanWithDetails as TradeListWithDetails } from '../lib/services/trade-plan-service'
+import { parseSizingInput, toSizingSpec, type SizingSpec } from '../lib/trade-lab/sizing-parser'
+import { detectDirectionConflict } from '../lib/trade-lab/normalize-sizing'
+import { ConflictBadgeV3 } from '../components/trading/VariantStatusBadges'
+import { TradeSheetPanel } from '../components/trading/TradeSheetPanel'
+import { TradeSheetReadinessPanel } from '../components/trading/TradeSheetReadinessPanel'
+import { UnifiedSizingInput, type CurrentPosition as UnifiedCurrentPosition } from '../components/trading/UnifiedSizingInput'
+import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../components/trading/TradeCardConflictBadge'
+import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
+import { useIntentVariants } from '../hooks/useIntentVariants'
+import { useSimulationRows } from '../hooks/useSimulationRows'
+import type { SizingValidationError, AssetPrice } from '../types/trading'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -88,21 +99,27 @@ function getInitialState(propSimulationId?: string, tabId?: string) {
   if (tabId) {
     const savedState = TabStateManager.loadTabState(tabId)
     if (savedState) {
+      // Remap legacy tab names to new ones
+      let impactView = savedState.impactView || 'simulation'
+      if (impactView === 'summary' || impactView === 'intent' || impactView === 'holdings') {
+        impactView = 'simulation'
+      }
       return {
         selectedSimulationId: savedState.selectedSimulationId || propSimulationId || null,
         showIdeasPanel: savedState.showIdeasPanel ?? true,
-        impactView: savedState.impactView || 'summary',
+        impactView,
       }
     }
   }
   return {
     selectedSimulationId: propSimulationId || null,
     showIdeasPanel: true,
-    impactView: 'summary' as const,
+    impactView: 'simulation' as const,
   }
 }
 
 // Simplified sizing mode options - delta is auto-detected from +/- prefix
+// v3: weight mode now accepts full sizing syntax: 2.5, +0.5, -0.25, #500, @t0.5, @d+0.5
 type SimpleSizingMode = 'weight' | 'shares' | 'vs_benchmark'
 const SIZING_MODE_OPTIONS: { value: SimpleSizingMode; label: string; unit: string; placeholder: string; disabled?: boolean }[] = [
   { value: 'weight', label: 'Weight', unit: '%', placeholder: '' },
@@ -110,19 +127,129 @@ const SIZING_MODE_OPTIONS: { value: SimpleSizingMode; label: string; unit: strin
   { value: 'vs_benchmark', label: '± Bench', unit: '%', placeholder: '', disabled: true },
 ]
 
-// Parse value to detect if it's a delta (starts with + or -)
-const parseEditingValue = (value: string, baseMode: SimpleSizingMode): { mode: TradeSizingMode; numValue: number | null } => {
-  if (baseMode === 'vs_benchmark') return { mode: 'delta_benchmark', numValue: null }
-  if (!value || value.trim() === '') return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue: null }
-  const trimmed = value.trim()
-  const isDelta = trimmed.startsWith('+') || (trimmed.startsWith('-') && trimmed !== '-')
-  const numValue = parseFloat(trimmed)
-  if (isNaN(numValue)) return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue: null }
+// =============================================================================
+// V3 SIZING PARSER INTEGRATION
+// =============================================================================
 
-  if (isDelta) {
-    return { mode: baseMode === 'weight' ? 'delta_weight' : 'delta_shares', numValue }
+interface V3ParseResult {
+  mode: TradeSizingMode
+  numValue: number | null
+  sizingSpec: SizingSpec | null
+  isValid: boolean
+  error?: string
+}
+
+/**
+ * Parse sizing value using v3 sizing-parser.
+ * Supports full v3 syntax:
+ * - Weight: 2.5, +0.5, -0.25
+ * - Shares: #500, #+100, #-50
+ * - Active Target: @t0.5, @t-0.5 (if benchmark)
+ * - Active Delta: @d+0.5, @d-0.25 (if benchmark)
+ *
+ * Falls back to legacy mode-based parsing for backward compatibility.
+ */
+const parseEditingValueV3 = (
+  value: string,
+  baseMode: SimpleSizingMode,
+  hasBenchmark: boolean = false
+): V3ParseResult => {
+  // Legacy vs_benchmark mode (not yet implemented in v3)
+  if (baseMode === 'vs_benchmark') {
+    return { mode: 'delta_benchmark', numValue: null, sizingSpec: null, isValid: false }
   }
-  return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue }
+
+  if (!value || value.trim() === '') {
+    return {
+      mode: baseMode === 'weight' ? 'weight' : 'shares',
+      numValue: null,
+      sizingSpec: null,
+      isValid: false
+    }
+  }
+
+  const trimmed = value.trim()
+
+  // Use v3 parser for # and @ prefixes, or if in weight mode
+  // In shares mode without #, treat as raw share count
+  if (trimmed.startsWith('#') || trimmed.startsWith('@') || baseMode === 'weight') {
+    // For weight mode, if user types a number without prefix, parse as weight
+    // For shares mode with # prefix, parse as shares
+    const parseInput = baseMode === 'shares' && !trimmed.startsWith('#') && !trimmed.startsWith('@')
+      ? `#${trimmed}`  // Add # prefix for shares mode
+      : trimmed
+
+    const parseResult = parseSizingInput(parseInput, { has_benchmark: hasBenchmark })
+
+    if (parseResult.is_valid && parseResult.framework && parseResult.value !== undefined) {
+      const sizingSpec = toSizingSpec(trimmed, parseResult)
+
+      // Map framework to TradeSizingMode
+      let mode: TradeSizingMode
+      switch (parseResult.framework) {
+        case 'weight_target':
+          mode = 'weight'
+          break
+        case 'weight_delta':
+          mode = 'delta_weight'
+          break
+        case 'shares_target':
+          mode = 'shares'
+          break
+        case 'shares_delta':
+          mode = 'delta_shares'
+          break
+        case 'active_target':
+        case 'active_delta':
+          mode = 'delta_benchmark'
+          break
+        default:
+          mode = baseMode === 'weight' ? 'weight' : 'shares'
+      }
+
+      return {
+        mode,
+        numValue: parseResult.value,
+        sizingSpec,
+        isValid: true
+      }
+    }
+
+    // Parse failed - return with error
+    return {
+      mode: baseMode === 'weight' ? 'weight' : 'shares',
+      numValue: null,
+      sizingSpec: null,
+      isValid: false,
+      error: parseResult.error
+    }
+  }
+
+  // Legacy shares mode parsing (numbers without # prefix)
+  const numValue = parseFloat(trimmed)
+  if (isNaN(numValue)) {
+    return {
+      mode: 'shares',
+      numValue: null,
+      sizingSpec: null,
+      isValid: false,
+      error: 'Invalid number'
+    }
+  }
+
+  const isDelta = trimmed.startsWith('+') || (trimmed.startsWith('-') && trimmed !== '-')
+  return {
+    mode: isDelta ? 'delta_shares' : 'shares',
+    numValue,
+    sizingSpec: null,
+    isValid: true
+  }
+}
+
+// Legacy wrapper for backward compatibility
+const parseEditingValue = (value: string, baseMode: SimpleSizingMode): { mode: TradeSizingMode; numValue: number | null } => {
+  const result = parseEditingValueV3(value, baseMode, false)
+  return { mode: result.mode, numValue: result.numValue }
 }
 
 // Get current sizing mode option
@@ -216,7 +343,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null)
   const [editingSizingMode, setEditingSizingMode] = useState<SimpleSizingMode>('weight')
   const [editingValue, setEditingValue] = useState<string>('')
-  const [impactView, setImpactView] = useState<'summary' | 'holdings' | 'trades'>(initialState.current.impactView)
+  const [impactView, setImpactView] = useState<'simulation' | 'impact' | 'trades'>(
+    initialState.current.impactView as any || 'simulation'
+  )
 
   // New: Portfolio-first workflow state
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(initialPortfolioId || null)
@@ -259,6 +388,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Track asset_ids that were added via proposals (not via idea checkbox)
   const [proposalAddedAssetIds, setProposalAddedAssetIds] = useState<Set<string>>(new Set())
+
+  // Local optimistic state for instant checkbox feedback (avoids full re-render through React Query)
+  // Single override map for instant checkbox feedback.
+  // Map<assetId, boolean> — true = user wants added, false = user wants removed.
+  // Cleared when server state matches desired state.
+  const [checkboxOverrides, setCheckboxOverrides] = useState<Map<string, boolean>>(new Map())
+  const checkboxOverridesRef = useRef<Map<string, boolean>>(new Map())
+
+  // Track in-flight imports so handleRemoveAsset knows whether to fire removal
+  // directly or let importTradeMutation.onSuccess handle it.
+  const importsInFlightRef = useRef<Set<string>>(new Set())
+
+  // Pending sizing edits made on temp variants. When the real variant arrives
+  // (in importTradeMutation.onSuccess), the pending sizing overrides the trade idea's default.
+  const pendingSizingRef = useRef<Map<string, string>>(new Map())
 
   // Persist state when it changes
   useEffect(() => {
@@ -375,6 +519,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return null
     },
     enabled: !!selectedPortfolioId && !!portfolios,
+    staleTime: 60000, // Cache for 1 minute
   })
 
   // Fetch all simulations
@@ -393,6 +538,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       if (error) throw error
       return data as SimulationWithDetails[]
     },
+    staleTime: 30000, // Cache for 30 seconds
   })
 
   // Get simulations for the selected portfolio
@@ -550,8 +696,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { data: tradeIdeas, isLoading: tradeIdeasLoading, isFetching: tradeIdeasFetching, refetch: refetchTradeIdeas } = useQuery({
     queryKey: ['trade-queue-ideas', selectedPortfolioId],
     queryFn: async () => {
-      console.log('🔍 Fetching trade ideas for portfolio:', selectedPortfolioId)
-
       // First, get idea IDs linked to this portfolio via trade_lab_idea_links
       const { data: linkedIds } = await supabase
         .from('trade_lab_idea_links')
@@ -559,7 +703,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         .eq('trade_labs.portfolio_id', selectedPortfolioId)
 
       const linkedIdeaIds = linkedIds?.map(l => l.trade_queue_item_id) || []
-      console.log('🔍 Linked idea IDs from trade_lab_idea_links:', linkedIdeaIds.length, linkedIdeaIds)
 
       // Fetch ideas that either have direct portfolio_id match or are linked via trade_lab
       // Only show active ideas (not in trash or archive)
@@ -578,12 +721,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         .order('priority', { ascending: false })
 
       if (error) throw error
-
-      // Debug logging for pair trade grouping
-      console.log('🔍 Trade ideas fetched:', data?.length)
-      console.log('🔍 Linked idea IDs:', linkedIdeaIds)
-      const pairItems = data?.filter(d => d.pair_id)
-      console.log('🔍 Items with pair_id:', pairItems?.map(p => ({ id: p.id, pair_id: p.pair_id, symbol: p.assets?.symbol })))
 
       return data as TradeQueueItemWithDetails[]
     },
@@ -629,7 +766,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       if (error) throw error
 
-      console.log('🔍 Active proposals fetched:', data?.length, data)
+      // Active proposals fetched
       return data || []
     },
     enabled: !!selectedPortfolioId,
@@ -656,6 +793,66 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     viewId: simulation?.id, // Using simulation ID as view ID for now
     labId: tradeLab?.id,
   })
+
+  // ==========================================================================
+  // TRADE LAB V3: Intent Variants
+  // ==========================================================================
+  const {
+    variants: intentVariants,
+    conflictSummary: v3ConflictSummary,
+    tradeSheets: v3TradeSheets,
+    hasConflicts: v3HasConflicts,
+    canCreateTradeSheet: v3CanCreateTradeSheet,
+    isLoading: v3Loading,
+    isCreatingTradeSheet: v3CreatingSheet,
+    createVariant: v3CreateVariant,
+    createVariantAsync: v3CreateVariantAsync,
+    updateVariant: v3UpdateVariant,
+    deleteVariant: v3DeleteVariant,
+    createTradeSheet: v3CreateTradeSheet,
+  } = useIntentVariants({
+    labId: tradeLab?.id,
+    viewId: null, // Not using trade_lab_views, variants are lab-wide
+    portfolioId: selectedPortfolioId,
+  })
+
+  // Handler for fixing conflicts via one-click action change
+  const handleFixConflict = async (variantId: string, suggestedAction: string) => {
+    if (variantId.startsWith('temp-')) return
+    const variant = intentVariants.find(v => v.id === variantId)
+    if (!variant) return
+
+    // Build a mock price for the update
+    const price: AssetPrice = {
+      asset_id: variant.asset_id,
+      price: priceMap?.[variant.asset_id] || 100,
+      timestamp: new Date().toISOString(),
+      source: 'realtime',
+    }
+
+    await v3UpdateVariant({
+      variantId,
+      updates: { action: suggestedAction as any },
+      currentPosition: variant.current_position,
+      price,
+      portfolioTotalValue: simulation?.baseline_total_value || 0,
+      roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+      hasBenchmark: false,
+    })
+  }
+
+  // Handler for creating trade sheet
+  const handleCreateTradeSheet = async (name: string, description?: string) => {
+    await v3CreateTradeSheet({ name, description })
+  }
+
+  // v3: Guard to prevent concurrent sync runs
+  const syncingRef = useRef(false)
+
+  // Reset sync guard when simulation changes
+  useEffect(() => {
+    syncingRef.current = false
+  }, [selectedSimulationId])
 
   // Search assets for quick trade
   const { data: quickTradeAssets } = useQuery({
@@ -716,6 +913,123 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     staleTime: 60000, // Cache for 1 minute
     refetchInterval: 60000, // Refetch every minute for updated prices
   })
+
+  // Merge baseline + variants into simulation rows for the table
+  const simulationRows = useSimulationRows({
+    baselineHoldings: simulation?.baseline_holdings as BaselineHolding[] || [],
+    variants: intentVariants,
+    priceMap: priceMap || {},
+  })
+
+  // Handler for creating a variant from an untraded holding row
+  const handleCreateVariantForHolding = useCallback((assetId: string, action: TradeAction) => {
+    if (!simulation) return
+    const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+    const holding = baselineHoldings.find(h => h.asset_id === assetId)
+    const currentPosition = holding ? {
+      shares: holding.shares,
+      weight: holding.weight,
+      cost_basis: null,
+      active_weight: null,
+    } : null
+
+    v3CreateVariant({
+      assetId,
+      action,
+      sizingInput: '',
+      currentPosition,
+      price: {
+        asset_id: assetId,
+        price: priceMap?.[assetId] || holding?.price || 100,
+        timestamp: new Date().toISOString(),
+        source: 'realtime' as const,
+      },
+      portfolioTotalValue: simulation.baseline_total_value || 0,
+      roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+      hasBenchmark: false,
+    })
+  }, [simulation, priceMap, v3CreateVariant])
+
+  // v3: Sync simulation_trades → lab_variants on load and when real (non-temp) trades change.
+  // Only syncs persisted trades that don't have a matching variant.
+  // Optimistic temp trades (id starts with "temp-") are skipped — the import mutation handles those.
+  const realTradeIds = useMemo(() => {
+    if (!simulation?.simulation_trades?.length) return ''
+    return simulation.simulation_trades
+      .filter(t => !t.id.startsWith('temp-'))
+      .map(t => t.id)
+      .sort()
+      .join(',')
+  }, [simulation?.simulation_trades])
+
+  useEffect(() => {
+    const syncVariants = async () => {
+      if (
+        !simulation?.simulation_trades?.length ||
+        !tradeLab?.id ||
+        !priceMap ||
+        v3Loading ||
+        syncingRef.current
+      ) {
+        return
+      }
+
+      // Only consider persisted (non-temp) trades
+      const persistedTrades = simulation.simulation_trades.filter(t => !t.id.startsWith('temp-'))
+      const variantAssetIds = new Set(intentVariants.map(v => v.asset_id))
+      const unsyncedTrades = persistedTrades.filter(
+        t => !variantAssetIds.has(t.asset_id) && checkboxOverridesRef.current.get(t.asset_id) !== false
+      )
+
+      if (unsyncedTrades.length === 0) return
+
+      syncingRef.current = true
+      const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+
+      for (const trade of unsyncedTrades) {
+        try {
+          const currentHolding = baselineHoldings.find(h => h.asset_id === trade.asset_id)
+          const currentPosition = currentHolding ? {
+            shares: currentHolding.shares,
+            weight: currentHolding.weight,
+            cost_basis: null,
+            active_weight: null,
+          } : null
+
+          const tradePrice = priceMap[trade.asset_id] || trade.price || 100
+          const sizingInput = trade.weight != null
+            ? String(trade.weight)
+            : trade.shares != null
+              ? `#${trade.shares}`
+              : ''
+
+          await v3CreateVariantAsync({
+            assetId: trade.asset_id,
+            action: trade.action as any,
+            sizingInput,
+            tradeQueueItemId: trade.trade_queue_item_id,
+            currentPosition,
+            price: {
+              asset_id: trade.asset_id,
+              price: tradePrice,
+              timestamp: new Date().toISOString(),
+              source: 'realtime',
+            },
+            portfolioTotalValue: simulation.baseline_total_value || 0,
+            roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+            hasBenchmark: false,
+            uiSource: 'simulation_page',
+          })
+        } catch (err) {
+          console.warn('⚠️ Failed to sync trade to variant:', err)
+        }
+      }
+
+      syncingRef.current = false
+    }
+
+    syncVariants()
+  }, [realTradeIds, tradeLab?.id, priceMap, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, simulation?.simulation_trades])
 
   // Create simulation mutation
   const createSimulationMutation = useMutation({
@@ -783,14 +1097,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     mutationFn: async (tradeIdea: TradeQueueItemWithDetails) => {
       if (!simulation) throw new Error('No simulation selected')
 
-      // Use priceMap price if available (keyed by asset_id), otherwise target_price
       const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
 
-      console.log('📥 Importing trade idea:', tradeIdea.id, tradeIdea.assets?.symbol)
-
+      // Upsert: if the trade already exists (from a rapid toggle race), just return it
       const { data, error } = await supabase
         .from('simulation_trades')
-        .insert({
+        .upsert({
           simulation_id: simulation.id,
           trade_queue_item_id: tradeIdea.id,
           asset_id: tradeIdea.asset_id,
@@ -799,7 +1111,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           weight: tradeIdea.proposed_weight,
           price,
           sort_order: (simulation.simulation_trades?.length || 0),
-        })
+        }, { onConflict: 'simulation_id,asset_id' })
         .select()
         .single()
 
@@ -807,49 +1119,134 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         console.error('❌ Import trade error:', error)
         throw error
       }
-      console.log('✅ Import trade success:', data)
       return data
     },
-    onMutate: async (tradeIdea) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
-
-      // Snapshot previous value
-      const previousSimulation = queryClient.getQueryData(['simulation', selectedSimulationId])
-
-      // Optimistically update - add a temporary trade
-      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
-        if (!old) return old
-        const tempTrade = {
-          id: `temp-${tradeIdea.id}`,
-          simulation_id: simulation?.id,
-          trade_queue_item_id: tradeIdea.id,
-          asset_id: tradeIdea.asset_id,
-          action: tradeIdea.action,
-          shares: tradeIdea.proposed_shares,
-          weight: tradeIdea.proposed_weight,
-          price: tradeIdea.target_price,
-          sort_order: (old.simulation_trades?.length || 0),
-          assets: tradeIdea.assets,
+    onSuccess: async (data, tradeIdea) => {
+      // Check override AFTER the import completes — this is the definitive moment
+      if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
+        // User toggled OFF while import was in-flight — undo immediately
+        removeTradeMutation.mutate({ tradeId: data.id, assetId: tradeIdea.asset_id })
+        if (tradeLab?.id) {
+          queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+          queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
+            old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
+          )
         }
-        return {
-          ...old,
-          simulation_trades: [...(old.simulation_trades || []), tempTrade],
-        }
-      })
+        return
+      }
 
-      return { previousSimulation }
-    },
-    onError: (_err, _tradeIdea, context) => {
-      // Rollback on error
-      if (context?.previousSimulation) {
-        queryClient.setQueryData(['simulation', selectedSimulationId], context.previousSimulation)
+      // User still wants this trade — sync lab_variant
+      if (tradeLab?.id && simulation) {
+        try {
+          const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
+          const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+          const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
+          const currentPosition = currentHolding ? {
+            shares: currentHolding.shares,
+            weight: currentHolding.weight,
+            cost_basis: null,
+            active_weight: null,
+          } : null
+
+          // Use pending sizing from user edit (if they typed into the temp variant),
+          // otherwise fall back to the trade idea's proposed sizing.
+          const pendingSizing = pendingSizingRef.current.get(tradeIdea.asset_id)
+          pendingSizingRef.current.delete(tradeIdea.asset_id)
+          const sizingInput = pendingSizing
+            ?? (tradeIdea.proposed_weight != null
+              ? String(tradeIdea.proposed_weight)
+              : tradeIdea.proposed_shares != null
+                ? `#${tradeIdea.proposed_shares}`
+                : '')
+
+          const existingVariant = intentVariants.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
+          const assetPrice = { asset_id: tradeIdea.asset_id, price, timestamp: new Date().toISOString(), source: 'realtime' as const }
+
+          if (existingVariant) {
+            v3UpdateVariant({
+              variantId: existingVariant.id,
+              updates: { action: tradeIdea.action, sizingInput },
+              currentPosition,
+              price: assetPrice,
+              portfolioTotalValue: simulation.baseline_total_value || 0,
+              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+              hasBenchmark: false,
+            })
+          } else {
+            // Re-check override right before creating (narrow race window)
+            if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) return
+            const createdVariant = await v3CreateVariantAsync({
+              assetId: tradeIdea.asset_id,
+              action: tradeIdea.action,
+              sizingInput,
+              tradeQueueItemId: tradeIdea.id,
+              currentPosition,
+              price: assetPrice,
+              portfolioTotalValue: simulation.baseline_total_value || 0,
+              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+              hasBenchmark: false,
+              uiSource: 'simulation_page',
+            })
+
+            // If user typed sizing while we were creating the variant (editing the
+            // temp placeholder), the pending sizing wasn't used above because it
+            // didn't exist yet. Pick it up now and fire a follow-up update so the
+            // real variant gets the user's intended value.
+            const laterPending = pendingSizingRef.current.get(tradeIdea.asset_id)
+            if (laterPending !== undefined && createdVariant?.id) {
+              pendingSizingRef.current.delete(tradeIdea.asset_id)
+              queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+              queryClient.setQueryData<IntentVariant[]>(
+                ['intent-variants', tradeLab.id, null] as any,
+                (old) => old?.map(v =>
+                  v.id === createdVariant.id
+                    ? { ...v, sizing_input: laterPending, sizing_spec: null, computed: null }
+                    : v.id === `temp-${tradeIdea.asset_id}` ? null! : v
+                ).filter(Boolean) ?? []
+              )
+              v3UpdateVariant({
+                variantId: createdVariant.id,
+                updates: { sizingInput: laterPending },
+                currentPosition,
+                price: assetPrice,
+                portfolioTotalValue: simulation.baseline_total_value || 0,
+                roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+                hasBenchmark: false,
+              })
+            }
+
+            // Post-creation guard: if user toggled off during await, clean up immediately
+            if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
+              queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+              queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
+                old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
+              )
+              const cached = queryClient.getQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any) || []
+              const created = cached.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
+              if (created) v3DeleteVariant({ variantId: created.id })
+            }
+          }
+        } catch (variantError) {
+          console.warn('⚠️ Failed to sync lab variant (non-blocking):', variantError)
+        }
       }
     },
-    onSettled: () => {
-      // Always refetch after mutation settles
+    onError: (_err, tradeIdea) => {
+      // Only clear override if user still wants the add (hasn't toggled off)
+      if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === true) {
+        checkboxOverridesRef.current.delete(tradeIdea.asset_id)
+        setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+      }
+      // Remove temp variant from cache
+      if (tradeLab?.id) {
+        queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null], (old) =>
+          old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
+        )
+      }
+    },
+    onSettled: (_data, _error, tradeIdea) => {
+      importsInFlightRef.current.delete(tradeIdea.asset_id)
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-      refetchPrices()
     },
   })
 
@@ -858,7 +1255,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     mutationFn: async (pairTradeLegs: TradeQueueItemWithDetails[]) => {
       if (!simulation) throw new Error('No simulation selected')
 
-      console.log('📥 Importing pair trade with', pairTradeLegs.length, 'legs')
+      // Import pair trade legs
 
       // Insert all legs as simulation trades
       const inserts = pairTradeLegs.map((leg, index) => ({
@@ -874,81 +1271,161 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       const { data, error } = await supabase
         .from('simulation_trades')
-        .insert(inserts)
+        .upsert(inserts, { onConflict: 'simulation_id,asset_id' })
         .select()
 
       if (error) {
         console.error('❌ Import pair trade error:', error)
         throw error
       }
-      console.log('✅ Import pair trade success:', data)
+      // Pair trade import success
+
+      // v3: Create lab_variants in background (fire-and-forget to keep checkbox snappy)
+      if (tradeLab?.id) {
+        const syncVariants = async () => {
+          const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+          for (const leg of pairTradeLegs) {
+            try {
+              // If user has since toggled this leg off, skip variant creation
+              if (checkboxOverridesRef.current.get(leg.asset_id) === false) continue
+
+              const currentHolding = baselineHoldings.find(h => h.asset_id === leg.asset_id)
+              const currentPosition = currentHolding ? {
+                shares: currentHolding.shares,
+                weight: currentHolding.weight,
+                cost_basis: null,
+                active_weight: null,
+              } : null
+
+              const legPrice = priceMap?.[leg.asset_id] || leg.target_price || 100
+              const sizingInput = leg.proposed_weight != null
+                ? String(leg.proposed_weight)
+                : leg.proposed_shares != null
+                  ? `#${leg.proposed_shares}`
+                  : ''
+
+              const existingVariant = intentVariants.find(v => v.asset_id === leg.asset_id && !v.id.startsWith('temp-'))
+
+              if (existingVariant) {
+                v3UpdateVariant({
+                  variantId: existingVariant.id,
+                  updates: { action: leg.action, sizingInput },
+                  currentPosition,
+                  price: { asset_id: leg.asset_id, price: legPrice, timestamp: new Date().toISOString(), source: 'realtime' },
+                  portfolioTotalValue: simulation.baseline_total_value || 0,
+                  roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+                  hasBenchmark: false,
+                })
+              } else {
+                await v3CreateVariantAsync({
+                  assetId: leg.asset_id,
+                  action: leg.action,
+                  sizingInput,
+                  tradeQueueItemId: leg.id,
+                  currentPosition,
+                  price: { asset_id: leg.asset_id, price: legPrice, timestamp: new Date().toISOString(), source: 'realtime' },
+                  portfolioTotalValue: simulation.baseline_total_value || 0,
+                  roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+                  hasBenchmark: false,
+                  uiSource: 'simulation_page',
+                })
+              }
+            } catch (variantError) {
+              console.warn('⚠️ Failed to sync lab variant for leg (non-blocking):', variantError)
+            }
+          }
+        }
+        // Don't await — let mutation settle quickly so checkboxes re-enable
+        syncVariants()
+      }
+
       return data
     },
-    onMutate: async (pairTradeLegs) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
-
-      // Snapshot previous value
-      const previousSimulation = queryClient.getQueryData(['simulation', selectedSimulationId])
-
-      // Optimistically update - add temporary trades for all legs
-      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
-        if (!old) return old
-        const tempTrades = pairTradeLegs.map((leg, index) => ({
-          id: `temp-${leg.id}`,
-          simulation_id: simulation?.id,
-          trade_queue_item_id: leg.id,
-          asset_id: leg.asset_id,
-          action: leg.action,
-          shares: leg.proposed_shares,
-          weight: leg.proposed_weight,
-          price: leg.target_price,
-          sort_order: (old.simulation_trades?.length || 0) + index,
-          assets: leg.assets,
-        }))
-        return {
-          ...old,
-          simulation_trades: [...(old.simulation_trades || []), ...tempTrades],
+    onSuccess: (data, pairTradeLegs) => {
+      // Rapid toggle reconciliation for each leg
+      if (data) {
+        (data as any[]).forEach((trade: any) => {
+          if (checkboxOverridesRef.current.get(trade.asset_id) === false) {
+            removeTradeMutation.mutate({ tradeId: trade.id, assetId: trade.asset_id })
+            // Also clean up variant
+            if (tradeLab?.id) {
+              const cached = queryClient.getQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null])
+              const variant = cached?.find(v => v.asset_id === trade.asset_id)
+              if (variant) v3DeleteVariant({ variantId: variant.id })
+            }
+          }
+        })
+      }
+    },
+    onError: (_err, pairTradeLegs) => {
+      // Only clear overrides that are still 'true' (user hasn't toggled off)
+      let anyCleared = false
+      pairTradeLegs.forEach(leg => {
+        if (checkboxOverridesRef.current.get(leg.asset_id) === true) {
+          checkboxOverridesRef.current.delete(leg.asset_id)
+          anyCleared = true
         }
       })
-
-      return { previousSimulation }
-    },
-    onError: (_err, _pairTradeLegs, context) => {
-      // Rollback on error
-      if (context?.previousSimulation) {
-        queryClient.setQueryData(['simulation', selectedSimulationId], context.previousSimulation)
+      if (anyCleared) setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+      // Remove temp variants from cache
+      if (tradeLab?.id) {
+        queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null], (old) => {
+          const legAssetIds = new Set(pairTradeLegs.map(l => l.asset_id))
+          return old?.filter(v => !legAssetIds.has(v.asset_id) || !v.id.startsWith('temp-')) ?? []
+        })
       }
     },
     onSettled: () => {
-      // Always refetch after mutation settles
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-      refetchPrices()
     },
   })
 
-  // Update trade in simulation (sandbox edit - doesn't affect original idea)
+  // Update trade in simulation (sandbox edit - unlinking from idea/proposal makes it manual)
   const updateTradeMutation = useMutation({
-    mutationFn: async ({ tradeId, shares, weight }: { tradeId: string; shares?: number; weight?: number }) => {
+    mutationFn: async ({ tradeId, shares, weight, action, assetId, unlinkFromIdea = true }: { tradeId: string; shares?: number; weight?: number; action?: TradeAction; assetId?: string; unlinkFromIdea?: boolean }) => {
+      const updateData: Record<string, any> = {
+        shares: shares ?? null,
+        weight: weight ?? null,
+      }
+
+      // v3: Support action updates for conflict resolution
+      if (action !== undefined) {
+        updateData.action = action
+      }
+
+      // When user manually edits a trade, unlink it from the idea/proposal
+      // This moves it to the "Manual Trades" section
+      if (unlinkFromIdea) {
+        updateData.trade_queue_item_id = null
+      }
+
       const { error } = await supabase
         .from('simulation_trades')
-        .update({
-          shares: shares ?? null,
-          weight: weight ?? null,
-        })
+        .update(updateData)
         .eq('id', tradeId)
 
       if (error) throw error
+
+      // Return assetId for onSuccess to clear from proposal tracking
+      return { assetId, unlinkFromIdea }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // Clear from proposal tracking if unlinked
+      if (result?.unlinkFromIdea && result?.assetId) {
+        setProposalAddedAssetIds(prev => {
+          const next = new Set(prev)
+          next.delete(result.assetId)
+          return next
+        })
+      }
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       setEditingTradeId(null)
     },
   })
 
-  // Remove trade from simulation
+  // Remove trade from simulation (variant deletion handled by onClick handlers for instant optimistic removal)
   const removeTradeMutation = useMutation({
-    mutationFn: async (tradeId: string) => {
+    mutationFn: async ({ tradeId }: { tradeId: string; assetId: string }) => {
       const { error } = await supabase
         .from('simulation_trades')
         .delete()
@@ -956,34 +1433,155 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       if (error) throw error
     },
-    onMutate: async (tradeId) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
-
-      // Snapshot previous value
-      const previousSimulation = queryClient.getQueryData(['simulation', selectedSimulationId])
-
-      // Optimistically remove the trade
-      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          simulation_trades: (old.simulation_trades || []).filter((t: any) => t.id !== tradeId),
-        }
-      })
-
-      return { previousSimulation }
-    },
-    onError: (_err, _tradeId, context) => {
-      // Rollback on error
-      if (context?.previousSimulation) {
-        queryClient.setQueryData(['simulation', selectedSimulationId], context.previousSimulation)
+    onError: (_err, { assetId }) => {
+      // Only clear override if user still wants the removal (hasn't toggled back on)
+      if (checkboxOverridesRef.current.get(assetId) === false) {
+        checkboxOverridesRef.current.delete(assetId)
+        setCheckboxOverrides(new Map(checkboxOverridesRef.current))
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+    onSettled: async () => {
+      // Await refetch so reconciliation effect sees fresh data
+      await queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      // The reconciliation effect will clear the FALSE override once the trade is gone
     },
   })
+
+  // ==========================================================================
+  // CHECKBOX HELPERS — immediate mutations with instant optimistic UI
+  // ==========================================================================
+
+  // Convergence effect: clears overrides once server state matches desired state.
+  // Also catches stale variants that reappear from refetches after uncheck.
+  useEffect(() => {
+    const tradeAssetIds = new Set(
+      (simulation?.simulation_trades || [])
+        .filter((t: any) => !t.id?.startsWith('temp-'))
+        .map((t: any) => t.asset_id)
+    )
+    setCheckboxOverrides(prev => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Map(prev)
+      prev.forEach((desired, assetId) => {
+        const exists = tradeAssetIds.has(assetId)
+        if ((desired && exists) || (!desired && !exists)) {
+          // Server matches desired state — safe to clear override
+          next.delete(assetId)
+          checkboxOverridesRef.current.delete(assetId)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+
+    // Guard: if override is false but variant still exists (from async creation race),
+    // remove it from cache and fire DB delete.
+    if (tradeLab?.id) {
+      checkboxOverridesRef.current.forEach((desired, assetId) => {
+        if (desired === false) {
+          const variant = intentVariants.find(v => v.asset_id === assetId)
+          if (variant) {
+            queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+            queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
+              old?.filter(v => v.asset_id !== assetId) ?? []
+            )
+            if (!variant.id.startsWith('temp-')) {
+              v3DeleteVariant({ variantId: variant.id })
+            }
+          }
+          // Also ensure trade is removed if it reappeared
+          if (tradeAssetIds.has(assetId)) {
+            const trades = (simulation?.simulation_trades || []).filter(
+              (t: any) => t.asset_id === assetId && !t.id?.startsWith('temp-')
+            )
+            trades.forEach((trade: any) => {
+              removeTradeMutation.mutate({ tradeId: trade.id, assetId })
+            })
+          }
+        }
+      })
+    }
+  }, [simulation?.simulation_trades, intentVariants, tradeLab?.id, queryClient, v3DeleteVariant, removeTradeMutation])
+
+  /** Remove an asset from simulation */
+  const handleRemoveAsset = useCallback((assetId: string) => {
+    // Instant UI feedback
+    checkboxOverridesRef.current.set(assetId, false)
+    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+
+    // Cancel in-flight variant fetches so a pending refetch can't overwrite our removal
+    if (tradeLab?.id) {
+      queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+    }
+
+    // Optimistic: remove ALL variants (temp AND real) from cache (table row disappears)
+    if (tradeLab?.id) {
+      queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
+        old?.filter(v => v.asset_id !== assetId) ?? []
+      )
+    }
+
+    // If an import is in-flight for this asset, don't fire removal now —
+    // importTradeMutation.onSuccess will handle it when the import lands.
+    if (importsInFlightRef.current.has(assetId)) return
+
+    // Find trades to remove from current simulation data
+    const trades = (simulation?.simulation_trades || []).filter(
+      (t: any) => t.asset_id === assetId && !t.id?.startsWith('temp-')
+    )
+    // Fire removal for each trade found
+    trades.forEach((trade: any) => {
+      removeTradeMutation.mutate({ tradeId: trade.id, assetId })
+    })
+    // Delete real variant from DB
+    if (tradeLab?.id) {
+      const variant = intentVariants.find(v => v.asset_id === assetId && !v.id.startsWith('temp-'))
+      if (variant) v3DeleteVariant({ variantId: variant.id })
+    }
+  }, [simulation?.simulation_trades, intentVariants, tradeLab?.id, queryClient, removeTradeMutation, v3DeleteVariant])
+
+  /** Add an asset to simulation */
+  const handleAddAsset = useCallback((idea: TradeQueueItemWithDetails) => {
+    const assetId = idea.asset_id
+
+    // Instant UI feedback
+    checkboxOverridesRef.current.set(assetId, true)
+    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+
+    // Optimistic: add temp variant to cache for instant table row
+    if (tradeLab?.id) {
+      const variantQueryKey = ['intent-variants', tradeLab.id, null]
+      queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+        if (old?.some(v => v.asset_id === assetId)) return old
+        const tempVariant = {
+          id: `temp-${assetId}`,
+          asset_id: assetId,
+          trade_lab_id: tradeLab.id,
+          action: idea.action || 'buy',
+          sizing_input: null,
+          sizing_spec: null,
+          computed: null,
+          direction_conflict: null,
+          below_lot_warning: false,
+          active_weight_config: null,
+          asset: idea.assets ? { symbol: idea.assets.symbol, company_name: idea.assets.company_name, sector: idea.assets.sector } : undefined,
+        } as IntentVariant
+        return [...(old || []), tempVariant]
+      })
+    }
+
+    // Fire import immediately
+    importsInFlightRef.current.add(assetId)
+    importTradeMutation.mutate(idea)
+  }, [tradeLab?.id, queryClient, importTradeMutation])
+
+  // Override-aware trade count: filters out trades the user has toggled OFF.
+  // This keeps the header count and tab badge in sync with checkbox state instantly.
+  const effectiveTradeCount = useMemo(() => {
+    const trades = simulation?.simulation_trades || []
+    return trades.filter((t: any) => checkboxOverrides.get(t.asset_id) !== false).length
+  }, [simulation?.simulation_trades, checkboxOverrides])
 
   // Calculate metrics dynamically based on current trades (LIVE!)
   const liveMetrics = useMemo(() => {
@@ -1141,17 +1739,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Get all trade ideas with their inclusion/expression status
   // isIncluded = linked via trade_lab_idea_links (part of this lab)
-  // isAdded = has a simulation_trade row (expressed as trade with sizing) AND not added via proposal
+  // isAdded = has a simulation_trade for this asset (checkbox state is decoupled from variants)
+  // checkboxOverrides give instant feedback before React Query re-renders
   const tradeIdeasWithStatus = useMemo(() => {
     if (!tradeIdeas) return []
     const expressedAssetIds = new Set(simulation?.simulation_trades?.map(t => t.asset_id) || [])
-    return tradeIdeas.map(idea => ({
-      ...idea,
-      isIncluded: includedIdeaIds?.has(idea.id) || false,
-      // Only show as added if in simulation AND not added via proposal checkbox
-      isAdded: expressedAssetIds.has(idea.asset_id) && !proposalAddedAssetIds.has(idea.asset_id)
-    }))
-  }, [tradeIdeas, simulation?.simulation_trades, includedIdeaIds, proposalAddedAssetIds])
+    return tradeIdeas.map(idea => {
+      // Checkbox override takes precedence for instant feedback
+      if (checkboxOverrides.has(idea.asset_id)) {
+        return { ...idea, isIncluded: includedIdeaIds?.has(idea.id) || false, isAdded: checkboxOverrides.get(idea.asset_id)! }
+      }
+      return {
+        ...idea,
+        isIncluded: includedIdeaIds?.has(idea.id) || false,
+        isAdded: expressedAssetIds.has(idea.asset_id)
+          && !proposalAddedAssetIds.has(idea.asset_id),
+      }
+    })
+  }, [tradeIdeas, simulation?.simulation_trades, includedIdeaIds, proposalAddedAssetIds, checkboxOverrides])
 
   // Show all trade ideas for the portfolio (not just included ones)
   // This lets users see all available ideas and add them to the workbench
@@ -1222,17 +1827,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }
     })
 
-    console.log('🔍 Pair trades grouped:', {
-      pairTradesCount: pairTradesMap.size,
-      pairTrades: Array.from(pairTradesMap.entries()).map(([id, entry]) => ({
-        id,
-        name: entry.pairTrade.name,
-        status: entry.pairTrade.status,
-        legsCount: entry.legs.length,
-        legs: entry.legs.map(l => l.assets?.symbol)
-      })),
-      standaloneCount: standalone.length
-    })
     return { pairTrades: pairTradesMap, standalone }
   }, [includedIdeasWithStatus])
 
@@ -1302,16 +1896,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }
     })
 
-    console.log('🔍 Items by category:', {
-      proposalsCount: groups.proposals.length,
-      proposals: groups.proposals.map(p => ({
-        id: p.proposal.id,
-        isPairTrade: p.isPairTrade,
-        symbol: p.proposal.trade_queue_items?.assets?.symbol
-      })),
-      ideasCount: groups.ideas.length,
-      manualCount: groups.manual.length
-    })
     return groups
   }, [pairTradesGrouped, tradeIdeasWithStatus, simulation?.simulation_trades, activeProposals])
 
@@ -1612,19 +2196,39 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   }
 
   // Queue trade change for auto-save using current sizing mode
+  // v3: Skips queueing if there's a direction conflict
   const queueTradeChange = useCallback((baseMode: SimpleSizingMode, value: string) => {
     if (!editingTradeId || !simulation?.simulation_trades) return
     const trade = simulation.simulation_trades.find(t => t.id === editingTradeId)
     if (!trade) return
 
-    // Parse value to detect delta mode from +/- prefix
-    const { mode, numValue } = parseEditingValue(value, baseMode)
+    // v3: Parse with full sizing syntax support
+    const hasBenchmark = false // TODO: wire up benchmark config
+    const v3Result = parseEditingValueV3(value, baseMode, hasBenchmark)
+    const { mode, numValue, sizingSpec } = v3Result
 
     // Get baseline and current holding for delta calculations
     const baseline = (simulation.baseline_holdings as BaselineHolding[])
       ?.find(b => b.asset_id === trade.asset_id)
     const currentHolding = metrics?.holdings_after
       ?.find(h => h.asset_id === trade.asset_id)
+
+    // v3: Calculate delta for conflict detection
+    const currentWeight = currentHolding?.weight ?? baseline?.weight ?? 0
+    const currentShares = currentHolding?.shares ?? baseline?.shares ?? 0
+    let deltaValue = 0
+    if (numValue !== null) {
+      if (mode === 'delta_weight' || mode === 'delta_shares') {
+        deltaValue = numValue
+      } else if (mode === 'weight') {
+        deltaValue = numValue - currentWeight
+      } else if (mode === 'shares') {
+        deltaValue = numValue - currentShares
+      }
+    }
+
+    // v3: Conflicts are allowed to persist - we only block Trade Sheet creation, not individual saves
+    // Direction conflict is computed for display but does NOT block auto-save
 
     const resolved = resolveSizing(
       { mode, value: numValue },
@@ -1664,14 +2268,33 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const trade = simulation.simulation_trades?.find(t => t.id === editingTradeId)
     if (!trade) return
 
-    // Parse value to detect delta mode from +/- prefix
-    const { mode, numValue } = parseEditingValue(editingValue, editingSizingMode)
+    // v3: Parse with full sizing syntax support
+    const hasBenchmark = false // TODO: wire up benchmark config
+    const v3Result = parseEditingValueV3(editingValue, editingSizingMode, hasBenchmark)
+    const { mode, numValue, sizingSpec } = v3Result
 
     // Get baseline and current holding for delta calculations
     const baseline = (simulation.baseline_holdings as BaselineHolding[])
       ?.find(b => b.asset_id === trade.asset_id)
     const currentHolding = metrics?.holdings_after
       ?.find(h => h.asset_id === trade.asset_id)
+
+    // v3: Calculate delta for conflict detection
+    const currentWeight = currentHolding?.weight ?? baseline?.weight ?? 0
+    const currentShares = currentHolding?.shares ?? baseline?.shares ?? 0
+    let deltaValue = 0
+    if (numValue !== null) {
+      if (mode === 'delta_weight' || mode === 'delta_shares') {
+        deltaValue = numValue
+      } else if (mode === 'weight') {
+        deltaValue = numValue - currentWeight
+      } else if (mode === 'shares') {
+        deltaValue = numValue - currentShares
+      }
+    }
+
+    // v3: Conflicts are allowed to persist - we only block Trade Sheet creation, not individual saves
+    // Conflict is computed for display but does NOT block save
 
     const resolved = resolveSizing(
       { mode, value: numValue },
@@ -1684,10 +2307,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Force immediate save of any pending changes
     workbenchSaveNow()
     // Also update via the direct mutation for immediate UI feedback
+    // This unlinks the trade from ideas/proposals, making it a "manual" trade
     updateTradeMutation.mutate({
       tradeId: editingTradeId,
       shares: resolved.shares ?? undefined,
       weight: resolved.weight ?? undefined,
+      assetId: trade.asset_id,
     })
   }
 
@@ -1731,18 +2356,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           <button
             onClick={(e) => {
               e.stopPropagation()
-              console.log('🔘 Checkbox clicked for:', idea.assets?.symbol, 'isAdded:', idea.isAdded)
               if (idea.isAdded) {
-                // Find and remove the trade
-                const trade = simulation?.simulation_trades?.find(t => t.asset_id === idea.asset_id)
-                console.log('🗑️ Removing trade:', trade?.id)
-                if (trade) removeTradeMutation.mutate(trade.id)
+                handleRemoveAsset(idea.asset_id)
               } else {
-                console.log('➕ Adding trade idea:', idea.id)
-                importTradeMutation.mutate(idea)
+                handleAddAsset(idea)
               }
             }}
-            disabled={importTradeMutation.isPending || removeTradeMutation.isPending}
             className={clsx(
               "flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors mt-0.5",
               idea.isAdded
@@ -1778,54 +2397,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               )}
             </div>
 
-            {/* Non-editing: show size display */}
-            {idea.isAdded && sandboxTrade && !isEditingThis ? (
-              <div className="mt-1 flex items-center gap-2">
-                {sandboxTrade.weight != null || sandboxTrade.shares != null ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      sandboxTrade && startEditingTrade(sandboxTrade)
-                    }}
-                    className="text-xs text-gray-500 dark:text-gray-400 truncate hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group"
-                  >
-                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {sandboxTrade.weight != null && `${sandboxTrade.weight}%`}
-                    {sandboxTrade.weight != null && sandboxTrade.shares != null && ' · '}
-                    {sandboxTrade.shares != null && `${sandboxTrade.shares.toLocaleString()} shares`}
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      sandboxTrade && startEditingTrade(sandboxTrade)
-                    }}
-                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
-                  >
-                    <AlertTriangle className="h-3 w-3" />
-                    Set size
-                  </button>
-                )}
-                {/* Propose button - opens formal proposal editor */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setProposalEditorIdea(idea)
-                  }}
-                  className="text-[10px] text-gray-400 hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400 transition-colors"
-                  title="Edit your proposal"
-                >
-                  <Scale className="h-3 w-3" />
-                </button>
-              </div>
-            ) : !idea.isAdded ? (
+            {/* Proposed size + propose button */}
+            {!idea.isAdded && (idea.proposed_weight || idea.proposed_shares) && (
               <div className="mt-1 flex items-center gap-2">
                 <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                   {idea.proposed_weight ? `${idea.proposed_weight}%` : ''}
                   {idea.proposed_weight && idea.proposed_shares ? ' · ' : ''}
                   {idea.proposed_shares ? `${idea.proposed_shares} shares` : ''}
                 </div>
-                {/* Propose button - opens formal proposal editor */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -1837,7 +2416,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <Scale className="h-3 w-3" />
                 </button>
               </div>
-            ) : null}
+            )}
 
           </div>
           {/* Expand button */}
@@ -1852,89 +2431,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           </button>
         </div>
 
-        {/* Editing UI - full width below the header row */}
-        {idea.isAdded && sandboxTrade && isEditingThis && (() => {
-          const baseline = (simulation?.baseline_holdings as BaselineHolding[])
-            ?.find(b => b.asset_id === sandboxTrade.asset_id)
-          const currentHolding = metrics?.holdings_after
-            ?.find(h => h.asset_id === sandboxTrade.asset_id)
-          const modeOption = getSizingModeOption(editingSizingMode)
-
-          // Parse to detect delta and calculate preview
-          const { mode: resolvedMode, numValue } = parseEditingValue(editingValue, editingSizingMode)
-          const isDelta = resolvedMode.startsWith('delta_')
-          const getPreview = () => {
-            if (numValue === null) return null
-            if (resolvedMode === 'delta_weight') {
-              const current = currentHolding?.weight ?? baseline?.weight ?? 0
-              return { type: 'weight', to: current + numValue }
-            }
-            if (resolvedMode === 'delta_shares') {
-              const current = currentHolding?.shares ?? baseline?.shares ?? 0
-              return { type: 'shares', to: current + numValue }
-            }
-            return null
-          }
-          const preview = isDelta ? getPreview() : null
-
-          return (
-            <div className="mt-2 space-y-1" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-1">
-                <select
-                  value={editingSizingMode}
-                  onChange={(e) => handleSizingModeChange(e.target.value as SimpleSizingMode)}
-                  className="text-xs h-6 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
-                >
-                  {SIZING_MODE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                      {opt.label}{opt.disabled ? ' (N/A)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <div className="relative">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={editingValue}
-                    onChange={(e) => handleEditingValueChange(e.target.value)}
-                    className="w-14 text-xs h-6 pl-1.5 pr-5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
-                    autoFocus
-                  />
-                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 dark:text-gray-500 pointer-events-none">
-                    {modeOption.unit}
-                  </span>
-                </div>
-                <button
-                  onClick={saveTradeEdit}
-                  className="h-6 w-6 bg-primary-500 text-white rounded hover:bg-primary-600 transition-colors flex items-center justify-center"
-                >
-                  <Check className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={() => setEditingTradeId(null)}
-                  className="h-6 w-6 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-              <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                {baseline ? (
-                  <span>Current: {baseline.shares.toLocaleString()} sh ({baseline.weight.toFixed(2)}%)</span>
-                ) : (
-                  <span className="italic">New position</span>
-                )}
-                {preview && (
-                  <span className="text-primary-600 dark:text-primary-400 ml-1">
-                    → {preview.type === 'weight'
-                      ? `${preview.to.toFixed(2)}%`
-                      : `${preview.to.toLocaleString()} sh`
-                    }
-                  </span>
-                )}
-              </div>
-            </div>
-          )
-        })()}
 
         {/* Expanded content - rationale */}
         {isExpanded && (
@@ -1999,15 +2495,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     const handleTogglePairTrade = () => {
       if (allAdded) {
-        // Remove all legs from simulation
-        legs.forEach(leg => {
-          const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
-          if (trade) removeTradeMutation.mutate(trade.id)
-        })
+        legs.forEach(leg => handleRemoveAsset(leg.asset_id))
       } else {
-        // Add all legs that aren't already added
         const legsToAdd = legs.filter(l => !l.isAdded)
         if (legsToAdd.length > 0) {
+          // Optimistic: mark all legs as added + add temp variants
+          legsToAdd.forEach(leg => {
+            checkboxOverridesRef.current.set(leg.asset_id, true)
+            if (tradeLab?.id) {
+              const variantQueryKey = ['intent-variants', tradeLab.id, null]
+              queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+                if (old?.some(v => v.asset_id === leg.asset_id)) return old
+                return [...(old || []), {
+                  id: `temp-${leg.asset_id}`, asset_id: leg.asset_id, trade_lab_id: tradeLab.id,
+                  direction: leg.action || 'buy', sizing_input: null, sizing_spec: null,
+                  computed: null, direction_conflict: null, below_lot_warning: false,
+                  active_weight_config: null,
+                  asset: leg.assets ? { symbol: leg.assets.symbol, company_name: leg.assets.company_name, sector: leg.assets.sector } : undefined,
+                } as IntentVariant]
+              })
+            }
+          })
+          setCheckboxOverrides(new Map(checkboxOverridesRef.current))
           importPairTradeMutation.mutate(legsToAdd)
         }
       }
@@ -2051,7 +2560,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           {/* Checkbox for added status */}
           <button
             onClick={handleTogglePairTrade}
-            disabled={importPairTradeMutation.isPending || removeTradeMutation.isPending}
+            disabled={false}
             className={clsx(
               "flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors",
               allAdded
@@ -2105,17 +2614,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 const handleToggleLeg = (e: React.MouseEvent) => {
                   e.stopPropagation()
                   if (leg.isAdded) {
-                    const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
-                    if (trade) removeTradeMutation.mutate(trade.id)
+                    handleRemoveAsset(leg.asset_id)
                   } else {
-                    importTradeMutation.mutate(leg)
+                    handleAddAsset(leg)
                   }
                 }
+                // v3: Look up variant conflict status
+                const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
+                const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
+                const variantConflict = variant?.direction_conflict as SizingValidationError | null
+
                 return (
                   <div key={leg.id} className="flex items-center gap-2 text-xs group">
                     <button
                       onClick={handleToggleLeg}
-                      disabled={importTradeMutation.isPending || removeTradeMutation.isPending}
+                      disabled={false}
                       className={clsx(
                         "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors",
                         leg.isAdded
@@ -2139,6 +2652,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
                       {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
                     </span>
+                    {/* v3: Inline conflict badge for pair leg */}
+                    {leg.isAdded && trade && (
+                      <InlineConflictBadge
+                        conflict={variantConflict}
+                        onFixAction={(suggestedAction) => {
+                          updateTradeMutation.mutate({
+                            tradeId: trade.id,
+                            action: suggestedAction,
+                            assetId: trade.asset_id,
+                            unlinkFromIdea: false,
+                          })
+                        }}
+                        size="sm"
+                      />
+                    )}
                   </div>
                 )
               })}
@@ -2148,17 +2676,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 const handleToggleLeg = (e: React.MouseEvent) => {
                   e.stopPropagation()
                   if (leg.isAdded) {
-                    const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
-                    if (trade) removeTradeMutation.mutate(trade.id)
+                    handleRemoveAsset(leg.asset_id)
                   } else {
-                    importTradeMutation.mutate(leg)
+                    handleAddAsset(leg)
                   }
                 }
+                // v3: Look up variant conflict status
+                const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
+                const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
+                const variantConflict = variant?.direction_conflict as SizingValidationError | null
+
                 return (
                   <div key={leg.id} className="flex items-center gap-2 text-xs group">
                     <button
                       onClick={handleToggleLeg}
-                      disabled={importTradeMutation.isPending || removeTradeMutation.isPending}
+                      disabled={false}
                       className={clsx(
                         "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors",
                         leg.isAdded
@@ -2182,6 +2714,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
                       {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
                     </span>
+                    {/* v3: Inline conflict badge for pair leg */}
+                    {leg.isAdded && trade && (
+                      <InlineConflictBadge
+                        conflict={variantConflict}
+                        onFixAction={(suggestedAction) => {
+                          updateTradeMutation.mutate({
+                            tradeId: trade.id,
+                            action: suggestedAction,
+                            assetId: trade.asset_id,
+                            unlinkFromIdea: false,
+                          })
+                        }}
+                        size="sm"
+                      />
+                    )}
                   </div>
                 )
               })}
@@ -2191,18 +2738,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 const handleToggleLeg = (e: React.MouseEvent) => {
                   e.stopPropagation()
                   if (leg.isAdded) {
-                    const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
-                    if (trade) removeTradeMutation.mutate(trade.id)
+                    handleRemoveAsset(leg.asset_id)
                   } else {
-                    importTradeMutation.mutate(leg)
+                    handleAddAsset(leg)
                   }
                 }
                 const isBuyAction = leg.action === 'buy' || leg.action === 'add'
+                // v3: Look up variant conflict status
+                const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
+                const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
+                const variantConflict = variant?.direction_conflict as SizingValidationError | null
+
                 return (
                   <div key={leg.id} className="flex items-center gap-2 text-xs group">
                     <button
                       onClick={handleToggleLeg}
-                      disabled={importTradeMutation.isPending || removeTradeMutation.isPending}
+                      disabled={false}
                       className={clsx(
                         "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors",
                         leg.isAdded
@@ -2231,6 +2782,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
                       {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
                     </span>
+                    {/* v3: Inline conflict badge for pair leg */}
+                    {leg.isAdded && trade && (
+                      <InlineConflictBadge
+                        conflict={variantConflict}
+                        onFixAction={(suggestedAction) => {
+                          updateTradeMutation.mutate({
+                            tradeId: trade.id,
+                            action: suggestedAction,
+                            assetId: trade.asset_id,
+                            unlinkFromIdea: false,
+                          })
+                        }}
+                        size="sm"
+                      />
+                    )}
                   </div>
                 )
               })}
@@ -2250,10 +2816,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // Manual trade card
       const trade = item.trade
       const asset = trade.assets
+      // v3: Look up variant conflict status for this trade
+      const variant = intentVariants.find(v => v.asset_id === trade.asset_id)
+      const variantConflict = variant?.direction_conflict as SizingValidationError | null
+      const variantBelowLot = variant?.below_lot_warning ?? false
+
       return (
         <div
           key={trade.id}
-          className="bg-white dark:bg-gray-800 rounded-lg p-2.5 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 transition-colors"
+          className={clsx(
+            "bg-white dark:bg-gray-800 rounded-lg p-2.5 border transition-colors",
+            variantConflict
+              ? "border-red-300 dark:border-red-700"
+              : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
+          )}
         >
           <div className="flex items-start gap-2">
             <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-green-500 bg-green-500 text-white flex items-center justify-center mt-0.5">
@@ -2277,6 +2853,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     {asset.company_name}
                   </span>
                 )}
+                {/* v3: Inline conflict badge */}
+                <InlineConflictBadge
+                  conflict={variantConflict}
+                  belowLotWarning={variantBelowLot}
+                  onFixAction={(suggestedAction) => {
+                    updateTradeMutation.mutate({
+                      tradeId: trade.id,
+                      action: suggestedAction,
+                      assetId: trade.asset_id,
+                      unlinkFromIdea: false,
+                    })
+                  }}
+                  size="sm"
+                />
               </div>
               <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {trade.weight != null && `${trade.weight}%`}
@@ -2285,8 +2875,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               </div>
             </div>
             <button
-              onClick={() => removeTradeMutation.mutate(trade.id)}
-              disabled={removeTradeMutation.isPending}
+              onClick={() => removeTradeMutation.mutate({ tradeId: trade.id, assetId: trade.asset_id })}
+              disabled={false}
               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-red-500"
               title="Remove trade"
             >
@@ -2480,7 +3070,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             )}
             {tradeLab && (
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {simulation?.simulation_trades?.length || 0} trades
+                {effectiveTradeCount} trades
               </span>
             )}
           </div>
@@ -2522,19 +3112,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 Share
               </Button>
             )}
-            {/* Create Trade List Button - only show for draft simulations with trades */}
-            {simulation?.status === 'draft' && simulation.simulation_trades && simulation.simulation_trades.length > 0 && (
-              <Button
-                size="sm"
-                onClick={() => createTradeListMutation.mutate()}
-                disabled={createTradeListMutation.isPending || workbenchSaving}
-                loading={createTradeListMutation.isPending}
-                title="Create trade list for approval"
-              >
-                <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                Create Trade List
-              </Button>
-            )}
+            {/* Create Trade List button moved to bottom bar of HoldingsSimulationTable */}
           </div>
         </div>
 
@@ -2572,36 +3150,38 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               </button>
             </div>
 
-            {/* Right: Impact View Toggle (only show for workbench views, not Trade Sheets) */}
+            {/* Right: View Toggle (only show for workbench views, not Trade Sheets) */}
             {selectedViewType !== 'lists' && simulation && (
               <div className="flex items-center gap-2">
                 <div className="inline-flex items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
                   <button
-                    onClick={() => setImpactView('summary')}
+                    onClick={() => setImpactView('simulation')}
                     className={clsx(
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
-                      impactView === 'summary'
-                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
-                        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-                    )}
-                  >
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    Summary
-                  </button>
-                  <button
-                    onClick={() => setImpactView('holdings')}
-                    className={clsx(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
-                      impactView === 'holdings'
+                      impactView === 'simulation'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     )}
                   >
                     <Table2 className="h-3.5 w-3.5" />
-                    Holdings
-                    <span className="text-xs text-gray-400 dark:text-gray-500 font-normal">
-                      {metrics?.holdings_after?.filter(h => !h.is_removed).length || 0}
-                    </span>
+                    Simulation
+                    {v3ConflictSummary.conflicts > 0 && (
+                      <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full">
+                        {v3ConflictSummary.conflicts}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setImpactView('impact')}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      impactView === 'impact'
+                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                    )}
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Portfolio Impact
                   </button>
                   <button
                     onClick={() => setImpactView('trades')}
@@ -2614,9 +3194,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   >
                     <List className="h-3.5 w-3.5" />
                     Trades
-                    {(simulation?.simulation_trades?.length || 0) > 0 && (
+                    {effectiveTradeCount > 0 && (
                       <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full">
-                        {simulation?.simulation_trades?.length || 0}
+                        {effectiveTradeCount}
                       </span>
                     )}
                   </button>
@@ -2660,6 +3240,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Trade Sheets</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Browse and manage trade sheets for this portfolio
+                    <span className="mx-1.5 text-gray-300 dark:text-gray-600">|</span>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('openTradePlans'))}
+                      className="text-primary-600 dark:text-primary-400 hover:underline underline-offset-2"
+                    >
+                      View Trade Plans
+                    </button>
                   </p>
                 </div>
                 {listStats && (
@@ -2689,6 +3276,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   </div>
                 )}
               </div>
+
+              {/* V3: Trade Sheet Creation Panel with Conflict Summary */}
+              <TradeSheetPanel
+                variants={intentVariants}
+                conflictSummary={v3ConflictSummary}
+                tradeSheets={v3TradeSheets}
+                onCreateTradeSheet={handleCreateTradeSheet}
+                onFixConflict={handleFixConflict}
+                isCreating={v3CreatingSheet}
+                className="mb-6"
+              />
 
               {/* Trade Sheets List */}
               {listsLoading ? (
@@ -3013,20 +3611,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     })
                                   }
 
+                                  const action = tradeItem?.action || 'buy'
+                                  const isBuy = action === 'buy' || action === 'add'
+                                  const rationale = tradeItem?.rationale || ''
+
                                   return (
                                     <div
                                       key={proposal.id}
-                                      className="bg-white dark:bg-gray-800 rounded-lg p-2.5 border border-amber-300 dark:border-amber-700 hover:border-amber-400 dark:hover:border-amber-600 transition-colors cursor-pointer"
-                                      onClick={() => {
-                                        const tradeQueueItemId = proposal.trade_queue_item_id
-                                        if (tradeQueueItemId) {
-                                          setTradeModalInitialTab('proposals')
-                                          setSelectedTradeId(tradeQueueItemId)
-                                        }
-                                      }}
+                                      className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200/80 dark:border-amber-800/60 transition-colors"
                                     >
-                                      {/* Header with checkbox */}
-                                      <div className="flex items-center gap-2">
+                                      {/* Main row: checkbox | action | ticker | weight | proposer | expand */}
+                                      <div className="flex items-center gap-1.5 px-2 py-1.5">
                                         <button
                                           onClick={handleAddProposal}
                                           className={clsx(
@@ -3039,71 +3634,121 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                         >
                                           {isProposalApplied && <Check className="h-2.5 w-2.5" />}
                                         </button>
-                                        {isPairTrade && (
-                                          <button
-                                            onClick={toggleProposalExpand}
-                                            className="flex items-center gap-1.5 min-w-0 flex-1"
-                                          >
-                                            <ChevronDown className={clsx(
-                                              "h-3 w-3 text-gray-400 transition-transform flex-shrink-0",
-                                              !isProposalExpanded && "-rotate-90"
-                                            )} />
-                                            <Link2 className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                                            <span className="font-medium text-sm truncate text-left">
-                                              {buySymbols && (
-                                                <>
-                                                  <span className="text-green-600 dark:text-green-400">Buy</span>
-                                                  <span className="text-gray-900 dark:text-white"> {buySymbols}</span>
-                                                </>
-                                              )}
-                                              {buySymbols && sellSymbols && <span className="text-gray-500"> / </span>}
-                                              {sellSymbols && (
-                                                <>
-                                                  <span className="text-red-600 dark:text-red-400">Sell</span>
-                                                  <span className="text-gray-900 dark:text-white"> {sellSymbols}</span>
-                                                </>
-                                              )}
-                                            </span>
-                                          </button>
+
+                                        {/* Action badge */}
+                                        {!isPairTrade ? (
+                                          <span className={clsx(
+                                            "flex-shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded",
+                                            isBuy
+                                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                                              : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                                          )}>
+                                            {action}
+                                          </span>
+                                        ) : (
+                                          <Link2 className="h-3 w-3 text-purple-500 dark:text-purple-400 flex-shrink-0" />
                                         )}
-                                        {!isPairTrade && (
-                                          <span className="font-medium text-sm truncate text-gray-900 dark:text-white">
-                                            {asset?.symbol || 'Unknown'}
+
+                                        {/* Ticker */}
+                                        {!isPairTrade ? (
+                                          <span className="font-semibold text-[13px] text-gray-900 dark:text-white truncate">
+                                            {asset?.symbol || '???'}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[13px] font-medium truncate">
+                                            {buySymbols && <span className="text-emerald-600 dark:text-emerald-400">{buySymbols}</span>}
+                                            {buySymbols && sellSymbols && <span className="text-gray-400 mx-0.5">/</span>}
+                                            {sellSymbols && <span className="text-red-600 dark:text-red-400">{sellSymbols}</span>}
                                           </span>
                                         )}
+
+                                        {/* Weight (right-aligned) */}
+                                        {!isPairTrade && proposal.weight != null && (
+                                          <span className="ml-auto text-[12px] tabular-nums font-medium text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                            {proposal.weight}%
+                                          </span>
+                                        )}
+
+                                        {/* Proposer initials */}
+                                        <span className={clsx(
+                                          "flex-shrink-0 text-[9px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded-full px-1.5 py-0.5",
+                                          !isPairTrade && proposal.weight == null && "ml-auto"
+                                        )}>
+                                          {proposerName}
+                                        </span>
+
+                                        {/* Expand toggle */}
+                                        <button
+                                          onClick={toggleProposalExpand}
+                                          className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500"
+                                        >
+                                          <ChevronDown className={clsx(
+                                            "h-3 w-3 transition-transform",
+                                            !isProposalExpanded && "-rotate-90"
+                                          )} />
+                                        </button>
                                       </div>
 
-                                      {/* Proposer attribution */}
-                                      <div className="mt-1.5 pt-1.5 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 ml-6">
-                                        by {proposerName}
-                                      </div>
-
-                                      {/* Legs with weights - collapsible for pair trades */}
-                                      {isPairTrade && sortedLegs.length > 0 && isProposalExpanded && (
-                                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-1 ml-6">
-                                          {sortedLegs.map((leg: any) => (
-                                            <div key={leg.legId} className="flex items-center gap-2 text-xs">
-                                              <span className={clsx(
-                                                "px-1.5 py-0.5 rounded font-medium uppercase",
-                                                leg.action === 'buy' || leg.action === 'add'
-                                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                              )}>
-                                                {leg.action === 'buy' || leg.action === 'add' ? 'buy' : 'sell'}
-                                              </span>
-                                              <span className="font-semibold text-gray-900 dark:text-white">{leg.symbol}</span>
-                                              {leg.weight != null && (
-                                                <span className="text-gray-500 dark:text-gray-400 ml-auto">{leg.weight}%</span>
-                                              )}
+                                      {/* Expanded details */}
+                                      {isProposalExpanded && (
+                                        <div className="px-2 pb-2 pt-0.5 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5">
+                                          {/* Pair trade legs */}
+                                          {isPairTrade && sortedLegs.length > 0 && (
+                                            <div className="space-y-1">
+                                              {sortedLegs.map((leg: any) => (
+                                                <div key={leg.legId} className="flex items-center gap-2 text-xs ml-5">
+                                                  <span className={clsx(
+                                                    "px-1 py-px rounded text-[9px] font-bold uppercase",
+                                                    leg.action === 'buy' || leg.action === 'add'
+                                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                                  )}>
+                                                    {leg.action}
+                                                  </span>
+                                                  <span className="font-semibold text-gray-900 dark:text-white">{leg.symbol}</span>
+                                                  {leg.weight != null && (
+                                                    <span className="text-gray-500 dark:text-gray-400 ml-auto tabular-nums">{leg.weight}%</span>
+                                                  )}
+                                                </div>
+                                              ))}
                                             </div>
-                                          ))}
-                                        </div>
-                                      )}
+                                          )}
 
-                                      {/* Single trade weight */}
-                                      {!isPairTrade && proposal.weight != null && (
-                                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                          Weight: {proposal.weight}%
+                                          {/* Notes */}
+                                          {proposal.notes && (
+                                            <p className="text-[11px] text-gray-500 dark:text-gray-400 ml-5 line-clamp-3">
+                                              {proposal.notes}
+                                            </p>
+                                          )}
+
+                                          {/* Rationale from the trade idea */}
+                                          {rationale && !proposal.notes && (
+                                            <p className="text-[11px] text-gray-500 dark:text-gray-400 ml-5 line-clamp-3">
+                                              {rationale}
+                                            </p>
+                                          )}
+
+                                          {/* Shares if available */}
+                                          {!isPairTrade && proposal.shares != null && (
+                                            <div className="text-[11px] text-gray-500 dark:text-gray-400 ml-5">
+                                              Shares: {proposal.shares.toLocaleString()}
+                                            </div>
+                                          )}
+
+                                          {/* View full idea link */}
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              const tradeQueueItemId = proposal.trade_queue_item_id
+                                              if (tradeQueueItemId) {
+                                                setTradeModalInitialTab('proposals')
+                                                setSelectedTradeId(tradeQueueItemId)
+                                              }
+                                            }}
+                                            className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline underline-offset-2 ml-5"
+                                          >
+                                            View full idea
+                                          </button>
                                         </div>
                                       )}
                                     </div>
@@ -3191,15 +3836,116 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
               {/* Simulation Workspace */}
               <div className="flex-1 overflow-hidden flex flex-col">
-                {/* Impact Results Area */}
-                <div className="flex-1 overflow-y-auto p-4">
+                {/* Main Content Area */}
+                <div className="flex-1 overflow-hidden p-4">
                   {simulation ? (
                   <>
-                  {/* Results Content - show immediately, prices load in background */}
-                  <div className="space-y-3">
-                    {metrics ? (
-                      <>
-                        {impactView === 'summary' ? (
+                  {/* View Content */}
+                  <div className="h-full">
+                    {impactView === 'simulation' ? (
+                      /* Holdings Simulation Table */
+                      <div className="h-full rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                        <HoldingsSimulationTable
+                          rows={simulationRows.rows}
+                          tradedRows={simulationRows.tradedRows}
+                          untradedRows={simulationRows.untradedRows}
+                          newPositionRows={simulationRows.newPositionRows}
+                          summary={simulationRows.summary}
+                          portfolioTotalValue={simulation.baseline_total_value || 0}
+                          hasBenchmark={false}
+                          priceMap={priceMap || {}}
+                          onUpdateVariant={(variantId, updates) => {
+                            // Temp variants: apply cache update for instant display, store
+                            // pending sizing so it's used when the real variant arrives.
+                            if (variantId.startsWith('temp-')) {
+                              const tempAssetId = variantId.replace('temp-', '')
+                              if (updates.sizingInput !== undefined) {
+                                pendingSizingRef.current.set(tempAssetId, updates.sizingInput)
+                              }
+                              if (tradeLab?.id) {
+                                // Cancel in-flight refetches so they don't overwrite our optimistic update
+                                queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+                                queryClient.setQueryData<IntentVariant[]>(
+                                  ['intent-variants', tradeLab.id, null],
+                                  (old) => old?.map(v => v.id === variantId
+                                    ? {
+                                        ...v,
+                                        ...(updates.sizingInput !== undefined ? {
+                                          sizing_input: updates.sizingInput,
+                                          sizing_spec: null,
+                                          computed: null,
+                                        } : {}),
+                                        ...(updates.action !== undefined ? { action: updates.action } : {}),
+                                      }
+                                    : v
+                                  ) ?? []
+                                )
+                              }
+                              return
+                            }
+                            const variant = intentVariants.find(v => v.id === variantId)
+                            const assetId = variant?.asset_id || ''
+                            const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+                            const holding = baselineHoldings.find(h => h.asset_id === assetId)
+                            const currentPosition = holding ? {
+                              shares: holding.shares,
+                              weight: holding.weight,
+                              cost_basis: null,
+                              active_weight: null,
+                            } : null
+                            const assetPrice = {
+                              asset_id: assetId,
+                              price: priceMap?.[assetId] || holding?.price || 100,
+                              timestamp: new Date().toISOString(),
+                              source: 'realtime' as const,
+                            }
+
+                            // Optimistic: update variant in cache immediately so the row
+                            // shows the new value before the server round-trip completes.
+                            // This also prevents cleanupEmptyVariant from deleting a variant
+                            // whose sizing_input was '' in the stale cache.
+                            if (tradeLab?.id) {
+                              // Cancel in-flight refetches so they don't overwrite our optimistic update
+                              queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+                              queryClient.setQueryData<IntentVariant[]>(
+                                ['intent-variants', tradeLab.id, null],
+                                (old) => old?.map(v => v.id === variantId
+                                  ? {
+                                      ...v,
+                                      ...(updates.sizingInput !== undefined ? {
+                                        sizing_input: updates.sizingInput,
+                                        sizing_spec: null,  // Clear stale spec so hook uses quick estimate
+                                        computed: null,     // Clear stale computed so deltas recompute
+                                      } : {}),
+                                      ...(updates.action !== undefined ? { action: updates.action } : {}),
+                                    }
+                                  : v
+                                ) ?? []
+                              )
+                            }
+
+                            v3UpdateVariant({
+                              variantId,
+                              updates,
+                              currentPosition,
+                              price: assetPrice,
+                              portfolioTotalValue: simulation.baseline_total_value || 0,
+                              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+                              hasBenchmark: false,
+                            })
+                          }}
+                          onDeleteVariant={(variantId) => v3DeleteVariant({ variantId })}
+                          onCreateVariant={handleCreateVariantForHolding}
+                          onFixConflict={(variantId, suggestedAction) => handleFixConflict(variantId, suggestedAction)}
+                          onAddTrade={() => setShowQuickTrade(true)}
+                          onCreateTradeSheet={() => createTradeListMutation.mutate()}
+                          canCreateTradeSheet={simulation?.status === 'draft' && effectiveTradeCount > 0 && !workbenchSaving}
+                          isCreatingTradeSheet={createTradeListMutation.isPending}
+                        />
+                      </div>
+                    ) : metrics ? (
+                      <div className="h-full overflow-y-auto space-y-3">
+                        {impactView === 'impact' ? (
                           <div className="space-y-6">
                             {/* Key Metrics - Modern card grid */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3351,573 +4097,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               />
                             </div>
                           </div>
-                        ) : impactView === 'holdings' ? (
-                          /* Full Holdings Table View with Sandbox Trades */
-                          <>
-                            {/* Quick Add Trade Form (shown when expanded) */}
-                            {showQuickTrade && (
-                              <div className="mb-2">
-                                <Card className="p-4">
-                                  <div className="flex items-center justify-between mb-3">
-                                    <span className="text-sm font-medium text-gray-900 dark:text-white">Quick Trade</span>
-                                    <button
-                                      onClick={() => {
-                                        setShowQuickTrade(false)
-                                        setQuickTradeSearch('')
-                                        setQuickTradeAsset(null)
-                                        setQuickTradeShares('')
-                                        setQuickTradeWeight('')
-                                      }}
-                                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                                    >
-                                      <X className="h-4 w-4 text-gray-500" />
-                                    </button>
-                                  </div>
-                                  <div className="flex flex-wrap items-end gap-3">
-                                    {/* Asset Search */}
-                                    <div className="relative flex-1 min-w-[200px]">
-                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Asset</label>
-                                      {quickTradeAsset ? (
-                                        <div className="flex items-center justify-between px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700">
-                                          <div>
-                                            <span className="font-medium text-gray-900 dark:text-white">{quickTradeAsset.symbol}</span>
-                                            <span className="text-sm text-gray-500 dark:text-gray-400 ml-2 truncate">{quickTradeAsset.company_name}</span>
-                                          </div>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setQuickTradeAsset(null)
-                                              setQuickTradeSearch('')
-                                            }}
-                                            className="text-xs text-primary-600 hover:text-primary-700"
-                                          >
-                                            Change
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="relative">
-                                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                          <Input
-                                            placeholder="Search symbol..."
-                                            value={quickTradeSearch}
-                                            onChange={(e) => setQuickTradeSearch(e.target.value)}
-                                            className="pl-9"
-                                          />
-                                          {quickTradeAssets && quickTradeAssets.length > 0 && quickTradeSearch && (
-                                            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                              {quickTradeAssets.map(asset => (
-                                                <button
-                                                  key={asset.id}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setQuickTradeAsset(asset)
-                                                    setQuickTradeSearch('')
-                                                  }}
-                                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-                                                >
-                                                  <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
-                                                  <span className="text-gray-500 dark:text-gray-400 ml-2">{asset.company_name}</span>
-                                                </button>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Action */}
-                                    <div className="w-32">
-                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Action</label>
-                                      <div className="flex gap-1">
-                                        {(['buy', 'sell'] as TradeAction[]).map(a => (
-                                          <button
-                                            key={a}
-                                            type="button"
-                                            onClick={() => setQuickTradeAction(a)}
-                                            className={clsx(
-                                              "flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-lg border transition-colors capitalize text-sm",
-                                              quickTradeAction === a
-                                                ? a === 'buy'
-                                                  ? "border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
-                                                  : "border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
-                                                : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                            )}
-                                          >
-                                            {a === 'buy' ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                                            {a}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    {/* Shares or Weight */}
-                                    <div className="w-24">
-                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Shares</label>
-                                      <Input
-                                        type="number"
-                                        placeholder="1000"
-                                        value={quickTradeShares}
-                                        onChange={(e) => setQuickTradeShares(e.target.value)}
-                                      />
-                                    </div>
-                                    <div className="w-20">
-                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Weight %</label>
-                                      <Input
-                                        type="number"
-                                        step="0.1"
-                                        placeholder="2.5"
-                                        value={quickTradeWeight}
-                                        onChange={(e) => setQuickTradeWeight(e.target.value)}
-                                      />
-                                    </div>
-
-                                    {/* Add Button */}
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        if (!quickTradeAsset) return
-                                        addQuickTradeMutation.mutate({
-                                          asset: quickTradeAsset,
-                                          action: quickTradeAction,
-                                          shares: quickTradeShares ? parseFloat(quickTradeShares) : undefined,
-                                          weight: quickTradeWeight ? parseFloat(quickTradeWeight) : undefined,
-                                        })
-                                      }}
-                                      disabled={!quickTradeAsset || addQuickTradeMutation.isPending}
-                                      loading={addQuickTradeMutation.isPending}
-                                    >
-                                      Add
-                                    </Button>
-                                  </div>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                                    This adds a sandbox-only trade. It won't create a trade idea.
-                                  </p>
-                                </Card>
-                              </div>
-                            )}
-
-                          <Card className="overflow-hidden">
-                            {/* Sandbox Trade Summary Header */}
-                            {tradeStats.total > 0 && (
-                              <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-b border-amber-200 dark:border-amber-800">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                      <Beaker className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                                      <span className="font-medium text-amber-900 dark:text-amber-100">
-                                        Sandbox Trades
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-3 text-sm">
-                                      <span className="text-gray-600 dark:text-gray-400">
-                                        {tradeStats.total} changes
-                                      </span>
-                                      {tradeStats.buys > 0 && (
-                                        <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                                          <ArrowUpRight className="h-3.5 w-3.5" />
-                                          {tradeStats.buys} buy{tradeStats.buys !== 1 ? 's' : ''}
-                                        </span>
-                                      )}
-                                      {tradeStats.sells > 0 && (
-                                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                                          <ArrowDownRight className="h-3.5 w-3.5" />
-                                          {tradeStats.sells} sell{tradeStats.sells !== 1 ? 's' : ''}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span className="text-xs text-amber-700 dark:text-amber-300">
-                                    Click action badges to edit
-                                  </span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Grouping Options */}
-                            <div className="px-4 py-2 bg-gray-50 dark:bg-gray-700/30 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <FolderOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                                <span className="text-sm text-gray-600 dark:text-gray-400">Group by:</span>
-                                <select
-                                  value={holdingsGroupBy}
-                                  onChange={(e) => {
-                                    setHoldingsGroupBy(e.target.value as 'none' | 'sector' | 'action' | 'change')
-                                    setCollapsedGroups(new Set())
-                                  }}
-                                  className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                >
-                                  <option value="none">None</option>
-                                  <option value="sector">Sector</option>
-                                  <option value="action">Trade Action</option>
-                                  <option value="change">Weight Change</option>
-                                </select>
-                              </div>
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                {metrics.holdings_after.filter(h => !h.is_removed).length} active positions
-                              </span>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead className="bg-gray-50 dark:bg-gray-700/50">
-                                  <tr>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-300">Symbol</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-300">Company</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-300">Sector</th>
-                                    <th className="px-4 py-3 text-center font-medium text-gray-700 dark:text-gray-300">Trade</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Shares</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Price</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Value</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Base Wt%</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">New Wt%</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-300">Change</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                  {groupedHoldings ? (
-                                    // Grouped view
-                                    groupedHoldings.map((group) => {
-                                      const isCollapsed = collapsedGroups.has(group.name)
-                                      return (
-                                        <React.Fragment key={`group-${group.name}`}>
-                                          {/* Group Header */}
-                                          <tr
-                                            className="bg-gray-100 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
-                                            onClick={() => toggleGroupCollapse(group.name)}
-                                          >
-                                            <td colSpan={10} className="px-4 py-2">
-                                              <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                  <ChevronDown className={clsx(
-                                                    "h-4 w-4 text-gray-500 transition-transform",
-                                                    isCollapsed && "-rotate-90"
-                                                  )} />
-                                                  <span className="font-medium text-gray-900 dark:text-white">{group.name}</span>
-                                                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                                                    ({group.count} position{group.count !== 1 ? 's' : ''})
-                                                  </span>
-                                                </div>
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                                  {group.totalWeight.toFixed(1)}% weight
-                                                </span>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                          {/* Group Holdings */}
-                                          {!isCollapsed && group.holdings.map((holding) => {
-                                            const baseline = (simulation.baseline_holdings as BaselineHolding[]).find(
-                                              b => b.asset_id === holding.asset_id
-                                            )
-                                            const baseWeight = baseline?.weight || 0
-                                            const weightChange = holding.weight - baseWeight
-                                            const trade = simulation.simulation_trades?.find(t => t.asset_id === holding.asset_id)
-                                            const isEditing = editingTradeId === trade?.id
-
-                                            return (
-                                              <tr
-                                                key={holding.asset_id}
-                                                className={clsx(
-                                                  "hover:bg-gray-50 dark:hover:bg-gray-700/30 group",
-                                                  holding.is_new && !holding.is_short && "bg-green-50 dark:bg-green-900/10",
-                                                  holding.is_short && "bg-purple-50 dark:bg-purple-900/10",
-                                                  holding.is_removed && "bg-red-50 dark:bg-red-900/10 opacity-60"
-                                                )}
-                                              >
-                                                <td className="px-4 py-3 font-medium text-gray-900 dark:text-white pl-8">
-                                                  <div className="flex items-center gap-2">
-                                                    {holding.symbol}
-                                                    {holding.is_short && (
-                                                      <span className="text-xs font-medium px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
-                                                        SHORT
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-[200px] truncate">
-                                                  {holding.company_name}
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                                                  {holding.sector || '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                  {trade ? (
-                                                    isEditing ? (
-                                                      <div className="flex items-center gap-1 justify-center">
-                                                        <select
-                                                          value={editingSizingMode}
-                                                          onChange={(e) => handleSizingModeChange(e.target.value as SimpleSizingMode)}
-                                                          className="text-[10px] h-6 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-0.5"
-                                                        >
-                                                          {SIZING_MODE_OPTIONS.map(opt => (
-                                                            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                                                              {opt.label}{opt.disabled ? ' (N/A)' : ''}
-                                                            </option>
-                                                          ))}
-                                                        </select>
-                                                        <div className="relative">
-                                                          <input
-                                                            type="text"
-                                                            inputMode="numeric"
-                                                            value={editingValue}
-                                                            onChange={(e) => handleEditingValueChange(e.target.value)}
-                                                            className="w-12 text-xs h-6 pl-1 pr-4 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
-                                                            autoFocus
-                                                          />
-                                                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">
-                                                            {getSizingModeOption(editingSizingMode).unit}
-                                                          </span>
-                                                        </div>
-                                                        <button
-                                                          onClick={saveTradeEdit}
-                                                          className="p-1 bg-primary-500 text-white rounded hover:bg-primary-600"
-                                                        >
-                                                          <Check className="h-3 w-3" />
-                                                        </button>
-                                                        <button
-                                                          onClick={() => setEditingTradeId(null)}
-                                                          className="p-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
-                                                        >
-                                                          <X className="h-3 w-3" />
-                                                        </button>
-                                                      </div>
-                                                    ) : (
-                                                      <div className="flex items-center gap-1 justify-center">
-                                                        <button
-                                                          onClick={() => canEdit && startEditingTrade(trade)}
-                                                          className={clsx(
-                                                            "text-xs font-medium uppercase px-2 py-1 rounded flex items-center gap-1",
-                                                            trade.action === 'buy' || trade.action === 'add'
-                                                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-                                                            canEdit && "hover:ring-2 hover:ring-offset-1 hover:ring-primary-400 cursor-pointer"
-                                                          )}
-                                                          title={canEdit ? "Click to edit" : undefined}
-                                                        >
-                                                          {trade.action}
-                                                          {trade.shares && <span className="font-normal">({trade.shares.toLocaleString()})</span>}
-                                                        </button>
-                                                        {canEdit && (
-                                                          <button
-                                                            onClick={() => removeTradeMutation.mutate(trade.id)}
-                                                            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-opacity"
-                                                            title="Remove trade"
-                                                          >
-                                                            <X className="h-3 w-3 text-red-500" />
-                                                          </button>
-                                                        )}
-                                                      </div>
-                                                    )
-                                                  ) : (
-                                                    <span className="text-gray-400 text-xs">—</span>
-                                                  )}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                                  {holding.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                                  ${holding.price.toFixed(2)}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                                  ${holding.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono">
-                                                  {baseWeight.toFixed(2)}%
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono font-medium">
-                                                  {holding.weight.toFixed(2)}%
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-mono">
-                                                  <span className={clsx(
-                                                    "inline-flex items-center gap-0.5",
-                                                    weightChange > 0.01 ? "text-green-600 dark:text-green-400" :
-                                                    weightChange < -0.01 ? "text-red-600 dark:text-red-400" :
-                                                    "text-gray-500"
-                                                  )}>
-                                                    {weightChange > 0.01 ? (
-                                                      <ArrowUpRight className="h-3 w-3" />
-                                                    ) : weightChange < -0.01 ? (
-                                                      <ArrowDownRight className="h-3 w-3" />
-                                                    ) : (
-                                                      <Minus className="h-3 w-3" />
-                                                    )}
-                                                    {weightChange > 0 ? '+' : ''}{weightChange.toFixed(2)}%
-                                                  </span>
-                                                </td>
-                                              </tr>
-                                            )
-                                          })}
-                                        </React.Fragment>
-                                      )
-                                    })
-                                  ) : (
-                                    // Ungrouped view
-                                    metrics.holdings_after.map((holding) => {
-                                      const baseline = (simulation.baseline_holdings as BaselineHolding[]).find(
-                                        b => b.asset_id === holding.asset_id
-                                      )
-                                      const baseWeight = baseline?.weight || 0
-                                      const weightChange = holding.weight - baseWeight
-                                      const trade = simulation.simulation_trades?.find(t => t.asset_id === holding.asset_id)
-                                      const isEditing = editingTradeId === trade?.id
-
-                                      return (
-                                        <tr
-                                          key={holding.asset_id}
-                                          className={clsx(
-                                            "hover:bg-gray-50 dark:hover:bg-gray-700/30 group",
-                                            holding.is_new && !holding.is_short && "bg-green-50 dark:bg-green-900/10",
-                                            holding.is_short && "bg-purple-50 dark:bg-purple-900/10",
-                                            holding.is_removed && "bg-red-50 dark:bg-red-900/10 opacity-60"
-                                          )}
-                                        >
-                                          <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                            <div className="flex items-center gap-2">
-                                              {holding.symbol}
-                                              {holding.is_short && (
-                                                <span className="text-xs font-medium px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
-                                                  SHORT
-                                                </span>
-                                              )}
-                                            </div>
-                                          </td>
-                                          <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-[200px] truncate">
-                                            {holding.company_name}
-                                          </td>
-                                          <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                                            {holding.sector || '—'}
-                                          </td>
-                                          <td className="px-4 py-3 text-center">
-                                            {trade ? (
-                                              isEditing ? (
-                                                <div className="flex items-center gap-1 justify-center">
-                                                  <select
-                                                    value={editingSizingMode}
-                                                    onChange={(e) => handleSizingModeChange(e.target.value as SimpleSizingMode)}
-                                                    className="text-[10px] h-6 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-0.5"
-                                                  >
-                                                    {SIZING_MODE_OPTIONS.map(opt => (
-                                                      <option key={opt.value} value={opt.value}>
-                                                        {opt.label}
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                  <div className="relative">
-                                                    <input
-                                                      type="text"
-                                                      inputMode="numeric"
-                                                      value={editingValue}
-                                                      onChange={(e) => handleEditingValueChange(e.target.value)}
-                                                      className="w-16 text-xs h-6 pl-1.5 pr-5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
-                                                      placeholder={getSizingModeOption(editingSizingMode).placeholder}
-                                                      autoFocus
-                                                    />
-                                                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">
-                                                      {getSizingModeOption(editingSizingMode).unit}
-                                                    </span>
-                                                  </div>
-                                                  <button
-                                                    onClick={saveTradeEdit}
-                                                    className="p-1 bg-primary-500 text-white rounded hover:bg-primary-600"
-                                                  >
-                                                    <Check className="h-3 w-3" />
-                                                  </button>
-                                                  <button
-                                                    onClick={() => setEditingTradeId(null)}
-                                                    className="p-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
-                                                  >
-                                                    <X className="h-3 w-3" />
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <div className="flex items-center gap-1 justify-center">
-                                                  <button
-                                                    onClick={() => canEdit && startEditingTrade(trade)}
-                                                    className={clsx(
-                                                      "text-xs font-medium uppercase px-2 py-1 rounded flex items-center gap-1",
-                                                      trade.action === 'buy' || trade.action === 'add'
-                                                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-                                                      canEdit && "hover:ring-2 hover:ring-offset-1 hover:ring-primary-400 cursor-pointer"
-                                                    )}
-                                                    title={canEdit ? "Click to edit" : undefined}
-                                                  >
-                                                    {trade.action}
-                                                    {trade.shares && <span className="font-normal">({trade.shares.toLocaleString()})</span>}
-                                                  </button>
-                                                  {canEdit && (
-                                                    <button
-                                                      onClick={() => removeTradeMutation.mutate(trade.id)}
-                                                      className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-opacity"
-                                                      title="Remove trade"
-                                                    >
-                                                      <X className="h-3 w-3 text-red-500" />
-                                                    </button>
-                                                  )}
-                                                </div>
-                                              )
-                                            ) : (
-                                              <span className="text-gray-400 text-xs">—</span>
-                                            )}
-                                          </td>
-                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                            {holding.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                          </td>
-                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                            ${holding.price.toFixed(2)}
-                                          </td>
-                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                            ${holding.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                          </td>
-                                          <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono">
-                                            {baseWeight.toFixed(2)}%
-                                          </td>
-                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono font-medium">
-                                            {holding.weight.toFixed(2)}%
-                                          </td>
-                                          <td className="px-4 py-3 text-right font-mono">
-                                            <span className={clsx(
-                                              "inline-flex items-center gap-0.5",
-                                              weightChange > 0.01 ? "text-green-600 dark:text-green-400" :
-                                              weightChange < -0.01 ? "text-red-600 dark:text-red-400" :
-                                              "text-gray-500"
-                                            )}>
-                                              {weightChange > 0.01 ? (
-                                                <ArrowUpRight className="h-3 w-3" />
-                                              ) : weightChange < -0.01 ? (
-                                                <ArrowDownRight className="h-3 w-3" />
-                                              ) : (
-                                                <Minus className="h-3 w-3" />
-                                              )}
-                                              {weightChange > 0 ? '+' : ''}{weightChange.toFixed(2)}%
-                                            </span>
-                                          </td>
-                                        </tr>
-                                      )
-                                    })
-                                  )}
-                                </tbody>
-                                <tfoot className="bg-gray-100 dark:bg-gray-700 font-medium">
-                                  <tr>
-                                    <td className="px-4 py-3 text-gray-900 dark:text-white" colSpan={4}>
-                                      Total ({metrics.holdings_after.length} positions)
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono" colSpan={2}>
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                      ${metrics.total_value_after.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 font-mono">
-                                      100.00%
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-mono">
-                                      100.00%
-                                    </td>
-                                    <td className="px-4 py-3"></td>
-                                  </tr>
-                                </tfoot>
-                              </table>
-                            </div>
-                          </Card>
-                          </>
                         ) : (
                           /* Trades View - Grouped by Action with Cash Impact */
                           <div className="space-y-6">
@@ -4197,9 +4376,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             )}
                           </div>
                         )}
-                      </>
+                      </div>
                     ) : (
-                      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+                      <div className="h-full flex flex-col items-center justify-center text-center">
                         <div className="w-20 h-20 bg-gradient-to-br from-primary-100 to-primary-50 dark:from-primary-900/30 dark:to-primary-900/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
                           <Layers className="h-10 w-10 text-primary-600 dark:text-primary-400" />
                         </div>
@@ -4207,15 +4386,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           Add Trades to See Impact
                         </h3>
                         <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto mb-6">
-                          Import trade ideas from the left panel or add custom trades.
-                          Results will update automatically as you make changes.
+                          Switch to the Intent Board to add and size your trades.
+                          Portfolio impact will appear here once trades are active.
                         </p>
                         <button
-                          onClick={() => setShowQuickTrade(true)}
+                          onClick={() => setImpactView('intent')}
                           className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30 rounded-lg transition-colors"
                         >
-                          <Plus className="h-4 w-4" />
-                          Add Quick Trade
+                          <Beaker className="h-4 w-4" />
+                          Go to Intent Board
                         </button>
                       </div>
                     )}

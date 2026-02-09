@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Search, TrendingUp, Briefcase, Tag, FileText, List, PieChart, Clock, User,
-  GitBranch, FolderKanban, BookOpen, FileSpreadsheet, FileType, LineChart, Users,
+  GitBranch, FolderKanban, BookOpen, FileSpreadsheet, FileType, Beaker, Users,
   Calendar, Camera, LayoutDashboard
 } from 'lucide-react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
@@ -32,7 +32,6 @@ const STATIC_PAGES = [
   { id: 'files', title: 'Files', type: 'page' as const, subtitle: 'File management', keywords: ['documents', 'uploads', 'models'] },
   { id: 'templates', title: 'Templates', type: 'page' as const, subtitle: 'Model and text templates', keywords: ['models', 'spreadsheets'] },
   { id: 'organization', title: 'Organization', type: 'page' as const, subtitle: 'Team and settings', keywords: ['team', 'settings', 'users', 'members'] },
-  { id: 'simulations', title: 'Simulations', type: 'page' as const, subtitle: 'Portfolio simulations', keywords: ['monte carlo', 'scenarios', 'backtest'] },
   { id: 'audit', title: 'Activity History', type: 'page' as const, subtitle: 'Track all changes and actions', keywords: ['audit', 'activity', 'history', 'log', 'trail', 'changes', 'compliance'] },
 ]
 
@@ -41,7 +40,7 @@ interface SearchResult {
   title: string
   type: 'asset' | 'portfolio' | 'theme' | 'note' | 'list' | 'tdf' | 'allocation-period' | 'user' |
         'workflow' | 'workflow-template' | 'project' | 'notebook' | 'model-template' | 'model-file' |
-        'text-template' | 'simulation' | 'team' | 'calendar-event' | 'capture' | 'page'
+        'text-template' | 'team' | 'calendar-event' | 'capture' | 'page'
   subtitle?: string
   data: any
 }
@@ -82,7 +81,7 @@ const ResultItem = React.memo(({
       case 'model-template': return <FileSpreadsheet className={`${iconClass} text-green-600`} />
       case 'model-file': return <FileSpreadsheet className={`${iconClass} text-green-500`} />
       case 'text-template': return <FileType className={`${iconClass} text-sky-600`} />
-      case 'simulation': return <LineChart className={`${iconClass} text-pink-600`} />
+      case 'trade-lab': return <Beaker className={`${iconClass} text-pink-600`} />
       case 'team': return <Users className={`${iconClass} text-teal-600`} />
       case 'calendar-event': return <Calendar className={`${iconClass} text-red-500`} />
       case 'capture': return <Camera className={`${iconClass} text-fuchsia-600`} />
@@ -276,12 +275,6 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
         results.push(...data.teams.map((t: any) => ({
           id: t.id, title: t.name, subtitle: t.description || 'Team',
           type: 'team' as const, data: t
-        })))
-      }
-      if (data?.simulations) {
-        results.push(...data.simulations.map((s: any) => ({
-          id: s.id, title: s.name, subtitle: s.description || `${s.status || 'active'} simulation`,
-          type: 'simulation' as const, data: s
         })))
       }
       if (data?.model_files) {

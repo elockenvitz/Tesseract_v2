@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase } from 'lucide-react'
+import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -11,6 +11,17 @@ import {
   getProposalVersions,
 } from '../../lib/services/trade-lab-service'
 import { moveTradeIdea } from '../../lib/services/trade-idea-service'
+import {
+  parseSizingInput,
+  toSizingSpec,
+  formatSizingDisplay,
+} from '../../lib/trade-lab/sizing-parser'
+import {
+  normalizeSizing,
+  detectDirectionConflict,
+  type NormalizationContext,
+} from '../../lib/trade-lab/normalize-sizing'
+import { ConflictBadgeV3, ConflictExplanation, SizingHelpText } from './VariantStatusBadges'
 import type {
   TradeQueueItemWithDetails,
   TradeProposal,
@@ -19,29 +30,119 @@ import type {
   BaselineHolding,
   SimulatedHolding,
   ActionContext,
+  RoundingConfig,
+  AssetPrice,
+  SizingValidationError,
 } from '../../types/trading'
 
-// Sizing mode options
-type SimpleSizingMode = 'weight' | 'shares' | 'vs_benchmark'
-const SIZING_MODE_OPTIONS: { value: SimpleSizingMode; label: string; unit: string; disabled?: boolean }[] = [
-  { value: 'weight', label: 'Weight %', unit: '%' },
-  { value: 'shares', label: 'Shares', unit: 'sh' },
-  { value: 'vs_benchmark', label: '± Benchmark', unit: '%', disabled: true },
-]
+// =============================================================================
+// V3 SIZING INTEGRATION
+// =============================================================================
 
-// Parse value to detect if it's a delta (starts with + or -)
-const parseEditingValue = (value: string, baseMode: SimpleSizingMode): { mode: TradeSizingMode; numValue: number | null } => {
-  if (baseMode === 'vs_benchmark') return { mode: 'delta_benchmark', numValue: null }
-  if (!value || value.trim() === '') return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue: null }
-  const trimmed = value.trim()
-  const isDelta = trimmed.startsWith('+') || (trimmed.startsWith('-') && trimmed !== '-')
-  const numValue = parseFloat(trimmed)
-  if (isNaN(numValue)) return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue: null }
-
-  if (isDelta) {
-    return { mode: baseMode === 'weight' ? 'delta_weight' : 'delta_shares', numValue }
+/**
+ * Parse sizing input using v3 parser with direction conflict detection.
+ * Returns both the parsed result and conflict status.
+ */
+function parseSizingWithConflictCheck(
+  sizingInput: string,
+  action: string,
+  currentPosition: { shares: number; weight: number } | null,
+  portfolioTotalValue: number,
+  price: number,
+  hasBenchmark: boolean
+): {
+  isValid: boolean
+  error?: string
+  framework?: string
+  value?: number
+  directionConflict: SizingValidationError | null  // v3: Full error object, not boolean
+  computed?: {
+    targetShares: number
+    targetWeight: number
+    deltaShares: number
+    deltaWeight: number
   }
-  return { mode: baseMode === 'weight' ? 'weight' : 'shares', numValue }
+} {
+  // Parse using v3 parser
+  const parseResult = parseSizingInput(sizingInput, { has_benchmark: hasBenchmark })
+
+  if (!parseResult.is_valid) {
+    return {
+      isValid: false,
+      error: parseResult.error,
+      directionConflict: null,  // v3: null = no conflict
+    }
+  }
+
+  const sizingSpec = toSizingSpec(sizingInput, parseResult)
+  if (!sizingSpec) {
+    return {
+      isValid: false,
+      error: 'Failed to parse sizing',
+      directionConflict: null,  // v3: null = no conflict
+    }
+  }
+
+  // Create mock price for normalization
+  const mockPrice: AssetPrice = {
+    asset_id: 'temp',
+    price: price > 0 ? price : 100, // Fallback for calculation
+    timestamp: new Date().toISOString(),
+    source: 'realtime',
+  }
+
+  // Default rounding config (no rounding for proposals)
+  const roundingConfig: RoundingConfig = {
+    lot_size: 1,
+    min_lot_behavior: 'round',
+    round_direction: 'nearest',
+  }
+
+  // Normalize to get computed values
+  const normCtx: NormalizationContext = {
+    action: action as any,
+    sizing_input: sizingInput,
+    current_position: currentPosition ? {
+      shares: currentPosition.shares,
+      weight: currentPosition.weight,
+      cost_basis: null,
+      active_weight: null,
+    } : null,
+    portfolio_total_value: portfolioTotalValue,
+    price: mockPrice,
+    rounding_config: roundingConfig,
+    active_weight_config: null,
+    has_benchmark: hasBenchmark,
+  }
+
+  const normResult = normalizeSizing(normCtx)
+
+  return {
+    isValid: normResult.is_valid,
+    error: normResult.error,
+    framework: sizingSpec.framework,
+    value: sizingSpec.value,
+    directionConflict: normResult.direction_conflict,
+    computed: normResult.computed ? {
+      targetShares: normResult.computed.target_shares,
+      targetWeight: normResult.computed.target_weight,
+      deltaShares: normResult.computed.delta_shares,
+      deltaWeight: normResult.computed.delta_weight,
+    } : undefined,
+  }
+}
+
+// Legacy mapping for backwards compatibility with existing code
+function mapFrameworkToLegacyMode(framework: string | undefined): TradeSizingMode {
+  switch (framework) {
+    case 'weight_target': return 'weight'
+    case 'weight_delta': return 'delta_weight'
+    case 'shares_target': return 'shares'
+    case 'shares_delta': return 'delta_shares'
+    case 'active_target':
+    case 'active_delta': return 'delta_benchmark'
+    default: return 'weight'
+  }
 }
 
 interface PortfolioOption {
@@ -76,10 +177,14 @@ export function ProposalEditorModal({
   const queryClient = useQueryClient()
 
   // Form state
-  const [sizingMode, setSizingMode] = useState<SimpleSizingMode>('weight')
   const [sizingValue, setSizingValue] = useState('')
   const [notes, setNotes] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [showSizingHelp, setShowSizingHelp] = useState(false)
+
+  // V3: Direction conflict detection state (null = no conflict, object = conflict details)
+  const [directionConflict, setDirectionConflict] = useState<SizingValidationError | null>(null)
+  const [sizingError, setSizingError] = useState<string | null>(null)
 
   // Portfolio selection state
   // Priority: preselected > first available > trade idea's portfolio
@@ -116,31 +221,30 @@ export function ProposalEditorModal({
   // Initialize form from existing proposal
   useEffect(() => {
     if (existingProposal) {
-      // Determine sizing mode from the proposal
-      if (existingProposal.sizing_mode) {
+      // V3: Try to load the raw input value from sizing_context first
+      const context = existingProposal.sizing_context as Record<string, unknown> | null
+      if (context?.input_value) {
+        setSizingValue(context.input_value as string)
+      } else {
+        // Fallback: reconstruct from legacy mode/value
         const mode = existingProposal.sizing_mode
         if (mode === 'weight' || mode === 'delta_weight') {
-          setSizingMode('weight')
           if (existingProposal.weight != null) {
             setSizingValue(mode === 'delta_weight' ? `+${existingProposal.weight}` : existingProposal.weight.toString())
           }
         } else if (mode === 'shares' || mode === 'delta_shares') {
-          setSizingMode('shares')
           if (existingProposal.shares != null) {
-            setSizingValue(mode === 'delta_shares' ? `+${existingProposal.shares}` : existingProposal.shares.toString())
+            setSizingValue(mode === 'delta_shares' ? `#+${existingProposal.shares}` : `#${existingProposal.shares}`)
           }
+        } else if (existingProposal.weight != null) {
+          setSizingValue(existingProposal.weight.toString())
+        } else if (existingProposal.shares != null) {
+          setSizingValue(`#${existingProposal.shares}`)
         }
-      } else if (existingProposal.weight != null) {
-        setSizingMode('weight')
-        setSizingValue(existingProposal.weight.toString())
-      } else if (existingProposal.shares != null) {
-        setSizingMode('shares')
-        setSizingValue(existingProposal.shares.toString())
       }
       setNotes(existingProposal.notes || '')
     } else {
       // Reset to defaults
-      setSizingMode('weight')
       setSizingValue('')
       setNotes('')
     }
@@ -158,26 +262,31 @@ export function ProposalEditorModal({
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      console.log('🔄 Starting proposal save...', { tradeIdea: tradeIdea.id, sizingMode, sizingValue, portfolioId: selectedPortfolioId })
+      console.log('🔄 Starting proposal save...', { tradeIdea: tradeIdea.id, sizingValue, portfolioId: selectedPortfolioId })
       if (!user) throw new Error('Not authenticated')
       if (!selectedPortfolioId) throw new Error('Please select a portfolio')
 
-      const { mode, numValue } = parseEditingValue(sizingValue, sizingMode)
+      // V3: Block save if there's a direction conflict
+      if (directionConflict !== null) {
+        throw new Error('Cannot save proposal with direction conflict. The sizing contradicts the trade action.')
+      }
 
-      // Resolve to absolute values if delta mode
+      if (!sizingValidation.isValid) {
+        throw new Error(sizingValidation.error || 'Invalid sizing input')
+      }
+
+      // Use v3 computed values
+      const mode = mapFrameworkToLegacyMode(sizingValidation.framework)
       let resolvedWeight: number | null = null
       let resolvedShares: number | null = null
 
-      if (mode === 'weight') {
-        resolvedWeight = numValue
-      } else if (mode === 'shares') {
-        resolvedShares = numValue
-      } else if (mode === 'delta_weight' && numValue !== null) {
-        const current = currentHolding?.weight ?? baseline?.weight ?? 0
-        resolvedWeight = current + numValue
-      } else if (mode === 'delta_shares' && numValue !== null) {
-        const current = currentHolding?.shares ?? baseline?.shares ?? 0
-        resolvedShares = current + numValue
+      if (sizingValidation.computed) {
+        // Use target values from normalization
+        if (mode === 'weight' || mode === 'delta_weight' || mode === 'delta_benchmark') {
+          resolvedWeight = sizingValidation.computed.targetWeight
+        } else {
+          resolvedShares = sizingValidation.computed.targetShares
+        }
       }
 
       const context = buildContext()
@@ -194,8 +303,9 @@ export function ProposalEditorModal({
           sizing_context: {
             baseline_weight: baseline?.weight,
             baseline_shares: baseline?.shares,
-            input_mode: sizingMode,
             input_value: sizingValue,
+            v3_framework: sizingValidation.framework,
+            v3_direction_conflict: directionConflict !== null,  // Boolean for storage
           },
           notes: notes || null,
         },
@@ -250,25 +360,58 @@ export function ProposalEditorModal({
     },
   })
 
-  // Calculate preview for delta modes
-  const preview = useMemo(() => {
-    const { mode, numValue } = parseEditingValue(sizingValue, sizingMode)
-    if (numValue === null) return null
+  // V3: Validate sizing and detect direction conflicts
+  const sizingValidation = useMemo(() => {
+    if (!sizingValue.trim()) {
+      return { isValid: false, directionConflict: null as SizingValidationError | null, computed: undefined }
+    }
 
-    if (mode === 'delta_weight') {
-      const current = currentHolding?.weight ?? baseline?.weight ?? 0
-      return { type: 'weight' as const, from: current, to: current + numValue }
+    // Get current position from baseline or holding
+    const currentPosition = baseline || currentHolding ? {
+      shares: currentHolding?.shares ?? baseline?.shares ?? 0,
+      weight: currentHolding?.weight ?? baseline?.weight ?? 0,
+    } : null
+
+    // Estimate portfolio value (fallback to 1M if unknown)
+    const portfolioValue = 1_000_000 // TODO: Pass actual portfolio value
+    const price = baseline?.price ?? currentHolding?.price ?? 100
+
+    // Check if portfolio has benchmark configured
+    const hasBenchmark = false // TODO: Check portfolio.benchmark
+
+    return parseSizingWithConflictCheck(
+      sizingValue,
+      tradeIdea.action,
+      currentPosition,
+      portfolioValue,
+      price,
+      hasBenchmark
+    )
+  }, [sizingValue, tradeIdea.action, baseline, currentHolding])
+
+  // Update conflict state when validation changes
+  useEffect(() => {
+    setDirectionConflict(sizingValidation.directionConflict)
+    setSizingError(sizingValidation.error ?? null)
+  }, [sizingValidation])
+
+  // Calculate preview for display
+  const preview = useMemo(() => {
+    if (!sizingValidation.computed) return null
+
+    const { deltaWeight, deltaShares, targetWeight, targetShares } = sizingValidation.computed
+    const currentWeight = currentHolding?.weight ?? baseline?.weight ?? 0
+    const currentShares = currentHolding?.shares ?? baseline?.shares ?? 0
+
+    // Determine if showing weight or shares based on the framework
+    const framework = sizingValidation.framework || ''
+    if (framework.includes('shares')) {
+      return { type: 'shares' as const, from: currentShares, to: targetShares }
     }
-    if (mode === 'delta_shares') {
-      const current = currentHolding?.shares ?? baseline?.shares ?? 0
-      return { type: 'shares' as const, from: current, to: current + numValue }
-    }
-    return null
-  }, [sizingValue, sizingMode, baseline, currentHolding])
+    return { type: 'weight' as const, from: currentWeight, to: targetWeight }
+  }, [sizingValidation, baseline, currentHolding])
 
   if (!isOpen) return null
-
-  const modeOption = SIZING_MODE_OPTIONS.find(o => o.value === sizingMode) || SIZING_MODE_OPTIONS[0]
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -363,46 +506,63 @@ export function ProposalEditorModal({
             )}
           </div>
 
-          {/* Sizing inputs */}
+          {/* Sizing inputs - V3 unified input */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Proposed Size
-            </label>
-            <div className="flex items-center gap-2">
-              <select
-                value={sizingMode}
-                onChange={(e) => {
-                  setSizingMode(e.target.value as SimpleSizingMode)
-                  setSizingValue('') // Clear value when switching modes
-                }}
-                className="h-9 px-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Proposed Size
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowSizingHelp(!showSizingHelp)}
+                className="text-xs text-primary-500 hover:text-primary-600 dark:text-primary-400"
               >
-                {SIZING_MODE_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                    {opt.label}{opt.disabled ? ' (N/A)' : ''}
-                  </option>
-                ))}
-              </select>
+                {showSizingHelp ? 'Hide syntax help' : 'Syntax help'}
+              </button>
+            </div>
+
+            {/* Sizing help text - V3 syntax */}
+            {showSizingHelp && (
+              <SizingHelpText hasBenchmark={false} className="mb-3 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg" />
+            )}
+
+            <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Input
                   type="text"
-                  inputMode="numeric"
                   value={sizingValue}
                   onChange={(e) => setSizingValue(e.target.value)}
-                  placeholder={sizingMode === 'weight' ? 'e.g., 5 or +2' : 'e.g., 1000 or +500'}
-                  className="pr-8"
+                  placeholder="e.g., 5, +2, -0.5, #1000, #+500"
+                  className={clsx(
+                    directionConflict !== null && 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                  )}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 dark:text-gray-500">
-                  {modeOption.unit}
-                </span>
               </div>
+              {/* V3: Show conflict badge inline with one-click fix */}
+              <ConflictBadgeV3 conflict={directionConflict} />
             </div>
+
+            {/* V3: Sizing syntax hint */}
             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              Use + or - prefix for relative changes (e.g., "+2" to add 2%)
+              Weight: 5, +2, -0.5 | Shares: #1000, #+500, #-200
             </p>
 
-            {/* Preview for delta modes */}
-            {preview && (
+            {/* V3: Show parsing error */}
+            {sizingError && directionConflict === null && (
+              <p className="mt-1 text-xs text-red-500">{sizingError}</p>
+            )}
+
+            {/* V3: Direction conflict explanation */}
+            {directionConflict !== null && (
+              <ConflictExplanation
+                action={tradeIdea.action}
+                sizingInput={sizingValue}
+                className="mt-2"
+              />
+            )}
+
+            {/* Preview for computed values */}
+            {preview && directionConflict === null && (
               <div className="mt-2 text-sm text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded px-2 py-1">
                 {preview.type === 'weight' ? (
                   <span>{preview.from.toFixed(2)}% → {preview.to.toFixed(2)}%</span>
@@ -486,7 +646,14 @@ export function ProposalEditorModal({
             type="button"
             variant="primary"
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || directionConflict !== null || !sizingValidation.isValid}
+            title={
+              directionConflict !== null
+                ? 'Resolve the direction conflict before saving'
+                : !sizingValidation.isValid
+                ? 'Enter valid sizing'
+                : undefined
+            }
           >
             {saveMutation.isPending ? 'Saving...' : existingProposal ? 'Update Proposal' : 'Save Proposal'}
           </Button>

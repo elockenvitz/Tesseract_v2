@@ -78,7 +78,6 @@ export class TabStateManager {
 
       mainState.tabStates = mainState.tabStates || {}
       mainState.tabStates[tabId] = state
-      console.log(`TabStateManager: Saving state for ${tabId}:`, state)
 
       sessionStorage.setItem(TAB_STATE_KEY, JSON.stringify(mainState))
     } catch (error) {
@@ -90,7 +89,6 @@ export class TabStateManager {
   static loadTabState(tabId: string): TabState | null {
     try {
       const mainState = this.loadMainTabState()
-      console.log(`TabStateManager: Loading state for ${tabId}:`, mainState?.tabStates?.[tabId])
 
       if (!mainState || !mainState.tabStates) {
         return null

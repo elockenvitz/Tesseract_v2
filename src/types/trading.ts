@@ -677,3 +677,283 @@ export interface CreateTradeEventInput {
   proposal_id?: string | null
   proposal_version_id?: string | null
 }
+
+// =============================================================================
+// Trade Lab v3 Types - Intent Variants & Sizing
+// =============================================================================
+
+// Re-export sizing types from parser
+export type {
+  SizingSpec,
+  SizingFramework,
+  ParseResult as SizingParseResult,
+  SizingContext,
+} from '../lib/trade-lab/sizing-parser'
+
+// Portfolio roles for permission matrix
+export type PortfolioRole = 'pm' | 'analyst' | 'trader' | 'viewer'
+
+// Permission actions
+export type PermissionAction =
+  | 'create_variant'
+  | 'edit_variant'
+  | 'delete_variant'
+  | 'resolve_queue_item'
+  | 'create_trade_sheet'
+  | 'approve_trade_sheet'
+  | 'view_lab'
+
+// Permission matrix type
+export type PermissionMatrix = Record<PortfolioRole, PermissionAction[]>
+
+// Default permission matrix
+export const DEFAULT_PERMISSIONS: PermissionMatrix = {
+  pm: [
+    'create_variant',
+    'edit_variant',
+    'delete_variant',
+    'resolve_queue_item',
+    'create_trade_sheet',
+    'approve_trade_sheet',
+    'view_lab',
+  ],
+  analyst: [
+    'create_variant',
+    'edit_variant',
+    'delete_variant',
+    'view_lab',
+  ],
+  trader: [
+    'view_lab',
+  ],
+  viewer: [
+    'view_lab',
+  ],
+}
+
+// Rounding policy for lot sizes (v3 spec)
+// 'allow_zero' - allow result to be 0 when computed shares < lot_size
+// 'round_to_one_lot' - round up to at least one lot when shares would be 0
+export type MinLotBehavior = 'allow_zero' | 'round_to_one_lot' | 'round' | 'zero' | 'warn'
+
+// Rounding configuration (per portfolio or asset override)
+// v3 spec: weight->shares conversion rounds toward zero (floor for +, ceil for -)
+export interface RoundingConfig {
+  lot_size: number              // Minimum lot size (e.g., 100 for round lots)
+  min_lot_behavior: MinLotBehavior  // What to do when computed shares < lot_size
+  zero_threshold?: number       // v3: Below this share count, treat as zero
+  round_direction?: 'nearest' | 'up' | 'down' | 'toward_zero'  // How to round to lot boundaries (default: toward_zero for v3)
+}
+
+// Default rounding config (v3 spec: rounds toward zero)
+export const DEFAULT_ROUNDING_CONFIG: RoundingConfig = {
+  lot_size: 1,
+  min_lot_behavior: 'allow_zero',
+  zero_threshold: 0,
+  round_direction: 'toward_zero',
+}
+
+// Active weight source (where benchmark weight comes from)
+export type ActiveWeightSource = 'portfolio_benchmark' | 'custom' | 'index'
+
+// Active weight configuration per asset
+export interface ActiveWeightConfig {
+  source: ActiveWeightSource
+  benchmark_weight: number | null  // Current benchmark weight for this asset
+  custom_benchmark_id?: string     // If source is 'custom', the benchmark ID
+}
+
+// Computed values from normalization
+export interface ComputedValues {
+  direction: 'buy' | 'sell'       // Normalized trade direction
+  target_shares: number           // Final share count after trade
+  target_weight: number           // Final weight % after trade
+  delta_shares: number            // Change in shares (signed)
+  delta_weight: number            // Change in weight % (signed)
+  shares_change: number           // Alias for delta_shares (v3 spec: used for conflict detection)
+  delta_active_weight?: number    // Change in active weight (if benchmark available)
+  target_active_weight?: number   // Final active weight (if benchmark available)
+  notional_value: number          // Dollar value of the trade
+  price_used: number              // Price used for computation
+  price_timestamp: string         // When price was fetched
+}
+
+// =============================================================================
+// SIZING VALIDATION ERROR (v3 spec)
+// =============================================================================
+
+/**
+ * Direction conflict error details.
+ *
+ * Per v3 spec: Conflict is detected when shares_change sign contradicts action.
+ * - BUY/ADD + negative shares_change = CONFLICT
+ * - SELL/TRIM + positive shares_change = CONFLICT
+ * - shares_change === 0 is ALWAYS allowed (no conflict)
+ *
+ * The error includes a suggested_direction for one-click fix in the UI.
+ */
+export interface SizingValidationError {
+  code: 'direction_conflict'
+  message: string                 // Human-readable error (e.g., "BUY action conflicts with -50 share decrease")
+  action: TradeAction             // The action that was attempted
+  shares_change: number           // The computed shares_change that caused the conflict
+  suggested_direction: TradeAction  // One-click fix: the action that would resolve conflict
+  trigger: 'user_edit' | 'load_revalidation' | 'price_update'  // What caused the conflict to be detected
+}
+
+/**
+ * Conflict trigger types for activity events.
+ */
+export type ConflictTrigger = 'user_edit' | 'load_revalidation' | 'price_update'
+
+// Normalized sizing result (transient, computed on demand)
+export interface NormalizedSizingResult {
+  is_valid: boolean
+  computed?: ComputedValues
+  direction_conflict: SizingValidationError | null  // null = no conflict, object = conflict details
+  below_lot_warning: boolean      // True if computed shares < lot_size
+  rounded_shares?: number         // Shares after lot rounding (if applicable)
+  error?: string                  // Error message if invalid
+}
+
+// Intent Variant - ephemeral scenario delta in Trade Lab
+export interface IntentVariant {
+  id: string
+  lab_id: string
+  view_id: string | null          // null = lab-wide, string = view-scoped
+  trade_queue_item_id: string | null  // Source trade idea (if any)
+  asset_id: string
+
+  // User input
+  action: TradeAction             // buy | sell | trim | add
+  sizing_input: string            // Raw user input (e.g., "2.5", "+0.5", "@t0.5", "#500")
+  sizing_spec: import('../lib/trade-lab/sizing-parser').SizingSpec | null  // Parsed sizing
+
+  // Computed state (persisted for display, recomputed on price changes)
+  computed: ComputedValues | null
+  direction_conflict: SizingValidationError | null  // Persisted: null = no conflict, object = conflict details
+  below_lot_warning: boolean      // Persisted: shares below lot size
+
+  // Portfolio context
+  portfolio_id: string
+  current_position: {
+    shares: number
+    weight: number
+    cost_basis: number | null
+    active_weight: number | null
+  } | null
+
+  // Benchmark context (for active weight sizing)
+  active_weight_config: ActiveWeightConfig | null
+
+  // Metadata
+  notes: string | null
+  sort_order: number
+  touched_in_lab_at: string | null  // v3: Last time this variant was modified in lab
+  created_at: string
+  updated_at: string
+  created_by: string | null
+}
+
+// Intent Variant with related data
+export interface IntentVariantWithDetails extends IntentVariant {
+  asset: {
+    id: string
+    symbol: string
+    company_name: string
+    sector: string | null
+  }
+  trade_queue_item?: {
+    id: string
+    rationale: string
+    urgency: TradeUrgency
+    stage: TradeStage
+  } | null
+}
+
+// Create/Update inputs for Intent Variants
+export interface CreateIntentVariantInput {
+  lab_id: string
+  view_id?: string | null
+  trade_queue_item_id?: string | null
+  asset_id: string
+  action: TradeAction
+  sizing_input: string
+  notes?: string | null
+  sort_order?: number
+}
+
+export interface UpdateIntentVariantInput {
+  action?: TradeAction
+  sizing_input?: string
+  notes?: string | null
+  sort_order?: number
+}
+
+// Batch update for revalidation
+export interface VariantBatchUpdate {
+  id: string
+  computed: ComputedValues | null
+  direction_conflict: SizingValidationError | null
+  below_lot_warning: boolean
+  sizing_spec: import('../lib/trade-lab/sizing-parser').SizingSpec | null
+}
+
+// Trade Sheet - immutable snapshot of intent for execution
+export interface TradeSheet {
+  id: string
+  lab_id: string
+  portfolio_id: string
+  name: string
+  description: string | null
+
+  // Snapshot of variants at creation time
+  variants_snapshot: IntentVariant[]
+
+  // Computed totals
+  total_notional: number
+  total_trades: number
+  net_weight_change: number
+
+  // Workflow state
+  status: 'draft' | 'pending_approval' | 'approved' | 'sent_to_desk' | 'executed' | 'cancelled'
+  submitted_at: string | null
+  submitted_by: string | null
+  approved_at: string | null
+  approved_by: string | null
+  executed_at: string | null
+
+  // Audit
+  created_at: string
+  created_by: string | null
+
+  // Validation state at creation
+  had_conflicts: boolean          // Should always be false (blocked if true)
+  had_below_lot_warnings: boolean // Allowed, but recorded for audit
+}
+
+// Decision Queue Item Resolution
+export type QueueResolution = 'accept' | 'reject' | 'defer'
+
+export interface ResolveQueueItemInput {
+  trade_queue_item_id: string
+  portfolio_id: string
+  resolution: QueueResolution
+  reason?: string
+  deferred_until?: string | null  // For 'defer' resolution
+}
+
+// Price data for batch fetching
+export interface AssetPrice {
+  asset_id: string
+  price: number
+  timestamp: string
+  source: 'realtime' | 'delayed' | 'close'
+}
+
+// Batch price fetch result
+export interface PriceBatchResult {
+  prices: Map<string, AssetPrice>
+  errors: Map<string, string>
+  fetched_at: string
+}
