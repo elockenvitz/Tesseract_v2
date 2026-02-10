@@ -6,8 +6,8 @@
  * Enter activates the focused cell, Escape exits editing, Delete removes trade.
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, FileText, Plus, X } from 'lucide-react'
+import React, { useState, useCallback, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, FileText, Info, Plus, Search, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { SimulationRow, SimulationRowSummary } from '../../hooks/useSimulationRows'
 import type { TradeAction } from '../../types/trading'
@@ -191,7 +191,9 @@ export interface HoldingsSimulationTableProps {
   onDeleteVariant: (variantId: string) => void
   onCreateVariant: (assetId: string, action: TradeAction) => void
   onFixConflict: (variantId: string, suggestedAction: TradeAction) => void
-  onAddTrade: () => void
+  onAddAsset: (asset: { id: string; symbol: string; company_name: string; sector: string | null }) => void
+  assetSearchResults?: { id: string; symbol: string; company_name: string; sector: string | null }[]
+  onAssetSearchChange?: (query: string) => void
   onCreateTradeSheet?: () => void
   canCreateTradeSheet?: boolean
   isCreatingTradeSheet?: boolean
@@ -469,6 +471,110 @@ function GroupHeaderRow({ groupName, count, totalWeight, isCollapsed, onToggle }
 }
 
 // =============================================================================
+// PHANTOM ROW (inline asset search for Add Trade)
+// =============================================================================
+
+function PhantomRow({
+  search, onSearchChange, results, highlightIndex, onHighlightChange,
+  onSelect, onClose, inputRef,
+}: {
+  search: string
+  onSearchChange: (v: string) => void
+  results: { id: string; symbol: string; company_name: string; sector: string | null }[]
+  highlightIndex: number
+  onHighlightChange: (i: number) => void
+  onSelect: (asset: { id: string; symbol: string; company_name: string; sector: string | null }) => void
+  onClose: () => void
+  inputRef: React.RefObject<HTMLInputElement | null>
+}) {
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  return (
+    <tr className="bg-primary-50/30 dark:bg-primary-950/10 border-t border-dashed border-primary-300 dark:border-primary-700">
+      <td className="pl-3 pr-2 py-1.5 border-l-2 border-l-primary-400" colSpan={2}>
+        <div className="relative">
+          <div className="flex items-center gap-1.5">
+            <Search className="w-3.5 h-3.5 text-primary-400 flex-shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              autoFocus
+              value={search}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                onSearchChange(e.target.value)
+                onHighlightChange(0)
+              }}
+              onBlur={(e) => {
+                // Don't close if clicking within the dropdown
+                if (dropdownRef.current?.contains(e.relatedTarget as Node)) return
+                // Small delay to allow click events on dropdown items
+                setTimeout(() => {
+                  if (!dropdownRef.current?.contains(document.activeElement)) onClose()
+                }, 150)
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Escape') { onClose(); return }
+                if (e.key === 'ArrowDown') { e.preventDefault(); onHighlightChange(Math.min(highlightIndex + 1, results.length - 1)); return }
+                if (e.key === 'ArrowUp') { e.preventDefault(); onHighlightChange(Math.max(highlightIndex - 1, 0)); return }
+                if (e.key === 'Enter' && results.length > 0) {
+                  e.preventDefault()
+                  onSelect(results[highlightIndex])
+                }
+              }}
+              placeholder="Search ticker or name..."
+              className="w-full text-[13px] px-1.5 py-0.5 rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-1 focus:ring-primary-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+            />
+          </div>
+
+          {/* Dropdown */}
+          {search.length >= 1 && results.length > 0 && (
+            <div
+              ref={dropdownRef}
+              className="absolute left-0 top-full mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-[280px] overflow-y-auto"
+            >
+              {results.map((asset, i) => (
+                <button
+                  key={asset.id}
+                  tabIndex={-1}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelect(asset)}
+                  onMouseEnter={() => onHighlightChange(i)}
+                  className={clsx(
+                    'w-full text-left px-3 py-2 flex items-center gap-2 transition-colors text-[13px]',
+                    i === highlightIndex
+                      ? 'bg-primary-50 dark:bg-primary-900/30'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50',
+                    i > 0 && 'border-t border-gray-100 dark:border-gray-700/50',
+                  )}
+                >
+                  <span className="font-semibold text-gray-900 dark:text-white min-w-[4rem]">{asset.symbol}</span>
+                  <span className="text-gray-500 dark:text-gray-400 truncate text-[12px]">{asset.company_name}</span>
+                  {asset.sector && (
+                    <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">{asset.sector}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* No results message */}
+          {search.length >= 2 && results.length === 0 && (
+            <div className="absolute left-0 top-full mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-50 px-3 py-3 text-[12px] text-gray-400 dark:text-gray-500">
+              No assets found for &ldquo;{search}&rdquo;
+            </div>
+          )}
+        </div>
+      </td>
+      {/* Empty cells for remaining columns */}
+      <td colSpan={COL_COUNT - 2} className="px-2 py-1.5">
+        <span className="text-[11px] text-gray-400 dark:text-gray-500 italic">Type to search...</span>
+      </td>
+    </tr>
+  )
+}
+
+// =============================================================================
 // SORT ICON
 // =============================================================================
 
@@ -483,7 +589,7 @@ function SortIcon({ dir, className }: { dir: SortDir; className?: string }) {
 // SUMMARY PANEL (bottom bar, expandable)
 // =============================================================================
 
-function SummaryPanel({ summary, tradedRows, onAddTrade, onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet }: {
+function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet }: {
   summary: SimulationRowSummary
   tradedRows: SimulationRow[]
   onAddTrade: () => void
@@ -500,7 +606,7 @@ function SummaryPanel({ summary, tradedRows, onAddTrade, onCreateTradeSheet, can
     <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
       {/* Summary bar */}
       <div className="flex items-center gap-4 px-3 py-2">
-        <button onClick={onAddTrade} tabIndex={-1}
+        <button onClick={onShowPhantom} tabIndex={-1}
           className="inline-flex items-center gap-1 text-[11px] text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-semibold transition-colors"
         ><Plus className="w-3 h-3" />Add Trade</button>
 
@@ -604,7 +710,8 @@ function SummaryPanel({ summary, tradedRows, onAddTrade, onCreateTradeSheet, can
 export function HoldingsSimulationTable({
   rows, tradedRows, untradedRows, newPositionRows, summary,
   portfolioTotalValue, hasBenchmark, priceMap,
-  onUpdateVariant, onDeleteVariant, onCreateVariant, onFixConflict, onAddTrade,
+  onUpdateVariant, onDeleteVariant, onCreateVariant, onFixConflict,
+  onAddAsset, assetSearchResults, onAssetSearchChange,
   onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet,
   groupBy: externalGroupBy, onGroupByChange, className = '',
 }: HoldingsSimulationTableProps) {
@@ -615,7 +722,33 @@ export function HoldingsSimulationTable({
   const [editing, setEditing] = useState(false)
   const [pendingEditAssetId, setPendingEditAssetId] = useState<string | null>(null)
   const [pendingEditCol, setPendingEditCol] = useState(COL.SIM_WT)
-  const [showHints, setShowHints] = useState(false)
+
+  // Popover state (conflicts + sizing help)
+  const [showConflictPopover, setShowConflictPopover] = useState(false)
+  const [showSizingHelp, setShowSizingHelp] = useState(false)
+  const conflictPopoverRef = useRef<HTMLDivElement>(null)
+  const sizingHelpRef = useRef<HTMLDivElement>(null)
+
+  // Close popovers on outside click
+  useEffect(() => {
+    if (!showConflictPopover && !showSizingHelp) return
+    const handler = (e: MouseEvent) => {
+      if (showConflictPopover && conflictPopoverRef.current && !conflictPopoverRef.current.contains(e.target as Node)) {
+        setShowConflictPopover(false)
+      }
+      if (showSizingHelp && sizingHelpRef.current && !sizingHelpRef.current.contains(e.target as Node)) {
+        setShowSizingHelp(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showConflictPopover, showSizingHelp])
+
+  // Phantom row state (inline asset search)
+  const [showPhantomRow, setShowPhantomRow] = useState(false)
+  const [phantomSearch, setPhantomSearch] = useState('')
+  const [phantomHighlight, setPhantomHighlight] = useState(0)
+  const phantomInputRef = useRef<HTMLInputElement>(null)
 
   // Sort state
   const [sortCol, setSortCol] = useState<ColKey | null>(null)
@@ -626,6 +759,39 @@ export function HoldingsSimulationTable({
 
   const containerRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
+
+  // Stable row order: preserve existing positions across refetches/cache churn.
+  // New rows append at end; removed rows are dropped. This prevents rows from
+  // jumping when the variant cache is replaced by a DB refetch.
+  const rowOrderRef = useRef<string[]>([])
+  const stableRows = useMemo(() => {
+    const knownOrder = rowOrderRef.current
+    const rowMap = new Map(rows.map(r => [r.asset_id, r]))
+
+    const result: SimulationRow[] = []
+    const seen = new Set<string>()
+
+    // Keep existing rows in their known order
+    for (const id of knownOrder) {
+      const row = rowMap.get(id)
+      if (row) {
+        result.push(row)
+        seen.add(id)
+      }
+    }
+
+    // Append new rows at end
+    for (const row of rows) {
+      if (!seen.has(row.asset_id)) {
+        result.push(row)
+      }
+    }
+
+    // Sync ref (benign side effect — ref update doesn't trigger re-render)
+    rowOrderRef.current = result.map(r => r.asset_id)
+
+    return result
+  }, [rows])
 
   const groupBy = externalGroupBy ?? internalGroupBy
   const handleGroupByChange = onGroupByChange ?? setInternalGroupBy
@@ -659,9 +825,12 @@ export function HoldingsSimulationTable({
     setFilters({})
   }, [])
 
-  // Pipeline: rows → filter → sort → group
+  // Pipeline: stableRows → filter → sort → group
+  // Rows with direction conflicts (for popover)
+  const conflictRows = useMemo(() => rows.filter(r => r.hasConflict), [rows])
+
   const processedRows = useMemo(() => {
-    let result = rows
+    let result = stableRows
 
     // Apply filters
     const activeFilters = Object.entries(filters).filter(([, v]) => v && v.length > 0) as [ColKey, string][]
@@ -688,7 +857,7 @@ export function HoldingsSimulationTable({
     }
 
     return result
-  }, [rows, filters, sortCol, sortDir])
+  }, [stableRows, filters, sortCol, sortDir])
 
   // Display rows: apply grouping/collapse to processedRows
   const displayRows = useMemo(() => {
@@ -731,14 +900,6 @@ export function HoldingsSimulationTable({
   useEffect(() => {
     if (focusRow >= 0) rowRefs.current.get(focusRow)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [focusRow])
-
-  useEffect(() => {
-    if (focusRow >= 0 && !showHints) {
-      setShowHints(true)
-      const t = setTimeout(() => setShowHints(false), 4000)
-      return () => clearTimeout(t)
-    }
-  }, [focusRow >= 0]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tracks whether the last edit was committed with a non-empty value.
   // When true, cleanupEmptyVariant skips deletion (the server update is in flight).
@@ -840,6 +1001,52 @@ export function HoldingsSimulationTable({
     setEditing(false)
   }, [])
 
+  const handleShowPhantom = useCallback(() => {
+    if (showPhantomRow) {
+      // Already showing — refocus the input
+      phantomInputRef.current?.focus()
+      return
+    }
+    setPhantomSearch('')
+    setPhantomHighlight(0)
+    setShowPhantomRow(true)
+    onAssetSearchChange?.('')
+  }, [showPhantomRow, onAssetSearchChange])
+
+  const handlePhantomSelect = useCallback((asset: { id: string; symbol: string; company_name: string; sector: string | null }) => {
+    // Check if asset already exists in displayRows
+    const existingIdx = displayRows.findIndex(r => r.asset_id === asset.id)
+    if (existingIdx >= 0) {
+      // Asset exists — navigate to it and open sizing
+      setFocusRow(existingIdx)
+      setFocusCol(COL.SIM_WT)
+      const row = displayRows[existingIdx]
+      if (row.variant) {
+        setEditing(true)
+      } else {
+        onCreateVariant(row.asset_id, 'add')
+        setPendingEditAssetId(row.asset_id)
+        setPendingEditCol(COL.SIM_WT)
+      }
+    } else {
+      // New asset — import it
+      onAddAsset(asset)
+      setPendingEditAssetId(asset.id)
+      setPendingEditCol(COL.SIM_WT)
+    }
+    setShowPhantomRow(false)
+    setPhantomSearch('')
+    onAssetSearchChange?.('')
+    // Re-focus the table container so keyboard nav works
+    containerRef.current?.focus()
+  }, [displayRows, onAddAsset, onCreateVariant, onAssetSearchChange])
+
+  const handlePhantomClose = useCallback(() => {
+    setShowPhantomRow(false)
+    setPhantomSearch('')
+    onAssetSearchChange?.('')
+  }, [onAssetSearchChange])
+
   // Footer totals computed from displayRows (respects filters)
   const totals = useMemo(() => {
     const src = displayRows
@@ -873,6 +1080,7 @@ export function HoldingsSimulationTable({
       onFocus={() => { if (focusRow < 0 && displayRows.length > 0) { setFocusRow(0); setFocusCol(0) } }}
       onBlur={(e) => {
         // Clean up when focus leaves the table entirely
+        // (but not when moving to phantom row input — that's still "in table")
         if (!e.currentTarget.contains(e.relatedTarget as Node)) {
           setPendingEditAssetId(null)
           if (focusRow >= 0) cleanupEmptyVariant(focusRow)
@@ -898,25 +1106,74 @@ export function HoldingsSimulationTable({
           ))}
         </div>
 
-        <div className={clsx(
-          'ml-auto text-[10px] text-gray-400 dark:text-gray-500 items-center gap-3 transition-opacity duration-500 hidden sm:flex',
-          showHints ? 'opacity-100' : 'opacity-0 pointer-events-none',
-        )}>
-          <span><kbd className="px-1 py-px rounded bg-gray-100 dark:bg-gray-800 font-mono text-[9px]">arrows</kbd> navigate</span>
-          <span><kbd className="px-1 py-px rounded bg-gray-100 dark:bg-gray-800 font-mono text-[9px]">enter</kbd> edit</span>
-          <span><kbd className="px-1 py-px rounded bg-gray-100 dark:bg-gray-800 font-mono text-[9px]">del</kbd> remove</span>
-        </div>
+        <div className="ml-auto" />
 
         {summary.tradedCount > 0 && (
-          <div className={clsx(
-            'text-[11px] font-medium tabular-nums px-2 py-0.5 rounded-full',
-            !showHints && 'ml-auto',
-            summary.conflictCount > 0
-              ? 'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400'
-              : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400',
-          )}>
-            {summary.tradedCount} trade{summary.tradedCount !== 1 ? 's' : ''}
-            {summary.conflictCount > 0 && ` · ${summary.conflictCount} conflict${summary.conflictCount !== 1 ? 's' : ''}`}
+          <div className="relative" ref={conflictPopoverRef}>
+            <button
+              onClick={() => summary.conflictCount > 0 && setShowConflictPopover(prev => !prev)}
+              className={clsx(
+                'text-[11px] font-medium tabular-nums px-2 py-0.5 rounded-full transition-colors',
+                summary.conflictCount > 0
+                  ? 'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 cursor-pointer'
+                  : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 cursor-default',
+              )}
+            >
+              {summary.tradedCount} trade{summary.tradedCount !== 1 ? 's' : ''}
+              {summary.conflictCount > 0 && (
+                <>
+                  {' · '}<AlertTriangle className="inline h-3 w-3 -mt-px" /> {summary.conflictCount} conflict{summary.conflictCount !== 1 ? 's' : ''}
+                </>
+              )}
+            </button>
+
+            {/* Conflict details popover */}
+            {showConflictPopover && conflictRows.length > 0 && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-red-200 dark:border-red-800/60 overflow-hidden">
+                <div className="px-3 py-2 border-b border-red-100 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20">
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Direction Conflicts
+                  </span>
+                </div>
+                <div className="max-h-64 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/50">
+                  {conflictRows.map(row => {
+                    const conflict = row.conflict
+                    return (
+                      <div key={row.asset_id} className="px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-750">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={clsx(
+                              'text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0',
+                              row.variant?.action === 'buy' || row.variant?.action === 'add'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+                            )}>
+                              {row.variant?.action || row.derivedAction}
+                            </span>
+                            <span className="font-semibold text-sm text-gray-900 dark:text-white">{row.symbol}</span>
+                          </div>
+                          {conflict?.suggested_direction && row.variant && (
+                            <button
+                              onClick={() => {
+                                onFixConflict(row.variant!.id, conflict.suggested_direction as TradeAction)
+                                setShowConflictPopover(false)
+                              }}
+                              className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                            >
+                              Fix → {(conflict.suggested_direction as string).toUpperCase()}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                          {conflict?.message || `${row.variant?.action?.toUpperCase()} action conflicts with computed ${row.deltaShares > 0 ? 'positive' : 'negative'} delta`}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -926,6 +1183,69 @@ export function HoldingsSimulationTable({
             {processedRows.length}/{rows.length}
           </span>
         )}
+
+        {/* Sizing input reference */}
+        <div className="relative" ref={sizingHelpRef}>
+          <button
+            onClick={() => setShowSizingHelp(prev => !prev)}
+            className={clsx(
+              'p-1 rounded-full transition-colors',
+              showSizingHelp
+                ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+            )}
+            title="Sizing input reference"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+
+          {showSizingHelp && (
+            <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Sizing Input Reference</span>
+              </div>
+              <div className="p-3 space-y-3 text-[11px]">
+                {/* Weight */}
+                <div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Weight %</div>
+                  <div className="space-y-0.5 text-gray-500 dark:text-gray-400 font-mono">
+                    <div className="flex justify-between"><span className="text-gray-900 dark:text-white">2.5</span><span>Target 2.5% weight</span></div>
+                    <div className="flex justify-between"><span className="text-emerald-600 dark:text-emerald-400">+0.5</span><span>Add 0.5% to current</span></div>
+                    <div className="flex justify-between"><span className="text-red-600 dark:text-red-400">-0.25</span><span>Reduce by 0.25%</span></div>
+                  </div>
+                </div>
+                {/* Shares */}
+                <div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Shares</div>
+                  <div className="space-y-0.5 text-gray-500 dark:text-gray-400 font-mono">
+                    <div className="flex justify-between"><span className="text-gray-900 dark:text-white">#500</span><span>Target 500 shares</span></div>
+                    <div className="flex justify-between"><span className="text-emerald-600 dark:text-emerald-400">#+100</span><span>Buy 100 more shares</span></div>
+                    <div className="flex justify-between"><span className="text-red-600 dark:text-red-400">#-50</span><span>Sell 50 shares</span></div>
+                  </div>
+                </div>
+                {/* Active weight */}
+                <div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Active Weight
+                    {!hasBenchmark && <span className="font-normal text-gray-400 dark:text-gray-500 ml-1">(needs benchmark)</span>}
+                  </div>
+                  <div className="space-y-0.5 text-gray-500 dark:text-gray-400 font-mono">
+                    <div className="flex justify-between"><span className="text-gray-900 dark:text-white">@t0.5</span><span>Target 0.5% active</span></div>
+                    <div className="flex justify-between"><span className="text-emerald-600 dark:text-emerald-400">@d+0.25</span><span>Add 0.25% active</span></div>
+                    <div className="flex justify-between"><span className="text-red-600 dark:text-red-400">@d-0.25</span><span>Reduce 0.25% active</span></div>
+                  </div>
+                </div>
+                {/* Special */}
+                <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
+                  <div className="space-y-0.5 text-gray-500 dark:text-gray-400 font-mono">
+                    <div className="flex justify-between"><span className="text-gray-900 dark:text-white">0</span><span>Exit position (sell all)</span></div>
+                    <div className="flex justify-between"><span className="text-gray-900 dark:text-white">#0</span><span>Exit position (sell all)</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -1004,7 +1324,7 @@ export function HoldingsSimulationTable({
           </thead>
 
           <tbody>
-            {displayRows.length === 0 && rows.length === 0 ? (
+            {displayRows.length === 0 && rows.length === 0 && !showPhantomRow ? (
               <tr>
                 <td colSpan={COL_COUNT} className="px-4 py-20 text-center">
                   <div className="flex flex-col items-center gap-4">
@@ -1015,13 +1335,13 @@ export function HoldingsSimulationTable({
                       <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No holdings yet</p>
                       <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Add a trade to start building your simulation</p>
                     </div>
-                    <button onClick={onAddTrade}
+                    <button onClick={handleShowPhantom}
                       className="text-[13px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 px-4 py-1.5 rounded-full border border-primary-200 dark:border-primary-800 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
                     >+ Add a trade</button>
                   </div>
                 </td>
               </tr>
-            ) : displayRows.length === 0 && rows.length > 0 ? (
+            ) : displayRows.length === 0 && rows.length > 0 && !showPhantomRow ? (
               <tr>
                 <td colSpan={COL_COUNT} className="px-4 py-12 text-center">
                   <p className="text-sm text-gray-400 dark:text-gray-500">No results match your filters</p>
@@ -1041,6 +1361,20 @@ export function HoldingsSimulationTable({
                   ))
                 })() : displayRows.map((row, idx) => renderRow(row, idx))}
               </>
+            )}
+
+            {/* Phantom row for inline asset search */}
+            {showPhantomRow && (
+              <PhantomRow
+                search={phantomSearch}
+                onSearchChange={(v) => { setPhantomSearch(v); onAssetSearchChange?.(v) }}
+                results={assetSearchResults || []}
+                highlightIndex={phantomHighlight}
+                onHighlightChange={setPhantomHighlight}
+                onSelect={handlePhantomSelect}
+                onClose={handlePhantomClose}
+                inputRef={phantomInputRef}
+              />
             )}
           </tbody>
 
@@ -1088,7 +1422,7 @@ export function HoldingsSimulationTable({
         <SummaryPanel
           summary={summary}
           tradedRows={tradedRows}
-          onAddTrade={onAddTrade}
+          onAddTrade={handleShowPhantom}
           onCreateTradeSheet={onCreateTradeSheet}
           canCreateTradeSheet={canCreateTradeSheet}
           isCreatingTradeSheet={isCreatingTradeSheet}

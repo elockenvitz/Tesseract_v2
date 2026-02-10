@@ -66,6 +66,11 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
         ? variantService.getVariantsForLab({ labId, viewId })
         : Promise.resolve([]),
     enabled: !!labId,
+    // Prevent automatic background refetches from overwriting optimistic cache
+    // updates (temp variants, surgical setQueryData in mutation handlers).
+    // Data is kept fresh via setQueryData in create/update/delete onSuccess,
+    // and explicit invalidateQueries will still force refetches when needed.
+    staleTime: 30_000,
   })
 
   // Fetch conflict summary
@@ -144,6 +149,7 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
           notes: params.notes,
           sort_order: params.sortOrder,
         },
+        portfolioId,
         currentPosition: params.currentPosition,
         price: params.price,
         portfolioTotalValue: params.portfolioTotalValue,
@@ -153,8 +159,28 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
         context: buildActionContext(user, params.uiSource),
       })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['intent-variants', labId] })
+    onSuccess: (newVariant) => {
+      // Surgically replace the temp variant with the real one.
+      // A full invalidateQueries would trigger a refetch that wipes temp variants
+      // for OTHER assets whose imports are still in-flight, causing row flicker.
+      queryClient.setQueryData<IntentVariant[]>(
+        ['intent-variants', labId, viewId],
+        (old) => {
+          if (!old) return [newVariant]
+          // Carry over the asset join data from the temp variant — the raw DB
+          // insert returns without the assets join, so without this the row
+          // would briefly show "Unknown" for symbol/name.
+          const temp = old.find(v => v.asset_id === newVariant.asset_id && v.id.startsWith('temp-'))
+          const merged = temp
+            ? { ...newVariant, asset: (temp as any).asset }
+            : newVariant
+          const withoutTemp = old.filter(v =>
+            !(v.asset_id === newVariant.asset_id && v.id.startsWith('temp-'))
+            && v.id !== newVariant.id
+          )
+          return [...withoutTemp, merged]
+        }
+      )
       queryClient.invalidateQueries({ queryKey: ['intent-variants-conflicts', labId] })
     },
     onError: (error) => {
@@ -226,8 +252,16 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
       )
       return { previous }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['intent-variants', labId] })
+    onSuccess: (updatedVariant, params) => {
+      // Merge server response into cache (onMutate already applied optimistic update).
+      // Avoid invalidateQueries — a full refetch would wipe temp variants for
+      // other assets whose imports are still in-flight.
+      if (updatedVariant?.id) {
+        queryClient.setQueryData<IntentVariant[]>(
+          ['intent-variants', labId, viewId],
+          (old) => old?.map(v => v.id === updatedVariant.id ? { ...v, ...updatedVariant } : v) ?? []
+        )
+      }
       queryClient.invalidateQueries({ queryKey: ['intent-variants-conflicts', labId] })
     },
     onError: (error, _params, context) => {
@@ -262,7 +296,8 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['intent-variants', labId] })
+      // onMutate already removed the variant from cache. Don't invalidate the
+      // full variants query — a refetch would wipe temp variants for other assets.
       queryClient.invalidateQueries({ queryKey: ['intent-variants-conflicts', labId] })
     },
     onError: (error, _params, context) => {

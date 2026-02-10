@@ -1456,14 +1456,18 @@ export async function getUserProposalForTradeIdea(
  */
 export async function upsertProposal(
   input: CreateTradeProposalInput,
-  context: ActionContext
+  context: ActionContext,
+  /** Pass known existing proposal ID to skip the lookup query */
+  knownExistingId?: string | null
 ): Promise<TradeProposal> {
-  // Check if user already has an active proposal for this portfolio
-  const existing = await getUserProposalForTradeIdea(
-    input.trade_queue_item_id,
-    context.actorId,
-    input.portfolio_id
-  )
+  // Skip lookup if caller already knows whether a proposal exists
+  const existing = knownExistingId !== undefined
+    ? (knownExistingId ? { id: knownExistingId, proposal_type: 'analyst' as const } : null)
+    : await getUserProposalForTradeIdea(
+        input.trade_queue_item_id,
+        context.actorId,
+        input.portfolio_id
+      )
 
   if (existing) {
     // Update existing proposal
@@ -1486,21 +1490,17 @@ export async function upsertProposal(
       throw new Error(`Failed to update proposal: ${error.message}`)
     }
 
-    // Log event (non-blocking)
-    try {
-      await createTradeEvent({
-        trade_queue_item_id: input.trade_queue_item_id,
-        event_type: 'proposal_updated',
-        metadata: {
-          proposal_id: data.id,
-          portfolio_id: input.portfolio_id,
-          changes: { weight: input.weight, shares: input.shares },
-        },
+    // Log event (fire-and-forget — don't block the save)
+    createTradeEvent({
+      trade_queue_item_id: input.trade_queue_item_id,
+      event_type: 'proposal_updated',
+      metadata: {
         proposal_id: data.id,
-      }, context)
-    } catch (e) {
-      console.warn('Failed to log proposal_updated event:', e)
-    }
+        portfolio_id: input.portfolio_id,
+        changes: { weight: input.weight, shares: input.shares },
+      },
+      proposal_id: data.id,
+    }, context).catch(e => console.warn('Failed to log proposal_updated event:', e))
 
     return data as TradeProposal
   } else {
@@ -1527,23 +1527,19 @@ export async function upsertProposal(
       throw new Error(`Failed to create proposal: ${error.message}`)
     }
 
-    // Log event (non-blocking)
-    try {
-      await createTradeEvent({
-        trade_queue_item_id: input.trade_queue_item_id,
-        event_type: 'proposal_created',
-        metadata: {
-          proposal_id: data.id,
-          portfolio_id: input.portfolio_id,
-          weight: input.weight,
-          shares: input.shares,
-          proposal_type: input.proposal_type || 'analyst',
-        },
+    // Log event (fire-and-forget — don't block the save)
+    createTradeEvent({
+      trade_queue_item_id: input.trade_queue_item_id,
+      event_type: 'proposal_created',
+      metadata: {
         proposal_id: data.id,
-      }, context)
-    } catch (e) {
-      console.warn('Failed to log proposal_created event:', e)
-    }
+        portfolio_id: input.portfolio_id,
+        weight: input.weight,
+        shares: input.shares,
+        proposal_type: input.proposal_type || 'analyst',
+      },
+      proposal_id: data.id,
+    }, context).catch(e => console.warn('Failed to log proposal_created event:', e))
 
     return data as TradeProposal
   }

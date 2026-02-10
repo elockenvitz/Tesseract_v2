@@ -72,6 +72,7 @@ interface UseSimulationRowsOptions {
   baselineHoldings: BaselineHolding[]
   variants: IntentVariant[]
   priceMap: Record<string, number>
+  benchmarkWeightMap?: Record<string, number>
 }
 
 // =============================================================================
@@ -110,6 +111,7 @@ function quickEstimate(
   currentShares: number,
   price: number,
   totalValue: number,
+  assetBenchmarkWeight?: number | null,
 ): { weight: number; shares: number } | null {
   const s = input.trim()
   if (!s) return null
@@ -127,8 +129,32 @@ function quickEstimate(
     return { weight: targetWeight, shares: Math.round(targetShares) }
   }
 
-  // Active-weight: @t..., @d... — can't compute without benchmark, skip
-  if (s.startsWith('@')) return null
+  // Active-weight: @t (active target), @d (active delta)
+  if (s.startsWith('@')) {
+    if (assetBenchmarkWeight == null) return null
+    const bw = assetBenchmarkWeight
+    if (s.startsWith('@t')) {
+      const num = parseFloat(s.substring(2))
+      if (isNaN(num)) return null
+      // @t0.5 means target active weight of 0.5% → portfolio weight = benchmark + active
+      const targetWeight = bw + num
+      const targetShares = totalValue > 0 && price > 0
+        ? (targetWeight / 100) * totalValue / price
+        : currentShares
+      return { weight: targetWeight, shares: Math.round(targetShares) }
+    }
+    if (s.startsWith('@d')) {
+      const num = parseFloat(s.substring(2))
+      if (isNaN(num)) return null
+      // @d+0.25 means change active weight by 0.25% → change portfolio weight by same amount
+      const targetWeight = currentWeight + num
+      const targetShares = totalValue > 0 && price > 0
+        ? (targetWeight / 100) * totalValue / price
+        : currentShares
+      return { weight: targetWeight, shares: Math.round(targetShares) }
+    }
+    return null
+  }
 
   // Weight-based: 2.5, +0.5, -0.25
   const num = parseFloat(s.replace(/%/g, ''))
@@ -146,6 +172,7 @@ function getIntendedWeight(
   variant: IntentVariant | null,
   computed: ComputedValues | null,
   currentWeight: number,
+  assetBenchmarkWeight?: number | null,
 ): number {
   if (!variant) return currentWeight
   const spec = variant.sizing_spec as SizingSpec | null
@@ -154,6 +181,12 @@ function getIntendedWeight(
   if (spec) {
     if (spec.framework === 'weight_target') return spec.value
     if (spec.framework === 'weight_delta') return currentWeight + spec.value
+    if (spec.framework === 'active_target' && assetBenchmarkWeight != null) {
+      return assetBenchmarkWeight + spec.value
+    }
+    if (spec.framework === 'active_delta') {
+      return currentWeight + spec.value
+    }
   }
   if (computed) return computed.target_weight
   return currentWeight
@@ -167,6 +200,7 @@ export function useSimulationRows({
   baselineHoldings,
   variants,
   priceMap,
+  benchmarkWeightMap,
 }: UseSimulationRowsOptions) {
   return useMemo(() => {
     // Step 1: Build maps
@@ -187,17 +221,17 @@ export function useSimulationRows({
         ? (variant.direction_conflict as SizingValidationError | null)
         : null
 
-      // Benchmark / active weight from variant context
-      const benchWeight = variant?.active_weight_config?.benchmark_weight ?? null
+      // Benchmark / active weight: prefer benchmarkWeightMap, fall back to variant context
+      const benchWeight = benchmarkWeightMap?.[assetId] ?? variant?.active_weight_config?.benchmark_weight ?? null
       const activeWeight = benchWeight !== null ? holding.weight - benchWeight : null
 
       // Quick client-side estimate when computed is null but sizing_input exists
       const price = priceMap[assetId] || holding.price
       const est = !computed && variant?.sizing_input
-        ? quickEstimate(variant.sizing_input, holding.weight, holding.shares, price, totalValue)
+        ? quickEstimate(variant.sizing_input, holding.weight, holding.shares, price, totalValue, benchWeight)
         : null
 
-      const intendedWeight = est ? est.weight : getIntendedWeight(variant, computed, holding.weight)
+      const intendedWeight = est ? est.weight : getIntendedWeight(variant, computed, holding.weight, benchWeight)
       const simShares = est ? est.shares : (computed?.target_shares ?? holding.shares)
       const isRemoved = computed ? computed.target_shares === 0 : (est ? est.shares === 0 : false)
 
@@ -245,15 +279,15 @@ export function useSimulationRows({
       const conflict = variant.direction_conflict as SizingValidationError | null
       const asset = (variant as any).asset
 
-      const benchWeight = variant.active_weight_config?.benchmark_weight ?? null
+      const benchWeight = benchmarkWeightMap?.[assetId] ?? variant.active_weight_config?.benchmark_weight ?? null
       const activeWeight = benchWeight !== null ? 0 - benchWeight : null
 
       const price = priceMap[assetId] || 0
       const est = !computed && variant.sizing_input
-        ? quickEstimate(variant.sizing_input, 0, 0, price, totalValue)
+        ? quickEstimate(variant.sizing_input, 0, 0, price, totalValue, benchWeight)
         : null
 
-      const intendedWeight = est ? est.weight : getIntendedWeight(variant, computed, 0)
+      const intendedWeight = est ? est.weight : getIntendedWeight(variant, computed, 0, benchWeight)
       const simShares = est ? est.shares : (computed?.target_shares ?? 0)
 
       const dw = (computed || est) ? intendedWeight : 0
@@ -287,8 +321,10 @@ export function useSimulationRows({
       })
     })
 
-    // Step 4: Categorize rows and sort stably (no row jumping on edit)
-    // Baseline holdings stay in weight-desc order, new positions at bottom
+    // Step 4: Categorize rows — NO auto-sort so rows don't jump on add/edit.
+    // Baseline holdings keep their natural order (from stored simulation data),
+    // new positions append at the bottom in insertion order.
+    // User-controlled sort via column headers in HoldingsSimulationTable.
     const WEIGHT_THRESHOLD = 0.005  // half of 2-decimal display precision
     const SHARES_THRESHOLD = 0.5    // less than 1 share
 
@@ -296,7 +332,7 @@ export function useSimulationRows({
     const untradedRows: SimulationRow[] = []
     const newPositionRows: SimulationRow[] = []
     const baselineRows: SimulationRow[] = []
-    const allNewRows: SimulationRow[] = [] // All new positions for sort order (includes traded)
+    const allNewRows: SimulationRow[] = []
 
     rows.forEach(row => {
       const hasMeaningfulTrade = row.variant?.sizing_input &&
@@ -310,17 +346,12 @@ export function useSimulationRows({
         untradedRows.push(row)
       }
 
-      // Separate list for stable sort: baseline vs new
       if (row.isNew) {
         allNewRows.push(row)
       } else {
         baselineRows.push(row)
       }
     })
-
-    // Stable sort: baseline holdings by weight desc (position doesn't change when traded)
-    baselineRows.sort((a, b) => b.currentWeight - a.currentWeight)
-    allNewRows.sort((a, b) => Math.abs(b.deltaWeight) - Math.abs(a.deltaWeight))
 
     const sortedRows = [...baselineRows, ...allNewRows]
 
@@ -343,5 +374,5 @@ export function useSimulationRows({
       newPositionRows,
       summary,
     }
-  }, [baselineHoldings, variants, priceMap])
+  }, [baselineHoldings, variants, priceMap, benchmarkWeightMap])
 }

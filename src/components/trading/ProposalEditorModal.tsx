@@ -159,6 +159,7 @@ interface ProposalEditorModalProps {
   labId?: string | null
   portfolioId?: string  // Pre-selected portfolio (use this when context is clear)
   availablePortfolios?: PortfolioOption[]  // Available portfolios for dropdown
+  initialSizingInput?: string  // Pre-fill sizing from variant
   onSaved?: (proposal: TradeProposal) => void
 }
 
@@ -171,6 +172,7 @@ export function ProposalEditorModal({
   labId,
   portfolioId: preselectedPortfolioId,
   availablePortfolios = [],
+  initialSizingInput,
   onSaved,
 }: ProposalEditorModalProps) {
   const { user } = useAuth()
@@ -244,11 +246,11 @@ export function ProposalEditorModal({
       }
       setNotes(existingProposal.notes || '')
     } else {
-      // Reset to defaults
-      setSizingValue('')
+      // Pre-fill from variant sizing or reset to defaults
+      setSizingValue(initialSizingInput || '')
       setNotes('')
     }
-  }, [existingProposal])
+  }, [existingProposal, initialSizingInput])
 
   // Build action context
   const buildContext = (): ActionContext => ({
@@ -291,7 +293,7 @@ export function ProposalEditorModal({
 
       const context = buildContext()
 
-      // Save the proposal
+      // Save the proposal — pass known existing ID to skip redundant lookup
       const proposal = await upsertProposal(
         {
           trade_queue_item_id: tradeIdea.id,
@@ -309,7 +311,8 @@ export function ProposalEditorModal({
           },
           notes: notes || null,
         },
-        context
+        context,
+        existingProposal?.id ?? null
       )
 
       // Auto-advance: Only move to 'deciding' if:
@@ -332,27 +335,25 @@ export function ProposalEditorModal({
       })
 
       if (shouldAutoAdvance) {
-        console.log('🚀 Auto-advancing from modeling to deciding (owner/assignee proposal)')
-        await moveTradeIdea({
+        // Fire-and-forget: don't block the modal from closing
+        moveTradeIdea({
           tradeId: tradeIdea.id,
           target: { stage: 'deciding' },
           context: { ...context, requestId: crypto.randomUUID() },
           note: 'Auto-advanced to deciding after owner/assignee proposal submitted',
-        })
-      } else {
-        console.log('⏭️ Skipping auto-advance:', !isInModelingStage ? 'not in modeling stage' : 'user is not owner/assignee')
+        }).catch(e => console.warn('Auto-advance failed:', e))
       }
 
       return proposal
     },
     onSuccess: (proposal) => {
-      console.log('✅ Proposal saved successfully:', proposal)
+      // Close modal immediately for perceived speed, then invalidate in background
+      onSaved?.(proposal)
+      onClose()
       queryClient.invalidateQueries({ queryKey: ['proposal', tradeIdea.id] })
       queryClient.invalidateQueries({ queryKey: ['trade-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] }) // SimulationPage uses this key
-      onSaved?.(proposal)
-      onClose()
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
     },
     onError: (error) => {
       console.error('❌ Failed to save proposal:', error)

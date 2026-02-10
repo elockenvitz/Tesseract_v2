@@ -75,6 +75,8 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { useToast } from '../components/common/Toast'
 import { useTradePlans as useTradeLists, usePlanStats as useListStats, useWorkbench } from '../hooks/useTradeLab'
 import type { TradePlanWithDetails as TradeListWithDetails } from '../lib/services/trade-plan-service'
+import { upsertProposal, requestAnalystInput } from '../lib/services/trade-lab-service'
+import { moveTradeIdea } from '../lib/services/trade-idea-service'
 import { parseSizingInput, toSizingSpec, type SizingSpec } from '../lib/trade-lab/sizing-parser'
 import { detectDirectionConflict } from '../lib/trade-lab/normalize-sizing'
 import { ConflictBadgeV3 } from '../components/trading/VariantStatusBadges'
@@ -85,7 +87,7 @@ import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../co
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
 import { useIntentVariants } from '../hooks/useIntentVariants'
 import { useSimulationRows } from '../hooks/useSimulationRows'
-import type { SizingValidationError, AssetPrice } from '../types/trading'
+import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -372,16 +374,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const lastAutoCreatePortfolioRef = useRef<string | null>(null)
   const [isAutoCreating, setIsAutoCreating] = useState(false)
 
-  // Quick trade state (for adding sandbox trades directly)
-  const [showQuickTrade, setShowQuickTrade] = useState(false)
-  const [quickTradeSearch, setQuickTradeSearch] = useState('')
-  const [quickTradeAsset, setQuickTradeAsset] = useState<{ id: string; symbol: string; company_name: string; sector: string | null } | null>(null)
-  const [quickTradeAction, setQuickTradeAction] = useState<TradeAction>('buy')
-  const [quickTradeShares, setQuickTradeShares] = useState('')
-  const [quickTradeWeight, setQuickTradeWeight] = useState('')
+  // Phantom row asset search (inline Add Trade in HoldingsSimulationTable)
+  const [phantomAssetSearch, setPhantomAssetSearch] = useState('')
 
   // Track expanded trade idea cards
   const [expandedTradeIds, setExpandedTradeIds] = useState<Set<string>>(new Set())
+
+  // Left pane search and filter
+  const [leftPaneSearch, setLeftPaneSearch] = useState('')
+  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling'>('all')
 
   // Track which proposals have been applied to the simulation
   const [appliedProposalIds, setAppliedProposalIds] = useState<Set<string>>(new Set())
@@ -399,6 +400,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Track in-flight imports so handleRemoveAsset knows whether to fire removal
   // directly or let importTradeMutation.onSuccess handle it.
   const importsInFlightRef = useRef<Set<string>>(new Set())
+
+  // Track in-flight convergence removals to prevent the convergence effect from
+  // re-firing removals that are already pending.
+  const convergenceRemovalsInFlightRef = useRef<Set<string>>(new Set())
 
   // Pending sizing edits made on temp variants. When the real variant arrives
   // (in importTradeMutation.onSuccess), the pending sizing overrides the trade idea's default.
@@ -716,7 +721,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           users:created_by (id, email, first_name, last_name)
         `)
         .eq('visibility_tier', 'active')
-        .in('status', ['idea', 'discussing', 'simulating'])
+        .in('status', ['idea', 'discussing', 'simulating', 'deciding'])
         .or(`portfolio_id.eq.${selectedPortfolioId}${linkedIdeaIds.length > 0 ? `,id.in.(${linkedIdeaIds.join(',')})` : ''}`)
         .order('priority', { ascending: false })
 
@@ -773,6 +778,23 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     staleTime: 30000,
   })
 
+  // Check if current user is PM for this portfolio
+  const { data: isCurrentUserPM } = useQuery({
+    queryKey: ['user-is-pm', user?.id, selectedPortfolioId],
+    queryFn: async () => {
+      if (!user?.id || !selectedPortfolioId) return false
+      const { data } = await supabase
+        .from('portfolio_team')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('portfolio_id', selectedPortfolioId)
+        .maybeSingle()
+      return data?.role === 'Portfolio Manager'
+    },
+    enabled: !!user?.id && !!selectedPortfolioId,
+    staleTime: 60000,
+  })
+
   // Fetch trade lists for the selected portfolio
   const { plans: lists, isLoading: listsLoading } = useTradeLists({
     portfolioId: selectedPortfolioId || undefined,
@@ -816,6 +838,36 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     portfolioId: selectedPortfolioId,
   })
 
+  // Hydrate appliedProposalIds + proposalAddedAssetIds from DB on mount/refresh.
+  // Cross-references simulation_trades (by trade_queue_item_id) with activeProposals
+  // so proposal checkboxes reflect what's already in the simulation.
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (hydratedRef.current) return
+    if (!simulation?.simulation_trades?.length || !activeProposals?.length) return
+    hydratedRef.current = true
+
+    const tradeItemIds = new Set(
+      simulation.simulation_trades.map((t: any) => t.trade_queue_item_id).filter(Boolean)
+    )
+
+    const proposalIds = new Set<string>()
+    const assetIds = new Set<string>()
+
+    for (const proposal of activeProposals) {
+      if (tradeItemIds.has(proposal.trade_queue_item_id)) {
+        proposalIds.add(proposal.id)
+        const assetId = (proposal.trade_queue_items as any)?.assets?.id
+        if (assetId) assetIds.add(assetId)
+      }
+    }
+
+    if (proposalIds.size > 0) {
+      setAppliedProposalIds(proposalIds)
+      setProposalAddedAssetIds(assetIds)
+    }
+  }, [simulation?.simulation_trades, activeProposals])
+
   // Handler for fixing conflicts via one-click action change
   const handleFixConflict = async (variantId: string, suggestedAction: string) => {
     if (variantId.startsWith('temp-')) return
@@ -837,7 +889,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       price,
       portfolioTotalValue: simulation?.baseline_total_value || 0,
       roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-      hasBenchmark: false,
+      activeWeightConfig: getActiveWeightConfig(variant.asset_id),
+      hasBenchmark,
     })
   }
 
@@ -845,6 +898,191 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const handleCreateTradeSheet = async (name: string, description?: string) => {
     await v3CreateTradeSheet({ name, description })
   }
+
+  // PM decision mutation for proposals (Accept/Reject/Defer)
+  const proposalDecisionMutation = useMutation({
+    mutationFn: async ({
+      proposalId,
+      decision,
+      reason
+    }: {
+      proposalId: string
+      decision: 'accept' | 'reject' | 'defer'
+      reason?: string
+    }) => {
+      const { data: proposal, error: fetchError } = await supabase
+        .from('trade_proposals')
+        .select('id, trade_queue_item_id, portfolio_id, weight, shares, user_id')
+        .eq('id', proposalId)
+        .single()
+
+      if (fetchError || !proposal) throw fetchError || new Error('Proposal not found')
+
+      if (decision === 'accept') {
+        const { error: trackError } = await supabase
+          .from('trade_idea_portfolios')
+          .upsert({
+            trade_queue_item_id: proposal.trade_queue_item_id,
+            portfolio_id: proposal.portfolio_id,
+            decision_outcome: 'accepted',
+            decision_reason: reason || null,
+            accepted_weight: proposal.weight,
+            accepted_shares: proposal.shares,
+            decided_by: user?.id,
+            decided_at: new Date().toISOString(),
+          }, { onConflict: 'trade_queue_item_id,portfolio_id' })
+        if (trackError) throw trackError
+
+        // Check if all portfolio tracks are decided
+        const { data: allTracks } = await supabase
+          .from('trade_idea_portfolios')
+          .select('decision_outcome')
+          .eq('trade_queue_item_id', proposal.trade_queue_item_id)
+
+        const allDecided = allTracks?.every(t => t.decision_outcome !== null)
+        const anyAccepted = allTracks?.some(t => t.decision_outcome === 'accepted')
+        if (allDecided) {
+          const newStatus = anyAccepted ? 'approved' : 'rejected'
+          await supabase
+            .from('trade_queue_items')
+            .update({ status: newStatus, stage: newStatus, outcome: newStatus })
+            .eq('id', proposal.trade_queue_item_id)
+        }
+      } else if (decision === 'reject') {
+        const { error: trackError } = await supabase
+          .from('trade_idea_portfolios')
+          .upsert({
+            trade_queue_item_id: proposal.trade_queue_item_id,
+            portfolio_id: proposal.portfolio_id,
+            decision_outcome: 'rejected',
+            decision_reason: reason || null,
+            decided_by: user?.id,
+            decided_at: new Date().toISOString(),
+          }, { onConflict: 'trade_queue_item_id,portfolio_id' })
+        if (trackError) throw trackError
+
+        // Deactivate the proposal
+        await supabase
+          .from('trade_proposals')
+          .update({ is_active: false })
+          .eq('id', proposalId)
+      } else if (decision === 'defer') {
+        const { error: trackError } = await supabase
+          .from('trade_idea_portfolios')
+          .upsert({
+            trade_queue_item_id: proposal.trade_queue_item_id,
+            portfolio_id: proposal.portfolio_id,
+            decision_outcome: 'deferred',
+            decision_reason: reason || null,
+            decided_by: user?.id,
+            decided_at: new Date().toISOString(),
+          }, { onConflict: 'trade_queue_item_id,portfolio_id' })
+        if (trackError) throw trackError
+      }
+
+      return { proposalId, decision }
+    },
+    onSuccess: (_data, { proposalId, decision }) => {
+      // Optimistically remove rejected proposals from cache for instant dedup
+      if (decision === 'reject') {
+        queryClient.setQueryData<any[]>(
+          ['trade-lab-proposals', selectedPortfolioId],
+          (old) => old?.filter(p => p.id !== proposalId) ?? []
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals', selectedPortfolioId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas', selectedPortfolioId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      showToast({
+        type: 'success',
+        title: decision === 'accept' ? 'Proposal accepted' : decision === 'reject' ? 'Proposal rejected' : 'Proposal deferred',
+      })
+    },
+  })
+
+  // Fast-track mutation: PM creates pm_initiated proposal + requests analyst input + moves to deciding
+  const fastTrackMutation = useMutation({
+    mutationFn: async (idea: TradeQueueItemWithDetails) => {
+      if (!user?.id || !selectedPortfolioId) throw new Error('Missing user or portfolio')
+
+      const actionContext = {
+        actorId: user.id,
+        actorName: user.email || 'Unknown',
+        actorEmail: user.email,
+        actorRole: 'pm' as const,
+        requestId: crypto.randomUUID(),
+      }
+
+      // Get current variant sizing if the idea is checked
+      const variant = intentVariants.find(v => v.asset_id === idea.asset_id)
+
+      // Create PM-initiated proposal
+      const proposal = await upsertProposal({
+        trade_queue_item_id: idea.id,
+        portfolio_id: selectedPortfolioId,
+        lab_id: tradeLab?.id || null,
+        weight: variant?.computed?.target_weight ?? null,
+        shares: variant?.computed?.target_shares ?? null,
+        sizing_mode: variant?.sizing_spec?.framework as any ?? null,
+        sizing_context: variant?.sizing_input ? { input_value: variant.sizing_input } : {},
+        proposal_type: 'pm_initiated',
+      }, actionContext)
+
+      // Request analyst input
+      await requestAnalystInput(proposal.id, actionContext)
+
+      // Move to deciding if not already there
+      const stage = idea.stage || idea.status
+      if (stage !== 'deciding' && stage !== 'approved') {
+        await moveTradeIdea({
+          tradeId: idea.id,
+          target: { stage: 'deciding' as any },
+          context: actionContext,
+        })
+      }
+
+      return proposal
+    },
+    onSuccess: (proposal, idea) => {
+      // Optimistically add to proposals cache for instant dedup
+      if (proposal) {
+        queryClient.setQueryData<any[]>(
+          ['trade-lab-proposals', selectedPortfolioId],
+          (old) => {
+            const enriched = {
+              ...proposal,
+              users: user ? { id: user.id, email: user.email, first_name: (user as any).first_name, last_name: (user as any).last_name } : null,
+              trade_queue_items: {
+                id: idea.id,
+                action: idea.action,
+                rationale: idea.rationale,
+                status: 'deciding',
+                stage: 'deciding',
+                pair_id: idea.pair_id,
+                pair_leg_type: idea.pair_leg_type,
+                assets: idea.assets,
+              },
+            }
+            if (!old) return [enriched]
+            const idx = old.findIndex((p: any) => p.trade_queue_item_id === proposal.trade_queue_item_id)
+            if (idx >= 0) {
+              const next = [...old]
+              next[idx] = enriched
+              return next
+            }
+            return [...old, enriched]
+          }
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals', selectedPortfolioId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas', selectedPortfolioId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      showToast({ type: 'success', title: 'Fast-tracked — awaiting analyst sizing' })
+    },
+    onError: (err: any) => {
+      showToast({ type: 'error', title: 'Fast-track failed', description: err.message })
+    },
+  })
 
   // v3: Guard to prevent concurrent sync runs
   const syncingRef = useRef(false)
@@ -854,22 +1092,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     syncingRef.current = false
   }, [selectedSimulationId])
 
-  // Search assets for quick trade
-  const { data: quickTradeAssets } = useQuery({
-    queryKey: ['assets-search-quick', quickTradeSearch],
+  // Search assets for phantom row (inline Add Trade)
+  const { data: phantomAssetResults } = useQuery({
+    queryKey: ['assets-search-phantom', phantomAssetSearch],
     queryFn: async () => {
-      if (!quickTradeSearch || quickTradeSearch.length < 1) return []
+      if (!phantomAssetSearch || phantomAssetSearch.length < 1) return []
 
       const { data, error } = await supabase
         .from('assets')
         .select('id, symbol, company_name, sector')
-        .or(`symbol.ilike.%${quickTradeSearch}%,company_name.ilike.%${quickTradeSearch}%`)
+        .or(`symbol.ilike.%${phantomAssetSearch}%,company_name.ilike.%${phantomAssetSearch}%`)
         .limit(8)
 
       if (error) throw error
       return data
     },
-    enabled: showQuickTrade && quickTradeSearch.length >= 1,
+    enabled: phantomAssetSearch.length >= 1,
   })
 
   // Fetch current prices for all assets in the simulation (for live calculations)
@@ -914,11 +1152,44 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     refetchInterval: 60000, // Refetch every minute for updated prices
   })
 
+  // Fetch benchmark weights for the selected portfolio
+  const { data: benchmarkWeightMap } = useQuery({
+    queryKey: ['benchmark-weights', selectedPortfolioId],
+    queryFn: async () => {
+      if (!selectedPortfolioId) return {}
+      const { data, error } = await supabase
+        .from('portfolio_benchmark_weights')
+        .select('asset_id, weight')
+        .eq('portfolio_id', selectedPortfolioId)
+      if (error) throw error
+      const map: Record<string, number> = {}
+      data?.forEach(row => { map[row.asset_id] = Number(row.weight) })
+      return map
+    },
+    enabled: !!selectedPortfolioId,
+    staleTime: 300000, // Cache for 5 minutes
+  })
+
+  const hasBenchmark = useMemo(
+    () => !!benchmarkWeightMap && Object.keys(benchmarkWeightMap).length > 0,
+    [benchmarkWeightMap],
+  )
+
+  const getActiveWeightConfig = useCallback(
+    (assetId: string) => {
+      const bw = benchmarkWeightMap?.[assetId]
+      if (bw == null) return null
+      return { source: 'portfolio_benchmark' as const, benchmark_weight: bw }
+    },
+    [benchmarkWeightMap],
+  )
+
   // Merge baseline + variants into simulation rows for the table
   const simulationRows = useSimulationRows({
     baselineHoldings: simulation?.baseline_holdings as BaselineHolding[] || [],
     variants: intentVariants,
     priceMap: priceMap || {},
+    benchmarkWeightMap: benchmarkWeightMap || {},
   })
 
   // Handler for creating a variant from an untraded holding row
@@ -946,13 +1217,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       },
       portfolioTotalValue: simulation.baseline_total_value || 0,
       roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-      hasBenchmark: false,
+      activeWeightConfig: getActiveWeightConfig(assetId),
+      hasBenchmark,
     })
-  }, [simulation, priceMap, v3CreateVariant])
+  }, [simulation, priceMap, v3CreateVariant, getActiveWeightConfig, hasBenchmark])
 
-  // v3: Sync simulation_trades → lab_variants on load and when real (non-temp) trades change.
-  // Only syncs persisted trades that don't have a matching variant.
-  // Optimistic temp trades (id starts with "temp-") are skipped — the import mutation handles those.
+  // v3: Bidirectional sync between simulation_trades and lab_variants on load.
+  // Forward: creates variants for trades that don't have one.
+  // Reverse: deletes orphaned variants whose asset has no simulation_trade.
+  // Optimistic temp trades/variants (id starts with "temp-") are skipped.
   const realTradeIds = useMemo(() => {
     if (!simulation?.simulation_trades?.length) return ''
     return simulation.simulation_trades
@@ -965,63 +1238,84 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   useEffect(() => {
     const syncVariants = async () => {
       if (
-        !simulation?.simulation_trades?.length ||
         !tradeLab?.id ||
         !priceMap ||
         v3Loading ||
-        syncingRef.current
+        syncingRef.current ||
+        importsInFlightRef.current.size > 0
       ) {
         return
       }
 
-      // Only consider persisted (non-temp) trades
-      const persistedTrades = simulation.simulation_trades.filter(t => !t.id.startsWith('temp-'))
+      const persistedTrades = (simulation?.simulation_trades || []).filter(t => !t.id.startsWith('temp-'))
+      const tradeAssetIds = new Set(persistedTrades.map(t => t.asset_id))
       const variantAssetIds = new Set(intentVariants.map(v => v.asset_id))
+
+      // Forward: trades without variants
       const unsyncedTrades = persistedTrades.filter(
         t => !variantAssetIds.has(t.asset_id) && checkboxOverridesRef.current.get(t.asset_id) !== false
       )
 
-      if (unsyncedTrades.length === 0) return
+      // Reverse: variants without trades (orphaned) — only non-temp, non-baseline-only variants
+      const orphanedVariants = intentVariants.filter(
+        v => !v.id.startsWith('temp-') && !tradeAssetIds.has(v.asset_id)
+          && checkboxOverridesRef.current.get(v.asset_id) !== true
+      )
+
+      if (unsyncedTrades.length === 0 && orphanedVariants.length === 0) return
 
       syncingRef.current = true
-      const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
 
-      for (const trade of unsyncedTrades) {
+      // Clean up orphaned variants
+      for (const variant of orphanedVariants) {
         try {
-          const currentHolding = baselineHoldings.find(h => h.asset_id === trade.asset_id)
-          const currentPosition = currentHolding ? {
-            shares: currentHolding.shares,
-            weight: currentHolding.weight,
-            cost_basis: null,
-            active_weight: null,
-          } : null
-
-          const tradePrice = priceMap[trade.asset_id] || trade.price || 100
-          const sizingInput = trade.weight != null
-            ? String(trade.weight)
-            : trade.shares != null
-              ? `#${trade.shares}`
-              : ''
-
-          await v3CreateVariantAsync({
-            assetId: trade.asset_id,
-            action: trade.action as any,
-            sizingInput,
-            tradeQueueItemId: trade.trade_queue_item_id,
-            currentPosition,
-            price: {
-              asset_id: trade.asset_id,
-              price: tradePrice,
-              timestamp: new Date().toISOString(),
-              source: 'realtime',
-            },
-            portfolioTotalValue: simulation.baseline_total_value || 0,
-            roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-            hasBenchmark: false,
-            uiSource: 'simulation_page',
-          })
+          v3DeleteVariant({ variantId: variant.id })
         } catch (err) {
-          console.warn('⚠️ Failed to sync trade to variant:', err)
+          console.warn('⚠️ Failed to clean up orphaned variant:', err)
+        }
+      }
+
+      // Create missing variants
+      if (unsyncedTrades.length > 0 && simulation) {
+        const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+        for (const trade of unsyncedTrades) {
+          try {
+            const currentHolding = baselineHoldings.find(h => h.asset_id === trade.asset_id)
+            const currentPosition = currentHolding ? {
+              shares: currentHolding.shares,
+              weight: currentHolding.weight,
+              cost_basis: null,
+              active_weight: null,
+            } : null
+
+            const tradePrice = priceMap[trade.asset_id] || trade.price || 100
+            const sizingInput = trade.weight != null
+              ? String(trade.weight)
+              : trade.shares != null
+                ? `#${trade.shares}`
+                : ''
+
+            await v3CreateVariantAsync({
+              assetId: trade.asset_id,
+              action: trade.action as any,
+              sizingInput,
+              tradeQueueItemId: trade.trade_queue_item_id,
+              currentPosition,
+              price: {
+                asset_id: trade.asset_id,
+                price: tradePrice,
+                timestamp: new Date().toISOString(),
+                source: 'realtime',
+              },
+              portfolioTotalValue: simulation.baseline_total_value || 0,
+              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+              activeWeightConfig: getActiveWeightConfig(trade.asset_id),
+              hasBenchmark,
+              uiSource: 'simulation_page',
+            })
+          } catch (err) {
+            console.warn('⚠️ Failed to sync trade to variant:', err)
+          }
         }
       }
 
@@ -1029,7 +1323,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
 
     syncVariants()
-  }, [realTradeIds, tradeLab?.id, priceMap, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, simulation?.simulation_trades])
+  }, [realTradeIds, tradeLab?.id, priceMap, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, v3DeleteVariant, simulation?.simulation_trades, getActiveWeightConfig, hasBenchmark])
 
   // Create simulation mutation
   const createSimulationMutation = useMutation({
@@ -1122,116 +1416,133 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return data
     },
     onSuccess: async (data, tradeIdea) => {
-      // Check override AFTER the import completes — this is the definitive moment
-      if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
-        // User toggled OFF while import was in-flight — undo immediately
-        removeTradeMutation.mutate({ tradeId: data.id, assetId: tradeIdea.asset_id })
-        if (tradeLab?.id) {
-          queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
-          queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
-            old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
-          )
+      try {
+        // Check override AFTER the import completes — this is the definitive moment
+        if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
+          // User toggled OFF while import was in-flight — undo immediately
+          removeTradeMutation.mutate({ tradeId: data.id, assetId: tradeIdea.asset_id })
+          if (tradeLab?.id) {
+            queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+            queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
+              old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
+            )
+          }
+          return
         }
-        return
-      }
 
-      // User still wants this trade — sync lab_variant
-      if (tradeLab?.id && simulation) {
-        try {
-          const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
-          const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
-          const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
-          const currentPosition = currentHolding ? {
-            shares: currentHolding.shares,
-            weight: currentHolding.weight,
-            cost_basis: null,
-            active_weight: null,
-          } : null
+        // User still wants this trade — sync lab_variant
+        if (tradeLab?.id && simulation) {
+          try {
+            const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
+            const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+            const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
+            const currentPosition = currentHolding ? {
+              shares: currentHolding.shares,
+              weight: currentHolding.weight,
+              cost_basis: null,
+              active_weight: null,
+            } : null
 
-          // Use pending sizing from user edit (if they typed into the temp variant),
-          // otherwise fall back to the trade idea's proposed sizing.
-          const pendingSizing = pendingSizingRef.current.get(tradeIdea.asset_id)
-          pendingSizingRef.current.delete(tradeIdea.asset_id)
-          const sizingInput = pendingSizing
-            ?? (tradeIdea.proposed_weight != null
-              ? String(tradeIdea.proposed_weight)
-              : tradeIdea.proposed_shares != null
-                ? `#${tradeIdea.proposed_shares}`
-                : '')
+            // Use pending sizing from user edit (if they typed into the temp variant),
+            // otherwise fall back to the trade idea's proposed sizing.
+            const pendingSizing = pendingSizingRef.current.get(tradeIdea.asset_id)
+            pendingSizingRef.current.delete(tradeIdea.asset_id)
+            const sizingInput = pendingSizing
+              ?? (tradeIdea.proposed_weight != null
+                ? String(tradeIdea.proposed_weight)
+                : tradeIdea.proposed_shares != null
+                  ? `#${tradeIdea.proposed_shares}`
+                  : '')
 
-          const existingVariant = intentVariants.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
-          const assetPrice = { asset_id: tradeIdea.asset_id, price, timestamp: new Date().toISOString(), source: 'realtime' as const }
+            const existingVariant = intentVariants.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
+            const assetPrice = { asset_id: tradeIdea.asset_id, price, timestamp: new Date().toISOString(), source: 'realtime' as const }
 
-          if (existingVariant) {
-            v3UpdateVariant({
-              variantId: existingVariant.id,
-              updates: { action: tradeIdea.action, sizingInput },
-              currentPosition,
-              price: assetPrice,
-              portfolioTotalValue: simulation.baseline_total_value || 0,
-              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-              hasBenchmark: false,
-            })
-          } else {
-            // Re-check override right before creating (narrow race window)
-            if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) return
-            const createdVariant = await v3CreateVariantAsync({
-              assetId: tradeIdea.asset_id,
-              action: tradeIdea.action,
-              sizingInput,
-              tradeQueueItemId: tradeIdea.id,
-              currentPosition,
-              price: assetPrice,
-              portfolioTotalValue: simulation.baseline_total_value || 0,
-              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-              hasBenchmark: false,
-              uiSource: 'simulation_page',
-            })
-
-            // If user typed sizing while we were creating the variant (editing the
-            // temp placeholder), the pending sizing wasn't used above because it
-            // didn't exist yet. Pick it up now and fire a follow-up update so the
-            // real variant gets the user's intended value.
-            const laterPending = pendingSizingRef.current.get(tradeIdea.asset_id)
-            if (laterPending !== undefined && createdVariant?.id) {
-              pendingSizingRef.current.delete(tradeIdea.asset_id)
-              queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
-              queryClient.setQueryData<IntentVariant[]>(
-                ['intent-variants', tradeLab.id, null] as any,
-                (old) => old?.map(v =>
-                  v.id === createdVariant.id
-                    ? { ...v, sizing_input: laterPending, sizing_spec: null, computed: null }
-                    : v.id === `temp-${tradeIdea.asset_id}` ? null! : v
-                ).filter(Boolean) ?? []
-              )
+            if (existingVariant) {
               v3UpdateVariant({
-                variantId: createdVariant.id,
-                updates: { sizingInput: laterPending },
+                variantId: existingVariant.id,
+                updates: { action: tradeIdea.action, sizingInput },
                 currentPosition,
                 price: assetPrice,
                 portfolioTotalValue: simulation.baseline_total_value || 0,
                 roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-                hasBenchmark: false,
+                activeWeightConfig: getActiveWeightConfig(tradeIdea.asset_id),
+                hasBenchmark,
               })
-            }
+            } else {
+              // Re-check override right before creating (narrow race window)
+              if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) return
+              const createdVariant = await v3CreateVariantAsync({
+                assetId: tradeIdea.asset_id,
+                action: tradeIdea.action,
+                sizingInput,
+                tradeQueueItemId: tradeIdea.id,
+                currentPosition,
+                price: assetPrice,
+                portfolioTotalValue: simulation.baseline_total_value || 0,
+                roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+                activeWeightConfig: getActiveWeightConfig(tradeIdea.asset_id),
+                hasBenchmark,
+                uiSource: 'simulation_page',
+              })
 
-            // Post-creation guard: if user toggled off during await, clean up immediately
-            if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
-              queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
-              queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
-                old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
-              )
-              const cached = queryClient.getQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any) || []
-              const created = cached.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
-              if (created) v3DeleteVariant({ variantId: created.id })
+              // If user typed sizing while we were creating the variant (editing the
+              // temp placeholder), the pending sizing wasn't used above because it
+              // didn't exist yet. Pick it up now and fire a follow-up update so the
+              // real variant gets the user's intended value.
+              const laterPending = pendingSizingRef.current.get(tradeIdea.asset_id)
+              if (laterPending !== undefined && createdVariant?.id) {
+                pendingSizingRef.current.delete(tradeIdea.asset_id)
+                queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+                queryClient.setQueryData<IntentVariant[]>(
+                  ['intent-variants', tradeLab.id, null] as any,
+                  (old) => old?.map(v =>
+                    v.id === createdVariant.id
+                      ? { ...v, sizing_input: laterPending, sizing_spec: null, computed: null }
+                      : v.id === `temp-${tradeIdea.asset_id}` ? null! : v
+                  ).filter(Boolean) ?? []
+                )
+                v3UpdateVariant({
+                  variantId: createdVariant.id,
+                  updates: { sizingInput: laterPending },
+                  currentPosition,
+                  price: assetPrice,
+                  portfolioTotalValue: simulation.baseline_total_value || 0,
+                  roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+                  activeWeightConfig: getActiveWeightConfig(tradeIdea.asset_id),
+                  hasBenchmark,
+                })
+              }
+
+              // Post-creation guard: if user toggled off during await, clean up immediately
+              if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
+                queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+                queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
+                  old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
+                )
+                const cached = queryClient.getQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any) || []
+                const created = cached.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
+                if (created) v3DeleteVariant({ variantId: created.id })
+              }
             }
+          } catch (variantError) {
+            console.warn('⚠️ Failed to sync lab variant (non-blocking):', variantError)
           }
-        } catch (variantError) {
-          console.warn('⚠️ Failed to sync lab variant (non-blocking):', variantError)
         }
+      } finally {
+        // Clear in-flight flag AFTER all async variant work completes.
+        // This prevents the sync effect from racing with this import flow.
+        importsInFlightRef.current.delete(tradeIdea.asset_id)
+        // Invalidate AFTER in-flight flag is cleared so the convergence effect
+        // sees both the fresh trade AND the cleared flag in the same render.
+        // (React Query v5 fires onSettled before async onSuccess completes,
+        // so placing this in onSettled caused a race: the refetch would trigger
+        // the convergence effect while variant creation was still pending.)
+        queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       }
     },
     onError: (_err, tradeIdea) => {
+      // Clear in-flight flag on error (onSuccess finally handles the success path)
+      importsInFlightRef.current.delete(tradeIdea.asset_id)
       // Only clear override if user still wants the add (hasn't toggled off)
       if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === true) {
         checkboxOverridesRef.current.delete(tradeIdea.asset_id)
@@ -1243,9 +1554,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
         )
       }
-    },
-    onSettled: (_data, _error, tradeIdea) => {
-      importsInFlightRef.current.delete(tradeIdea.asset_id)
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
     },
   })
@@ -1314,7 +1622,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   price: { asset_id: leg.asset_id, price: legPrice, timestamp: new Date().toISOString(), source: 'realtime' },
                   portfolioTotalValue: simulation.baseline_total_value || 0,
                   roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-                  hasBenchmark: false,
+                  activeWeightConfig: getActiveWeightConfig(leg.asset_id),
+                  hasBenchmark,
                 })
               } else {
                 await v3CreateVariantAsync({
@@ -1326,7 +1635,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   price: { asset_id: leg.asset_id, price: legPrice, timestamp: new Date().toISOString(), source: 'realtime' },
                   portfolioTotalValue: simulation.baseline_total_value || 0,
                   roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-                  hasBenchmark: false,
+                  activeWeightConfig: getActiveWeightConfig(leg.asset_id),
+                  hasBenchmark,
                   uiSource: 'simulation_page',
                 })
               }
@@ -1440,12 +1750,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         setCheckboxOverrides(new Map(checkboxOverridesRef.current))
       }
     },
-    onSettled: async () => {
+    onSettled: async (_data, _err, { assetId }) => {
+      convergenceRemovalsInFlightRef.current.delete(assetId)
       // Await refetch so reconciliation effect sees fresh data
       await queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       // The reconciliation effect will clear the FALSE override once the trade is gone
     },
   })
+
+  // Stable refs for mutation functions used in the convergence effect
+  // (avoids the effect re-triggering when mutation state changes)
+  const removeTradeMutateRef = useRef(removeTradeMutation.mutate)
+  removeTradeMutateRef.current = removeTradeMutation.mutate
+  const v3DeleteVariantRef = useRef(v3DeleteVariant)
+  v3DeleteVariantRef.current = v3DeleteVariant
 
   // ==========================================================================
   // CHECKBOX HELPERS — immediate mutations with instant optimistic UI
@@ -1453,6 +1771,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Convergence effect: clears overrides once server state matches desired state.
   // Also catches stale variants that reappear from refetches after uncheck.
+  // Uses stable refs for mutation functions to avoid re-triggering on mutation state changes.
   useEffect(() => {
     const tradeAssetIds = new Set(
       (simulation?.simulation_trades || [])
@@ -1464,11 +1783,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       let changed = false
       const next = new Map(prev)
       prev.forEach((desired, assetId) => {
+        // Don't converge while import is still in-flight — server state is in flux
+        if (importsInFlightRef.current.has(assetId)) return
         const exists = tradeAssetIds.has(assetId)
         if ((desired && exists) || (!desired && !exists)) {
           // Server matches desired state — safe to clear override
           next.delete(assetId)
           checkboxOverridesRef.current.delete(assetId)
+          convergenceRemovalsInFlightRef.current.delete(assetId)
           changed = true
         }
       })
@@ -1480,6 +1802,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (tradeLab?.id) {
       checkboxOverridesRef.current.forEach((desired, assetId) => {
         if (desired === false) {
+          // Skip if a removal is already in-flight for this asset
+          if (convergenceRemovalsInFlightRef.current.has(assetId)) return
+          // Skip if an import is in-flight (asset is being added by proposal/idea)
+          if (importsInFlightRef.current.has(assetId)) return
+
           const variant = intentVariants.find(v => v.asset_id === assetId)
           if (variant) {
             queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
@@ -1487,22 +1814,23 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               old?.filter(v => v.asset_id !== assetId) ?? []
             )
             if (!variant.id.startsWith('temp-')) {
-              v3DeleteVariant({ variantId: variant.id })
+              v3DeleteVariantRef.current({ variantId: variant.id })
             }
           }
           // Also ensure trade is removed if it reappeared
           if (tradeAssetIds.has(assetId)) {
+            convergenceRemovalsInFlightRef.current.add(assetId)
             const trades = (simulation?.simulation_trades || []).filter(
               (t: any) => t.asset_id === assetId && !t.id?.startsWith('temp-')
             )
             trades.forEach((trade: any) => {
-              removeTradeMutation.mutate({ tradeId: trade.id, assetId })
+              removeTradeMutateRef.current({ tradeId: trade.id, assetId })
             })
           }
         }
       })
     }
-  }, [simulation?.simulation_trades, intentVariants, tradeLab?.id, queryClient, v3DeleteVariant, removeTradeMutation])
+  }, [simulation?.simulation_trades, intentVariants, tradeLab?.id, queryClient])
 
   /** Remove an asset from simulation */
   const handleRemoveAsset = useCallback((assetId: string) => {
@@ -1541,9 +1869,48 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
   }, [simulation?.simulation_trades, intentVariants, tradeLab?.id, queryClient, removeTradeMutation, v3DeleteVariant])
 
+  /** Remove any other checked source for the same asset_id to enforce exclusivity */
+  const uncheckOtherSourcesForAsset = useCallback((assetId: string, source: 'idea' | 'proposal') => {
+    if (source === 'idea') {
+      // If checking an idea, unapply any proposal for the same asset
+      const appliedProposal = activeProposals?.find(p => {
+        const tradeItem = p.trade_queue_items as any
+        return tradeItem?.assets?.id === assetId && appliedProposalIds.has(p.id)
+      })
+      if (appliedProposal) {
+        setAppliedProposalIds(prev => {
+          const next = new Set(prev)
+          next.delete(appliedProposal.id)
+          return next
+        })
+        setProposalAddedAssetIds(prev => {
+          const next = new Set(prev)
+          next.delete(assetId)
+          return next
+        })
+        // Remove the simulation trade for this asset
+        const trade = simulation?.simulation_trades?.find(t => t.asset_id === assetId)
+        if (trade && !trade.id.startsWith('temp-')) {
+          supabase.from('simulation_trades').delete().eq('id', trade.id).then(() => {
+            queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+          })
+        }
+      }
+    } else {
+      // If checking a proposal, remove any idea-sourced trade for the same asset
+      const existingTrade = simulation?.simulation_trades?.find(t => t.asset_id === assetId)
+      if (existingTrade && !proposalAddedAssetIds.has(assetId)) {
+        handleRemoveAsset(assetId)
+      }
+    }
+  }, [activeProposals, appliedProposalIds, proposalAddedAssetIds, simulation?.simulation_trades, selectedSimulationId, queryClient, handleRemoveAsset])
+
   /** Add an asset to simulation */
   const handleAddAsset = useCallback((idea: TradeQueueItemWithDetails) => {
     const assetId = idea.asset_id
+
+    // Per-asset exclusivity: uncheck any proposal-sourced trade for this asset
+    uncheckOtherSourcesForAsset(assetId, 'idea')
 
     // Instant UI feedback
     checkboxOverridesRef.current.set(assetId, true)
@@ -1594,54 +1961,47 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   }, [simulation, priceMap])
 
   // Add quick trade (sandbox-only, no trade idea created)
-  const addQuickTradeMutation = useMutation({
-    mutationFn: async ({ asset, action, shares, weight }: {
-      asset: { id: string; symbol: string; company_name: string; sector: string | null }
-      action: TradeAction
-      shares?: number
-      weight?: number
-    }) => {
-      if (!simulation) throw new Error('No simulation selected')
+  /** Add a manual asset from the phantom row (inline Add Trade in the table) */
+  const handleAddManualAsset = useCallback((asset: { id: string; symbol: string; company_name: string; sector: string | null }) => {
+    if (!simulation || !tradeLab?.id) return
+    const assetId = asset.id
 
-      // Get current price for the asset
-      let price = 100
-      try {
-        const quote = await financialDataService.getQuote(asset.symbol)
-        if (quote?.price) price = quote.price
-      } catch {
-        // Use default price
-      }
+    // Optimistic: add temp variant to cache for instant table row
+    const variantQueryKey = ['intent-variants', tradeLab.id, null]
+    queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+      if (old?.some(v => v.asset_id === assetId)) return old
+      const tempVariant = {
+        id: `temp-${assetId}`,
+        asset_id: assetId,
+        trade_lab_id: tradeLab.id,
+        action: 'buy' as const,
+        sizing_input: null,
+        sizing_spec: null,
+        computed: null,
+        direction_conflict: null,
+        below_lot_warning: false,
+        active_weight_config: null,
+        asset: { id: assetId, symbol: asset.symbol, company_name: asset.company_name, sector: asset.sector },
+      } as IntentVariant
+      return [...(old || []), tempVariant]
+    })
 
-      const { data, error } = await supabase
-        .from('simulation_trades')
-        .insert({
-          simulation_id: simulation.id,
-          trade_queue_item_id: null, // No trade idea linked
-          asset_id: asset.id,
-          action,
-          shares: shares ?? null,
-          weight: weight ?? null,
-          price,
-          sort_order: (simulation.simulation_trades?.length || 0),
-        })
-        .select()
-        .single()
+    // Track import
+    importsInFlightRef.current.add(assetId)
 
-      if (error) throw error
-      return data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-      refetchPrices()
-      // Reset quick trade form
-      setShowQuickTrade(false)
-      setQuickTradeSearch('')
-      setQuickTradeAsset(null)
-      setQuickTradeAction('buy')
-      setQuickTradeShares('')
-      setQuickTradeWeight('')
-    },
-  })
+    // Build a minimal TradeQueueItemWithDetails-shaped object for importTradeMutation
+    const tradeIdea = {
+      id: crypto.randomUUID(),
+      asset_id: assetId,
+      action: 'buy' as TradeAction,
+      proposed_shares: null,
+      proposed_weight: null,
+      target_price: null,
+      assets: { symbol: asset.symbol, company_name: asset.company_name, sector: asset.sector },
+    } as unknown as TradeQueueItemWithDetails
+
+    importTradeMutation.mutate(tradeIdea)
+  }, [simulation, tradeLab?.id, queryClient, importTradeMutation])
 
   // Create Trade List mutation - saves, snapshots, and clears workbench
   const createTradeListMutation = useMutation({
@@ -1834,7 +2194,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   type TradeItem =
     | { type: 'single'; idea: typeof includedIdeasWithStatus[0] }
     | { type: 'pair'; pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }
-    | { type: 'manual'; trade: SimulationTradeWithDetails }
 
   // Type for proposals from trade_proposals table
   type ProposalItem = {
@@ -1848,18 +2207,27 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }>
   }
 
-  // Group items by: Proposals, Ideas, Manual Trades
+  // Group items by: Proposals (has active proposal) vs Ideas (no proposal)
+  // Per-trade-idea dedup: same trade_queue_item → Proposals if it has a proposal, else Ideas. Never both.
   const itemsByCategory = useMemo(() => {
     const groups = {
       proposals: [] as ProposalItem[],  // From trade_proposals table
-      ideas: [] as TradeItem[],         // All trade queue items (idea, working_on, modeling)
-      manual: [] as TradeItem[]         // Simulation trades not from queue
+      ideas: [] as TradeItem[],         // Trade queue items WITHOUT proposals
     }
 
-    // Proposals come from trade_proposals table, not trade_queue_items
-    // Group proposals - pair trade proposals have sizing_context.isPairTrade = true
+    // Wait for proposals to load before categorizing — otherwise ALL items
+    // go into Ideas first, then shuffle to Proposals when the query arrives.
+    if (!activeProposals) return groups
+
+    // Build set of trade_queue_item_ids that have active proposals for this portfolio
+    const proposalTradeItemIds = new Set<string>()
     const seenPairTradeProposals = new Set<string>()
+
     activeProposals?.forEach(proposal => {
+      if (proposal.trade_queue_item_id) {
+        proposalTradeItemIds.add(proposal.trade_queue_item_id)
+      }
+
       const sizingContext = proposal.sizing_context as any
       const isPairTrade = sizingContext?.isPairTrade === true
       const pairTradeId = sizingContext?.pairTradeId
@@ -1878,51 +2246,86 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })
     })
 
-    // All trade ideas go into Ideas (they never have status='deciding')
+    // Ideas: only include items WITHOUT a proposal for this portfolio
     pairTradesGrouped.standalone.forEach(idea => {
-      groups.ideas.push({ type: 'single', idea })
+      if (!proposalTradeItemIds.has(idea.id)) {
+        groups.ideas.push({ type: 'single', idea })
+      }
     })
 
-    // All pair trades from trade_queue_items go into Ideas
+    // Pair trades: include if ANY leg lacks a proposal
     pairTradesGrouped.pairTrades.forEach(entry => {
-      groups.ideas.push({ type: 'pair', ...entry })
-    })
-
-    // Find manual trades (simulation_trades not linked to any trade_queue_item)
-    const queueAssetIds = new Set(tradeIdeasWithStatus.map(i => i.asset_id))
-    simulation?.simulation_trades?.forEach(trade => {
-      if (!queueAssetIds.has(trade.asset_id)) {
-        groups.manual.push({ type: 'manual', trade })
+      const hasUnproposedLeg = entry.legs.some(leg => !proposalTradeItemIds.has(leg.id))
+      if (hasUnproposedLeg) {
+        groups.ideas.push({ type: 'pair', ...entry })
       }
     })
 
     return groups
-  }, [pairTradesGrouped, tradeIdeasWithStatus, simulation?.simulation_trades, activeProposals])
+  }, [pairTradesGrouped, activeProposals])
 
-  // Keep legacy references for backwards compatibility with other code
-  const tradeIdeasByStatus = useMemo(() => ({
-    idea: pairTradesGrouped.standalone.filter(i => (i.stage || i.status) === 'idea'),
-    workingOn: pairTradesGrouped.standalone.filter(i => ['working_on', 'discussing'].includes(i.stage || i.status)),
-    modeling: pairTradesGrouped.standalone.filter(i => ['modeling', 'simulating'].includes(i.stage || i.status)),
-    deciding: pairTradesGrouped.standalone.filter(i => ['deciding', 'approved'].includes(i.stage || i.status))
-  }), [pairTradesGrouped.standalone])
+  // Filter items by search query and stage
+  const filteredItems = useMemo(() => {
+    const searchLower = leftPaneSearch.toLowerCase().trim()
 
-  const pairTradesByStatus = useMemo(() => {
-    const groups = {
-      idea: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
-      workingOn: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
-      modeling: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>,
-      deciding: [] as Array<{ pairTrade: PairTrade; legs: typeof includedIdeasWithStatus; allAdded: boolean; someAdded: boolean }>
+    const matchesSearch = (item: TradeItem): boolean => {
+      if (!searchLower) return true
+      if (item.type === 'single') {
+        return (item.idea.assets?.symbol?.toLowerCase().includes(searchLower) || false) ||
+          (item.idea.assets?.company_name?.toLowerCase().includes(searchLower) || false)
+      } else {
+        return item.legs.some(leg =>
+          (leg.assets?.symbol?.toLowerCase().includes(searchLower) || false) ||
+          (leg.assets?.company_name?.toLowerCase().includes(searchLower) || false)
+        )
+      }
     }
-    pairTradesGrouped.pairTrades.forEach(entry => {
-      const status = entry.pairTrade.status
-      if (status === 'idea') groups.idea.push(entry)
-      else if (status === 'discussing' || status === 'working_on') groups.workingOn.push(entry)
-      else if (status === 'simulating' || status === 'modeling') groups.modeling.push(entry)
-      else if (status === 'approved' || status === 'deciding') groups.deciding.push(entry)
-    })
-    return groups
-  }, [pairTradesGrouped.pairTrades])
+
+    const matchesStage = (item: TradeItem): boolean => {
+      if (leftPaneStageFilter === 'all') return true
+      if (item.type === 'single') {
+        const stage = item.idea.stage || item.idea.status
+        if (leftPaneStageFilter === 'idea') return stage === 'idea'
+        if (leftPaneStageFilter === 'working_on') return stage === 'working_on' || stage === 'discussing'
+        if (leftPaneStageFilter === 'modeling') return stage === 'modeling' || stage === 'simulating'
+      } else {
+        const status = item.pairTrade.status
+        if (leftPaneStageFilter === 'idea') return status === 'idea'
+        if (leftPaneStageFilter === 'working_on') return status === 'working_on' || status === 'discussing'
+        if (leftPaneStageFilter === 'modeling') return status === 'modeling' || status === 'simulating'
+      }
+      return true
+    }
+
+    // Proposals filtered by search only; ideas by search + stage
+    const filteredProposals = searchLower
+      ? itemsByCategory.proposals.filter(p => {
+          const tradeItem = p.proposal.trade_queue_items as any
+          const asset = tradeItem?.assets
+          if (asset?.symbol?.toLowerCase().includes(searchLower)) return true
+          if (asset?.company_name?.toLowerCase().includes(searchLower)) return true
+          if (p.isPairTrade && p.legs?.length) {
+            return p.legs.some((l: any) => l.symbol?.toLowerCase().includes(searchLower))
+          }
+          return false
+        })
+      : itemsByCategory.proposals
+
+    const stageRank = (item: TradeItem): number => {
+      const s = item.type === 'single'
+        ? (item.idea.stage || item.idea.status)
+        : item.pairTrade.status
+      if (s === 'modeling' || s === 'simulating') return 0
+      if (s === 'working_on' || s === 'discussing') return 1
+      return 2 // idea
+    }
+
+    const filteredIdeas = itemsByCategory.ideas
+      .filter(item => matchesSearch(item) && matchesStage(item))
+      .sort((a, b) => stageRank(a) - stageRank(b))
+
+    return { proposals: filteredProposals, ideas: filteredIdeas }
+  }, [itemsByCategory, leftPaneSearch, leftPaneStageFilter])
 
   // Count sandbox trade stats
   const tradeStats = useMemo(() => {
@@ -2203,7 +2606,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (!trade) return
 
     // v3: Parse with full sizing syntax support
-    const hasBenchmark = false // TODO: wire up benchmark config
     const v3Result = parseEditingValueV3(value, baseMode, hasBenchmark)
     const { mode, numValue, sizingSpec } = v3Result
 
@@ -2269,7 +2671,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (!trade) return
 
     // v3: Parse with full sizing syntax support
-    const hasBenchmark = false // TODO: wire up benchmark config
     const v3Result = parseEditingValueV3(editingValue, editingSizingMode, hasBenchmark)
     const { mode, numValue, sizingSpec } = v3Result
 
@@ -2340,14 +2741,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const timePressure = getTimePressure(idea)
     const authorInitials = getUserInitials(idea.users)
 
+    // Stage-based left border color
+    const stageOfIdea = idea.stage || idea.status
+    const stageBorderClass =
+      (stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'border-l-indigo-500 dark:border-l-indigo-400' :
+      (stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'border-l-purple-500 dark:border-l-purple-400' :
+      'border-l-blue-400 dark:border-l-blue-500'
+
     return (
       <div
         key={idea.id}
         onClick={() => setSelectedTradeId(idea.id)}
         className={clsx(
-          "bg-white dark:bg-gray-800 rounded-lg p-2.5 border transition-colors cursor-pointer",
+          "bg-white dark:bg-gray-800 rounded-lg p-2.5 border border-l-[3px] transition-colors cursor-pointer",
+          stageBorderClass,
           idea.isAdded
-            ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
+            ? "border-green-300 dark:border-green-700 border-l-green-500 dark:border-l-green-400 bg-green-50/50 dark:bg-green-900/10"
             : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
         )}
       >
@@ -2460,6 +2869,32 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 </span>
               ) : (
                 <span>{formatDistanceToNow(new Date(idea.updated_at), { addSuffix: false })}</span>
+              )}
+            </div>
+            {/* Make Proposal + Fast-track buttons */}
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setProposalEditorIdea(idea)
+                }}
+                className="flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
+              >
+                <Scale className="h-3 w-3" />
+                Make Proposal
+              </button>
+              {isCurrentUserPM && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    fastTrackMutation.mutate(idea)
+                  }}
+                  disabled={fastTrackMutation.isPending}
+                  className="flex items-center gap-1 text-[11px] font-medium text-purple-700 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 transition-colors disabled:opacity-50"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Fast-track
+                </button>
               )}
             </div>
           </div>
@@ -2806,90 +3241,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     )
   }
 
-  // Helper to render a trade item (single, pair, or manual trade)
+  // Helper to render a trade item (single or pair trade)
   const renderTradeItem = (item: TradeItem) => {
     if (item.type === 'single') {
       return renderTradeIdeaCard(item.idea)
-    } else if (item.type === 'pair') {
-      return renderPairTradeCard(item)
     } else {
-      // Manual trade card
-      const trade = item.trade
-      const asset = trade.assets
-      // v3: Look up variant conflict status for this trade
-      const variant = intentVariants.find(v => v.asset_id === trade.asset_id)
-      const variantConflict = variant?.direction_conflict as SizingValidationError | null
-      const variantBelowLot = variant?.below_lot_warning ?? false
-
-      return (
-        <div
-          key={trade.id}
-          className={clsx(
-            "bg-white dark:bg-gray-800 rounded-lg p-2.5 border transition-colors",
-            variantConflict
-              ? "border-red-300 dark:border-red-700"
-              : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
-          )}
-        >
-          <div className="flex items-start gap-2">
-            <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-green-500 bg-green-500 text-white flex items-center justify-center mt-0.5">
-              <Check className="h-3 w-3" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className={clsx(
-                  "text-xs font-medium uppercase px-1.5 py-0.5 rounded flex-shrink-0",
-                  trade.action === 'buy' || trade.action === 'add'
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                )}>
-                  {trade.action}
-                </span>
-                <span className="font-semibold text-sm text-green-700 dark:text-green-400">
-                  {asset?.symbol}
-                </span>
-                {asset?.company_name && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {asset.company_name}
-                  </span>
-                )}
-                {/* v3: Inline conflict badge */}
-                <InlineConflictBadge
-                  conflict={variantConflict}
-                  belowLotWarning={variantBelowLot}
-                  onFixAction={(suggestedAction) => {
-                    updateTradeMutation.mutate({
-                      tradeId: trade.id,
-                      action: suggestedAction,
-                      assetId: trade.asset_id,
-                      unlinkFromIdea: false,
-                    })
-                  }}
-                  size="sm"
-                />
-              </div>
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {trade.weight != null && `${trade.weight}%`}
-                {trade.weight != null && trade.shares != null && ' · '}
-                {trade.shares != null && `${trade.shares.toLocaleString()} sh`}
-              </div>
-            </div>
-            <button
-              onClick={() => removeTradeMutation.mutate({ tradeId: trade.id, assetId: trade.asset_id })}
-              disabled={false}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-red-500"
-              title="Remove trade"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      )
+      return renderPairTradeCard(item)
     }
   }
-
-  // Legacy helper for backwards compatibility
-  const renderStageItem = (item: TradeItem) => renderTradeItem(item)
 
   return (
     <div className="h-full flex flex-col">
@@ -3395,15 +3754,60 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       <div className="flex items-center justify-center py-8">
                         <RefreshCw className="h-5 w-5 text-gray-400 animate-spin" />
                       </div>
-                    ) : tradeIdeasWithStatus.length === 0 && itemsByCategory.manual.length === 0 && itemsByCategory.proposals.length === 0 ? (
+                    ) : tradeIdeasWithStatus.length === 0 && itemsByCategory.proposals.length === 0 ? (
                       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                         <p className="text-sm">No trade ideas available</p>
                         <p className="text-xs mt-1">Add ideas from the Trade Queue</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {/* Proposals Section - Items in deciding/approved stage */}
-                        {itemsByCategory.proposals.length > 0 && (
+                        {/* Search and Filter Bar */}
+                        <div className="space-y-1.5">
+                          <div className="relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                            <input
+                              type="text"
+                              value={leftPaneSearch}
+                              onChange={(e) => setLeftPaneSearch(e.target.value)}
+                              placeholder="Filter by ticker or name..."
+                              className="w-full pl-7 pr-7 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 placeholder:text-gray-400"
+                            />
+                            {leftPaneSearch && (
+                              <button
+                                onClick={() => setLeftPaneSearch('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {(['all', 'modeling', 'working_on', 'idea'] as const).map(stage => {
+                              const dotColor =
+                                stage === 'modeling' ? 'bg-indigo-500' :
+                                stage === 'working_on' ? 'bg-purple-500' :
+                                stage === 'idea' ? 'bg-blue-400' : null
+                              return (
+                                <button
+                                  key={stage}
+                                  onClick={() => setLeftPaneStageFilter(stage)}
+                                  className={clsx(
+                                    "flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
+                                    leftPaneStageFilter === stage
+                                      ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                                      : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  )}
+                                >
+                                  {dotColor && <span className={clsx("w-1.5 h-1.5 rounded-full", dotColor)} />}
+                                  {stage === 'all' ? 'All' : stage === 'idea' ? 'Idea' : stage === 'working_on' ? 'Working' : 'Modeling'}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Proposals Section - Items with active proposals */}
+                        {filteredItems.proposals.length > 0 && (
                           <div className="bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-2 -mx-1">
                             <button
                               onClick={() => {
@@ -3423,11 +3827,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               )} />
                               <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                               <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Proposals</span>
-                              <Badge className="text-[10px] py-0 px-1.5 bg-amber-100 dark:bg-amber-800 text-amber-700 dark:text-amber-300">{itemsByCategory.proposals.length}</Badge>
+                              <Badge className="text-[10px] py-0 px-1.5 bg-amber-100 dark:bg-amber-800 text-amber-700 dark:text-amber-300">{filteredItems.proposals.length}</Badge>
                             </button>
                             {!collapsedGroups.has('category-proposals') && (
                               <div className="space-y-2">
-                                {itemsByCategory.proposals.map((proposalItem) => {
+                                {filteredItems.proposals.map((proposalItem) => {
                                   const { proposal, isPairTrade, legs } = proposalItem
                                   const tradeItem = proposal.trade_queue_items as any
                                   const asset = tradeItem?.assets
@@ -3477,17 +3881,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     ? enrichedLegs.map((l: any) => l.assetId).filter(Boolean)
                                     : asset?.id ? [asset.id] : []
 
-                                  // Handle applying/unapplying proposal to simulation
+                                  // Handle applying/unapplying proposal to simulation.
+                                  // Delegates to the same handleAddAsset / handleRemoveAsset flow
+                                  // used by ideas, so proposals get the exact same optimistic-UI,
+                                  // importsInFlightRef guards, and importTradeMutation lifecycle.
                                   const handleAddProposal = (e: React.MouseEvent) => {
                                     e.stopPropagation()
 
                                     if (isProposalApplied) {
-                                      // Get trade IDs to remove
-                                      const tradeIdsToRemove = proposalAssetIds
-                                        .map((assetId: string) => simulation?.simulation_trades?.find(t => t.asset_id === assetId)?.id)
-                                        .filter(Boolean) as string[]
-
-                                      // Optimistically update ALL state at once
+                                      // === UNCHECK: remove proposal from simulation ===
                                       setAppliedProposalIds(prev => {
                                         const next = new Set(prev)
                                         next.delete(proposal.id)
@@ -3498,32 +3900,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                         proposalAssetIds.forEach((id: string) => next.delete(id))
                                         return next
                                       })
-
-                                      // Optimistically remove trades from cache immediately
-                                      queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
-                                        if (!old) return old
-                                        return {
-                                          ...old,
-                                          simulation_trades: old.simulation_trades?.filter(
-                                            (t: any) => !tradeIdsToRemove.includes(t.id)
-                                          ) || []
-                                        }
-                                      })
-
-                                      // Then do the async delete
-                                      if (tradeIdsToRemove.length > 0) {
-                                        supabase
-                                          .from('simulation_trades')
-                                          .delete()
-                                          .in('id', tradeIdsToRemove)
-                                          .then(() => {
-                                            queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-                                          })
-                                      }
+                                      // Reuse the battle-tested remove path (optimistic variant removal,
+                                      // cancelQueries, DB delete via removeTradeMutation, convergence cleanup)
+                                      proposalAssetIds.forEach((aid: string) => handleRemoveAsset(aid))
                                       return
                                     }
 
-                                    // Optimistically update state FIRST
+                                    // === CHECK: add proposal to simulation ===
+
+                                    // Per-asset exclusivity: uncheck any idea-sourced trade first
+                                    proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))
+
+                                    // Clear any stale false overrides that handleRemoveAsset
+                                    // (from uncheckOtherSourcesForAsset) may have set
+                                    proposalAssetIds.forEach((aid: string) => {
+                                      checkboxOverridesRef.current.delete(aid)
+                                      convergenceRemovalsInFlightRef.current.delete(aid)
+                                    })
+
+                                    // Track proposal-level state
                                     setAppliedProposalIds(prev => {
                                       const next = new Set(prev)
                                       next.add(proposal.id)
@@ -3535,64 +3930,69 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                       return next
                                     })
 
-                                    // Then do the async work
-                                    if (isPairTrade && enrichedLegs.length) {
-                                      const inserts: any[] = []
-                                      const updates: { id: string; weight: number | null }[] = []
+                                    // Build per-asset info for the import
+                                    const assetsToAdd = isPairTrade && enrichedLegs.length
+                                      ? enrichedLegs.map((l: any) => ({
+                                          assetId: l.assetId as string,
+                                          tradeQueueItemId: l.tradeQueueItemId as string,
+                                          action: (l.action || 'buy') as TradeAction,
+                                          symbol: l.symbol as string,
+                                          companyName: (l.companyName || '') as string,
+                                          sector: (l.sector || null) as string | null,
+                                          weight: l.weight as number | null,
+                                        })).filter((l: any) => l.assetId)
+                                      : asset?.id ? [{
+                                          assetId: asset.id,
+                                          tradeQueueItemId: tradeItem?.id,
+                                          action: (tradeItem?.action || 'buy') as TradeAction,
+                                          symbol: asset.symbol || '',
+                                          companyName: asset.company_name || '',
+                                          sector: asset.sector || null,
+                                          weight: proposal.weight as number | null,
+                                        }] : []
 
-                                      for (const leg of enrichedLegs) {
-                                        if (!leg.assetId) continue
-                                        const existingTrade = simulation?.simulation_trades?.find(t => t.asset_id === leg.assetId)
-                                        if (existingTrade) {
-                                          updates.push({ id: existingTrade.id, weight: leg.weight ?? null })
-                                        } else {
-                                          inserts.push({
-                                            simulation_id: simulation?.id,
-                                            trade_queue_item_id: leg.tradeQueueItemId,
-                                            asset_id: leg.assetId,
-                                            action: leg.action,
-                                            weight: leg.weight ?? null,
-                                            price: priceMap?.[leg.assetId] || 100,
-                                            sort_order: (simulation?.simulation_trades?.length || 0) + inserts.length,
-                                          })
-                                        }
+                                    // Reuse the exact handleAddAsset pattern for each asset:
+                                    // checkboxOverride=true → temp variant → importsInFlight → importTradeMutation
+                                    for (const a of assetsToAdd) {
+                                      // Build a TradeQueueItemWithDetails-shaped object
+                                      const tradeIdeaLike = {
+                                        id: a.tradeQueueItemId || crypto.randomUUID(),
+                                        asset_id: a.assetId,
+                                        action: a.action,
+                                        proposed_shares: null,
+                                        proposed_weight: a.weight ?? proposal.weight ?? null,
+                                        target_price: null,
+                                        assets: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
+                                      } as unknown as TradeQueueItemWithDetails
+
+                                      // Instant UI: override + temp variant + in-flight + mutation
+                                      checkboxOverridesRef.current.set(a.assetId, true)
+
+                                      if (tradeLab?.id) {
+                                        const variantQueryKey = ['intent-variants', tradeLab.id, null]
+                                        queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+                                          if (old?.some(v => v.asset_id === a.assetId)) return old
+                                          return [...(old || []), {
+                                            id: `temp-${a.assetId}`,
+                                            asset_id: a.assetId,
+                                            trade_lab_id: tradeLab.id,
+                                            action: a.action,
+                                            sizing_input: a.weight != null ? String(a.weight) : (proposal.weight != null ? String(proposal.weight) : null),
+                                            sizing_spec: null,
+                                            computed: null,
+                                            direction_conflict: null,
+                                            below_lot_warning: false,
+                                            active_weight_config: null,
+                                            asset: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
+                                          } as IntentVariant]
+                                        })
                                       }
 
-                                      Promise.all([
-                                        inserts.length > 0 ? supabase.from('simulation_trades').insert(inserts) : Promise.resolve(),
-                                        ...updates.map(u => supabase.from('simulation_trades').update({ weight: u.weight }).eq('id', u.id))
-                                      ]).then(() => {
-                                        queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-                                      })
-                                    } else if (tradeItem) {
-                                      const assetId = tradeItem.assets?.id || asset?.id
-                                      const existingTrade = simulation?.simulation_trades?.find(t => t.asset_id === assetId)
-
-                                      if (existingTrade) {
-                                        supabase
-                                          .from('simulation_trades')
-                                          .update({ weight: proposal.weight ?? null })
-                                          .eq('id', existingTrade.id)
-                                          .then(() => {
-                                            queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-                                          })
-                                      } else {
-                                        supabase
-                                          .from('simulation_trades')
-                                          .insert({
-                                            simulation_id: simulation?.id,
-                                            trade_queue_item_id: tradeItem.id,
-                                            asset_id: assetId,
-                                            action: tradeItem.action,
-                                            weight: proposal.weight ?? null,
-                                            price: priceMap?.[assetId] || tradeItem.target_price || 100,
-                                            sort_order: (simulation?.simulation_trades?.length || 0),
-                                          })
-                                          .then(() => {
-                                            queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
-                                          })
-                                      }
+                                      importsInFlightRef.current.add(a.assetId)
+                                      importTradeMutation.mutate(tradeIdeaLike)
                                     }
+
+                                    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
                                   }
 
                                   // Expand/collapse state for this proposal
@@ -3749,6 +4149,44 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                           >
                                             View full idea
                                           </button>
+
+                                          {/* PM Decision Actions */}
+                                          {isCurrentUserPM && (
+                                            <div className="flex items-center gap-1.5 ml-5 mt-1">
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  proposalDecisionMutation.mutate({ proposalId: proposal.id, decision: 'accept' })
+                                                }}
+                                                disabled={proposalDecisionMutation.isPending}
+                                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50"
+                                              >
+                                                <Check className="h-3 w-3" />
+                                                Accept
+                                              </button>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  proposalDecisionMutation.mutate({ proposalId: proposal.id, decision: 'reject' })
+                                                }}
+                                                disabled={proposalDecisionMutation.isPending}
+                                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors disabled:opacity-50"
+                                              >
+                                                <X className="h-3 w-3" />
+                                                Reject
+                                              </button>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  proposalDecisionMutation.mutate({ proposalId: proposal.id, decision: 'defer' })
+                                                }}
+                                                disabled={proposalDecisionMutation.isPending}
+                                                className="px-2 py-1 text-[10px] font-medium rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                                              >
+                                                <Clock className="h-3 w-3" />
+                                              </button>
+                                            </div>
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -3759,8 +4197,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           </div>
                         )}
 
-                        {/* Ideas Section - All trade queue items not in deciding */}
-                        {itemsByCategory.ideas.length > 0 && (
+                        {/* Ideas Section - Trade ideas without proposals */}
+                        {filteredItems.ideas.length > 0 && (
                           <div>
                             <button
                               onClick={() => {
@@ -3780,12 +4218,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               )} />
                               <Sparkles className="h-3.5 w-3.5 text-blue-500" />
                               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Ideas</span>
-                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{itemsByCategory.ideas.length}</Badge>
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{filteredItems.ideas.length}</Badge>
                             </button>
                             {!collapsedGroups.has('category-ideas') && (
                               <div className="space-y-2">
-                                {itemsByCategory.ideas.map((item) => (
-                                  <div key={item.type === 'single' ? item.idea.id : item.type === 'pair' ? item.pairTrade.id : item.trade.id}>
+                                {filteredItems.ideas.map((item) => (
+                                  <div key={item.type === 'single' ? item.idea.id : item.pairTrade.id}>
                                     {renderTradeItem(item)}
                                   </div>
                                 ))}
@@ -3794,40 +4232,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           </div>
                         )}
 
-                        {/* Manual Trades Section - Trades added directly, not from queue */}
-                        {itemsByCategory.manual.length > 0 && (
-                          <div>
-                            <button
-                              onClick={() => {
-                                const newCollapsed = new Set(collapsedGroups)
-                                if (newCollapsed.has('category-manual')) {
-                                  newCollapsed.delete('category-manual')
-                                } else {
-                                  newCollapsed.add('category-manual')
-                                }
-                                setCollapsedGroups(newCollapsed)
-                              }}
-                              className="flex items-center gap-2 w-full text-left mb-2 group"
-                            >
-                              <ChevronDown className={clsx(
-                                "h-3 w-3 text-gray-400 transition-transform",
-                                collapsedGroups.has('category-manual') && "-rotate-90"
-                              )} />
-                              <Edit2 className="h-3.5 w-3.5 text-gray-500" />
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Manual Trades</span>
-                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{itemsByCategory.manual.length}</Badge>
-                            </button>
-                            {!collapsedGroups.has('category-manual') && (
-                              <div className="space-y-2">
-                                {itemsByCategory.manual.map((item) => (
-                                  <div key={item.type === 'manual' ? item.trade.id : ''}>
-                                    {renderTradeItem(item)}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -3852,7 +4256,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           newPositionRows={simulationRows.newPositionRows}
                           summary={simulationRows.summary}
                           portfolioTotalValue={simulation.baseline_total_value || 0}
-                          hasBenchmark={false}
+                          hasBenchmark={hasBenchmark}
                           priceMap={priceMap || {}}
                           onUpdateVariant={(variantId, updates) => {
                             // Temp variants: apply cache update for instant display, store
@@ -3931,13 +4335,16 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               price: assetPrice,
                               portfolioTotalValue: simulation.baseline_total_value || 0,
                               roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-                              hasBenchmark: false,
+                              activeWeightConfig: getActiveWeightConfig(assetId),
+                              hasBenchmark,
                             })
                           }}
                           onDeleteVariant={(variantId) => v3DeleteVariant({ variantId })}
                           onCreateVariant={handleCreateVariantForHolding}
                           onFixConflict={(variantId, suggestedAction) => handleFixConflict(variantId, suggestedAction)}
-                          onAddTrade={() => setShowQuickTrade(true)}
+                          onAddAsset={handleAddManualAsset}
+                          assetSearchResults={phantomAssetResults ?? []}
+                          onAssetSearchChange={setPhantomAssetSearch}
                           onCreateTradeSheet={() => createTradeListMutation.mutate()}
                           canCreateTradeSheet={simulation?.status === 'draft' && effectiveTradeCount > 0 && !workbenchSaving}
                           isCreatingTradeSheet={createTradeListMutation.isPending}
@@ -4441,9 +4848,47 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           labId={tradeLab?.id || null}
           portfolioId={selectedPortfolioId}
           availablePortfolios={portfolios?.map(p => ({ id: p.id, name: p.name })) || []}
-          onSaved={() => {
+          initialSizingInput={intentVariants.find(v => v.asset_id === proposalEditorIdea.asset_id)?.sizing_input || ''}
+          onSaved={(savedProposal) => {
+            // Capture before clearing for optimistic cache update
+            const tradeIdea = proposalEditorIdea
             setProposalEditorIdea(null)
-            // Optionally refetch proposals or update UI
+
+            // Optimistically add to proposals cache for instant dedup
+            // (prevents LRCX-in-both-sections flash during refetch)
+            if (savedProposal && tradeIdea) {
+              queryClient.setQueryData<any[]>(
+                ['trade-lab-proposals', selectedPortfolioId],
+                (old) => {
+                  const enriched = {
+                    ...savedProposal,
+                    users: user ? { id: user.id, email: user.email, first_name: (user as any).first_name, last_name: (user as any).last_name } : null,
+                    trade_queue_items: {
+                      id: tradeIdea.id,
+                      action: tradeIdea.action,
+                      rationale: tradeIdea.rationale,
+                      status: tradeIdea.status,
+                      stage: tradeIdea.stage,
+                      pair_id: tradeIdea.pair_id,
+                      pair_leg_type: tradeIdea.pair_leg_type,
+                      assets: tradeIdea.assets,
+                    },
+                  }
+                  if (!old) return [enriched]
+                  // Upsert: replace existing proposal for same trade item, or append
+                  const idx = old.findIndex(p => p.trade_queue_item_id === savedProposal.trade_queue_item_id)
+                  if (idx >= 0) {
+                    const next = [...old]
+                    next[idx] = enriched
+                    return next
+                  }
+                  return [...old, enriched]
+                }
+              )
+            }
+
+            queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals', selectedPortfolioId] })
+            queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas', selectedPortfolioId] })
           }}
         />
       )}

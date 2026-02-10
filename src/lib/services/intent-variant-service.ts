@@ -44,6 +44,7 @@ export interface FetchVariantsOptions {
 
 export interface CreateVariantParams {
   input: CreateIntentVariantInput
+  portfolioId?: string
   currentPosition?: {
     shares: number
     weight: number
@@ -116,7 +117,7 @@ export async function getVariantsForLab(
       trade_queue_item:trade_queue_items (id, rationale, urgency, stage)
     `)
     .eq('lab_id', labId)
-    .order('sort_order')
+    .order('created_at', { ascending: true })
 
   if (viewId !== undefined) {
     if (viewId === null) {
@@ -161,6 +162,7 @@ export async function getVariant(variantId: string): Promise<IntentVariant | nul
 export async function createVariant(params: CreateVariantParams): Promise<IntentVariant> {
   const {
     input,
+    portfolioId: passedPortfolioId,
     currentPosition,
     price,
     portfolioTotalValue,
@@ -190,44 +192,67 @@ export async function createVariant(params: CreateVariantParams): Promise<Intent
     ? toSizingSpec(input.sizing_input, parseResult)
     : null
 
-  // Get portfolio_id from lab
-  const { data: lab, error: labError } = await supabase
-    .from('trade_labs')
-    .select('portfolio_id')
-    .eq('id', input.lab_id)
-    .single()
+  // Use passed portfolioId if available, otherwise look it up
+  let portfolioId = passedPortfolioId
+  if (!portfolioId) {
+    const { data: lab, error: labError } = await supabase
+      .from('trade_labs')
+      .select('portfolio_id')
+      .eq('id', input.lab_id)
+      .single()
 
-  if (labError || !lab) {
-    throw new Error(`Lab not found: ${input.lab_id}`)
+    if (labError || !lab) {
+      throw new Error(`Lab not found: ${input.lab_id}${labError ? ` (${labError.message})` : ''}`)
+    }
+    portfolioId = lab.portfolio_id
   }
 
-  // Insert variant
-  const { data, error } = await supabase
-    .from('lab_variants')
-    .insert({
-      lab_id: input.lab_id,
-      view_id: input.view_id ?? null,
-      trade_queue_item_id: input.trade_queue_item_id ?? null,
-      asset_id: input.asset_id,
-      portfolio_id: lab.portfolio_id,
-      action: input.action,
-      sizing_input: input.sizing_input,
-      sizing_spec: sizingSpec,
-      computed: normResult.computed ?? null,
-      direction_conflict: normResult.direction_conflict,
-      below_lot_warning: normResult.below_lot_warning,
-      current_position: currentPosition ?? null,
-      active_weight_config: activeWeightConfig ?? null,
-      notes: input.notes ?? null,
-      sort_order: input.sort_order ?? 0,
-      touched_in_lab_at: new Date().toISOString(),
-      created_by: context.actorId,
-    })
-    .select()
-    .single()
+  // Sanitize JSONB fields (strip NaN/Infinity which break JSON serialization)
+  const safeJson = (val: any) => val != null ? JSON.parse(JSON.stringify(val)) : null
+
+  // Insert variant (with retry for transient network errors)
+  const insertPayload = {
+    lab_id: input.lab_id,
+    view_id: input.view_id ?? null,
+    trade_queue_item_id: input.trade_queue_item_id ?? null,
+    asset_id: input.asset_id,
+    portfolio_id: portfolioId,
+    action: input.action,
+    sizing_input: input.sizing_input,
+    sizing_spec: safeJson(sizingSpec),
+    computed: safeJson(normResult.computed),
+    direction_conflict: safeJson(normResult.direction_conflict),
+    below_lot_warning: normResult.below_lot_warning,
+    current_position: safeJson(currentPosition),
+    active_weight_config: safeJson(activeWeightConfig),
+    notes: input.notes ?? null,
+    sort_order: input.sort_order ?? 0,
+    touched_in_lab_at: new Date().toISOString(),
+    created_by: context.actorId,
+  }
+
+  let data: any
+  let error: any
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await supabase
+      .from('lab_variants')
+      .insert(insertPayload)
+      .select('*, asset:assets(id, symbol, company_name, sector)')
+      .single()
+    data = result.data
+    error = result.error
+    if (!error || !error.message?.includes('Failed to fetch')) break
+    // Wait briefly before retry
+    await new Promise(r => setTimeout(r, 300 * (attempt + 1)))
+  }
 
   if (error) {
-    throw new Error(`Failed to create variant: ${error.message}`)
+    const isRLS = error.message?.includes('row-level security')
+    throw new Error(
+      isRLS
+        ? `Permission denied: you don't have access to this portfolio's trade lab. Try refreshing or re-logging in.`
+        : `Failed to create variant: ${error.message}`
+    )
   }
 
   // Log event
@@ -321,11 +346,16 @@ export async function updateVariant(params: UpdateVariantParams): Promise<Intent
       touched_in_lab_at: new Date().toISOString(),
     })
     .eq('id', variantId)
-    .select()
+    .select('*, asset:assets(id, symbol, company_name, sector)')
     .single()
 
   if (error) {
-    throw new Error(`Failed to update variant: ${error.message}`)
+    const isRLS = error.message?.includes('row-level security')
+    throw new Error(
+      isRLS
+        ? `Permission denied: you don't have access to this portfolio's trade lab. Try refreshing or re-logging in.`
+        : `Failed to update variant: ${error.message}`
+    )
   }
 
   // v3 spec: Emit lab.variant.computed event
@@ -436,7 +466,12 @@ export async function deleteVariant(
     .eq('id', variantId)
 
   if (error) {
-    throw new Error(`Failed to delete variant: ${error.message}`)
+    const isRLS = error.message?.includes('row-level security')
+    throw new Error(
+      isRLS
+        ? `Permission denied: you don't have access to this portfolio's trade lab. Try refreshing or re-logging in.`
+        : `Failed to delete variant: ${error.message}`
+    )
   }
 
   await emitAuditEvent({
