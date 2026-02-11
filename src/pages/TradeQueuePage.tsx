@@ -450,6 +450,13 @@ export function TradeQueuePage() {
     return { nonPairTradeProposals: singleProposals, pairTradeProposalGroups: pairGroups }
   }, [decidingProposals])
 
+  // Set of pair trade IDs that already have proposals — used to dedup
+  // pair trade idea cards from the deciding section when a proposal exists.
+  const pairIdsWithProposals = useMemo(
+    () => new Set(pairTradeProposalGroups.map(g => g.pairTradeId)),
+    [pairTradeProposalGroups]
+  )
+
   const groupedDecidingProposals = useMemo(() => {
     return groupProposalsByTradeIdea(nonPairTradeProposals as ProposalData[])
   }, [nonPairTradeProposals])
@@ -1808,7 +1815,7 @@ export function TradeQueuePage() {
                               <Scale className={clsx("h-4 w-4", fourthColumnView === 'deciding' ? "text-amber-600" : "text-gray-400")} />
                               <span className={fourthColumnView === 'deciding' ? "font-medium text-amber-700 dark:text-amber-400" : ""}>Deciding</span>
                             </div>
-                            <Badge variant="secondary" className="text-xs">{groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.length}</Badge>
+                            <Badge variant="secondary" className="text-xs">{groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.filter(g => !pairIdsWithProposals.has(g.pairTradeId)).length}</Badge>
                           </button>
 
                           {/* Divider */}
@@ -1875,7 +1882,7 @@ export function TradeQueuePage() {
                       {/* Item count badge */}
                       <Badge variant="default" className="ml-auto">
                         {fourthColumnView === 'deciding'
-                          ? groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.length
+                          ? groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.filter(g => !pairIdsWithProposals.has(g.pairTradeId)).length
                           : fourthColumnView === 'executed'
                             ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
                             : fourthColumnView === 'rejected'
@@ -1999,7 +2006,9 @@ export function TradeQueuePage() {
                           : "space-y-2"
                       )}>
                         {/* Pair Trade Cards for Deciding/Approved/Rejected views */}
-                        {fourthColumnView === 'deciding' && pairTradesByStatus.deciding.map(({ pairTradeId, pairTrade, legs }) => (
+                        {fourthColumnView === 'deciding' && pairTradesByStatus.deciding
+                          .filter(({ pairTradeId }) => !pairIdsWithProposals.has(pairTradeId))
+                          .map(({ pairTradeId, pairTrade, legs }) => (
                           <PairTradeCard
                             key={pairTradeId}
                             pairTradeId={pairTradeId}

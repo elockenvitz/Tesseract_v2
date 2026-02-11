@@ -14,6 +14,7 @@ import type {
   TradeAction,
 } from '../types/trading'
 import type { SizingSpec } from '../lib/trade-lab/sizing-parser'
+import { detectDirectionConflict } from '../lib/trade-lab/normalize-sizing'
 
 // =============================================================================
 // TYPES
@@ -52,6 +53,7 @@ export interface SimulationRow {
   // Status flags
   isNew: boolean
   isRemoved: boolean
+  isCash: boolean
   hasConflict: boolean
   hasWarning: boolean
   conflict: SizingValidationError | null
@@ -217,9 +219,6 @@ export function useSimulationRows({
     baselineMap.forEach((holding, assetId) => {
       const variant = variantMap.get(assetId) || null
       const computed = (variant?.computed as ComputedValues) || null
-      const conflict = variant
-        ? (variant.direction_conflict as SizingValidationError | null)
-        : null
 
       // Benchmark / active weight: prefer benchmarkWeightMap, fall back to variant context
       const benchWeight = benchmarkWeightMap?.[assetId] ?? variant?.active_weight_config?.benchmark_weight ?? null
@@ -239,6 +238,14 @@ export function useSimulationRows({
       const ds = est ? simShares - holding.shares : (computed?.delta_shares ?? 0)
       // Signed notional: positive for buys/adds, negative for sells/trims
       const notional = est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0)
+
+      // Derive action from deltas, then recompute conflict using derived action.
+      // This prevents stale DB action (e.g. 'add' from initial creation) from
+      // causing false conflicts when the user's sizing implies a different direction.
+      const derived = deriveAction(false, isRemoved, ds, dw, computed !== null || est !== null, variant?.action || 'add')
+      const conflict = variant && (computed || est)
+        ? detectDirectionConflict(derived, ds, 'user_edit')
+        : null
 
       rows.push({
         asset_id: assetId,
@@ -262,9 +269,10 @@ export function useSimulationRows({
         deltaWeight: dw,
         deltaShares: ds,
         notional,
-        derivedAction: deriveAction(false, isRemoved, ds, dw, computed !== null || est !== null, variant?.action || 'add'),
+        derivedAction: derived,
         isNew: false,
         isRemoved,
+        isCash: false,
         hasConflict: conflict !== null,
         hasWarning: variant?.below_lot_warning ?? false,
         conflict,
@@ -276,7 +284,6 @@ export function useSimulationRows({
       if (baselineMap.has(assetId)) return
 
       const computed = (variant.computed as ComputedValues) || null
-      const conflict = variant.direction_conflict as SizingValidationError | null
       const asset = (variant as any).asset
 
       const benchWeight = benchmarkWeightMap?.[assetId] ?? variant.active_weight_config?.benchmark_weight ?? null
@@ -295,6 +302,11 @@ export function useSimulationRows({
       // Signed notional: positive for buys, negative for sells
       const notional = est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0)
 
+      const derivedNew = deriveAction(true, false, ds, dw, computed !== null || est !== null, variant.action)
+      const conflict = (computed || est)
+        ? detectDirectionConflict(derivedNew, ds, 'user_edit')
+        : null
+
       rows.push({
         asset_id: assetId,
         symbol: asset?.symbol || 'Unknown',
@@ -312,9 +324,10 @@ export function useSimulationRows({
         deltaWeight: dw,
         deltaShares: ds,
         notional,
-        derivedAction: deriveAction(true, false, ds, dw, computed !== null || est !== null, variant.action),
+        derivedAction: derivedNew,
         isNew: true,
         isRemoved: false,
+        isCash: false,
         hasConflict: conflict !== null,
         hasWarning: variant.below_lot_warning ?? false,
         conflict,
@@ -355,7 +368,56 @@ export function useSimulationRows({
 
     const sortedRows = [...baselineRows, ...allNewRows]
 
-    // Step 5: Summary
+    // Step 5: Synthetic cash row — shows net cash impact of all trades.
+    // Derive cash sim weight as 100% minus sum of all position sim weights so
+    // the footer total is always exactly 100%.
+    const netTradeNotional = sortedRows.reduce((sum, r) => sum + r.notional, 0)
+    const cashNotional = -netTradeNotional  // cash moves opposite to trades
+    const totalSimWeight = sortedRows.reduce((sum, r) => sum + r.simWeight, 0)
+    const totalCurrentWeight = sortedRows.reduce((sum, r) => sum + r.currentWeight, 0)
+
+    // Find existing cash baseline (if portfolio already has a cash position)
+    const cashBaseline = baselineHoldings.find(h =>
+      h.symbol.toUpperCase() === 'CASH' || h.symbol.toUpperCase() === '$CASH'
+    )
+    const baseCashWeight = cashBaseline?.weight ?? (100 - totalCurrentWeight)
+    const cashSimWeight = 100 - totalSimWeight
+    const cashDeltaWeight = cashSimWeight - baseCashWeight
+
+    // Only show cash row when there are trades that move cash
+    const hasTrades = netTradeNotional !== 0
+    const cashRow: SimulationRow | null = hasTrades ? {
+      asset_id: '__cash__',
+      symbol: 'CASH',
+      company_name: 'Cash & Equivalents',
+      sector: null,
+      baseline: cashBaseline ? {
+        shares: cashBaseline.shares,
+        price: cashBaseline.price,
+        value: cashBaseline.value,
+        weight: cashBaseline.weight,
+      } : null,
+      variant: null,
+      computed: null,
+      currentShares: 0,
+      simShares: 0,
+      currentWeight: baseCashWeight,
+      simWeight: cashSimWeight,
+      benchWeight: null,
+      activeWeight: null,
+      deltaWeight: cashDeltaWeight,
+      deltaShares: 0,
+      notional: cashNotional,
+      derivedAction: cashNotional >= 0 ? 'add' : 'trim',
+      isNew: !cashBaseline && cashNotional !== 0,
+      isRemoved: false,
+      isCash: true,
+      hasConflict: false,
+      hasWarning: false,
+      conflict: null,
+    } : null
+
+    // Step 6: Summary
     const summary: SimulationRowSummary = {
       totalPositions: sortedRows.length,
       tradedCount: tradedRows.length,
@@ -363,12 +425,13 @@ export function useSimulationRows({
       newPositionCount: newPositionRows.length,
       conflictCount: sortedRows.filter(r => r.hasConflict).length,
       warningCount: sortedRows.filter(r => r.hasWarning).length,
-      totalNotional: sortedRows.reduce((sum, r) => sum + r.notional, 0),
+      totalNotional: netTradeNotional,
       netDeltaWeight: sortedRows.reduce((sum, r) => sum + r.deltaWeight, 0),
     }
 
     return {
       rows: sortedRows,
+      cashRow,
       tradedRows,
       untradedRows,
       newPositionRows,

@@ -48,9 +48,7 @@ import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
 import { EmptyState } from '../components/common/EmptyState'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
-import { SectorExposureChart } from '../components/trading/SectorExposureChart'
-import { ConcentrationMetrics } from '../components/trading/ConcentrationMetrics'
-import { HoldingsComparison } from '../components/trading/HoldingsComparison'
+import { PortfolioImpactView } from '../components/trading/PortfolioImpactView'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { ProposalEditorModal } from '../components/trading/ProposalEditorModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
@@ -85,8 +83,14 @@ import { TradeSheetReadinessPanel } from '../components/trading/TradeSheetReadin
 import { UnifiedSizingInput, type CurrentPosition as UnifiedCurrentPosition } from '../components/trading/UnifiedSizingInput'
 import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../components/trading/TradeCardConflictBadge'
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
+import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
+import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
 import { useSimulationRows } from '../hooks/useSimulationRows'
+import { useSharedSimulation } from '../hooks/useSimulationShare'
+import { useSimulationSuggestions } from '../hooks/useSimulationSuggestions'
+import { SuggestionReviewPanel } from '../components/trading/SuggestionReviewPanel'
+import type { SimulationShareAccess, SimulationShareMode, SharedSimulationListItem } from '../hooks/useSimulationShare'
 import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
 
 interface SimulationPageProps {
@@ -94,6 +98,7 @@ interface SimulationPageProps {
   tabId?: string
   onClose?: () => void
   initialPortfolioId?: string
+  shareId?: string
 }
 
 // Load persisted state or use defaults
@@ -331,10 +336,40 @@ function resolveSizing(
   }
 }
 
-export function SimulationPage({ simulationId: propSimulationId, tabId, onClose, initialPortfolioId }: SimulationPageProps) {
+export function SimulationPage({ simulationId: propSimulationId, tabId, onClose, initialPortfolioId, shareId: propShareId }: SimulationPageProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const toast = useToast()
+
+  // Share context — when viewing a shared simulation
+  const [activeShareId, setActiveShareId] = useState<string | null>(propShareId || null)
+  const { data: sharedSimData, isLoading: sharedSimLoading } = useSharedSimulation(activeShareId || undefined)
+  const isSharedView = !!activeShareId
+  const isReadOnly = isSharedView && sharedSimData?.access_level === 'view'
+  const canSuggest = isSharedView && sharedSimData?.access_level === 'suggest' && sharedSimData?.share_mode === 'live'
+  const canCollaborate = isSharedView && sharedSimData?.access_level === 'collaborate' && sharedSimData?.share_mode === 'live'
+  // Suggest mode = read-only table + suggest overlay; Collaborate = full editing
+  const tableReadOnly = isReadOnly || canSuggest
+
+  // Suggestion review panel state (owner-side)
+  const [suggestionReviewOpen, setSuggestionReviewOpen] = useState(false)
+
+  // Save/restore context when entering/exiting a shared view
+  const prevContextRef = useRef<{ portfolioId: string | null; simulationId: string | null } | null>(null)
+
+  // Listen for open-shared-simulation events from Header dropdown
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ share: SharedSimulationListItem }>) => {
+      const share = e.detail.share
+      setActiveShareId(share.share_id)
+      // For live shares, navigate to the simulation
+      if (share.share_mode === 'live') {
+        setSelectedSimulationId(share.simulation_id)
+      }
+    }
+    window.addEventListener('open-shared-simulation', handler as EventListener)
+    return () => window.removeEventListener('open-shared-simulation', handler as EventListener)
+  }, [])
 
   // Get initial state from persisted storage or props
   const initialState = useRef(getInitialState(propSimulationId, tabId))
@@ -363,6 +398,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [showArchived, setShowArchived] = useState(false)
   const [showAddTradeIdeaModal, setShowAddTradeIdeaModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showCreateSheetConfirm, setShowCreateSheetConfirm] = useState(false)
   const [proposalEditorIdea, setProposalEditorIdea] = useState<TradeQueueItemWithDetails | null>(null)
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
   const [tradeModalInitialTab, setTradeModalInitialTab] = useState<'details' | 'discussion' | 'proposals' | 'activity'>('details')
@@ -382,7 +418,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Left pane search and filter
   const [leftPaneSearch, setLeftPaneSearch] = useState('')
-  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling'>('all')
+  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling' | 'deciding'>('all')
 
   // Track which proposals have been applied to the simulation
   const [appliedProposalIds, setAppliedProposalIds] = useState<Set<string>>(new Set())
@@ -427,6 +463,32 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
     window.addEventListener('navigate-to-simulation', handleNavigate as EventListener)
     return () => window.removeEventListener('navigate-to-simulation', handleNavigate as EventListener)
+  }, [])
+
+  // Set portfolio + simulation context when a live share loads.
+  // This makes all downstream hooks (trade lab, variants, prices) work for the recipient.
+  useEffect(() => {
+    if (isSharedView && sharedSimData?.share_mode === 'live' && sharedSimData.portfolio_id) {
+      // Save previous context on first entry so we can restore on exit
+      if (!prevContextRef.current) {
+        prevContextRef.current = {
+          portfolioId: selectedPortfolioId,
+          simulationId: selectedSimulationId,
+        }
+      }
+      setSelectedPortfolioId(sharedSimData.portfolio_id)
+      setSelectedSimulationId(sharedSimData.simulation_id)
+    }
+  }, [isSharedView, sharedSimData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Exit handler — restore previous context
+  const handleExitSharedView = useCallback(() => {
+    if (prevContextRef.current) {
+      setSelectedPortfolioId(prevContextRef.current.portfolioId)
+      setSelectedSimulationId(prevContextRef.current.simulationId)
+      prevContextRef.current = null
+    }
+    setActiveShareId(null)
   }, [])
 
   // Fetch portfolios for filter
@@ -502,6 +564,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       if (existingLab) return existingLab
 
+      // Share recipients should never auto-create a trade lab
+      if (isSharedView) return null
+
       // If not found, create one
       if (fetchError?.code === 'PGRST116') {
         const portfolio = portfolios?.find(p => p.id === selectedPortfolioId)
@@ -555,6 +620,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Auto-select or auto-create simulation when portfolio changes
   useEffect(() => {
     if (!selectedPortfolioId || !tradeLab || simulationsLoading) return
+    if (isSharedView) return // Share recipients use the shared simulation, never auto-create
 
     // If we already have a simulation selected for this portfolio, keep it
     if (selectedSimulationId) {
@@ -718,7 +784,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           assets (id, symbol, company_name, sector),
           portfolios (id, name),
           pair_trades (id, name, description, rationale, urgency, status),
-          users:created_by (id, email, first_name, last_name)
+          users:created_by (id, email, first_name, last_name),
+          trade_idea_portfolios (stage, portfolio_id)
         `)
         .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'deciding'])
@@ -831,11 +898,31 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     createVariantAsync: v3CreateVariantAsync,
     updateVariant: v3UpdateVariant,
     deleteVariant: v3DeleteVariant,
+    deleteVariantsByAsset: v3DeleteVariantsByAsset,
     createTradeSheet: v3CreateTradeSheet,
   } = useIntentVariants({
     labId: tradeLab?.id,
     viewId: null, // Not using trade_lab_views, variants are lab-wide
     portfolioId: selectedPortfolioId,
+  })
+
+  // ==========================================================================
+  // SUGGESTIONS (suggest access level + owner review)
+  // ==========================================================================
+  const {
+    suggestions,
+    pendingCount: pendingSuggestionCount,
+    pendingSuggestionsByAsset,
+    submitSuggestion,
+    acceptSuggestion: handleAcceptSuggestion,
+    rejectSuggestion: handleRejectSuggestion,
+    isAccepting: isSuggestionAccepting,
+  } = useSimulationSuggestions({
+    simulationId: selectedSimulationId,
+    shareId: activeShareId,
+    portfolioId: selectedPortfolioId,
+    labId: tradeLab?.id,
+    enabled: canSuggest || (!isSharedView && !!selectedSimulationId),
   })
 
   // Hydrate appliedProposalIds + proposalAddedAssetIds from DB on mount/refresh.
@@ -894,9 +981,29 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     })
   }
 
-  // Handler for creating trade sheet
+  // Handler for creating trade sheet + clearing simulation
   const handleCreateTradeSheet = async (name: string, description?: string) => {
     await v3CreateTradeSheet({ name, description })
+
+    // Clear all simulation trades
+    if (selectedSimulationId) {
+      await supabase
+        .from('simulation_trades')
+        .delete()
+        .eq('simulation_id', selectedSimulationId)
+    }
+
+    // Clear all variants
+    if (tradeLab?.id) {
+      await supabase
+        .from('lab_variants')
+        .delete()
+        .eq('lab_id', tradeLab.id)
+    }
+
+    // Invalidate caches so UI refreshes
+    queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+    queryClient.invalidateQueries({ queryKey: ['intent-variants', tradeLab?.id] })
   }
 
   // PM decision mutation for proposals (Accept/Reject/Defer)
@@ -1086,10 +1193,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // v3: Guard to prevent concurrent sync runs
   const syncingRef = useRef(false)
+  // Reverse sync (orphan detection) only runs on initial load for each simulation.
+  // During active editing the user may create variants without trades (via direct
+  // click on baseline position). Continuous orphan detection would delete those.
+  const initialSyncDoneRef = useRef(false)
 
-  // Reset sync guard when simulation changes
+  // Reset sync guards when simulation changes
   useEffect(() => {
     syncingRef.current = false
+    initialSyncDoneRef.current = false
   }, [selectedSimulationId])
 
   // Search assets for phantom row (inline Add Trade)
@@ -1184,15 +1296,81 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     [benchmarkWeightMap],
   )
 
+  // Effective data: switch between real data and shared snapshot data
+  const effectiveBaselineHoldings = useMemo(() => {
+    if (isSharedView && sharedSimData?.share_mode === 'snapshot' && sharedSimData.baseline_holdings) {
+      return sharedSimData.baseline_holdings as BaselineHolding[]
+    }
+    return simulation?.baseline_holdings as BaselineHolding[] || []
+  }, [isSharedView, sharedSimData, simulation])
+
+  const effectiveVariants = useMemo(() => {
+    if (isSharedView && sharedSimData?.share_mode === 'snapshot' && sharedSimData.snapshot_variants) {
+      return sharedSimData.snapshot_variants as IntentVariant[]
+    }
+    return intentVariants
+  }, [isSharedView, sharedSimData, intentVariants])
+
+  const effectiveTotalValue = useMemo(() => {
+    if (isSharedView && sharedSimData?.share_mode === 'snapshot' && sharedSimData.baseline_total_value != null) {
+      return sharedSimData.baseline_total_value
+    }
+    return simulation?.baseline_total_value || 0
+  }, [isSharedView, sharedSimData, simulation])
+
+  // Realtime: subscribe to variant changes for live shared views
+  useEffect(() => {
+    if (!isSharedView || sharedSimData?.share_mode !== 'live' || !tradeLab?.id) return
+
+    const channel = supabase
+      .channel(`live-share-variants-${tradeLab.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'lab_variants',
+        filter: `lab_id=eq.${tradeLab.id}`
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: ['intent-variants', tradeLab.id] })
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [isSharedView, sharedSimData?.share_mode, tradeLab?.id, queryClient])
+
+  // Realtime: subscribe to simulation_trades changes for live shared views
+  useEffect(() => {
+    if (!isSharedView || sharedSimData?.share_mode !== 'live' || !selectedSimulationId) return
+
+    const channel = supabase
+      .channel(`live-share-sim-${selectedSimulationId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'simulation_trades',
+        filter: `simulation_id=eq.${selectedSimulationId}`
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [isSharedView, sharedSimData?.share_mode, selectedSimulationId, queryClient])
+
   // Merge baseline + variants into simulation rows for the table
   const simulationRows = useSimulationRows({
-    baselineHoldings: simulation?.baseline_holdings as BaselineHolding[] || [],
-    variants: intentVariants,
+    baselineHoldings: effectiveBaselineHoldings,
+    variants: effectiveVariants,
     priceMap: priceMap || {},
     benchmarkWeightMap: benchmarkWeightMap || {},
   })
 
-  // Handler for creating a variant from an untraded holding row
+  // Build asset_id → symbol map for trade sheet display
+  const assetSymbolMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const row of simulationRows.rows) {
+      if (row.asset_id && row.symbol) map[row.asset_id] = row.symbol
+    }
+    return map
+  }, [simulationRows.rows])
+
+  // Handler for creating a variant from an untraded holding row.
+  // Inserts an optimistic temp variant into cache for instant editor opening.
   const handleCreateVariantForHolding = useCallback((assetId: string, action: TradeAction) => {
     if (!simulation) return
     const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
@@ -1203,6 +1381,30 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       cost_basis: null,
       active_weight: null,
     } : null
+
+    // Optimistic: insert temp variant so the editor can open immediately
+    if (tradeLab?.id) {
+      const variantQueryKey = ['intent-variants', tradeLab.id, null]
+      queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+        if (old?.some(v => v.asset_id === assetId)) return old
+        const tempVariant = {
+          id: `temp-${assetId}`,
+          asset_id: assetId,
+          trade_lab_id: tradeLab.id,
+          action,
+          sizing_input: null,
+          sizing_spec: null,
+          computed: null,
+          direction_conflict: null,
+          below_lot_warning: false,
+          active_weight_config: null,
+          asset: holding
+            ? { id: assetId, symbol: holding.symbol, company_name: holding.company_name, sector: holding.sector }
+            : undefined,
+        } as IntentVariant
+        return [...(old || []), tempVariant]
+      })
+    }
 
     v3CreateVariant({
       assetId,
@@ -1220,7 +1422,66 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       activeWeightConfig: getActiveWeightConfig(assetId),
       hasBenchmark,
     })
-  }, [simulation, priceMap, v3CreateVariant, getActiveWeightConfig, hasBenchmark])
+  }, [simulation, priceMap, tradeLab?.id, queryClient, v3CreateVariant, getActiveWeightConfig, hasBenchmark])
+
+  // Track assets whose direct-edit was cancelled before the server responded.
+  // When the real variant arrives (replacing the temp), delete it immediately.
+  const cancelledDirectEditsRef = useRef<Set<string>>(new Set())
+
+  // Follow-up effect: when a real variant replaces a temp variant created by
+  // handleCreateVariantForHolding, check for pending sizing or cancellation.
+  const prevVariantIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const currentIds = new Set(intentVariants.map(v => v.id))
+    const prevIds = prevVariantIdsRef.current
+    prevVariantIdsRef.current = currentIds
+
+    if (!simulation) return
+
+    // Find real variants that just appeared (weren't in previous set)
+    for (const variant of intentVariants) {
+      if (variant.id.startsWith('temp-')) continue
+      if (prevIds.has(variant.id)) continue
+
+      const assetId = variant.asset_id
+
+      // If user cancelled the edit before server responded, delete the real variant
+      if (cancelledDirectEditsRef.current.has(assetId)) {
+        cancelledDirectEditsRef.current.delete(assetId)
+        v3DeleteVariant({ variantId: variant.id })
+        continue
+      }
+
+      // If user typed sizing on the temp variant, fire a follow-up update on the real one
+      const pendingSizing = pendingSizingRef.current.get(assetId)
+      if (pendingSizing !== undefined) {
+        pendingSizingRef.current.delete(assetId)
+        const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+        const holding = baselineHoldings.find(h => h.asset_id === assetId)
+        const currentPosition = holding ? {
+          shares: holding.shares,
+          weight: holding.weight,
+          cost_basis: null,
+          active_weight: null,
+        } : null
+        v3UpdateVariant({
+          variantId: variant.id,
+          updates: { sizingInput: pendingSizing },
+          currentPosition,
+          price: {
+            asset_id: assetId,
+            price: priceMap?.[assetId] || holding?.price || 100,
+            timestamp: new Date().toISOString(),
+            source: 'realtime' as const,
+          },
+          portfolioTotalValue: simulation.baseline_total_value || 0,
+          roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+          activeWeightConfig: getActiveWeightConfig(assetId),
+          hasBenchmark,
+        })
+      }
+    }
+  }, [intentVariants, simulation, priceMap, v3UpdateVariant, v3DeleteVariant, getActiveWeightConfig, hasBenchmark])
 
   // v3: Bidirectional sync between simulation_trades and lab_variants on load.
   // Forward: creates variants for trades that don't have one.
@@ -1256,13 +1517,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         t => !variantAssetIds.has(t.asset_id) && checkboxOverridesRef.current.get(t.asset_id) !== false
       )
 
-      // Reverse: variants without trades (orphaned) — only non-temp, non-baseline-only variants
-      const orphanedVariants = intentVariants.filter(
-        v => !v.id.startsWith('temp-') && !tradeAssetIds.has(v.asset_id)
-          && checkboxOverridesRef.current.get(v.asset_id) !== true
-      )
+      // Reverse: delete orphaned variants (no matching trade). Only run during
+      // initial sync — during active editing users may create variants without
+      // trades via direct click on baseline positions. Those are cleaned up by
+      // cleanupEmptyVariant in HoldingsSimulationTable when the edit is abandoned.
+      const orphanedVariants = initialSyncDoneRef.current
+        ? []
+        : intentVariants.filter(
+            v => !v.id.startsWith('temp-') && !tradeAssetIds.has(v.asset_id)
+              && checkboxOverridesRef.current.get(v.asset_id) !== true
+          )
 
-      if (unsyncedTrades.length === 0 && orphanedVariants.length === 0) return
+      if (unsyncedTrades.length === 0 && orphanedVariants.length === 0) {
+        initialSyncDoneRef.current = true
+        return
+      }
 
       syncingRef.current = true
 
@@ -1319,6 +1588,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
       }
 
+      initialSyncDoneRef.current = true
       syncingRef.current = false
     }
 
@@ -1764,6 +2034,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   removeTradeMutateRef.current = removeTradeMutation.mutate
   const v3DeleteVariantRef = useRef(v3DeleteVariant)
   v3DeleteVariantRef.current = v3DeleteVariant
+  const v3DeleteVariantsByAssetRef = useRef(v3DeleteVariantsByAsset)
+  v3DeleteVariantsByAssetRef.current = v3DeleteVariantsByAsset
 
   // ==========================================================================
   // CHECKBOX HELPERS — immediate mutations with instant optimistic UI
@@ -1807,15 +2079,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           // Skip if an import is in-flight (asset is being added by proposal/idea)
           if (importsInFlightRef.current.has(assetId)) return
 
-          const variant = intentVariants.find(v => v.asset_id === assetId)
-          if (variant) {
+          const hasVariant = intentVariants.some(v => v.asset_id === assetId)
+          if (hasVariant) {
             queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
             queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
               old?.filter(v => v.asset_id !== assetId) ?? []
             )
-            if (!variant.id.startsWith('temp-')) {
-              v3DeleteVariantRef.current({ variantId: variant.id })
-            }
+            // Delete ALL variants for this asset (handles duplicates)
+            v3DeleteVariantsByAssetRef.current({ assetId })
           }
           // Also ensure trade is removed if it reappeared
           if (tradeAssetIds.has(assetId)) {
@@ -1838,10 +2109,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, false)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
-    // Cancel in-flight variant fetches so a pending refetch can't overwrite our removal
+    // Cancel in-flight variant AND simulation fetches so pending refetches
+    // can't overwrite our optimistic removal with stale data
     if (tradeLab?.id) {
       queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
     }
+    queryClient.cancelQueries({ queryKey: ['simulation', selectedSimulationId] })
 
     // Optimistic: remove ALL variants (temp AND real) from cache (table row disappears)
     if (tradeLab?.id) {
@@ -1849,6 +2122,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         old?.filter(v => v.asset_id !== assetId) ?? []
       )
     }
+
+    // Optimistic: remove the simulation_trade from cache so expressedAssetIds
+    // is immediately consistent. Prevents the convergence effect from seeing
+    // a stale trade and firing redundant removals that cause checkbox flicker.
+    queryClient.setQueryData(
+      ['simulation', selectedSimulationId],
+      (old: any) => {
+        if (!old?.simulation_trades) return old
+        return {
+          ...old,
+          simulation_trades: old.simulation_trades.filter(
+            (t: any) => t.asset_id !== assetId
+          ),
+        }
+      }
+    )
 
     // If an import is in-flight for this asset, don't fire removal now —
     // importTradeMutation.onSuccess will handle it when the import lands.
@@ -1862,12 +2151,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     trades.forEach((trade: any) => {
       removeTradeMutation.mutate({ tradeId: trade.id, assetId })
     })
-    // Delete real variant from DB
+    // Delete ALL variants for this asset from DB (handles duplicates from rapid toggling)
     if (tradeLab?.id) {
-      const variant = intentVariants.find(v => v.asset_id === assetId && !v.id.startsWith('temp-'))
-      if (variant) v3DeleteVariant({ variantId: variant.id })
+      v3DeleteVariantsByAsset({ assetId })
     }
-  }, [simulation?.simulation_trades, intentVariants, tradeLab?.id, queryClient, removeTradeMutation, v3DeleteVariant])
+  }, [simulation?.simulation_trades, tradeLab?.id, queryClient, removeTradeMutation, v3DeleteVariantsByAsset, selectedSimulationId])
 
   /** Remove any other checked source for the same asset_id to enforce exclusivity */
   const uncheckOtherSourcesForAsset = useCallback((assetId: string, source: 'idea' | 'proposal') => {
@@ -1917,6 +2205,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
     // Optimistic: add temp variant to cache for instant table row
+    // Include proposed sizing so quickEstimate can compute deltas + cash immediately
+    const tempSizing = idea.proposed_weight != null
+      ? String(idea.proposed_weight)
+      : idea.proposed_shares != null
+        ? `#${idea.proposed_shares}`
+        : null
     if (tradeLab?.id) {
       const variantQueryKey = ['intent-variants', tradeLab.id, null]
       queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
@@ -1926,7 +2220,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           asset_id: assetId,
           trade_lab_id: tradeLab.id,
           action: idea.action || 'buy',
-          sizing_input: null,
+          sizing_input: tempSizing,
           sizing_spec: null,
           computed: null,
           direction_conflict: null,
@@ -1945,20 +2239,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Override-aware trade count: filters out trades the user has toggled OFF.
   // This keeps the header count and tab badge in sync with checkbox state instantly.
-  const effectiveTradeCount = useMemo(() => {
-    const trades = simulation?.simulation_trades || []
-    return trades.filter((t: any) => checkboxOverrides.get(t.asset_id) !== false).length
-  }, [simulation?.simulation_trades, checkboxOverrides])
 
-  // Calculate metrics dynamically based on current trades (LIVE!)
+
+  // Calculate metrics dynamically based on current trades + variants (LIVE!)
   const liveMetrics = useMemo(() => {
     if (!simulation || !priceMap || Object.keys(priceMap).length === 0) return null
 
     const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
     const trades = simulation.simulation_trades || []
 
-    return calculateSimulationMetrics(baselineHoldings, trades, priceMap)
-  }, [simulation, priceMap])
+    return calculateSimulationMetrics(baselineHoldings, trades, priceMap, intentVariants)
+  }, [simulation, priceMap, intentVariants])
 
   // Add quick trade (sandbox-only, no trade idea created)
   /** Add a manual asset from the phantom row (inline Add Trade in the table) */
@@ -1989,9 +2280,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Track import
     importsInFlightRef.current.add(assetId)
 
-    // Build a minimal TradeQueueItemWithDetails-shaped object for importTradeMutation
+    // Build a minimal TradeQueueItemWithDetails-shaped object for importTradeMutation.
+    // id is null so the FK on trade_queue_item_id doesn't fail (no trade idea source).
     const tradeIdea = {
-      id: crypto.randomUUID(),
+      id: null,
       asset_id: assetId,
       action: 'buy' as TradeAction,
       proposed_shares: null,
@@ -2105,18 +2397,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (!tradeIdeas) return []
     const expressedAssetIds = new Set(simulation?.simulation_trades?.map(t => t.asset_id) || [])
     return tradeIdeas.map(idea => {
+      // Prefer per-portfolio stage from trade_idea_portfolios over parent stage
+      const portfolioTrack = (idea as any).trade_idea_portfolios?.find(
+        (t: any) => t.portfolio_id === selectedPortfolioId
+      )
+      const effectiveStage = portfolioTrack?.stage || idea.stage || idea.status
+
       // Checkbox override takes precedence for instant feedback
       if (checkboxOverrides.has(idea.asset_id)) {
-        return { ...idea, isIncluded: includedIdeaIds?.has(idea.id) || false, isAdded: checkboxOverrides.get(idea.asset_id)! }
+        return { ...idea, effectiveStage, isIncluded: includedIdeaIds?.has(idea.id) || false, isAdded: checkboxOverrides.get(idea.asset_id)! }
       }
       return {
         ...idea,
+        effectiveStage,
         isIncluded: includedIdeaIds?.has(idea.id) || false,
         isAdded: expressedAssetIds.has(idea.asset_id)
           && !proposalAddedAssetIds.has(idea.asset_id),
       }
     })
-  }, [tradeIdeas, simulation?.simulation_trades, includedIdeaIds, proposalAddedAssetIds, checkboxOverrides])
+  }, [tradeIdeas, simulation?.simulation_trades, includedIdeaIds, proposalAddedAssetIds, checkboxOverrides, selectedPortfolioId])
 
   // Show all trade ideas for the portfolio (not just included ones)
   // This lets users see all available ideas and add them to the workbench
@@ -2178,9 +2477,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         // Use the most advanced stage among the legs
         const stageOrder = ['idea', 'discussing', 'working_on', 'simulating', 'modeling', 'deciding', 'approved']
         const currentStageIdx = stageOrder.indexOf(entry.pairTrade.status)
-        const ideaStageIdx = stageOrder.indexOf(idea.stage || idea.status)
+        const effectiveIdeaStage = idea.effectiveStage || idea.stage || idea.status
+        const ideaStageIdx = stageOrder.indexOf(effectiveIdeaStage)
         if (ideaStageIdx > currentStageIdx) {
-          entry.pairTrade.status = (idea.stage || idea.status) as any
+          entry.pairTrade.status = effectiveIdeaStage as any
         }
       } else {
         standalone.push(idea)
@@ -2232,6 +2532,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const isPairTrade = sizingContext?.isPairTrade === true
       const pairTradeId = sizingContext?.pairTradeId
 
+      // For pair trade proposals, mark ALL leg IDs as having a proposal
+      // (the proposal is linked to one trade_queue_item_id but covers all legs)
+      if (isPairTrade && sizingContext?.legs?.length) {
+        sizingContext.legs.forEach((leg: any) => {
+          if (leg.legId) proposalTradeItemIds.add(leg.legId)
+        })
+      }
+
       // For pair trades, only add one proposal entry per pairTradeId
       if (isPairTrade && pairTradeId) {
         if (seenPairTradeProposals.has(pairTradeId)) return
@@ -2253,8 +2561,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }
     })
 
-    // Pair trades: include if ANY leg lacks a proposal
-    pairTradesGrouped.pairTrades.forEach(entry => {
+    // Pair trades: exclude if a proposal covers this pair trade (by pairTradeId)
+    // or if ALL legs have individual proposals
+    pairTradesGrouped.pairTrades.forEach((entry, pairId) => {
+      if (seenPairTradeProposals.has(pairId)) return // entire pair covered by a proposal
       const hasUnproposedLeg = entry.legs.some(leg => !proposalTradeItemIds.has(leg.id))
       if (hasUnproposedLeg) {
         groups.ideas.push({ type: 'pair', ...entry })
@@ -2284,15 +2594,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const matchesStage = (item: TradeItem): boolean => {
       if (leftPaneStageFilter === 'all') return true
       if (item.type === 'single') {
-        const stage = item.idea.stage || item.idea.status
+        const stage = item.idea.effectiveStage || item.idea.stage || item.idea.status
         if (leftPaneStageFilter === 'idea') return stage === 'idea'
         if (leftPaneStageFilter === 'working_on') return stage === 'working_on' || stage === 'discussing'
         if (leftPaneStageFilter === 'modeling') return stage === 'modeling' || stage === 'simulating'
+        if (leftPaneStageFilter === 'deciding') return stage === 'deciding'
       } else {
-        const status = item.pairTrade.status
-        if (leftPaneStageFilter === 'idea') return status === 'idea'
-        if (leftPaneStageFilter === 'working_on') return status === 'working_on' || status === 'discussing'
-        if (leftPaneStageFilter === 'modeling') return status === 'modeling' || status === 'simulating'
+        // For pair trades, use the most-advanced leg's effectiveStage
+        const legStages = item.legs.map(l => (l as any).effectiveStage || l.stage || l.status)
+        const stageMatches = (s: string) => {
+          if (leftPaneStageFilter === 'idea') return s === 'idea'
+          if (leftPaneStageFilter === 'working_on') return s === 'working_on' || s === 'discussing'
+          if (leftPaneStageFilter === 'modeling') return s === 'modeling' || s === 'simulating'
+          if (leftPaneStageFilter === 'deciding') return s === 'deciding'
+          return false
+        }
+        return legStages.some(stageMatches)
       }
       return true
     }
@@ -2313,11 +2630,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     const stageRank = (item: TradeItem): number => {
       const s = item.type === 'single'
-        ? (item.idea.stage || item.idea.status)
+        ? (item.idea.effectiveStage || item.idea.stage || item.idea.status)
         : item.pairTrade.status
-      if (s === 'modeling' || s === 'simulating') return 0
-      if (s === 'working_on' || s === 'discussing') return 1
-      return 2 // idea
+      if (s === 'deciding') return 0
+      if (s === 'modeling' || s === 'simulating') return 1
+      if (s === 'working_on' || s === 'discussing') return 2
+      return 3 // idea
     }
 
     const filteredIdeas = itemsByCategory.ideas
@@ -2329,21 +2647,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Count sandbox trade stats
   const tradeStats = useMemo(() => {
-    const trades = simulation?.simulation_trades || []
-    const buys = trades.filter(t => t.action === 'buy' || t.action === 'add').length
-    const sells = trades.filter(t => t.action === 'sell' || t.action === 'trim').length
-    return { total: trades.length, buys, sells }
-  }, [simulation?.simulation_trades])
+    // Use simulationRows.tradedRows for accurate action breakdown
+    // (simulation_trades.action may be stale; derivedAction from variants is truth)
+    const traded = simulationRows.tradedRows
+    const buys = traded.filter(r => r.derivedAction === 'buy' || r.derivedAction === 'add').length
+    const sells = traded.filter(r => r.derivedAction === 'sell' || r.derivedAction === 'trim').length
+    return { total: traded.length, buys, sells }
+  }, [simulationRows.tradedRows])
 
   // Group trades by action with detailed metrics for Trades view
   const tradesGroupedByAction = useMemo(() => {
-    if (!simulation?.simulation_trades || !priceMap) return null
+    // Use simulationRows.tradedRows which already has computed deltas from
+    // lab_variants (v3). simulation_trades.shares/weight are often null in v3
+    // since sizing lives on variants, not on the trade link records.
+    const traded = simulationRows.tradedRows
+    if (!traded || traded.length === 0) return null
 
-    const trades = simulation.simulation_trades
-    const baseline = simulation.baseline_holdings as BaselineHolding[] || []
-    const totalPortfolioValue = simulation.baseline_total_value || 0
+    const totalPortfolioValue = simulation?.baseline_total_value || 0
 
-    // Group trades by action
+    // Group trades by derived action
     const groups: Record<string, {
       action: TradeAction
       trades: Array<{
@@ -2357,7 +2679,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         weight: number
         currentHolding: number
         currentWeight: number
-        cashImpact: number // positive = cash outflow (buy), negative = cash inflow (sell)
+        cashImpact: number
       }>
       totalValue: number
       totalCashImpact: number
@@ -2372,28 +2694,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       trim: 'Trims'
     }
 
-    trades.forEach(trade => {
-      const action = trade.action
-      const price = priceMap[trade.asset_id] || trade.price || 100
-      const baselineHolding = baseline.find(h => h.asset_id === trade.asset_id)
-      const currentShares = baselineHolding?.shares || 0
-      const currentValue = currentShares * price
-      const currentWeight = totalPortfolioValue > 0 ? (currentValue / totalPortfolioValue) * 100 : 0
-
-      // Calculate trade value
-      let tradeShares = trade.shares || 0
-      let tradeWeight = trade.weight || 0
-
-      // If weight is specified, calculate shares
-      if (!tradeShares && tradeWeight && totalPortfolioValue > 0) {
-        tradeShares = (tradeWeight / 100 * totalPortfolioValue) / price
-      }
-      // If shares specified, calculate weight
-      if (tradeShares && !tradeWeight && totalPortfolioValue > 0) {
-        tradeWeight = (tradeShares * price / totalPortfolioValue) * 100
-      }
-
-      const tradeValue = tradeShares * price
+    traded.forEach(row => {
+      const action = row.derivedAction
+      const price = priceMap?.[row.asset_id] || row.baseline?.price || 100
+      const tradeShares = Math.abs(row.deltaShares)
+      const tradeWeight = Math.abs(row.deltaWeight)
+      const tradeValue = Math.abs(row.notional)
 
       // Cash impact: buys/adds are cash outflows (positive), sells/trims are inflows (negative)
       const cashImpact = (action === 'buy' || action === 'add') ? tradeValue : -tradeValue
@@ -2411,16 +2717,16 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }
 
       groups[label].trades.push({
-        id: trade.id,
-        symbol: trade.assets?.symbol || '',
-        company_name: trade.assets?.company_name || '',
-        sector: trade.assets?.sector || null,
+        id: row.variant?.id || row.asset_id,
+        symbol: row.symbol,
+        company_name: row.company_name,
+        sector: row.sector,
         shares: tradeShares,
         price,
         value: tradeValue,
         weight: tradeWeight,
-        currentHolding: currentShares,
-        currentWeight,
+        currentHolding: row.currentShares,
+        currentWeight: row.currentWeight,
         cashImpact
       })
 
@@ -2449,10 +2755,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       totalCashImpact,
       totalBuyValue,
       totalSellValue,
-      netCashFlow: totalSellValue - totalBuyValue, // positive = net cash in, negative = net cash out
+      netCashFlow: totalSellValue - totalBuyValue,
       totalPortfolioValue
     }
-  }, [simulation?.simulation_trades, simulation?.baseline_holdings, simulation?.baseline_total_value, priceMap])
+  }, [simulationRows.tradedRows, simulation?.baseline_total_value, priceMap])
 
   // Group holdings based on selected grouping
   const groupedHoldings = useMemo(() => {
@@ -2741,9 +3047,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const timePressure = getTimePressure(idea)
     const authorInitials = getUserInitials(idea.users)
 
-    // Stage-based left border color
-    const stageOfIdea = idea.stage || idea.status
+    // Stage-based left border color (prefer per-portfolio stage)
+    const stageOfIdea = idea.effectiveStage || idea.stage || idea.status
     const stageBorderClass =
+      (stageOfIdea === 'deciding') ? 'border-l-amber-500 dark:border-l-amber-400' :
       (stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'border-l-indigo-500 dark:border-l-indigo-400' :
       (stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'border-l-purple-500 dark:border-l-purple-400' :
       'border-l-blue-400 dark:border-l-blue-500'
@@ -3340,10 +3647,18 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         <div className="px-6 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Beaker className="h-5 w-5 text-primary-600" />
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Trade Lab</h1>
-            <span className="text-gray-300 dark:text-gray-600">|</span>
-            {/* Portfolio Selector - Searchable Dropdown */}
-            <div className="relative" ref={portfolioDropdownRef}>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {isSharedView ? 'Shared Simulation' : 'Trade Lab'}
+            </h1>
+            {isSharedView && sharedSimData && (
+              <>
+                <span className="text-gray-300 dark:text-gray-600">|</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{sharedSimData.name}</span>
+              </>
+            )}
+            {!isSharedView && <span className="text-gray-300 dark:text-gray-600">|</span>}
+            {/* Portfolio Selector - Searchable Dropdown — hidden in shared view */}
+            {!isSharedView && <div className="relative" ref={portfolioDropdownRef}>
               <button
                 onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
                 className={clsx(
@@ -3423,13 +3738,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   </div>
                 </div>
               )}
-            </div>
-            {tradeLabLoading && (
+            </div>}
+            {!isSharedView && tradeLabLoading && (
               <RefreshCw className="h-4 w-4 text-gray-400 animate-spin" />
             )}
-            {tradeLab && (
+            {!isSharedView && tradeLab && (
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {effectiveTradeCount} trades
+                {simulationRows.summary.tradedCount} trades
               </span>
             )}
           </div>
@@ -3459,8 +3774,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 )}
               </>
             )}
-            {/* Share Simulation Button */}
-            {simulation && (
+            {/* Share Simulation Button — hidden in shared view */}
+            {simulation && !isSharedView && (
               <Button
                 variant="outline"
                 size="sm"
@@ -3471,46 +3786,71 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 Share
               </Button>
             )}
+            {/* Exit shared view button */}
+            {isSharedView && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExitSharedView}
+              >
+                <X className="h-4 w-4 mr-1.5" />
+                Exit shared view
+              </Button>
+            )}
             {/* Create Trade List button moved to bottom bar of HoldingsSimulationTable */}
           </div>
         </div>
 
         {/* View Tabs Row */}
-        {selectedPortfolioId && (
+        {(selectedPortfolioId || isSharedView) && (
           <div className="px-6 pb-2 flex items-center justify-between">
-            {/* Left: View Type Tabs */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setSelectedViewType('private')}
-                className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                  selectedViewType === 'private'
-                    ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                )}
-              >
-                <FileText className="h-4 w-4" />
-                Workspace
-                {selectedViewType === 'private' && (
-                  <span className="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal">Only you</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedViewType('lists')}
-                className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                  selectedViewType === 'lists'
-                    ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                )}
-              >
-                <List className="h-4 w-4" />
-                Trade Sheets
-              </button>
-            </div>
+            {/* Left: View Type Tabs — hidden in shared view */}
+            {!isSharedView ? (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setSelectedViewType('private')}
+                  className={clsx(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                    selectedViewType === 'private'
+                      ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  )}
+                >
+                  <FileText className="h-4 w-4" />
+                  Workspace
+                  {selectedViewType === 'private' && (
+                    <span className="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal">Only you</span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setSelectedViewType('lists')}
+                  className={clsx(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                    selectedViewType === 'lists'
+                      ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  )}
+                >
+                  <List className="h-4 w-4" />
+                  Trade Sheets
+                </button>
+                <button
+                  onClick={() => setSelectedViewType('shared')}
+                  className={clsx(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                    selectedViewType === 'shared'
+                      ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  )}
+                >
+                  <Share2 className="h-4 w-4" />
+                  Shared with me
+                </button>
+              </div>
+            ) : <div />}
 
             {/* Right: View Toggle (only show for workbench views, not Trade Sheets) */}
-            {selectedViewType !== 'lists' && simulation && (
+            {selectedViewType !== 'lists' && (simulation || isSharedView) && (
               <div className="flex items-center gap-2">
                 <div className="inline-flex items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
                   <button
@@ -3524,9 +3864,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   >
                     <Table2 className="h-3.5 w-3.5" />
                     Simulation
-                    {v3ConflictSummary.conflicts > 0 && (
+                    {simulationRows.summary.conflictCount > 0 && (
                       <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full">
-                        {v3ConflictSummary.conflicts}
+                        {simulationRows.summary.conflictCount}
                       </span>
                     )}
                   </button>
@@ -3553,9 +3893,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   >
                     <List className="h-3.5 w-3.5" />
                     Trades
-                    {effectiveTradeCount > 0 && (
+                    {simulationRows.summary.tradedCount > 0 && (
                       <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full">
-                        {effectiveTradeCount}
+                        {simulationRows.summary.tradedCount}
                       </span>
                     )}
                   </button>
@@ -3569,14 +3909,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Loading state - unified loading for all initial data */}
-        {(tradeLabLoading || simulationsLoading || isAutoCreating || (selectedPortfolioId && !simulation && simulationLoading)) ? (
+        {(sharedSimLoading || tradeLabLoading || simulationsLoading || isAutoCreating || (selectedPortfolioId && !simulation && simulationLoading && !isSharedView)) ? (
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
             <div className="text-center">
               <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mx-auto mb-4" />
               <p className="text-gray-500 dark:text-gray-400">Loading workbench...</p>
             </div>
           </div>
-        ) : !selectedPortfolioId ? (
+        ) : !selectedPortfolioId && !isSharedView ? (
           /* No portfolio selected state */
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
             <div className="text-center max-w-md">
@@ -3593,117 +3933,43 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           /* Trade Sheets Section */
           <div className="flex-1 bg-white dark:bg-gray-900 overflow-auto">
             <div className="p-6">
-              {/* Trade Sheets Header with Stats */}
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Trade Sheets</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Browse and manage trade sheets for this portfolio
-                    <span className="mx-1.5 text-gray-300 dark:text-gray-600">|</span>
-                    <button
-                      onClick={() => window.dispatchEvent(new CustomEvent('openTradePlans'))}
-                      className="text-primary-600 dark:text-primary-400 hover:underline underline-offset-2"
-                    >
-                      View Trade Plans
-                    </button>
-                  </p>
-                </div>
-                {listStats && (
-                  <div className="flex items-center gap-4">
-                    <div className="text-center px-3">
-                      <div className="text-lg font-semibold text-gray-900 dark:text-white">{listStats.total}</div>
-                      <div className="text-xs text-gray-500">Total</div>
-                    </div>
-                    {listStats.pending > 0 && (
-                      <div className="text-center px-3 border-l border-gray-200 dark:border-gray-700">
-                        <div className="text-lg font-semibold text-amber-600">{listStats.pending}</div>
-                        <div className="text-xs text-gray-500">Pending</div>
-                      </div>
-                    )}
-                    {listStats.sent > 0 && (
-                      <div className="text-center px-3 border-l border-gray-200 dark:border-gray-700">
-                        <div className="text-lg font-semibold text-blue-600">{listStats.sent}</div>
-                        <div className="text-xs text-gray-500">Sent</div>
-                      </div>
-                    )}
-                    {listStats.acknowledged > 0 && (
-                      <div className="text-center px-3 border-l border-gray-200 dark:border-gray-700">
-                        <div className="text-lg font-semibold text-green-600">{listStats.acknowledged}</div>
-                        <div className="text-xs text-gray-500">Complete</div>
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* Trade Sheets Header */}
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Trade Sheets</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Committed trade sheets for this portfolio
+                </p>
               </div>
 
-              {/* V3: Trade Sheet Creation Panel with Conflict Summary */}
+              {/* V3: Trade Sheet List */}
               <TradeSheetPanel
-                variants={intentVariants}
-                conflictSummary={v3ConflictSummary}
                 tradeSheets={v3TradeSheets}
-                onCreateTradeSheet={handleCreateTradeSheet}
-                onFixConflict={handleFixConflict}
-                isCreating={v3CreatingSheet}
-                className="mb-6"
+                assetSymbolMap={assetSymbolMap}
               />
-
-              {/* Trade Sheets List */}
-              {listsLoading ? (
-                <ListSkeleton count={3} />
-              ) : lists.length === 0 ? (
-                <EmptyState
-                  icon={List}
-                  title="No Trade Sheets Yet"
-                  description="When you commit trades from your workspace, they'll appear here as trade sheets."
-                />
-              ) : (
-                <div className="space-y-3">
-                  {lists.map((tradeList) => (
-                    <div
-                      key={tradeList.id}
-                      className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-medium text-gray-900 dark:text-white truncate">
-                              {tradeList.name}
-                            </h3>
-                            <Badge
-                              variant={
-                                tradeList.status === 'acknowledged' ? 'success' :
-                                tradeList.status === 'sent_to_desk' ? 'info' :
-                                tradeList.status === 'approved' ? 'success' :
-                                tradeList.status === 'pending_approval' ? 'warning' :
-                                tradeList.status === 'rejected' ? 'error' :
-                                'default'
-                              }
-                              className="text-xs"
-                            >
-                              {tradeList.status === 'pending_approval' ? 'Pending' :
-                               tradeList.status === 'sent_to_desk' ? 'Sent' :
-                               tradeList.status.charAt(0).toUpperCase() + tradeList.status.slice(1)}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            {tradeList.trade_plan_items?.length || 0} trades •
-                            Created {new Date(tradeList.created_at).toLocaleDateString()}
-                            {tradeList.desk_reference && ` • Ref: ${tradeList.desk_reference}`}
-                          </p>
-                        </div>
-                        <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0 mt-1" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            </div>
+          </div>
+        ) : selectedViewType === 'shared' ? (
+          /* Shared with me Section */
+          <div className="flex-1 bg-white dark:bg-gray-900 overflow-auto">
+            <div className="p-6 max-w-3xl mx-auto">
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Shared with me</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Simulations that other team members have shared with you.
+                </p>
+              </div>
+              <SharedWithMeList
+                onSelectShare={(share) => {
+                  window.dispatchEvent(new CustomEvent('open-shared-simulation', { detail: { share } }))
+                }}
+              />
             </div>
           </div>
         ) : (
           /* Workbench View - always show for Workspace tab */
           <>
-              {/* Trade Ideas Panel */}
-              <div className={clsx(
+              {/* Trade Ideas Panel — hidden in shared view */}
+              {!isSharedView && <div className={clsx(
                 "border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col transition-all",
                 showIdeasPanel ? "w-80" : "w-12"
               )}>
@@ -3782,8 +4048,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             )}
                           </div>
                           <div className="flex items-center gap-1">
-                            {(['all', 'modeling', 'working_on', 'idea'] as const).map(stage => {
+                            {(['all', 'deciding', 'modeling', 'working_on', 'idea'] as const).map(stage => {
                               const dotColor =
+                                stage === 'deciding' ? 'bg-amber-500' :
                                 stage === 'modeling' ? 'bg-indigo-500' :
                                 stage === 'working_on' ? 'bg-purple-500' :
                                 stage === 'idea' ? 'bg-blue-400' : null
@@ -3799,7 +4066,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                   )}
                                 >
                                   {dotColor && <span className={clsx("w-1.5 h-1.5 rounded-full", dotColor)} />}
-                                  {stage === 'all' ? 'All' : stage === 'idea' ? 'Idea' : stage === 'working_on' ? 'Working' : 'Modeling'}
+                                  {stage === 'all' ? 'All' : stage === 'idea' ? 'Idea' : stage === 'working_on' ? 'Working' : stage === 'deciding' ? 'Deciding' : 'Modeling'}
                                 </button>
                               )
                             })}
@@ -4236,28 +4503,48 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     )}
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* Simulation Workspace */}
               <div className="flex-1 overflow-hidden flex flex-col">
+                {/* Shared Simulation Banner */}
+                {isSharedView && sharedSimData && (
+                  <div className="px-4 pt-4">
+                    <SharedSimulationBanner
+                      sharedBy={sharedSimData.shared_by}
+                      accessLevel={sharedSimData.access_level}
+                      shareMode={sharedSimData.share_mode}
+                      sharedAt={sharedSimData.shared_at}
+                      message={sharedSimData.message}
+                    />
+                  </div>
+                )}
                 {/* Main Content Area */}
                 <div className="flex-1 overflow-hidden p-4">
-                  {simulation ? (
+                  {(simulation || (isSharedView && sharedSimData)) ? (
                   <>
                   {/* View Content */}
                   <div className="h-full">
                     {impactView === 'simulation' ? (
-                      /* Holdings Simulation Table */
-                      <div className="h-full rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                      /* Holdings Simulation Table + Suggestion Review Panel */
+                      <div className="h-full flex gap-0">
+                      <div className="flex-1 min-w-0 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
                         <HoldingsSimulationTable
                           rows={simulationRows.rows}
+                          cashRow={simulationRows.cashRow}
                           tradedRows={simulationRows.tradedRows}
                           untradedRows={simulationRows.untradedRows}
                           newPositionRows={simulationRows.newPositionRows}
                           summary={simulationRows.summary}
-                          portfolioTotalValue={simulation.baseline_total_value || 0}
+                          portfolioTotalValue={effectiveTotalValue}
+                          readOnly={tableReadOnly}
                           hasBenchmark={hasBenchmark}
                           priceMap={priceMap || {}}
+                          suggestMode={canSuggest || false}
+                          onSubmitSuggestion={canSuggest ? submitSuggestion : undefined}
+                          pendingSuggestionsByAsset={pendingSuggestionsByAsset}
+                          pendingSuggestionCount={!isSharedView ? pendingSuggestionCount : undefined}
+                          onOpenSuggestionReview={!isSharedView ? () => setSuggestionReviewOpen(true) : undefined}
                           onUpdateVariant={(variantId, updates) => {
                             // Temp variants: apply cache update for instant display, store
                             // pending sizing so it's used when the real variant arrives.
@@ -4338,172 +4625,76 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               activeWeightConfig: getActiveWeightConfig(assetId),
                               hasBenchmark,
                             })
+
+                            // If this variant has no matching simulation_trade (created via
+                            // direct click on baseline position), create one so the dual-write
+                            // invariant holds and the trade appears in the Trades tab.
+                            if (updates.sizingInput && assetId && simulation?.simulation_trades) {
+                              const hasTrade = simulation.simulation_trades.some(t => t.asset_id === assetId)
+                              if (!hasTrade) {
+                                supabase.from('simulation_trades')
+                                  .upsert({
+                                    simulation_id: simulation.id,
+                                    asset_id: assetId,
+                                    action: updates.action || variant?.action || 'add',
+                                    price: priceMap?.[assetId] || holding?.price || 100,
+                                    sort_order: simulation.simulation_trades.length,
+                                  }, { onConflict: 'simulation_id,asset_id' })
+                                  .select()
+                                  .single()
+                                  .then(({ error }) => {
+                                    if (!error) queryClient.invalidateQueries({ queryKey: ['simulation', simulation.id] })
+                                  })
+                              }
+                            }
                           }}
-                          onDeleteVariant={(variantId) => v3DeleteVariant({ variantId })}
+                          onDeleteVariant={(variantId) => {
+                            // If deleting a temp variant from a direct edit (user escaped
+                            // before server responded), track the cancellation so the
+                            // follow-up effect can delete the real variant when it arrives.
+                            if (variantId.startsWith('temp-')) {
+                              const assetId = variantId.replace('temp-', '')
+                              cancelledDirectEditsRef.current.add(assetId)
+                              // Also clear any pending sizing for this asset
+                              pendingSizingRef.current.delete(assetId)
+                            }
+                            v3DeleteVariant({ variantId })
+                          }}
                           onCreateVariant={handleCreateVariantForHolding}
                           onFixConflict={(variantId, suggestedAction) => handleFixConflict(variantId, suggestedAction)}
                           onAddAsset={handleAddManualAsset}
                           assetSearchResults={phantomAssetResults ?? []}
                           onAssetSearchChange={setPhantomAssetSearch}
-                          onCreateTradeSheet={() => createTradeListMutation.mutate()}
-                          canCreateTradeSheet={simulation?.status === 'draft' && effectiveTradeCount > 0 && !workbenchSaving}
-                          isCreatingTradeSheet={createTradeListMutation.isPending}
+                          onCreateTradeSheet={!isSharedView ? () => {
+                            setShowCreateSheetConfirm(true)
+                          } : undefined}
+                          canCreateTradeSheet={!isSharedView && simulation?.status === 'draft' && simulationRows.summary.tradedCount > 0 && !v3HasConflicts}
+                          isCreatingTradeSheet={v3CreatingSheet}
                         />
+                      </div>
+                      {/* Suggestion Review Panel (owner-side) */}
+                      {suggestionReviewOpen && !isSharedView && (
+                        <SuggestionReviewPanel
+                          suggestions={suggestions}
+                          onAccept={handleAcceptSuggestion}
+                          onReject={handleRejectSuggestion}
+                          onClose={() => setSuggestionReviewOpen(false)}
+                          baselineHoldings={simulation?.baseline_holdings as BaselineHolding[] | undefined}
+                          priceMap={priceMap || {}}
+                          portfolioTotalValue={effectiveTotalValue}
+                          hasBenchmark={hasBenchmark}
+                          isAccepting={isSuggestionAccepting}
+                        />
+                      )}
                       </div>
                     ) : metrics ? (
                       <div className="h-full overflow-y-auto space-y-3">
                         {impactView === 'impact' ? (
-                          <div className="space-y-6">
-                            {/* Key Metrics - Modern card grid */}
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                              {/* Positions Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
-                                <div className="flex items-center justify-between mb-3">
-                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Positions</span>
-                                  <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
-                                    <Layers className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                  </div>
-                                </div>
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{metrics.position_count_after}</span>
-                                  {metrics.position_count_before !== metrics.position_count_after && (
-                                    <span className="text-sm text-gray-400">from {metrics.position_count_before}</span>
-                                  )}
-                                </div>
-                                <div className="mt-2 flex items-center gap-2 text-xs h-5">
-                                  {metrics.positions_added > 0 && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400">
-                                      <Plus className="h-3 w-3" />{metrics.positions_added} new
-                                    </span>
-                                  )}
-                                  {metrics.positions_removed > 0 && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
-                                      <Minus className="h-3 w-3" />{metrics.positions_removed}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Top 5 Concentration Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
-                                <div className="flex items-center justify-between mb-3">
-                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Top 5</span>
-                                  <div className={clsx(
-                                    "w-8 h-8 rounded-lg flex items-center justify-center",
-                                    metrics.top_5_concentration_after > metrics.top_5_concentration_before
-                                      ? "bg-amber-50 dark:bg-amber-900/20"
-                                      : "bg-green-50 dark:bg-green-900/20"
-                                  )}>
-                                    {metrics.top_5_concentration_after > metrics.top_5_concentration_before
-                                      ? <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                                      : <TrendingDown className="h-4 w-4 text-green-600 dark:text-green-400" />
-                                    }
-                                  </div>
-                                </div>
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{metrics.top_5_concentration_after.toFixed(1)}%</span>
-                                </div>
-                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 h-4">
-                                  {metrics.top_5_concentration_after !== metrics.top_5_concentration_before && (
-                                    <>
-                                      <span className={clsx(
-                                        "font-medium",
-                                        metrics.top_5_concentration_after > metrics.top_5_concentration_before ? "text-amber-600" : "text-green-600"
-                                      )}>
-                                        {metrics.top_5_concentration_after > metrics.top_5_concentration_before ? '+' : ''}
-                                        {(metrics.top_5_concentration_after - metrics.top_5_concentration_before).toFixed(1)}%
-                                      </span>
-                                      {' '}from {metrics.top_5_concentration_before.toFixed(1)}%
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Top 10 Concentration Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
-                                <div className="flex items-center justify-between mb-3">
-                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Top 10</span>
-                                  <div className={clsx(
-                                    "w-8 h-8 rounded-lg flex items-center justify-center",
-                                    metrics.top_10_concentration_after > metrics.top_10_concentration_before
-                                      ? "bg-amber-50 dark:bg-amber-900/20"
-                                      : "bg-green-50 dark:bg-green-900/20"
-                                  )}>
-                                    {metrics.top_10_concentration_after > metrics.top_10_concentration_before
-                                      ? <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                                      : <TrendingDown className="h-4 w-4 text-green-600 dark:text-green-400" />
-                                    }
-                                  </div>
-                                </div>
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{metrics.top_10_concentration_after.toFixed(1)}%</span>
-                                </div>
-                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 h-4">
-                                  {metrics.top_10_concentration_after !== metrics.top_10_concentration_before && (
-                                    <>
-                                      <span className={clsx(
-                                        "font-medium",
-                                        metrics.top_10_concentration_after > metrics.top_10_concentration_before ? "text-amber-600" : "text-green-600"
-                                      )}>
-                                        {metrics.top_10_concentration_after > metrics.top_10_concentration_before ? '+' : ''}
-                                        {(metrics.top_10_concentration_after - metrics.top_10_concentration_before).toFixed(1)}%
-                                      </span>
-                                      {' '}from {metrics.top_10_concentration_before.toFixed(1)}%
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* HHI Card */}
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 min-h-[120px]">
-                                <div className="flex items-center justify-between mb-3">
-                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">HHI Index</span>
-                                  <div className={clsx(
-                                    "w-8 h-8 rounded-lg flex items-center justify-center",
-                                    metrics.herfindahl_index_after > metrics.herfindahl_index_before
-                                      ? "bg-amber-50 dark:bg-amber-900/20"
-                                      : "bg-green-50 dark:bg-green-900/20"
-                                  )}>
-                                    <BarChart3 className={clsx(
-                                      "h-4 w-4",
-                                      metrics.herfindahl_index_after > metrics.herfindahl_index_before
-                                        ? "text-amber-600 dark:text-amber-400"
-                                        : "text-green-600 dark:text-green-400"
-                                    )} />
-                                  </div>
-                                </div>
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{(metrics.herfindahl_index_after * 100).toFixed(0)}</span>
-                                </div>
-                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 h-4">
-                                  {metrics.herfindahl_index_after !== metrics.herfindahl_index_before && (
-                                    <>from {(metrics.herfindahl_index_before * 100).toFixed(0)}</>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Charts Section */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                                <SectorExposureChart
-                                  before={metrics.sector_exposure_before}
-                                  after={metrics.sector_exposure_after}
-                                />
-                              </div>
-                              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                                <ConcentrationMetrics metrics={metrics} />
-                              </div>
-                            </div>
-
-                            {/* Holdings Comparison */}
-                            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                              <HoldingsComparison
-                                holdings={metrics.holdings_after}
-                                baseline={simulation.baseline_holdings as BaselineHolding[]}
-                              />
-                            </div>
-                          </div>
+                          <PortfolioImpactView
+                            metrics={metrics}
+                            baseline={simulation.baseline_holdings as BaselineHolding[]}
+                            simulationRows={simulationRows.rows}
+                          />
                         ) : (
                           /* Trades View - Grouped by Action with Cash Impact */
                           <div className="space-y-6">
@@ -4915,17 +5106,67 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           simulationName={simulation.name}
         />
       )}
+
+      {/* Create Trade Sheet Confirmation Modal */}
+      {showCreateSheetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowCreateSheetConfirm(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Create Trade Sheet
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              Are you sure? This will create a new trade sheet and clear the current simulation.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowCreateSheetConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowCreateSheetConfirm(false)
+                  const name = `Trade Sheet — ${format(new Date(), 'MMM d, yyyy HH:mm')}`
+                  await handleCreateTradeSheet(name)
+                }}
+                disabled={v3CreatingSheet}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {v3CreatingSheet ? 'Creating...' : 'Create & Clear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // Helper function to calculate simulation metrics
+/** Minimal variant shape needed for metrics computation */
+type MetricsVariant = Pick<IntentVariant, 'asset_id' | 'sizing_input' | 'computed' | 'action'> & {
+  asset?: { symbol: string; company_name: string; sector: string | null }
+}
+
 function calculateSimulationMetrics(
   baselineHoldings: BaselineHolding[],
   trades: SimulationTradeWithDetails[],
-  priceMap: Record<string, number>
+  priceMap: Record<string, number>,
+  variants?: MetricsVariant[]
 ): SimulationMetrics {
   const holdingsMap = new Map<string, SimulatedHolding>()
+
+  // Build variant lookup: asset_id → variant (only variants with computed values)
+  const variantByAsset = new Map<string, MetricsVariant>()
+  if (variants) {
+    for (const v of variants) {
+      if (v.sizing_input && v.computed) {
+        variantByAsset.set(v.asset_id, v)
+      }
+    }
+  }
 
   let totalValueBefore = 0
   baselineHoldings.forEach(h => {
@@ -4960,96 +5201,95 @@ function calculateSimulationMetrics(
   // Track which positions have been affected by trades
   const tradedAssetIds = new Set<string>()
 
-  trades.forEach(trade => {
-    const existing = holdingsMap.get(trade.asset_id)
-    const price = priceMap[trade.asset_id] || trade.price || 100
+  // Collect asset IDs from both trades and variants so we process every traded asset
+  const allTradedAssetIds = new Set<string>()
+  trades.forEach(t => allTradedAssetIds.add(t.asset_id))
+  variantByAsset.forEach((_, assetId) => allTradedAssetIds.add(assetId))
 
-    if (trade.action === 'buy' || trade.action === 'add') {
-      const additionalShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
-      // Only count as a trade if there's actual impact
-      if (additionalShares === 0) return
-      tradedAssetIds.add(trade.asset_id)
+  allTradedAssetIds.forEach(assetId => {
+    const trade = trades.find(t => t.asset_id === assetId)
+    const variant = variantByAsset.get(assetId)
+    const existing = holdingsMap.get(assetId)
+    const price = priceMap[assetId] || trade?.price || 100
 
-      if (existing) {
-        existing.shares += additionalShares
-        existing.value = existing.shares * existing.price
-        positionsAdjusted++
-      } else {
-        holdingsMap.set(trade.asset_id, {
-          asset_id: trade.asset_id,
-          symbol: trade.assets?.symbol || '',
-          company_name: trade.assets?.company_name || '',
-          sector: trade.assets?.sector || null,
-          shares: additionalShares,
-          price,
-          value: additionalShares * price,
-          weight: 0,
-          change_from_baseline: 0,
-          is_new: true,
-          is_removed: false,
-          is_short: false,
-        })
-        positionsAdded++
+    // Determine the action: prefer variant's derived action, then trade's action
+    const action = trade?.action || variant?.action || 'add'
+
+    // Determine shares delta from variant computed values (authoritative) or trade fields
+    let deltaShares: number | null = null
+    if (variant?.computed) {
+      deltaShares = variant.computed.delta_shares
+    } else if (trade) {
+      // Fallback to simulation_trade fields (legacy path)
+      if (action === 'buy' || action === 'add') {
+        deltaShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
+      } else if (action === 'sell') {
+        const sellShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
+        deltaShares = sellShares > 0 ? -sellShares : 0
+      } else if (action === 'trim') {
+        const sellShares = trade.shares || (existing ? existing.shares * 0.5 : 0)
+        deltaShares = sellShares > 0 ? -sellShares : 0
       }
-    } else if (trade.action === 'sell') {
-      const sellShares = trade.shares || (trade.weight ? (trade.weight / 100 * totalValueBefore) / price : 0)
-      // Only count as a trade if there's actual impact
-      if (sellShares === 0) return
-      tradedAssetIds.add(trade.asset_id)
+    }
 
-      if (existing) {
-        // Selling existing position - can go short (negative shares)
-        existing.shares = existing.shares - sellShares
-        existing.value = existing.shares * existing.price
+    // Skip if no computable impact
+    if (deltaShares == null || deltaShares === 0) return
+    tradedAssetIds.add(assetId)
 
+    if (existing) {
+      existing.shares += deltaShares
+      existing.value = existing.shares * existing.price
+
+      if (existing.shares <= 0 && deltaShares < 0) {
         if (existing.shares === 0) {
           existing.is_removed = true
           existing.is_short = false
           positionsRemoved++
-        } else if (existing.shares < 0) {
-          // Position went short
+        } else {
           existing.is_short = true
           existing.is_removed = false
           positionsAdjusted++
-        } else {
-          existing.is_short = false
-          positionsAdjusted++
         }
       } else {
-        // Selling without owning = short position
-        const shortShares = -sellShares // Negative shares for short
-        holdingsMap.set(trade.asset_id, {
-          asset_id: trade.asset_id,
-          symbol: trade.assets?.symbol || '',
-          company_name: trade.assets?.company_name || '',
-          sector: trade.assets?.sector || null,
-          shares: shortShares,
-          price,
-          value: shortShares * price, // Negative value (liability)
-          weight: 0,
-          change_from_baseline: 0,
-          is_new: true,
-          is_removed: false,
-          is_short: true,
-        })
-        positionsAdded++
+        existing.is_short = false
+        positionsAdjusted++
       }
-    } else if (trade.action === 'trim') {
-      if (existing) {
-        const sellShares = trade.shares || existing.shares * 0.5
-        // Only count as a trade if there's actual impact
-        if (sellShares === 0) return
-        tradedAssetIds.add(trade.asset_id)
-
-        existing.shares = Math.max(0, existing.shares - sellShares)
-        existing.value = existing.shares * existing.price
-        if (existing.shares === 0) {
-          existing.is_removed = true
-          positionsRemoved++
-        } else {
-          positionsAdjusted++
-        }
-      }
+    } else if (deltaShares > 0) {
+      // New position (buy into something not in baseline)
+      const assetData = variant?.asset || trade?.assets
+      holdingsMap.set(assetId, {
+        asset_id: assetId,
+        symbol: assetData?.symbol || '',
+        company_name: assetData?.company_name || '',
+        sector: assetData?.sector || null,
+        shares: deltaShares,
+        price,
+        value: deltaShares * price,
+        weight: 0,
+        change_from_baseline: 0,
+        is_new: true,
+        is_removed: false,
+        is_short: false,
+      })
+      positionsAdded++
+    } else {
+      // Selling without owning = short position
+      const assetData = variant?.asset || trade?.assets
+      holdingsMap.set(assetId, {
+        asset_id: assetId,
+        symbol: assetData?.symbol || '',
+        company_name: assetData?.company_name || '',
+        sector: assetData?.sector || null,
+        shares: deltaShares,
+        price,
+        value: deltaShares * price,
+        weight: 0,
+        change_from_baseline: 0,
+        is_new: true,
+        is_removed: false,
+        is_short: true,
+      })
+      positionsAdded++
     }
   })
 

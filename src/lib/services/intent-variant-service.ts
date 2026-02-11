@@ -10,6 +10,7 @@ import { emitAuditEvent } from '../audit'
 import {
   normalizeSizing,
   normalizeSizingBatch,
+  detectDirectionConflict,
   hasAnyConflicts,
   hasAnyBelowLotWarnings,
   getNormalizationSummary,
@@ -31,6 +32,33 @@ import type {
   ActionContext,
   TradeAction,
 } from '../../types/trading'
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Auto-derive the trade action from computed deltas.
+ * Keeps the stored action in sync with what the sizing actually does,
+ * preventing stale action → direction_conflict mismatches.
+ */
+function deriveActionFromComputed(
+  computed: ComputedValues | null,
+  currentPosition: { shares: number } | null | undefined,
+  fallbackAction: TradeAction,
+): TradeAction {
+  if (!computed) return fallbackAction
+  const ds = computed.delta_shares ?? 0
+  const dw = computed.delta_weight ?? 0
+  const isNew = !currentPosition || currentPosition.shares === 0
+  if (isNew) {
+    if (ds < 0 || dw < -0.005) return 'sell'
+    return 'buy'
+  }
+  if (ds > 0 || dw > 0.005) return 'add'
+  if (ds < 0 || dw < -0.005) return 'trim'
+  return fallbackAction
+}
 
 // =============================================================================
 // TYPES
@@ -210,6 +238,22 @@ export async function createVariant(params: CreateVariantParams): Promise<Intent
   // Sanitize JSONB fields (strip NaN/Infinity which break JSON serialization)
   const safeJson = (val: any) => val != null ? JSON.parse(JSON.stringify(val)) : null
 
+  // Delete any existing variant(s) for same (lab_id, asset_id) to prevent duplicates.
+  // This handles rapid check/uncheck cycles where old variants weren't fully cleaned up.
+  await supabase
+    .from('lab_variants')
+    .delete()
+    .eq('lab_id', input.lab_id)
+    .eq('asset_id', input.asset_id)
+
+  // Auto-derive action from computed deltas so stored action matches reality
+  const derivedAction = deriveActionFromComputed(normResult.computed, currentPosition, input.action)
+
+  // Re-run conflict detection with the derived action
+  const derivedConflict = normResult.computed
+    ? detectDirectionConflict(derivedAction, normResult.computed.delta_shares ?? 0, 'user_edit')
+    : normResult.direction_conflict
+
   // Insert variant (with retry for transient network errors)
   const insertPayload = {
     lab_id: input.lab_id,
@@ -217,11 +261,11 @@ export async function createVariant(params: CreateVariantParams): Promise<Intent
     trade_queue_item_id: input.trade_queue_item_id ?? null,
     asset_id: input.asset_id,
     portfolio_id: portfolioId,
-    action: input.action,
+    action: derivedAction,
     sizing_input: input.sizing_input,
     sizing_spec: safeJson(sizingSpec),
     computed: safeJson(normResult.computed),
-    direction_conflict: safeJson(normResult.direction_conflict),
+    direction_conflict: safeJson(derivedConflict),
     below_lot_warning: normResult.below_lot_warning,
     current_position: safeJson(currentPosition),
     active_weight_config: safeJson(activeWeightConfig),
@@ -286,7 +330,7 @@ export async function createVariant(params: CreateVariantParams): Promise<Intent
 // UPDATE VARIANT
 // =============================================================================
 
-export async function updateVariant(params: UpdateVariantParams): Promise<IntentVariant> {
+export async function updateVariant(params: UpdateVariantParams): Promise<IntentVariant | null> {
   const {
     variantId,
     updates,
@@ -302,11 +346,14 @@ export async function updateVariant(params: UpdateVariantParams): Promise<Intent
   // Get existing variant
   const existing = await getVariant(variantId)
   if (!existing) {
-    throw new Error(`Variant not found: ${variantId}`)
+    // Variant was deleted by a concurrent operation (e.g., rapid checkbox toggle).
+    // This is expected during races — return null instead of throwing.
+    console.warn(`⚠️ updateVariant: variant ${variantId} already deleted, skipping update`)
+    return null
   }
 
   // Merge updates
-  const action = updates.action ?? existing.action
+  let action = updates.action ?? existing.action
   const sizingInput = updates.sizing_input ?? existing.sizing_input
 
   // Re-normalize with new values
@@ -322,6 +369,27 @@ export async function updateVariant(params: UpdateVariantParams): Promise<Intent
   }
 
   const normResult = normalizeSizing(normCtx)
+
+  // Auto-derive action from computed deltas when the caller didn't explicitly set one.
+  // This prevents stale actions (e.g. 'add' from initial creation) from conflicting
+  // with the user's actual sizing direction (e.g. negative sizing = trim).
+  if (!updates.action && normResult.computed) {
+    const ds = normResult.computed.delta_shares
+    const isNewPosition = !currentPosition && !existing.current_position?.shares
+    if (isNewPosition) {
+      action = ds < 0 ? 'sell' : 'buy'
+    } else if (ds > 0) {
+      action = 'add'
+    } else if (ds < 0) {
+      action = 'trim'
+    }
+    // Re-run normalization with corrected action so direction_conflict is accurate
+    normCtx.action = action
+    const reNorm = normalizeSizing(normCtx)
+    normResult.computed = reNorm.computed
+    normResult.direction_conflict = reNorm.direction_conflict
+    normResult.below_lot_warning = reNorm.below_lot_warning
+  }
 
   // Parse sizing spec
   const parseResult = parseSizingInput(sizingInput, { has_benchmark: hasBenchmark })
@@ -454,15 +522,13 @@ export async function deleteVariant(
 ): Promise<void> {
   const existing = await getVariant(variantId)
   if (!existing) {
-    throw new Error(`Variant not found: ${variantId}`)
+    // Already deleted — nothing to do
+    return
   }
 
   const { error } = await supabase
     .from('lab_variants')
-    .update({
-      visibility_tier: 'trash',
-      deleted_at: new Date().toISOString(),
-    })
+    .delete()
     .eq('id', variantId)
 
   if (error) {
@@ -491,6 +557,56 @@ export async function deleteVariant(
     actorName: context.actorName,
     actorEmail: context.actorEmail,
   })
+}
+
+/**
+ * Hard-delete ALL variants for a given asset in a lab.
+ * Used by handleRemoveAsset to clean up all duplicates at once.
+ */
+export async function deleteVariantsByAsset(
+  labId: string,
+  assetId: string,
+  context: ActionContext
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('lab_variants')
+    .delete()
+    .eq('lab_id', labId)
+    .eq('asset_id', assetId)
+    .select('id')
+
+  if (error) {
+    const isRLS = error.message?.includes('row-level security')
+    throw new Error(
+      isRLS
+        ? `Permission denied: you don't have access to this portfolio's trade lab.`
+        : `Failed to delete variants for asset: ${error.message}`
+    )
+  }
+
+  const deletedCount = data?.length ?? 0
+
+  if (deletedCount > 0) {
+    await emitAuditEvent({
+      actor: { id: context.actorId, type: 'user', role: context.actorRole },
+      entity: { type: 'lab_variant', id: `${labId}:${assetId}` },
+      action: { type: 'delete', category: 'lifecycle' },
+      state: {
+        from: { asset_id: assetId, count: deletedCount },
+        to: null,
+      },
+      metadata: {
+        request_id: context.requestId,
+        ui_source: context.uiSource,
+        lab_id: labId,
+      },
+      orgId: undefined,
+      actorName: context.actorName,
+      actorEmail: context.actorEmail,
+    })
+  }
+
+  return deletedCount
 }
 
 // =============================================================================
@@ -644,7 +760,7 @@ export async function getConflictSummary(labId: string, viewId?: string): Promis
 }> {
   let query = supabase
     .from('lab_variants')
-    .select('direction_conflict, below_lot_warning')
+    .select('sizing_input, direction_conflict, below_lot_warning')
     .eq('lab_id', labId)
     .eq('visibility_tier', 'active')
 
@@ -658,7 +774,11 @@ export async function getConflictSummary(labId: string, viewId?: string): Promis
     throw new Error(`Failed to get conflict summary: ${error.message}`)
   }
 
-  const variants = data ?? []
+  // Only count variants with actual sizing input (non-empty) — empty variants
+  // are placeholders that haven't been sized yet and don't represent trades.
+  const variants = (data ?? []).filter(
+    (v) => v.sizing_input != null && v.sizing_input.trim() !== ''
+  )
   // v3: direction_conflict is JSONB (null = no conflict, object = conflict)
   const conflicts = variants.filter((v) => v.direction_conflict !== null).length
   const warnings = variants.filter((v) => v.below_lot_warning).length

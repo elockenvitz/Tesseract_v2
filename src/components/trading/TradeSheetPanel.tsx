@@ -1,208 +1,172 @@
 /**
  * Trade Sheet Panel
  *
- * UI for viewing conflict summary and creating Trade Sheets in Trade Lab v3.
- * Shows:
- * - Variant count with conflict/warning badges
- * - "Create Trade Sheet" button (disabled when conflicts exist)
- * - List of created trade sheets
+ * Displays created Trade Sheets for the current simulation.
+ * Click a trade sheet to expand and see the individual trades.
+ * Trade sheet creation happens from the Simulation tab's summary panel.
  */
 
 import React, { useState } from 'react'
-import { FileText, AlertCircle, AlertTriangle, Check, Clock, ChevronDown, ChevronUp, Plus } from 'lucide-react'
-import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { FileText, Inbox, ChevronDown, ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import type { TradeSheet, IntentVariant, SizingValidationError } from '../../types/trading'
-import { ConflictSummaryBar, VariantStatusBadgesV3 } from './VariantStatusBadges'
+import type { TradeSheet, IntentVariant } from '../../types/trading'
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-interface ConflictSummary {
-  total: number
-  conflicts: number
-  warnings: number
-  canCreateTradeSheet: boolean
-}
-
 interface TradeSheetPanelProps {
-  variants: IntentVariant[]
-  conflictSummary: ConflictSummary
   tradeSheets: TradeSheet[]
-  onCreateTradeSheet: (name: string, description?: string) => Promise<void>
-  onFixConflict?: (variantId: string, suggestedAction: string) => void
-  isCreating?: boolean
+  /** Map of asset_id → symbol for resolving variant asset names */
+  assetSymbolMap?: Record<string, string>
   className?: string
 }
 
-// =============================================================================
-// VARIANT LIST ITEM
-// =============================================================================
-
-interface VariantListItemProps {
-  variant: IntentVariant
-  onFixConflict?: (variantId: string, suggestedAction: string) => void
+const ACTION_COLORS: Record<string, string> = {
+  buy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  add: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  sell: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  trim: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
-function VariantListItem({ variant, onFixConflict }: VariantListItemProps) {
-  const hasConflict = variant.direction_conflict !== null
+// =============================================================================
+// TRADE ROW (inside expanded sheet)
+// =============================================================================
 
+function TradeRow({ variant, symbol }: { variant: IntentVariant; symbol: string }) {
+  const c = variant.computed
   return (
-    <div
-      className={clsx(
-        'flex items-center justify-between px-3 py-2 rounded-lg border',
-        hasConflict
-          ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'
-          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
-      )}
-    >
-      <div className="flex items-center gap-2">
+    <tr className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+      <td className="py-1.5 pr-3">
         <span className={clsx(
-          'px-1.5 py-0.5 text-xs font-medium rounded',
-          variant.action === 'buy' || variant.action === 'add'
-            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+          'inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded',
+          ACTION_COLORS[variant.action] || 'bg-gray-100 text-gray-600'
         )}>
-          {variant.action.toUpperCase()}
+          {variant.action}
         </span>
-        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          {variant.sizing_input}
-        </span>
-        {variant.computed && (
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            ({variant.computed.delta_shares > 0 ? '+' : ''}{variant.computed.delta_shares.toLocaleString()} sh)
-          </span>
-        )}
-      </div>
-
-      <VariantStatusBadgesV3
-        conflict={variant.direction_conflict}
-        belowLotWarning={variant.below_lot_warning}
-        onFixAction={onFixConflict ? (action) => onFixConflict(variant.id, action) : undefined}
-      />
-    </div>
+      </td>
+      <td className="py-1.5 pr-3 text-[13px] font-medium text-gray-900 dark:text-white">
+        {symbol}
+      </td>
+      <td className="py-1.5 pr-3 text-[13px] font-mono text-gray-600 dark:text-gray-300">
+        {variant.sizing_input}
+      </td>
+      <td className="py-1.5 pr-3 text-[13px] font-mono text-right text-gray-600 dark:text-gray-300">
+        {c ? `${c.delta_shares > 0 ? '+' : ''}${c.delta_shares.toLocaleString()}` : '—'}
+      </td>
+      <td className="py-1.5 pr-3 text-[13px] font-mono text-right text-gray-600 dark:text-gray-300">
+        {c ? `${c.delta_weight > 0 ? '+' : ''}${c.delta_weight.toFixed(2)}%` : '—'}
+      </td>
+      <td className="py-1.5 text-[13px] font-mono text-right text-gray-600 dark:text-gray-300">
+        {c ? `$${Math.abs(c.notional_value).toLocaleString()}` : '—'}
+      </td>
+    </tr>
   )
 }
 
 // =============================================================================
-// CREATE TRADE SHEET FORM
+// TRADE SHEET LIST ITEM (expandable)
 // =============================================================================
 
-interface CreateSheetFormProps {
-  onSubmit: (name: string, description?: string) => Promise<void>
-  onCancel: () => void
-  isSubmitting: boolean
-  disabled: boolean
-  disabledReason?: string
-}
-
-function CreateSheetForm({ onSubmit, onCancel, isSubmitting, disabled, disabledReason }: CreateSheetFormProps) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim() || disabled) return
-    await onSubmit(name.trim(), description.trim() || undefined)
-    setName('')
-    setDescription('')
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-      <div>
-        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Sheet Name
-        </label>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g., Q1 Rebalance"
-          className="text-sm"
-          disabled={isSubmitting}
-        />
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Description (optional)
-        </label>
-        <Input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Notes about this trade sheet..."
-          className="text-sm"
-          disabled={isSubmitting}
-        />
-      </div>
-      {disabled && disabledReason && (
-        <div className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
-          <AlertCircle className="w-3 h-3" />
-          <span>{disabledReason}</span>
-        </div>
-      )}
-      <div className="flex justify-end gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={onCancel}
-          disabled={isSubmitting}
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          disabled={!name.trim() || disabled || isSubmitting}
-        >
-          {isSubmitting ? 'Creating...' : 'Create Sheet'}
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-// =============================================================================
-// TRADE SHEET LIST
-// =============================================================================
-
-interface SheetListItemProps {
+function SheetListItem({
+  sheet,
+  assetSymbolMap,
+}: {
   sheet: TradeSheet
-}
+  assetSymbolMap: Record<string, string>
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const variants = sheet.variants_snapshot || []
 
-function SheetListItem({ sheet }: SheetListItemProps) {
   return (
-    <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-      <div className="flex items-center gap-2">
-        <FileText className="w-4 h-4 text-gray-400" />
-        <div>
-          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            {sheet.name}
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {sheet.total_trades} trades · ${sheet.total_notional.toLocaleString()}
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+      {/* Header — clickable */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {expanded ? (
+            <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          )}
+          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+              {sheet.name}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {sheet.total_trades} trade{sheet.total_trades !== 1 ? 's' : ''} · ${sheet.total_notional.toLocaleString()}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={clsx(
-          'px-2 py-0.5 text-xs font-medium rounded',
-          sheet.status === 'executed' && 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-          sheet.status === 'approved' && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-          sheet.status === 'pending_approval' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-          sheet.status === 'draft' && 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-          sheet.status === 'cancelled' && 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-        )}>
-          {sheet.status.replace('_', ' ')}
-        </span>
-        <span className="text-xs text-gray-400">
-          {formatDistanceToNow(new Date(sheet.created_at), { addSuffix: true })}
-        </span>
-      </div>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+          <span className={clsx(
+            'px-2 py-0.5 text-xs font-medium rounded',
+            sheet.status === 'executed' && 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+            sheet.status === 'approved' && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+            sheet.status === 'pending_approval' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+            sheet.status === 'draft' && 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+            sheet.status === 'cancelled' && 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+          )}>
+            {sheet.status.replace('_', ' ')}
+          </span>
+          <span className="text-xs text-gray-400">
+            {formatDistanceToNow(new Date(sheet.created_at), { addSuffix: true })}
+          </span>
+        </div>
+      </button>
+
+      {/* Expanded trade details */}
+      {expanded && variants.length > 0 && (
+        <div className="border-t border-gray-200 dark:border-gray-700 px-3 py-2 bg-gray-50/50 dark:bg-gray-900/30">
+          <table className="w-full">
+            <thead>
+              <tr className="text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                <th className="text-left py-1 pr-3">Action</th>
+                <th className="text-left py-1 pr-3">Symbol</th>
+                <th className="text-left py-1 pr-3">Sizing</th>
+                <th className="text-right py-1 pr-3">Shares</th>
+                <th className="text-right py-1 pr-3">Weight</th>
+                <th className="text-right py-1">Notional</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variants.map((v: IntentVariant) => (
+                <TradeRow
+                  key={v.id}
+                  variant={v}
+                  symbol={assetSymbolMap[v.asset_id] || 'Unknown'}
+                />
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-gray-200 dark:border-gray-700">
+                <td colSpan={3} className="py-1.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+                  Total
+                </td>
+                <td className="py-1.5 text-[13px] font-mono font-semibold text-right text-gray-700 dark:text-gray-200">
+                  {variants.reduce((sum: number, v: IntentVariant) => sum + (v.computed?.delta_shares ?? 0), 0).toLocaleString()}
+                </td>
+                <td className="py-1.5 text-[13px] font-mono font-semibold text-right text-gray-700 dark:text-gray-200">
+                  {variants.reduce((sum: number, v: IntentVariant) => sum + (v.computed?.delta_weight ?? 0), 0).toFixed(2)}%
+                </td>
+                <td className="py-1.5 text-[13px] font-mono font-semibold text-right text-gray-700 dark:text-gray-200">
+                  ${Math.abs(variants.reduce((sum: number, v: IntentVariant) => sum + (v.computed?.notional_value ?? 0), 0)).toLocaleString()}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {expanded && variants.length === 0 && (
+        <div className="border-t border-gray-200 dark:border-gray-700 px-3 py-4 text-center text-xs text-gray-400">
+          No trade details available
+        </div>
+      )}
     </div>
   )
 }
@@ -212,114 +176,30 @@ function SheetListItem({ sheet }: SheetListItemProps) {
 // =============================================================================
 
 export function TradeSheetPanel({
-  variants,
-  conflictSummary,
   tradeSheets,
-  onCreateTradeSheet,
-  onFixConflict,
-  isCreating = false,
+  assetSymbolMap = {},
   className = '',
 }: TradeSheetPanelProps) {
-  const [showCreateForm, setShowCreateForm] = useState(false)
-  const [showVariants, setShowVariants] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
-
-  const variantsWithConflicts = variants.filter(v => v.direction_conflict !== null)
-
-  const handleCreate = async (name: string, description?: string) => {
-    await onCreateTradeSheet(name, description)
-    setShowCreateForm(false)
-  }
-
   return (
-    <div className={clsx('space-y-4', className)}>
-      {/* Summary Bar */}
-      <ConflictSummaryBar
-        total={conflictSummary.total}
-        conflicts={conflictSummary.conflicts}
-        warnings={conflictSummary.warnings}
-        canCreateTradeSheet={conflictSummary.canCreateTradeSheet}
-        onCreateTradeSheet={() => setShowCreateForm(true)}
-        isCreating={isCreating}
-      />
-
-      {/* Create Form */}
-      {showCreateForm && (
-        <CreateSheetForm
-          onSubmit={handleCreate}
-          onCancel={() => setShowCreateForm(false)}
-          isSubmitting={isCreating}
-          disabled={!conflictSummary.canCreateTradeSheet}
-          disabledReason={
-            conflictSummary.conflicts > 0
-              ? 'Resolve all conflicts before creating Trade Sheet'
-              : conflictSummary.total === 0
-              ? 'Add variants to create Trade Sheet'
-              : undefined
-          }
-        />
-      )}
-
-      {/* Conflicts Section */}
-      {variantsWithConflicts.length > 0 && (
-        <div className="border border-red-200 dark:border-red-800 rounded-lg overflow-hidden">
-          <button
-            onClick={() => setShowVariants(!showVariants)}
-            className="w-full flex items-center justify-between px-3 py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-              <span className="text-sm font-medium text-red-700 dark:text-red-400">
-                {variantsWithConflicts.length} Conflict{variantsWithConflicts.length !== 1 ? 's' : ''} to Resolve
-              </span>
-            </div>
-            {showVariants ? (
-              <ChevronUp className="w-4 h-4 text-red-600 dark:text-red-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-red-600 dark:text-red-400" />
-            )}
-          </button>
-          {showVariants && (
-            <div className="p-3 space-y-2 bg-white dark:bg-gray-900">
-              {variantsWithConflicts.map(variant => (
-                <VariantListItem
-                  key={variant.id}
-                  variant={variant}
-                  onFixConflict={onFixConflict}
-                />
-              ))}
-            </div>
-          )}
+    <div className={clsx('space-y-2', className)}>
+      {tradeSheets.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Inbox className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
+          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+            No trade sheets yet
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            Create a trade sheet from the Simulation tab
+          </p>
         </div>
-      )}
-
-      {/* Trade Sheets History */}
-      {tradeSheets.length > 0 && (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Trade Sheet History ({tradeSheets.length})
-              </span>
-            </div>
-            {showHistory ? (
-              <ChevronUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            )}
-          </button>
-          {showHistory && (
-            <div className="p-3 space-y-2 bg-white dark:bg-gray-900">
-              {tradeSheets.map(sheet => (
-                <SheetListItem key={sheet.id} sheet={sheet} />
-              ))}
-            </div>
-          )}
-        </div>
+      ) : (
+        tradeSheets.map(sheet => (
+          <SheetListItem
+            key={sheet.id}
+            sheet={sheet}
+            assetSymbolMap={assetSymbolMap}
+          />
+        ))
       )}
     </div>
   )

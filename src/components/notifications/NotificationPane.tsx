@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users } from 'lucide-react'
+import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users, Share2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -19,7 +19,7 @@ interface NotificationPaneProps {
 interface Notification {
   id: string
   user_id: string
-  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request' | 'workflow_access_request' | 'workflow_invitation'
+  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request' | 'workflow_access_request' | 'workflow_invitation' | 'simulation_shared'
   title: string
   message: string
   context_type: 'asset' | 'note' | 'portfolio' | 'theme' | 'workflow'
@@ -116,6 +116,8 @@ export function NotificationPane({
       case 'workflow_access_request':
       case 'workflow_invitation':
         return <User className="h-4 w-4 text-orange-600" />
+      case 'simulation_shared':
+        return <Share2 className="h-4 w-4 text-primary-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -134,6 +136,8 @@ export function NotificationPane({
         return 'purple'
       case 'coverage_request':
         return 'purple'
+      case 'simulation_shared':
+        return 'primary'
       default:
         return 'default'
     }
@@ -154,6 +158,21 @@ export function NotificationPane({
           title: 'Coverage Requests'
         })
       }
+      return
+    }
+
+    // Handle simulation_shared notifications by navigating to the shared simulation
+    if (notification.type === 'simulation_shared') {
+      window.dispatchEvent(new CustomEvent('open-shared-simulation', {
+        detail: {
+          share: {
+            share_id: notification.context_data?.share_id || notification.context_id,
+            simulation_id: notification.context_data?.simulation_id,
+            share_mode: notification.context_data?.share_mode || 'snapshot',
+            name: notification.context_data?.simulation_name || 'Shared Simulation',
+          }
+        }
+      }))
       return
     }
 

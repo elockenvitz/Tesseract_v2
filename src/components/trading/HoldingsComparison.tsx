@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Card } from '../ui/Card'
-import { Table, ArrowUp, ArrowDown, Minus, Search, Plus, X as XIcon } from 'lucide-react'
+import { Table, ArrowUp, ArrowDown, Minus, Search, Plus, X as XIcon, Filter } from 'lucide-react'
 import { Input } from '../ui/Input'
 import type { SimulatedHolding, BaselineHolding } from '../../types/trading'
 import { clsx } from 'clsx'
@@ -10,20 +10,57 @@ interface HoldingsComparisonProps {
   baseline: BaselineHolding[]
 }
 
+type FilterMode = 'all' | 'changed' | 'increased' | 'decreased' | 'new' | 'removed'
 type SortField = 'symbol' | 'weight' | 'change'
 type SortOrder = 'asc' | 'desc'
 
+/** Minimum |change_from_baseline| to count as a meaningful weight change */
+const CHANGE_THRESHOLD = 0.01
+
 export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonProps) {
   const [search, setSearch] = useState('')
-  const [sortField, setSortField] = useState<SortField>('weight')
+  const [sortField, setSortField] = useState<SortField>('change')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const [filter, setFilter] = useState<'all' | 'increased' | 'decreased' | 'new' | 'removed'>('all')
+  // Default to "changed" — shows only positions with meaningful weight changes
+  const [filter, setFilter] = useState<FilterMode>('changed')
 
   const baselineMap = useMemo(() => {
     const map = new Map<string, BaselineHolding>()
     baseline.forEach(h => map.set(h.asset_id, h))
     return map
   }, [baseline])
+
+  // Build sector weight change map — each holding's contribution to its sector's total change
+  const sectorContribMap = useMemo(() => {
+    const map = new Map<string, number>()  // asset_id → contribution to sector change
+    // Sum total sector change first
+    const sectorTotal = new Map<string, number>()
+    const allHoldings = [...holdings]
+    // Add removed positions
+    baseline.forEach(b => {
+      if (!holdings.find(h => h.asset_id === b.asset_id)) {
+        allHoldings.push({
+          asset_id: b.asset_id, symbol: b.symbol, company_name: b.company_name,
+          sector: b.sector, shares: 0, price: b.price, value: 0, weight: 0,
+          change_from_baseline: -b.weight, is_new: false, is_removed: true, is_short: false,
+        })
+      }
+    })
+    for (const h of allHoldings) {
+      const sector = h.sector || 'Other'
+      sectorTotal.set(sector, (sectorTotal.get(sector) || 0) + h.change_from_baseline)
+    }
+    // Each holding's fraction of its sector total change
+    for (const h of allHoldings) {
+      const sector = h.sector || 'Other'
+      const total = sectorTotal.get(sector) || 0
+      // Just store the raw change_from_baseline as the sector contribution
+      if (Math.abs(total) >= 0.01) {
+        map.set(h.asset_id, h.change_from_baseline)
+      }
+    }
+    return map
+  }, [holdings, baseline])
 
   const filteredAndSorted = useMemo(() => {
     let result = [...holdings]
@@ -43,6 +80,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           change_from_baseline: -b.weight,
           is_new: false,
           is_removed: true,
+          is_short: false,
         })
       }
     })
@@ -51,8 +89,9 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
     if (filter !== 'all') {
       result = result.filter(h => {
         switch (filter) {
-          case 'increased': return h.change_from_baseline > 0.1
-          case 'decreased': return h.change_from_baseline < -0.1
+          case 'changed': return Math.abs(h.change_from_baseline) > CHANGE_THRESHOLD || h.is_new || h.is_removed
+          case 'increased': return h.change_from_baseline > CHANGE_THRESHOLD
+          case 'decreased': return h.change_from_baseline < -CHANGE_THRESHOLD
           case 'new': return h.is_new
           case 'removed': return h.is_removed
           default: return true
@@ -80,7 +119,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           comparison = a.weight - b.weight
           break
         case 'change':
-          comparison = a.change_from_baseline - b.change_from_baseline
+          comparison = Math.abs(a.change_from_baseline) - Math.abs(b.change_from_baseline)
           break
       }
       return sortOrder === 'asc' ? comparison : -comparison
@@ -99,13 +138,25 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
   }
 
   const stats = useMemo(() => {
+    const allWithRemoved = [...holdings]
+    baseline.forEach(b => {
+      if (!holdings.find(h => h.asset_id === b.asset_id)) {
+        allWithRemoved.push({
+          asset_id: b.asset_id, symbol: b.symbol, company_name: b.company_name,
+          sector: b.sector, shares: 0, price: b.price, value: 0, weight: 0,
+          change_from_baseline: -b.weight, is_new: false, is_removed: true, is_short: false,
+        })
+      }
+    })
     return {
-      increased: holdings.filter(h => h.change_from_baseline > 0.1).length,
-      decreased: holdings.filter(h => h.change_from_baseline < -0.1).length,
+      total: allWithRemoved.length,
+      changed: allWithRemoved.filter(h => Math.abs(h.change_from_baseline) > CHANGE_THRESHOLD || h.is_new || h.is_removed).length,
+      increased: allWithRemoved.filter(h => h.change_from_baseline > CHANGE_THRESHOLD && !h.is_new).length,
+      decreased: allWithRemoved.filter(h => h.change_from_baseline < -CHANGE_THRESHOLD && !h.is_removed).length,
       new: holdings.filter(h => h.is_new).length,
-      removed: holdings.filter(h => h.is_removed).length,
+      removed: baseline.filter(b => !holdings.find(h => h.asset_id === b.asset_id)).length,
     }
-  }, [holdings])
+  }, [holdings, baseline])
 
   return (
     <Card className="p-4">
@@ -128,6 +179,18 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setFilter('changed')}
+            className={clsx(
+              "px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
+              filter === 'changed'
+                ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+                : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+            )}
+          >
+            <Filter className="h-3 w-3" />
+            Changed ({stats.changed})
+          </button>
+          <button
             onClick={() => setFilter('all')}
             className={clsx(
               "px-3 py-1.5 text-xs rounded-full transition-colors",
@@ -136,7 +199,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
                 : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
             )}
           >
-            All ({filteredAndSorted.length})
+            All ({stats.total})
           </button>
           <button
             onClick={() => setFilter('increased')}
@@ -233,70 +296,90 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
                   )}
                 </div>
               </th>
+              <th className="text-right py-2 px-3 font-medium text-gray-500 dark:text-gray-400">
+                Sector Δ
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
             {filteredAndSorted.map(holding => {
               const baselineHolding = baselineMap.get(holding.asset_id)
               const beforeWeight = baselineHolding?.weight || 0
+              const sectorContrib = sectorContribMap.get(holding.asset_id)
 
               return (
                 <tr
                   key={holding.asset_id}
                   className={clsx(
                     "hover:bg-gray-50 dark:hover:bg-gray-700/50",
-                    holding.is_new && "bg-green-50/50 dark:bg-green-900/10",
+                    holding.is_new && "bg-emerald-50/50 dark:bg-emerald-900/10",
                     holding.is_removed && "bg-red-50/50 dark:bg-red-900/10 opacity-60"
                   )}
                 >
                   <td className="py-2 px-3">
                     <div className="flex items-center gap-2">
-                      {holding.is_new && (
-                        <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-1.5 py-0.5 rounded">
-                          NEW
-                        </span>
-                      )}
-                      {holding.is_removed && (
-                        <span className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded">
-                          SOLD
-                        </span>
-                      )}
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">
-                          {holding.symbol}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[150px]">
-                          {holding.company_name}
-                        </div>
-                      </div>
+                      {(() => {
+                        const action = holding.is_new ? 'buy'
+                          : holding.is_removed ? 'sell'
+                          : holding.change_from_baseline > CHANGE_THRESHOLD ? 'add'
+                          : holding.change_from_baseline < -CHANGE_THRESHOLD ? 'trim'
+                          : null
+                        if (!action) return null
+                        const isBuy = action === 'buy' || action === 'add'
+                        return (
+                          <span className={clsx(
+                            'text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0',
+                            isBuy
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+                          )}>
+                            {action}
+                          </span>
+                        )
+                      })()}
+                      <span className="font-medium text-gray-900 dark:text-white">{holding.symbol}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[150px]">{holding.company_name}</span>
                     </div>
                   </td>
                   <td className="py-2 px-3 text-gray-600 dark:text-gray-400">
                     {holding.sector || '—'}
                   </td>
-                  <td className="py-2 px-3 text-right text-gray-500 dark:text-gray-400">
+                  <td className="py-2 px-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">
                     {beforeWeight.toFixed(2)}%
                   </td>
-                  <td className="py-2 px-3 text-right font-medium text-gray-900 dark:text-white">
+                  <td className="py-2 px-3 text-right font-medium text-gray-900 dark:text-white tabular-nums">
                     {holding.weight.toFixed(2)}%
                   </td>
                   <td className="py-2 px-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {holding.change_from_baseline > 0.1 ? (
+                      {holding.change_from_baseline > CHANGE_THRESHOLD ? (
                         <ArrowUp className="h-3 w-3 text-green-600" />
-                      ) : holding.change_from_baseline < -0.1 ? (
+                      ) : holding.change_from_baseline < -CHANGE_THRESHOLD ? (
                         <ArrowDown className="h-3 w-3 text-red-600" />
                       ) : (
                         <Minus className="h-3 w-3 text-gray-400" />
                       )}
                       <span className={clsx(
-                        "font-medium",
-                        holding.change_from_baseline > 0.1 ? "text-green-600" :
-                        holding.change_from_baseline < -0.1 ? "text-red-600" : "text-gray-400"
+                        "font-medium tabular-nums",
+                        holding.change_from_baseline > CHANGE_THRESHOLD ? "text-green-600" :
+                        holding.change_from_baseline < -CHANGE_THRESHOLD ? "text-red-600" : "text-gray-400"
                       )}>
                         {holding.change_from_baseline > 0 ? '+' : ''}{holding.change_from_baseline.toFixed(2)}%
                       </span>
                     </div>
+                  </td>
+                  <td className="py-2 px-3 text-right">
+                    {sectorContrib != null && Math.abs(sectorContrib) >= 0.01 ? (
+                      <span className={clsx(
+                        "text-xs tabular-nums",
+                        sectorContrib > 0 ? "text-green-600 dark:text-green-400" :
+                        sectorContrib < 0 ? "text-red-600 dark:text-red-400" : "text-gray-400"
+                      )}>
+                        {sectorContrib > 0 ? '+' : ''}{sectorContrib.toFixed(2)}%
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                    )}
                   </td>
                 </tr>
               )

@@ -15,9 +15,6 @@ export function ConcentrationMetrics({ metrics }: ConcentrationMetricsProps) {
   const top10Risk = metrics.top_10_concentration_after > 70 ? 'high' :
                     metrics.top_10_concentration_after > 50 ? 'medium' : 'low'
 
-  const hhiRisk = metrics.herfindahl_index_after > 0.15 ? 'high' :
-                  metrics.herfindahl_index_after > 0.10 ? 'medium' : 'low'
-
   const getRiskColor = (risk: string) => {
     switch (risk) {
       case 'high': return 'text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400'
@@ -108,49 +105,6 @@ export function ConcentrationMetrics({ metrics }: ConcentrationMetricsProps) {
               )}
               style={{ width: `${Math.min(metrics.top_10_concentration_after, 100)}%` }}
             />
-          </div>
-        </div>
-
-        {/* Herfindahl-Hirschman Index */}
-        <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <span className="text-sm text-gray-600 dark:text-gray-400">HHI Score</span>
-              <span className="text-xs text-gray-400 ml-1">(0 = diversified, 1 = concentrated)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {(metrics.herfindahl_index_before * 100).toFixed(0)}
-              </span>
-              <span className="text-gray-400">→</span>
-              <span className="font-semibold text-gray-900 dark:text-white">
-                {(metrics.herfindahl_index_after * 100).toFixed(0)}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className={clsx(
-              "p-2 rounded-lg",
-              hhiRisk === 'low' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-700'
-            )}>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Low</div>
-              <div className="text-xs text-gray-400">&lt; 10</div>
-            </div>
-            <div className={clsx(
-              "p-2 rounded-lg",
-              hhiRisk === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-gray-100 dark:bg-gray-700'
-            )}>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Moderate</div>
-              <div className="text-xs text-gray-400">10-15</div>
-            </div>
-            <div className={clsx(
-              "p-2 rounded-lg",
-              hhiRisk === 'high' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-gray-100 dark:bg-gray-700'
-            )}>
-              <div className="text-xs text-gray-500 dark:text-gray-400">High</div>
-              <div className="text-xs text-gray-400">&gt; 15</div>
-            </div>
           </div>
         </div>
 

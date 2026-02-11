@@ -167,12 +167,16 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
         ['intent-variants', labId, viewId],
         (old) => {
           if (!old) return [newVariant]
-          // Carry over the asset join data from the temp variant — the raw DB
-          // insert returns without the assets join, so without this the row
-          // would briefly show "Unknown" for symbol/name.
+          // Carry over the asset join data and any sizing_input the user typed
+          // on the temp variant while the server call was in-flight.
           const temp = old.find(v => v.asset_id === newVariant.asset_id && v.id.startsWith('temp-'))
           const merged = temp
-            ? { ...newVariant, asset: (temp as any).asset }
+            ? {
+                ...newVariant,
+                asset: (temp as any).asset,
+                // Preserve sizing_input if the user typed into the temp variant
+                ...(temp.sizing_input ? { sizing_input: temp.sizing_input } : {}),
+              }
             : newVariant
           const withoutTemp = old.filter(v =>
             !(v.asset_id === newVariant.asset_id && v.id.startsWith('temp-'))
@@ -231,31 +235,12 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
         context: buildActionContext(user, params.uiSource),
       })
     },
-    onMutate: async (params) => {
-      // Cancel in-flight refetches so they don't overwrite our optimistic update
-      await queryClient.cancelQueries({ queryKey: ['intent-variants', labId, viewId] })
-      const previous = queryClient.getQueryData<IntentVariant[]>(['intent-variants', labId, viewId])
-      queryClient.setQueryData<IntentVariant[]>(
-        ['intent-variants', labId, viewId],
-        (old) => old?.map(v => v.id === params.variantId
-          ? {
-              ...v,
-              ...(params.updates.sizingInput !== undefined ? {
-                sizing_input: params.updates.sizingInput,
-                sizing_spec: null,
-                computed: null,
-              } : {}),
-              ...(params.updates.action !== undefined ? { action: params.updates.action } : {}),
-            }
-          : v
-        ) ?? []
-      )
-      return { previous }
-    },
-    onSuccess: (updatedVariant, params) => {
-      // Merge server response into cache (onMutate already applied optimistic update).
-      // Avoid invalidateQueries — a full refetch would wipe temp variants for
-      // other assets whose imports are still in-flight.
+    // No onMutate — callers (SimulationPage inline handler) apply the optimistic
+    // cache update synchronously before calling mutate(). A redundant async
+    // onMutate would create a second setQueryData with a new array reference,
+    // triggering an extra render that causes a visible flash.
+    onSuccess: (updatedVariant) => {
+      // Merge server response (computed values, sizing_spec) into cache.
       if (updatedVariant?.id) {
         queryClient.setQueryData<IntentVariant[]>(
           ['intent-variants', labId, viewId],
@@ -264,11 +249,9 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
       }
       queryClient.invalidateQueries({ queryKey: ['intent-variants-conflicts', labId] })
     },
-    onError: (error, _params, context) => {
-      // Rollback optimistic update on failure
-      if (context?.previous) {
-        queryClient.setQueryData(['intent-variants', labId, viewId], context.previous)
-      }
+    onError: (error) => {
+      // Refetch to get correct state instead of restoring stale previous data
+      queryClient.invalidateQueries({ queryKey: ['intent-variants', labId] })
       toast.error(error instanceof Error ? error.message : 'Failed to update variant')
     },
   })
@@ -306,6 +289,37 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
         queryClient.setQueryData(['intent-variants', labId, viewId], context.previous)
       }
       toast.error(error instanceof Error ? error.message : 'Failed to delete variant')
+    },
+  })
+
+  // Delete ALL variants for an asset (handles duplicates from rapid toggling)
+  const deleteVariantsByAssetM = useMutation({
+    mutationFn: (params: { assetId: string; uiSource?: UISource }) => {
+      if (!labId || !user) throw new Error('Not ready')
+      return variantService.deleteVariantsByAsset(
+        labId,
+        params.assetId,
+        buildActionContext(user, params.uiSource)
+      )
+    },
+    onMutate: async (params) => {
+      await queryClient.cancelQueries({ queryKey: ['intent-variants', labId, viewId] })
+      const previous = queryClient.getQueryData<IntentVariant[]>(['intent-variants', labId, viewId])
+      // Optimistically remove ALL variants for this asset from cache
+      queryClient.setQueryData<IntentVariant[]>(
+        ['intent-variants', labId, viewId],
+        (old) => old?.filter(v => v.asset_id !== params.assetId) ?? []
+      )
+      return { previous }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['intent-variants-conflicts', labId] })
+    },
+    onError: (error, _params, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['intent-variants', labId, viewId], context.previous)
+      }
+      toast.error(error instanceof Error ? error.message : 'Failed to delete variants')
     },
   })
 
@@ -408,6 +422,8 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
     deleteVariant: deleteVariantM.mutate,
     deleteVariantAsync: deleteVariantM.mutateAsync,
     isDeleting: deleteVariantM.isPending,
+
+    deleteVariantsByAsset: deleteVariantsByAssetM.mutate,
 
     revalidate: revalidateM.mutate,
     revalidateAsync: revalidateM.mutateAsync,

@@ -277,6 +277,22 @@ export function DashboardPage() {
     return () => window.removeEventListener('openTradeLab', handleOpenTradeLab as EventListener)
   }, [])
 
+  // Listen for custom event to open a shared simulation
+  useEffect(() => {
+    const handleOpenSharedSimulation = (event: CustomEvent) => {
+      const { share } = event.detail || {}
+      if (!share) return
+      handleSearchResult({
+        id: `shared-${share.share_id}`,
+        title: `Shared: ${share.name}`,
+        type: 'trade-lab',
+        data: { shareId: share.share_id }
+      })
+    }
+    window.addEventListener('open-shared-simulation', handleOpenSharedSimulation as EventListener)
+    return () => window.removeEventListener('open-shared-simulation', handleOpenSharedSimulation as EventListener)
+  }, [])
+
   // Listen for custom event to open Trade Plans tab
   useEffect(() => {
     const handleOpenTradePlans = () => {
@@ -373,7 +389,7 @@ export function DashboardPage() {
       case 'trade-queue':
         return <TradeQueuePage />
       case 'trade-lab':
-        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} />
+        return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-plans':
         return <TradePlanHistoryPage />
       case 'asset-allocation':

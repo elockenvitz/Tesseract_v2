@@ -44,6 +44,7 @@ export interface SimulationSnapshot {
   baseline_holdings: unknown
   baseline_total_value: number | null
   snapshot_trades: unknown[]
+  snapshot_variants: unknown[]
   result_metrics: unknown
   created_by: string
   created_at: string
@@ -90,7 +91,10 @@ export interface SharedSimulationListItem {
   baseline_holdings?: unknown
   baseline_total_value?: number | null
   snapshot_trades?: unknown[]
+  snapshot_variants?: unknown[]
   result_metrics?: unknown
+  // For live mode — so frontend can set portfolio context
+  portfolio_id?: string
 }
 
 // ============================================================
@@ -135,6 +139,31 @@ export async function shareSimulation(params: ShareSimulationParams): Promise<{
 
   // Create snapshot if in snapshot mode
   if (shareMode === 'snapshot') {
+    // Fetch lab_variants for the simulation's trade lab
+    let snapshotVariants: unknown[] = []
+    const { data: tradeLab } = await supabase
+      .from('trade_labs')
+      .select('id')
+      .eq('portfolio_id', (
+        // Get portfolio_id from simulation
+        await supabase.from('simulations').select('portfolio_id').eq('id', simulationId).single()
+      ).data?.portfolio_id)
+      .single()
+
+    if (tradeLab) {
+      const { data: variants } = await supabase
+        .from('lab_variants')
+        .select('*, asset:assets(id, symbol, company_name, sector)')
+        .eq('lab_id', tradeLab.id)
+        .not('sizing_input', 'is', null)
+        .neq('sizing_input', '')
+        .order('created_at', { ascending: true })
+
+      if (variants) {
+        snapshotVariants = variants
+      }
+    }
+
     const { data: newSnapshot, error: snapError } = await supabase
       .from('simulation_snapshots')
       .insert({
@@ -144,6 +173,7 @@ export async function shareSimulation(params: ShareSimulationParams): Promise<{
         baseline_holdings: simulation.baseline_holdings,
         baseline_total_value: simulation.baseline_total_value,
         snapshot_trades: simulation.simulation_trades || [],
+        snapshot_variants: snapshotVariants,
         result_metrics: simulation.result_metrics,
         created_by: actorId,
         source_version: 1, // TODO: Track simulation versions
@@ -193,6 +223,45 @@ export async function shareSimulation(params: ShareSimulationParams): Promise<{
         snapshot_id: snapshotId,
       },
     })
+  }
+
+  // Create notifications for each recipient
+  const { data: actor } = await supabase
+    .from('users')
+    .select('full_name, email')
+    .eq('id', actorId)
+    .single()
+  const actorName = actor?.full_name || actor?.email || 'Someone'
+
+  const modeLabel = shareMode === 'live' ? 'live' : 'snapshot'
+  const accessLabel = accessLevel === 'collaborate' ? 'collaborate' : accessLevel === 'suggest' ? 'suggest' : 'view-only'
+
+  const notificationInserts = (shares || []).map(share => ({
+    user_id: share.shared_with,
+    type: 'simulation_shared',
+    title: 'Simulation Shared',
+    message: `${actorName} shared "${simulation.name}" with you (${modeLabel}, ${accessLabel})`,
+    context_type: 'simulation_share',
+    context_id: share.id,
+    context_data: {
+      share_id: share.id,
+      simulation_id: simulationId,
+      simulation_name: simulation.name,
+      share_mode: shareMode,
+      access_level: accessLevel,
+      shared_by_name: actorName,
+    },
+    is_read: false,
+  }))
+
+  if (notificationInserts.length > 0) {
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .insert(notificationInserts)
+
+    if (notifError) {
+      console.error('Failed to create share notifications:', notifError)
+    }
   }
 
   return {
@@ -366,15 +435,16 @@ export async function getSharedWithMe(userId: string): Promise<SharedSimulationL
           baseline_holdings: snapshot.baseline_holdings,
           baseline_total_value: snapshot.baseline_total_value,
           snapshot_trades: snapshot.snapshot_trades as unknown[],
+          snapshot_variants: snapshot.snapshot_variants as unknown[] ?? [],
           result_metrics: snapshot.result_metrics,
         })
       }
     } else {
-      // Live mode - get original simulation
+      // Live mode - get original simulation (include portfolio_id for frontend context)
       const { data: simulation } = await supabase
         .from('simulations')
         .select(`
-          id, name, description,
+          id, name, description, portfolio_id,
           baseline_holdings, baseline_total_value, result_metrics
         `)
         .eq('id', share.simulation_id)
@@ -396,6 +466,7 @@ export async function getSharedWithMe(userId: string): Promise<SharedSimulationL
           baseline_holdings: simulation.baseline_holdings,
           baseline_total_value: simulation.baseline_total_value,
           result_metrics: simulation.result_metrics,
+          portfolio_id: simulation.portfolio_id,
         })
       }
     }
@@ -574,13 +645,15 @@ export async function getSharedSimulation(
       baseline_holdings: snapshot.baseline_holdings,
       baseline_total_value: snapshot.baseline_total_value,
       snapshot_trades: snapshot.snapshot_trades as unknown[],
+      snapshot_variants: snapshot.snapshot_variants as unknown[] ?? [],
       result_metrics: snapshot.result_metrics,
     }
   } else {
+    // Live mode — include portfolio_id so frontend can set portfolio context
     const { data: simulation } = await supabase
       .from('simulations')
       .select(`
-        id, name, description,
+        id, name, description, portfolio_id,
         baseline_holdings, baseline_total_value, result_metrics
       `)
       .eq('id', share.simulation_id)
@@ -603,6 +676,7 @@ export async function getSharedSimulation(
       baseline_holdings: simulation.baseline_holdings,
       baseline_total_value: simulation.baseline_total_value,
       result_metrics: simulation.result_metrics,
+      portfolio_id: simulation.portfolio_id,
     }
   }
 }

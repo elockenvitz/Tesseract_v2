@@ -7,10 +7,12 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, FileText, Info, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, FileText, Info, MessageSquare, Plus, Search, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { SimulationRow, SimulationRowSummary } from '../../hooks/useSimulationRows'
 import type { TradeAction } from '../../types/trading'
+import type { SimulationSuggestion } from '../../hooks/useSimulationSuggestions'
+import { SuggestionIndicator } from './SuggestionIndicator'
 
 // =============================================================================
 // CONSTANTS
@@ -180,6 +182,7 @@ function getFilterValue(row: SimulationRow, col: ColKey): string {
 
 export interface HoldingsSimulationTableProps {
   rows: SimulationRow[]
+  cashRow?: SimulationRow | null
   tradedRows: SimulationRow[]
   untradedRows: SimulationRow[]
   newPositionRows: SimulationRow[]
@@ -199,7 +202,14 @@ export interface HoldingsSimulationTableProps {
   isCreatingTradeSheet?: boolean
   groupBy?: GroupBy
   onGroupByChange?: (groupBy: GroupBy) => void
+  readOnly?: boolean
   className?: string
+  // Suggest mode props
+  suggestMode?: boolean
+  onSubmitSuggestion?: (assetId: string, sizingInput: string, notes?: string) => void
+  pendingSuggestionsByAsset?: Map<string, SimulationSuggestion[]>
+  pendingSuggestionCount?: number
+  onOpenSuggestionReview?: () => void
 }
 
 // =============================================================================
@@ -215,7 +225,8 @@ const DIM = `${NUM} text-gray-400 dark:text-gray-500`
 
 function HoldingRow({
   row, rowIndex, isEven, focusedCol, isEditing,
-  onUpdateVariant, onFocusCell, onStartEdit, onStopEdit, onCreateVariantAndEdit, rowRef,
+  onUpdateVariant, onFocusCell, onStartEdit, onStopEdit, onCreateVariantAndEdit, onClickEditableCell, rowRef,
+  suggestMode, onSubmitSuggestion, pendingSuggestions, onOpenSuggestionReview,
 }: {
   row: SimulationRow
   rowIndex: number
@@ -227,7 +238,12 @@ function HoldingRow({
   onStartEdit: () => void
   onStopEdit: (committedValue?: string) => void
   onCreateVariantAndEdit: (assetId: string, col?: number) => void
+  onClickEditableCell: (row: number, col: number, assetId: string, hasVariant: boolean) => void
   rowRef: (el: HTMLTableRowElement | null) => void
+  suggestMode?: boolean
+  onSubmitSuggestion?: (assetId: string, sizingInput: string) => void
+  pendingSuggestions?: SimulationSuggestion[]
+  onOpenSuggestionReview?: () => void
 }) {
   const v = row.variant
   const isFocused = focusedCol !== null
@@ -264,6 +280,14 @@ function HoldingRow({
       return
     }
     const trimmed = editValue.trim()
+    if (suggestMode) {
+      // Suggest mode: submit a suggestion instead of updating the variant
+      if (trimmed && onSubmitSuggestion) {
+        onSubmitSuggestion(row.asset_id, trimmed)
+      }
+      onStopEdit(trimmed || undefined)
+      return
+    }
     if (trimmed && v) {
       onUpdateVariant(v.id, { sizingInput: trimmed })
     }
@@ -290,28 +314,51 @@ function HoldingRow({
   )
 
   const simWtContent = () => {
-    if (!v) {
+    // Editor check first — so the input shows even if the temp variant hasn't
+    // propagated to the row yet (instant open on click).
+    if (isEditing && focusedCol === COL.SIM_WT) return sizingEditor()
+
+    if (!v && !suggestMode) {
       return (
         <span className={clsx(DIM, 'group-hover/row:text-gray-500 dark:group-hover/row:text-gray-400 transition-colors')}>
+          {fmtWt(row.currentWeight)}
+          {pendingSuggestions && pendingSuggestions.length > 0 && (
+            <SuggestionIndicator suggestions={pendingSuggestions} onClick={onOpenSuggestionReview} />
+          )}
+        </span>
+      )
+    }
+
+    if (!v && suggestMode) {
+      return (
+        <span className={clsx(DIM, 'group-hover/row:text-amber-500 dark:group-hover/row:text-amber-400 transition-colors')}>
           {fmtWt(row.currentWeight)}
         </span>
       )
     }
 
-    if (isEditing && focusedCol === COL.SIM_WT) return sizingEditor()
-
-    if (v.sizing_input) {
-      return <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>{fmtWt(row.simWeight)}</span>
+    if (v?.sizing_input) {
+      return (
+        <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>
+          {fmtWt(row.simWeight)}
+          {pendingSuggestions && pendingSuggestions.length > 0 && (
+            <SuggestionIndicator suggestions={pendingSuggestions} onClick={onOpenSuggestionReview} />
+          )}
+        </span>
+      )
     }
 
     return (
       <span className="text-[13px] text-gray-300 dark:text-gray-600 italic">
-        enter size
+        {suggestMode ? 'suggest' : 'enter size'}
       </span>
     )
   }
 
   const simSharesContent = () => {
+    // Editor check first — instant open before variant propagates
+    if (isEditing && focusedCol === COL.SIM_SHARES) return sizingEditor()
+
     if (!v) {
       return (
         <span className={clsx(DIM, 'group-hover/row:text-gray-500 dark:group-hover/row:text-gray-400 transition-colors')}>
@@ -319,8 +366,6 @@ function HoldingRow({
         </span>
       )
     }
-
-    if (isEditing && focusedCol === COL.SIM_SHARES) return sizingEditor()
 
     if (v.sizing_input) {
       return <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>{fmtShares(row.simShares)}</span>
@@ -401,29 +446,21 @@ function HoldingRow({
       {/* SIM WEIGHT */}
       <td
         className={clsx(
-          'px-2 py-1.5 text-right whitespace-nowrap cursor-text',
+          'px-2 py-1.5 text-right whitespace-nowrap cursor-default',
           cf(COL.SIM_WT),
           !v && !isFocused && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
         )}
-        onClick={() => {
-          onFocusCell(rowIndex, COL.SIM_WT)
-          if (v) onStartEdit()
-          else onCreateVariantAndEdit(row.asset_id, COL.SIM_WT)
-        }}
+        onClick={() => onClickEditableCell(rowIndex, COL.SIM_WT, row.asset_id, !!v)}
       >{simWtContent()}</td>
 
       {/* SIM SHARES */}
       <td
         className={clsx(
-          'px-2 py-1.5 text-right whitespace-nowrap cursor-text',
+          'px-2 py-1.5 text-right whitespace-nowrap cursor-default',
           cf(COL.SIM_SHARES),
           !v && !isFocused && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
         )}
-        onClick={() => {
-          onFocusCell(rowIndex, COL.SIM_SHARES)
-          if (v) onStartEdit()
-          else onCreateVariantAndEdit(row.asset_id, COL.SIM_SHARES)
-        }}
+        onClick={() => onClickEditableCell(rowIndex, COL.SIM_SHARES, row.asset_id, !!v)}
       >{simSharesContent()}</td>
 
       {/* Δ WT */}
@@ -651,7 +688,7 @@ function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreate
               )}
             >
               <FileText className="w-3 h-3" />
-              {isCreatingTradeSheet ? 'Creating...' : 'Create Trade List'}
+              {isCreatingTradeSheet ? 'Creating...' : 'Create Trade Sheet'}
             </button>
           )}
         </div>
@@ -659,7 +696,7 @@ function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreate
 
       {/* Expanded trade list */}
       {expanded && summary.tradedCount > 0 && (
-        <div className="border-t border-gray-200/60 dark:border-gray-700/40 max-h-52 overflow-y-auto">
+        <div className="border-t border-gray-200/60 dark:border-gray-700/40 max-h-[11rem] overflow-y-auto">
           <table className="w-full text-[11px] tabular-nums">
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
@@ -708,12 +745,13 @@ function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreate
 // =============================================================================
 
 export function HoldingsSimulationTable({
-  rows, tradedRows, untradedRows, newPositionRows, summary,
+  rows, cashRow, tradedRows, untradedRows, newPositionRows, summary,
   portfolioTotalValue, hasBenchmark, priceMap,
   onUpdateVariant, onDeleteVariant, onCreateVariant, onFixConflict,
   onAddAsset, assetSearchResults, onAssetSearchChange,
   onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet,
-  groupBy: externalGroupBy, onGroupByChange, className = '',
+  groupBy: externalGroupBy, onGroupByChange, readOnly = false, className = '',
+  suggestMode, onSubmitSuggestion, pendingSuggestionsByAsset, pendingSuggestionCount, onOpenSuggestionReview,
 }: HoldingsSimulationTableProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<GroupBy>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -929,15 +967,32 @@ export function HoldingsSimulationTable({
   }, [editing, focusRow, cleanupEmptyVariant])
 
   const activateCell = useCallback((r: number, c: number) => {
+    if (readOnly && !suggestMode) return
     if (r < 0 || r >= displayRows.length) return
     const row = displayRows[r]
     if (c === COL.SIM_WT || c === COL.SIM_SHARES) {
-      if (row.variant) setEditing(true)
-      else { onCreateVariant(row.asset_id, 'add'); setPendingEditAssetId(row.asset_id); setPendingEditCol(c) }
+      if (suggestMode) {
+        // Suggest mode: open inline editor for suggestion input (no variant needed)
+        setFocusRow(r)
+        setFocusCol(c)
+        setEditing(true)
+        return
+      }
+      if (row.variant) {
+        setEditing(true)
+      } else {
+        // onCreateVariant inserts a temp variant optimistically — open editor instantly
+        onCreateVariant(row.asset_id, 'add')
+        setEditing(true)
+        setPendingEditAssetId(row.asset_id)
+        setPendingEditCol(c)
+      }
     }
-  }, [displayRows, onCreateVariant])
+  }, [readOnly, suggestMode, displayRows, onCreateVariant])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (readOnly && !suggestMode && (e.key === 'Enter' || e.key === 'e' || e.key === 'Delete' || e.key === 'Backspace')) return
+    if (readOnly && suggestMode && (e.key === 'Delete' || e.key === 'Backspace')) return // Suggest mode: allow Enter/e but not Delete
     if (editing) {
       if (e.key === 'Escape') { e.preventDefault(); cleanupEmptyVariant(focusRow); setEditing(false) }
       else if (e.key === 'Tab') {
@@ -996,10 +1051,50 @@ export function HoldingsSimulationTable({
     onCreateVariant(assetId, 'add'); setPendingEditAssetId(assetId); setPendingEditCol(col)
   }, [onCreateVariant])
 
+  // Combined focus + edit for mouse clicks on editable cells.
+  // Avoids the focusCell (editing=false) → onStartEdit (editing=true) split
+  // which can race with cleanupEmptyVariant deleting the variant mid-batch.
+  // For untraded rows, onCreateVariant inserts a temp variant optimistically
+  // so the editor opens instantly in the same render cycle.
+  const handleClickEditable = useCallback((r: number, c: number, assetId: string, hasVariant: boolean) => {
+    if (readOnly && !suggestMode) { setFocusRow(r); setFocusCol(c); return }
+    if (suggestMode) {
+      // Suggest mode: just open the editor — no variant needed
+      setFocusRow(r); setFocusCol(c); setEditing(true)
+      return
+    }
+    // Clean up previous row's empty variant only when moving to a different row
+    if (editing && focusRow >= 0 && focusRow !== r) cleanupEmptyVariant(focusRow)
+    setFocusRow(r)
+    setFocusCol(c)
+    if (hasVariant) {
+      setEditing(true)
+    } else {
+      // onCreateVariant inserts a temp variant into the cache, so the row will
+      // have a variant by next render. Open editor immediately — pendingEditAssetId
+      // serves as a fallback in case the temp variant hasn't propagated yet.
+      onCreateVariant(assetId, 'add')
+      setEditing(true)
+      setPendingEditAssetId(assetId)
+      setPendingEditCol(c)
+    }
+  }, [editing, focusRow, cleanupEmptyVariant, onCreateVariant, readOnly, suggestMode])
+
   const handleStopEdit = useCallback((committedValue?: string) => {
-    if (committedValue) committedEditRef.current = true
+    if (suggestMode) {
+      // Suggest mode: no variant to clean up, just close editor
+      setEditing(false)
+      return
+    }
+    if (committedValue) {
+      committedEditRef.current = true
+    } else if (!committedEditRef.current) {
+      // No value committed — immediately delete the empty variant so the cell
+      // snaps back to the original weight without any intermediate "enter size" state.
+      cleanupEmptyVariant(focusRow)
+    }
     setEditing(false)
-  }, [])
+  }, [focusRow, cleanupEmptyVariant, suggestMode])
 
   const handleShowPhantom = useCallback(() => {
     if (showPhantomRow) {
@@ -1047,19 +1142,21 @@ export function HoldingsSimulationTable({
     onAssetSearchChange?.('')
   }, [onAssetSearchChange])
 
-  // Footer totals computed from displayRows (respects filters)
+  // Footer totals computed from displayRows (respects filters) + cash row
   const totals = useMemo(() => {
     const src = displayRows
+    const cashWt = cashRow?.simWeight ?? 0
+    const cashDeltaWt = cashRow?.deltaWeight ?? 0
     return {
       shares: src.reduce((s, r) => s + r.currentShares, 0),
-      weight: src.reduce((s, r) => s + r.currentWeight, 0),
+      weight: src.reduce((s, r) => s + r.currentWeight, 0) + (cashRow?.currentWeight ?? 0),
       bench: src.reduce((s, r) => s + (r.benchWeight ?? 0), 0),
       active: src.reduce((s, r) => s + (r.activeWeight ?? 0), 0),
-      simWt: src.reduce((s, r) => s + r.simWeight, 0),
-      deltaWt: src.reduce((s, r) => s + r.deltaWeight, 0),
+      simWt: src.reduce((s, r) => s + r.simWeight, 0) + cashWt,
+      deltaWt: src.reduce((s, r) => s + r.deltaWeight, 0) + cashDeltaWt,
       notional: src.reduce((s, r) => s + r.notional, 0),
     }
-  }, [displayRows])
+  }, [displayRows, cashRow])
 
   const renderRow = (row: SimulationRow, idx: number) => (
     <HoldingRow
@@ -1067,7 +1164,11 @@ export function HoldingsSimulationTable({
       focusedCol={focusRow === idx ? focusCol : null} isEditing={focusRow === idx && editing}
       onUpdateVariant={onUpdateVariant}
       onFocusCell={focusCell} onStartEdit={() => setEditing(true)} onStopEdit={handleStopEdit}
-      onCreateVariantAndEdit={handleCreateVariantAndEdit} rowRef={setRowRef(idx)}
+      onCreateVariantAndEdit={handleCreateVariantAndEdit} onClickEditableCell={handleClickEditable} rowRef={setRowRef(idx)}
+      suggestMode={suggestMode}
+      onSubmitSuggestion={onSubmitSuggestion}
+      pendingSuggestions={pendingSuggestionsByAsset?.get(row.asset_id)}
+      onOpenSuggestionReview={onOpenSuggestionReview}
     />
   )
 
@@ -1083,7 +1184,7 @@ export function HoldingsSimulationTable({
         // (but not when moving to phantom row input — that's still "in table")
         if (!e.currentTarget.contains(e.relatedTarget as Node)) {
           setPendingEditAssetId(null)
-          if (focusRow >= 0) cleanupEmptyVariant(focusRow)
+          if (focusRow >= 0 && !suggestMode) cleanupEmptyVariant(focusRow)
           setEditing(false)
           setFocusRow(-1)
         }
@@ -1175,6 +1276,17 @@ export function HoldingsSimulationTable({
               </div>
             )}
           </div>
+        )}
+
+        {/* Suggestions badge (owner view) */}
+        {!suggestMode && pendingSuggestionCount != null && pendingSuggestionCount > 0 && (
+          <button
+            onClick={onOpenSuggestionReview}
+            className="text-[11px] font-medium tabular-nums px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <MessageSquare className="h-3 w-3" />
+            {pendingSuggestionCount} suggestion{pendingSuggestionCount !== 1 ? 's' : ''}
+          </button>
         )}
 
         {/* Filtered count */}
@@ -1335,9 +1447,11 @@ export function HoldingsSimulationTable({
                       <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No holdings yet</p>
                       <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Add a trade to start building your simulation</p>
                     </div>
-                    <button onClick={handleShowPhantom}
-                      className="text-[13px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 px-4 py-1.5 rounded-full border border-primary-200 dark:border-primary-800 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
-                    >+ Add a trade</button>
+                    {!readOnly && (
+                      <button onClick={handleShowPhantom}
+                        className="text-[13px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 px-4 py-1.5 rounded-full border border-primary-200 dark:border-primary-800 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                      >+ Add a trade</button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -1364,7 +1478,7 @@ export function HoldingsSimulationTable({
             )}
 
             {/* Phantom row for inline asset search */}
-            {showPhantomRow && (
+            {!readOnly && showPhantomRow && (
               <PhantomRow
                 search={phantomSearch}
                 onSearchChange={(v) => { setPhantomSearch(v); onAssetSearchChange?.(v) }}
@@ -1375,6 +1489,44 @@ export function HoldingsSimulationTable({
                 onClose={handlePhantomClose}
                 inputRef={phantomInputRef}
               />
+            )}
+
+            {/* Synthetic cash row — pinned at bottom, shows net cash impact of trades */}
+            {cashRow && (
+              <tr className="border-t border-dashed border-gray-300 dark:border-gray-600 bg-gray-50/50 dark:bg-gray-800/40">
+                <td className="pl-3 pr-2 py-1.5 border-l-2 border-l-transparent whitespace-nowrap">
+                  <span className="text-[13px] font-semibold text-gray-600 dark:text-gray-300">CASH_USD</span>
+                </td>
+                <td className="px-2 py-1.5 whitespace-nowrap">
+                  <span className="text-[12px] text-gray-400 dark:text-gray-500">Cash &amp; Equivalents</span>
+                </td>
+                {/* Shares — not applicable */}
+                <td className="px-2 py-1.5" />
+                {/* Wt% */}
+                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                  <span className={DIM}>{cashRow.currentWeight !== 0 ? fmtWt(cashRow.currentWeight) : '—'}</span>
+                </td>
+                {/* Bench */}
+                <td className="px-2 py-1.5" />
+                {/* Active */}
+                <td className="px-2 py-1.5" />
+                {/* Sim Wt */}
+                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                  <span className={clsx(NUM, 'text-gray-600 dark:text-gray-300')}>{fmtWt(cashRow.simWeight)}</span>
+                </td>
+                {/* Sim Shrs — not applicable */}
+                <td className="px-2 py-1.5" />
+                {/* Δ Wt */}
+                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                  <span className={clsx(NUM, 'font-medium', dc(cashRow.deltaWeight))}>{fmtWt(cashRow.deltaWeight, true)}</span>
+                </td>
+                {/* Δ Shrs — not applicable */}
+                <td className="px-2 py-1.5" />
+                {/* Δ $ */}
+                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                  <span className={clsx(NUM, 'font-medium', dc(cashRow.notional))}>{fmtNotional(cashRow.notional)}</span>
+                </td>
+              </tr>
             )}
           </tbody>
 
@@ -1418,7 +1570,7 @@ export function HoldingsSimulationTable({
       </div>
 
       {/* Bottom Summary Panel */}
-      {rows.length > 0 && (
+      {!readOnly && rows.length > 0 && (
         <SummaryPanel
           summary={summary}
           tradedRows={tradedRows}

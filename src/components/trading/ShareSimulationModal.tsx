@@ -71,7 +71,7 @@ const SHARE_MODES: {
   {
     value: 'live',
     label: 'Live',
-    description: 'Share access to the live simulation (coming soon)',
+    description: 'Share real-time access to the live simulation',
     icon: <Link2 className="h-4 w-4" />,
   },
 ]
@@ -239,13 +239,11 @@ export function ShareSimulationModal({
                         setAccessLevel('view')
                       }
                     }}
-                    disabled={mode.value === 'live'} // Live mode coming soon
                     className={clsx(
                       'flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-left',
                       shareMode === mode.value
                         ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                         : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800',
-                      mode.value === 'live' && 'opacity-50 cursor-not-allowed'
                     )}
                   >
                     <span
@@ -267,9 +265,6 @@ export function ShareSimulationModal({
                         )}
                       >
                         {mode.label}
-                        {mode.value === 'live' && (
-                          <span className="ml-1 text-xs text-gray-400">(soon)</span>
-                        )}
                       </p>
                     </div>
                   </button>
@@ -279,6 +274,12 @@ export function ShareSimulationModal({
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <Info className="h-3 w-3" />
                   Recipients will see a frozen copy of your simulation's current state.
+                </p>
+              )}
+              {shareMode === 'live' && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <Info className="h-3 w-3" />
+                  Recipients will see your simulation update in real time as you make changes.
                 </p>
               )}
             </div>
