@@ -1,10 +1,13 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText } from 'lucide-react'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
+import { PromptModal } from '../thoughts/PromptModal'
+import { ProposalQuickModal } from '../thoughts/ProposalQuickModal'
 import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
+import { useDirectCounts } from '../../hooks/useDirectCounts'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
@@ -25,7 +28,7 @@ interface ThoughtsSectionProps {
   onOpenInspector?: (type: InspectableItemType, id: string) => void
 }
 
-type CaptureMode = 'collapsed' | 'idea' | 'trade_idea'
+type CaptureMode = 'collapsed' | 'idea' | 'trade_idea' | 'prompt' | 'proposal'
 type IdeaType = 'thought' | 'research_idea' | 'thesis'
 
 export function ThoughtsSection({
@@ -42,6 +45,7 @@ export function ThoughtsSection({
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const { success } = useToast()
+  const { openPromptCount, pendingProposalCount } = useDirectCounts()
 
   // Fetch recent quick ideas for the sidebar (max 5, personal only, no trade ideas)
   const { data: recentIdeas = [], invalidate: invalidateRecentIdeas, hasMore } = useRecentQuickIdeas(5)
@@ -50,7 +54,7 @@ export function ThoughtsSection({
   const [capturedContext, setCapturedContext] = useState<CapturedContext | null>(null)
 
   // When opening capture mode, capture the current context
-  const handleOpenCapture = (mode: 'idea' | 'trade_idea') => {
+  const handleOpenCapture = (mode: 'idea' | 'trade_idea' | 'prompt' | 'proposal') => {
     // Capture context at the moment of opening
     if (initialContextType && initialContextId) {
       setCapturedContext({
@@ -246,9 +250,15 @@ export function ThoughtsSection({
 
       {/* Capture Section */}
       <div className="flex-1 px-3 pb-3 overflow-y-auto">
-        {/* Mode selector - show two buttons */}
+        {/* Mode selector — four actions in two groups */}
         {captureMode === 'collapsed' && (
           <>
+            {/* CAPTURE group */}
+            <div className="mb-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Capture
+              </span>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => handleOpenCapture('idea')}
@@ -266,6 +276,70 @@ export function ThoughtsSection({
               </button>
             </div>
 
+            {/* Divider */}
+            <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
+
+            {/* DIRECT group */}
+            <div className="mb-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Direct
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-1.5 leading-tight">
+              Request insight or formalize a recommendation.
+            </p>
+            <div className="flex gap-2">
+              {/* Prompt column */}
+              <div className="flex-1">
+                <button
+                  onClick={() => handleOpenCapture('prompt')}
+                  title="Ask someone for input on the current context (assigned + tracked)"
+                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border border-violet-300 dark:border-violet-600 text-violet-700 dark:text-violet-300 text-sm font-medium rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                  <span>Prompt</span>
+                </button>
+                <button
+                  onClick={() => {
+                    // TODO: Navigate to filtered prompts list when dedicated view exists
+                    const filters = buildQuickThoughtsFilters()
+                    window.dispatchEvent(new CustomEvent('openIdeasTab', {
+                      detail: { filters: { ...filters, idea_type: 'prompt' } }
+                    }))
+                    onClose?.()
+                  }}
+                  className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
+                >
+                  <span className="font-semibold text-gray-600 dark:text-gray-300">{openPromptCount}</span> open prompts
+                </button>
+              </div>
+
+              {/* Proposal column */}
+              <div className="flex-1">
+                <button
+                  onClick={() => handleOpenCapture('proposal')}
+                  title="Create a formal recommendation from a trade idea"
+                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border-2 border-amber-300 dark:border-amber-500 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Proposal</span>
+                </button>
+                <button
+                  onClick={() => {
+                    // TODO: Navigate to proposals list when dedicated view exists
+                    window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
+                    onClose?.()
+                  }}
+                  className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
+                >
+                  <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingProposalCount}</span> proposals pending
+                </button>
+              </div>
+            </div>
+
+            {/* Divider — closes the DIRECT group before RECENT */}
+            <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
+
             {/* Recent Quick Ideas (personal only, no trade ideas) */}
             <RecentQuickIdeas
               items={recentIdeas}
@@ -273,6 +347,7 @@ export function ThoughtsSection({
               onViewAll={handleViewAllIdeas}
               hasMore={hasMore}
             />
+
           </>
         )}
 
@@ -314,6 +389,45 @@ export function ThoughtsSection({
               // Pass context as provenance props if available
               assetId={initialContextType === 'asset' ? initialContextId : undefined}
               portfolioId={initialContextType === 'portfolio' ? initialContextId : undefined}
+            />
+          </div>
+        )}
+
+        {/* Inline prompt form */}
+        {captureMode === 'prompt' && (
+          <div className="pt-3">
+            <p className="mb-3 text-xs text-gray-400">
+              Assign a question to a team member and choose who can see it.
+            </p>
+
+            <PromptModal
+              isOpen={true}
+              embedded
+              onClose={() => {
+                handleCaptureCancel()
+                // Close pane after send
+                setTimeout(() => onClose?.(), 100)
+              }}
+              context={capturedContext}
+            />
+          </div>
+        )}
+
+        {/* Inline proposal form */}
+        {captureMode === 'proposal' && (
+          <div className="pt-3">
+            <p className="mb-3 text-xs text-gray-400">
+              Select a trade idea to formalize into a recommendation.
+            </p>
+
+            <ProposalQuickModal
+              isOpen={true}
+              embedded
+              onClose={() => {
+                handleCaptureCancel()
+                setTimeout(() => onClose?.(), 100)
+              }}
+              context={capturedContext}
             />
           </div>
         )}

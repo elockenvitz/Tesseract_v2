@@ -1,8 +1,7 @@
 import React from 'react'
-import { X, Minimize2, Maximize2, MessageCircle, Mail, Bell, User, Lightbulb } from 'lucide-react'
+import { X, Minimize2, Maximize2, Mail, Bell, User, Lightbulb } from 'lucide-react'
 import { AISection } from './AISection'
 import { DirectMessaging } from './DirectMessaging'
-import { MessagingSection } from './MessagingSection'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { ThoughtsSection } from './ThoughtsSection'
 import { clsx } from 'clsx'
@@ -13,8 +12,8 @@ interface CommunicationPaneProps {
   onToggle: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
-  view: 'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'
-  onViewChange: (view: 'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts') => void
+  view: 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'
+  onViewChange: (view: 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts') => void
   contextType?: string
   contextId?: string
   contextTitle?: string
@@ -59,24 +58,12 @@ export function CommunicationPane({
   onOpenInspector
 }: CommunicationPaneProps) {
 
-  const handleBackToConversations = () => {
-    console.log('🏠 handleBackToConversations called')
-    // Clear the current context to go back to conversation selection
-    if (onContextChange) {
-      console.log('📞 Calling onContextChange with empty strings')
-      onContextChange('', '', '')
-    } else {
-      console.log('⚠️ onContextChange is not defined')
-    }
-  }
   const getViewTitle = () => {
     switch (view) {
       case 'ai':
         return 'AI Assistant'
       case 'direct-messages':
         return 'Direct Messages'
-      case 'messages':
-        return contextTitle || 'Context Discussions'
       case 'notifications':
         return 'Notifications'
       case 'profile':
@@ -98,8 +85,6 @@ export function CommunicationPane({
         )
       case 'direct-messages':
         return <Mail className="h-5 w-5 text-gray-600" />
-      case 'messages':
-        return <MessageCircle className="h-5 w-5 text-gray-600" />
       case 'notifications':
         return <Bell className="h-5 w-5 text-gray-600" />
       case 'profile':
@@ -107,7 +92,7 @@ export function CommunicationPane({
       case 'thoughts':
         return <Lightbulb className="h-5 w-5 text-amber-500" />
       default:
-        return <MessageCircle className="h-5 w-5 text-gray-600" />
+        return <Lightbulb className="h-5 w-5 text-amber-500" />
     }
   }
 
@@ -133,23 +118,6 @@ export function CommunicationPane({
           <DirectMessaging
             isOpen={true}
             onClose={onToggle}
-          />
-        )
-      case 'messages':
-        return (
-          <MessagingSection
-            contextType={contextType}
-            contextId={contextId}
-            contextTitle={contextTitle}
-            citedContent={citedContent}
-            fieldName={fieldName}
-            onCite={onCite}
-            onContextChange={onContextChange}
-            onShowCoverageManager={onShowCoverageManager}
-            onBack={handleBackToConversations}
-            onFocusMode={onFocusMode}
-            isFocusMode={isFocusMode}
-            isOpen={isOpen}
           />
         )
       case 'notifications':

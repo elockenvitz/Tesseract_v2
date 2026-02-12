@@ -11,139 +11,17 @@ import {
   getProposalVersions,
 } from '../../lib/services/trade-lab-service'
 import { moveTradeIdea } from '../../lib/services/trade-idea-service'
-import {
-  parseSizingInput,
-  toSizingSpec,
-  formatSizingDisplay,
-} from '../../lib/trade-lab/sizing-parser'
-import {
-  normalizeSizing,
-  detectDirectionConflict,
-  type NormalizationContext,
-} from '../../lib/trade-lab/normalize-sizing'
+import { parseSizingWithConflictCheck, mapFrameworkToLegacyMode } from '../../lib/trade-lab/proposal-sizing'
 import { ConflictBadgeV3, ConflictExplanation, SizingHelpText } from './VariantStatusBadges'
 import type {
   TradeQueueItemWithDetails,
   TradeProposal,
   TradeProposalVersion,
-  TradeSizingMode,
   BaselineHolding,
   SimulatedHolding,
   ActionContext,
-  RoundingConfig,
-  AssetPrice,
   SizingValidationError,
 } from '../../types/trading'
-
-// =============================================================================
-// V3 SIZING INTEGRATION
-// =============================================================================
-
-/**
- * Parse sizing input using v3 parser with direction conflict detection.
- * Returns both the parsed result and conflict status.
- */
-function parseSizingWithConflictCheck(
-  sizingInput: string,
-  action: string,
-  currentPosition: { shares: number; weight: number } | null,
-  portfolioTotalValue: number,
-  price: number,
-  hasBenchmark: boolean
-): {
-  isValid: boolean
-  error?: string
-  framework?: string
-  value?: number
-  directionConflict: SizingValidationError | null  // v3: Full error object, not boolean
-  computed?: {
-    targetShares: number
-    targetWeight: number
-    deltaShares: number
-    deltaWeight: number
-  }
-} {
-  // Parse using v3 parser
-  const parseResult = parseSizingInput(sizingInput, { has_benchmark: hasBenchmark })
-
-  if (!parseResult.is_valid) {
-    return {
-      isValid: false,
-      error: parseResult.error,
-      directionConflict: null,  // v3: null = no conflict
-    }
-  }
-
-  const sizingSpec = toSizingSpec(sizingInput, parseResult)
-  if (!sizingSpec) {
-    return {
-      isValid: false,
-      error: 'Failed to parse sizing',
-      directionConflict: null,  // v3: null = no conflict
-    }
-  }
-
-  // Create mock price for normalization
-  const mockPrice: AssetPrice = {
-    asset_id: 'temp',
-    price: price > 0 ? price : 100, // Fallback for calculation
-    timestamp: new Date().toISOString(),
-    source: 'realtime',
-  }
-
-  // Default rounding config (no rounding for proposals)
-  const roundingConfig: RoundingConfig = {
-    lot_size: 1,
-    min_lot_behavior: 'round',
-    round_direction: 'nearest',
-  }
-
-  // Normalize to get computed values
-  const normCtx: NormalizationContext = {
-    action: action as any,
-    sizing_input: sizingInput,
-    current_position: currentPosition ? {
-      shares: currentPosition.shares,
-      weight: currentPosition.weight,
-      cost_basis: null,
-      active_weight: null,
-    } : null,
-    portfolio_total_value: portfolioTotalValue,
-    price: mockPrice,
-    rounding_config: roundingConfig,
-    active_weight_config: null,
-    has_benchmark: hasBenchmark,
-  }
-
-  const normResult = normalizeSizing(normCtx)
-
-  return {
-    isValid: normResult.is_valid,
-    error: normResult.error,
-    framework: sizingSpec.framework,
-    value: sizingSpec.value,
-    directionConflict: normResult.direction_conflict,
-    computed: normResult.computed ? {
-      targetShares: normResult.computed.target_shares,
-      targetWeight: normResult.computed.target_weight,
-      deltaShares: normResult.computed.delta_shares,
-      deltaWeight: normResult.computed.delta_weight,
-    } : undefined,
-  }
-}
-
-// Legacy mapping for backwards compatibility with existing code
-function mapFrameworkToLegacyMode(framework: string | undefined): TradeSizingMode {
-  switch (framework) {
-    case 'weight_target': return 'weight'
-    case 'weight_delta': return 'delta_weight'
-    case 'shares_target': return 'shares'
-    case 'shares_delta': return 'delta_shares'
-    case 'active_target':
-    case 'active_delta': return 'delta_benchmark'
-    default: return 'weight'
-  }
-}
 
 interface PortfolioOption {
   id: string

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, Activity } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, Activity } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -13,8 +13,6 @@ import { TesseractLogo } from '../ui/TesseractLogo'
 interface HeaderProps {
   onSearchResult: (result: any) => void
   onFocusSearch?: () => void
-  onShowMessages?: () => void
-  hasUnreadMessages?: boolean
   onShowDirectMessages?: () => void
   onShowNotifications?: () => void
   onShowCoverageManager?: () => void
@@ -28,14 +26,12 @@ interface HeaderProps {
 export function Header({
   onSearchResult,
   onFocusSearch,
-  onShowMessages,
-  hasUnreadMessages,
   onShowDirectMessages,
   onShowNotifications,
   onShowCoverageManager,
   isCommPaneOpen,
   onToggleCommPane,
-  commPaneView = 'messages',
+  commPaneView = 'thoughts',
   onShowAI = () => {},
   onShowThoughts = () => {}
 }: HeaderProps) {
@@ -145,35 +141,6 @@ export function Header({
       supabase.removeChannel(channel)
     }
   }, [user?.id, refetchDirectMessages])
-
-  // Check for unread context messages (messages table only)
-  // Excludes trade_idea which has its own UI in TradeQueuePage
-  const { data: hasUnreadContextMessages } = useQuery({
-    queryKey: ['unread-context-messages', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return false
-
-      const { data: contextMessages, error: contextError } = await supabase
-        .from('messages')
-        .select('id')
-        .neq('user_id', user.id)
-        .neq('context_type', 'trade_idea') // trade_idea has its own UI
-        .eq('is_read', false)
-        .limit(1)
-
-      if (contextError) {
-        console.error('Error fetching context messages:', contextError)
-        return false
-      }
-
-      const hasUnread = contextMessages && contextMessages.length > 0
-      console.log('Header: Context messages unread:', hasUnread)
-      return hasUnread
-    },
-    enabled: !!user?.id,
-    refetchInterval: 30000,
-    staleTime: 0
-  })
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -437,25 +404,6 @@ export function Header({
               <Mail className="h-5 w-5" />
               {hasUnreadDirectMessages && (
                 <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500"></span>
-              )}
-            </button>
-            
-            {/* Communication Toggle */}
-            <button
-              onClick={() => {
-                onShowMessages?.()
-              }}
-              className={clsx(
-                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative",
-                isCommPaneOpen && commPaneView === 'messages'
-                  ? "text-primary-600 bg-primary-100"
-                  : "text-gray-400 hover:text-gray-600"
-              )}
-              title="Context Discussions"
-            >
-              <MessageCircle className="h-5 w-5" />
-              {hasUnreadContextMessages && (
-                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-error-500"></span>
               )}
             </button>
             

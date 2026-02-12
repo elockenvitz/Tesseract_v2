@@ -49,7 +49,7 @@ export function Layout({
     openCommPane
   } = useCommunication()
 
-  const [commPaneView, setCommPaneView] = useState<'messages' | 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'>('messages')
+  const [commPaneView, setCommPaneView] = useState<'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'>('thoughts')
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
@@ -84,15 +84,6 @@ export function Layout({
 
   const handleShowNotifications = () => {
     setCommPaneView('notifications')
-    if (!isCommPaneOpen) {
-      toggleCommPane()
-    }
-  }
-
-  const handleShowMessages = () => {
-    setCommPaneView('messages')
-    // Reset to tab-based context when opening messages view
-    setCommPaneContext(null)
     if (!isCommPaneOpen) {
       toggleCommPane()
     }
@@ -177,24 +168,8 @@ export function Layout({
     setIsFocusMode(enable)
     console.log('🔍 Focus mode:', enable ? 'enabled' : 'disabled')
 
-    // When enabling focus mode, switch context to current tab and open comm pane
-    if (enable) {
-      // Get the current tab's context
-      const tabContext = getCommContext()
-
-      // If current tab has a valid context, switch to it
-      if (tabContext.contextType && tabContext.contextId) {
-        console.log('🎯 Switching to current tab context:', tabContext)
-        // Clear any override context to use the current tab's context
-        setCommPaneContext(null)
-        // Switch to messages view
-        setCommPaneView('messages')
-        // Open the comm pane if it's not already open
-        if (!isCommPaneOpen) {
-          toggleCommPane()
-        }
-      }
-    }
+    // Focus mode is no longer tied to context conversations.
+    // Keep the flag for any citation-based features that remain.
   }, [isCommPaneOpen, toggleCommPane])
 
   // ESC key listener to exit focus mode
@@ -401,8 +376,6 @@ export function Layout({
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <Header
         onSearchResult={onSearchResult}
-        onShowMessages={handleShowMessages}
-        hasUnreadMessages={false}
         onShowDirectMessages={handleShowDirectMessages}
         onShowNotifications={handleShowNotifications}
         onShowCoverageManager={handleShowCoverageManager}
