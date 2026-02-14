@@ -1,18 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Loader2, Check, Edit2, Users, ChevronDown } from 'lucide-react'
 import { useAnalystRatings, useRatingScales, type AnalystRating } from '../../hooks/useAnalystRatings'
 import { useAuth } from '../../hooks/useAuth'
+import { useRatingDivergence } from '../../hooks/useRatingDivergence'
+import { DivergenceBadge } from './DivergenceBadge'
+import { InconsistencyBadge } from './InconsistencyBadge'
+import type { ViewScope } from '../../hooks/useExpectedValue'
 
 interface AnalystRatingsSectionProps {
   assetId: string
   className?: string
   isEditable?: boolean
+  currentPrice?: number
+  /** Currently selected view scope (firm or specific user) */
+  viewScope?: ViewScope
+  /**
+   * User IDs whose ratings the current user can see.
+   * Filters the divergence badge to only accessible analysts.
+   */
+  accessibleUserIds?: string[]
   /** When true, hides the internal header (for use as an embedded field) */
   embedded?: boolean
 }
 
-export function AnalystRatingsSection({ assetId, className, isEditable = false, embedded = false }: AnalystRatingsSectionProps) {
+export function AnalystRatingsSection({ assetId, className, isEditable = false, currentPrice, viewScope, accessibleUserIds, embedded = false }: AnalystRatingsSectionProps) {
   const { user } = useAuth()
   const {
     ratings,
@@ -30,6 +42,19 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
     getRatingColor,
     isLoading: scalesLoading
   } = useRatingScales()
+
+  const {
+    hasCrossViewDivergence,
+    ratingBreakdown,
+    hasEVInconsistency,
+    isSuppressed,
+    myDirection,
+    evReturn,
+    conflictDescription,
+    canSuppress,
+    suppress24h,
+    isSuppressing,
+  } = useRatingDivergence({ assetId, currentPrice, viewScope, accessibleUserIds })
 
   const [isEditing, setIsEditing] = useState(false)
   const [selectedValue, setSelectedValue] = useState(myRating?.rating_value || '')
@@ -62,6 +87,15 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
     setIsEditing(true)
   }
 
+  // Listen for external edit trigger from ActionLoopModule
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if ((e as CustomEvent).detail?.assetId === assetId && isEditable) startEditing()
+    }
+    window.addEventListener('actionloop-edit-rating', handler)
+    return () => window.removeEventListener('actionloop-edit-rating', handler)
+  }, [assetId, isEditable])
+
   if (isLoading || scalesLoading) {
     return (
       <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
@@ -91,6 +125,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <Users className="w-3.5 h-3.5" />
               <span>Firm Consensus ({ratings.length} analyst{ratings.length !== 1 ? 's' : ''})</span>
+              {hasCrossViewDivergence && <DivergenceBadge breakdown={ratingBreakdown} />}
             </div>
             <div className="flex flex-wrap gap-2">
               {consensus.map(({ value, count, percentage }) => {
@@ -212,6 +247,16 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
                 >
                   {getRatingLabel(myRating.rating_scale_id, myRating.rating_value)}
                 </div>
+                {hasEVInconsistency && !isSuppressed && myDirection && evReturn != null && conflictDescription && (
+                  <InconsistencyBadge
+                    direction={myDirection}
+                    evReturn={evReturn}
+                    conflictDescription={conflictDescription}
+                    canSuppress={canSuppress}
+                    onSuppress={suppress24h}
+                    isSuppressing={isSuppressing}
+                  />
+                )}
                 <button
                   onClick={startEditing}
                   className="p-1 text-gray-400 hover:text-gray-600 rounded"

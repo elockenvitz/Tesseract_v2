@@ -269,6 +269,18 @@ export function ContributionSection({
     coveringAnalystIds
   })
 
+  // Listen for external edit trigger from ActionLoopModule
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      if (d?.assetId === assetId && section === 'thesis' && activeTab === user?.id) {
+        setIsEditing(true)
+      }
+    }
+    window.addEventListener('actionloop-edit-thesis', handler)
+    return () => window.removeEventListener('actionloop-edit-thesis', handler)
+  }, [assetId, section, activeTab, user?.id])
+
   // Get asset info for smart input context
   const { data: assetInfo } = useQuery({
     queryKey: ['asset-info', assetId],

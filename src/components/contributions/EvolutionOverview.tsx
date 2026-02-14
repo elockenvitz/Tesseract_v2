@@ -4,7 +4,6 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  Calendar,
   Edit3,
   AlertTriangle,
   Target,
@@ -13,7 +12,7 @@ import {
   Loader2,
   ArrowRight
 } from 'lucide-react'
-import { format, formatDistanceStrict } from 'date-fns'
+import { format } from 'date-fns'
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -37,6 +36,7 @@ export interface EvolutionStats {
 
 interface EvolutionOverviewProps {
   stats: EvolutionStats
+  lastEditor?: { name: string; date: Date }
   isAnalyzing: boolean
   hasAnalysis: boolean
   isAnalysisStale: boolean
@@ -118,6 +118,7 @@ function StatCard({ icon: Icon, label, value, subValue, color }: StatCardProps) 
 
 export function EvolutionOverview({
   stats,
+  lastEditor,
   isAnalyzing,
   hasAnalysis,
   isAnalysisStale,
@@ -127,20 +128,10 @@ export function EvolutionOverview({
   const trajectoryConfig = getSentimentTrajectoryConfig(stats.sentimentTrajectory)
   const TrajectoryIcon = trajectoryConfig.icon
 
-  // Calculate active period
-  const activePeriod = stats.firstEditDate && stats.lastEditDate
-    ? formatDistanceStrict(stats.firstEditDate, stats.lastEditDate)
-    : 'N/A'
-
-  // Format date range
-  const dateRange = stats.firstEditDate && stats.lastEditDate
-    ? `${format(stats.firstEditDate, 'MMM d, yyyy')} - ${format(stats.lastEditDate, 'MMM d, yyyy')}`
-    : 'No edits yet'
-
   if (stats.totalRevisions === 0) {
     return (
       <div className={clsx(
-        'bg-white border border-gray-200 rounded-lg p-6 text-center',
+        'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 text-center',
         className
       )}>
         <Edit3 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
@@ -152,15 +143,22 @@ export function EvolutionOverview({
 
   return (
     <div className={clsx(
-      'bg-white border border-gray-200 rounded-lg overflow-hidden',
+      'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden',
       className
     )}>
       {/* Header */}
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-gray-500" />
-            <h3 className="text-sm font-semibold text-gray-900">Evolution Overview</h3>
+          <div>
+            <div className="flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-gray-500" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Change Intelligence</h3>
+            </div>
+            {lastEditor && (
+              <p className="text-xs text-gray-500 mt-0.5 ml-6">
+                Last updated by {lastEditor.name} · {format(lastEditor.date, 'MMM d, yyyy')}
+              </p>
+            )}
           </div>
 
           {/* Sentiment Trajectory Badge */}
@@ -176,27 +174,20 @@ export function EvolutionOverview({
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* Stats Grid - focused on material counts */}
       <div className="p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-          <StatCard
-            icon={Edit3}
-            label="Total Revisions"
-            value={stats.totalRevisions}
-            color="bg-blue-50 text-blue-600"
-          />
-          <StatCard
-            icon={Calendar}
-            label="Active Period"
-            value={activePeriod}
-            subValue={dateRange}
-            color="bg-purple-50 text-purple-600"
-          />
+        <div className="grid grid-cols-3 gap-4 mb-3">
           <StatCard
             icon={Target}
             label="Thesis Changes"
             value={stats.thesisChanges}
             color="bg-primary-50 text-primary-600"
+          />
+          <StatCard
+            icon={DollarSign}
+            label="Target Revisions"
+            value={stats.priceTargetRevisions}
+            color="bg-green-50 text-green-600"
           />
           <StatCard
             icon={AlertTriangle}
@@ -206,21 +197,9 @@ export function EvolutionOverview({
           />
         </div>
 
-        {/* Additional Stats Row */}
-        <div className="flex items-center gap-4 text-xs text-gray-500 border-t border-gray-100 pt-3">
-          <span className="flex items-center gap-1">
-            <DollarSign className="w-3 h-3" />
-            {stats.priceTargetRevisions} price target change{stats.priceTargetRevisions !== 1 ? 's' : ''}
-          </span>
-          <span className="text-gray-300">|</span>
-          <span>{stats.whereDifferentChanges} differentiation update{stats.whereDifferentChanges !== 1 ? 's' : ''}</span>
-          <span className="text-gray-300">|</span>
-          <span>{stats.referenceChanges} reference change{stats.referenceChanges !== 1 ? 's' : ''}</span>
-        </div>
-
         {/* Sentiment Evolution Arrow (if we have both sentiments) */}
         {stats.initialSentiment && stats.currentSentiment && stats.initialSentiment !== stats.currentSentiment && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <p className="text-xs text-gray-500 mb-2">Sentiment Evolution</p>
             <div className="flex items-center gap-2">
               <SentimentBadge sentiment={stats.initialSentiment} />
@@ -231,35 +210,33 @@ export function EvolutionOverview({
         )}
       </div>
 
-      {/* Analyze Button */}
-      <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
+      {/* Analyze link */}
+      <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
         <button
           onClick={onAnalyzeEvolution}
           disabled={isAnalyzing}
           className={clsx(
-            'w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            'flex items-center gap-1.5 text-xs transition-colors',
             isAnalyzing
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              ? 'text-gray-400 cursor-not-allowed'
               : isAnalysisStale
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                : hasAnalysis
-                  ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                  : 'bg-primary-600 text-white hover:bg-primary-700'
+                ? 'text-amber-600 hover:text-amber-700'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
           )}
         >
           {isAnalyzing ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Analyzing Evolution...
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Analyzing...
             </>
           ) : (
             <>
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3 h-3" />
               {hasAnalysis
                 ? isAnalysisStale
-                  ? 'Update Analysis'
-                  : 'Refresh Analysis'
-                : 'Analyze Evolution'}
+                  ? 'Update analysis →'
+                  : 'Refresh analysis →'
+                : 'Analyze evolution →'}
             </>
           )}
         </button>

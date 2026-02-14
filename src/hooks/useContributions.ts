@@ -2,6 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useAIConfig } from './useAIConfig'
+import {
+  findOrCreateRevision,
+  addRevisionEvents,
+  sectionToCategory,
+  getSignificanceTier,
+} from '../lib/revision-service'
 
 export type ContributionVisibility = 'portfolio' | 'team' | 'department' | 'division' | 'firm'
 
@@ -346,10 +352,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       visibility?: ContributionVisibility
       targetIds?: string[]
     }) => {
-      // Get the contribution with draft
+      // Get the contribution with draft AND current published content (for revision diff)
       const { data: existing } = await supabase
         .from('asset_contributions')
-        .select('id, draft_content')
+        .select('id, content, draft_content')
         .eq('asset_id', assetId)
         .eq('section', sectionKey)
         .eq('created_by', user?.id)
@@ -359,11 +365,14 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         throw new Error('No draft to publish')
       }
 
+      const oldContent = existing.content
+      const newContent = existing.draft_content
+
       // Move draft to published content
       const { data, error } = await supabase
         .from('asset_contributions')
         .update({
-          content: existing.draft_content,
+          content: newContent,
           draft_content: null,
           draft_updated_at: null,
           visibility,
@@ -395,6 +404,25 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
           })))
       }
 
+      // Create revision event (fire-and-forget, don't block publish)
+      if (user?.id) {
+        findOrCreateRevision({
+          assetId,
+          actorUserId: user.id,
+          viewScopeType: 'firm',
+        }).then(revisionId => {
+          addRevisionEvents(revisionId, [{
+            category: sectionToCategory(sectionKey),
+            field_key: sectionKey,
+            before_value: oldContent || null,
+            after_value: newContent,
+            significance_tier: getSignificanceTier(sectionKey, oldContent, newContent),
+          }])
+        }).catch(err => {
+          console.warn('Failed to record revision event:', err)
+        })
+      }
+
       return {
         ...data,
         user: data.user ? { ...data.user, full_name: getFullName(data.user) } : undefined
@@ -404,6 +432,7 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
       queryClient.invalidateQueries({ queryKey: ['contribution-history'] })
       queryClient.invalidateQueries({ queryKey: ['aggregate-history', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['asset-revisions', assetId] })
     }
   })
 
@@ -1378,7 +1407,7 @@ export interface EvolutionAnalysis {
 
 export interface HistoryEvent {
   id: string
-  type: 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference'
+  type: 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference' | 'rating'
   timestamp: Date
   userId: string
   userName: string
@@ -1386,6 +1415,7 @@ export interface HistoryEvent {
   previousContent?: string
   priceTarget?: number
   previousPriceTarget?: number
+  scenarioLabel?: string
 }
 
 // Hook for AI-powered history evolution analysis

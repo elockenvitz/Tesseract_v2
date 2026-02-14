@@ -212,15 +212,15 @@ export function Layout({
   // Listen for custom event to open thoughts capture (from Attention Dashboard)
   useEffect(() => {
     const handleOpenThoughtsCapture = (event: CustomEvent) => {
-      const { contextType, contextId, contextTitle } = event.detail || {}
+      const { contextType, contextId, contextTitle, captureType } = event.detail || {}
 
       // Set context if provided
       if (contextType && contextId) {
         setCommPaneContext({ contextType, contextId, contextTitle })
       }
 
-      // Use store to open in capture mode
-      openCaptureSidebar()
+      // Use store to open in capture mode (with optional auto-select type)
+      openCaptureSidebar(captureType || null)
 
       // Switch to thoughts view
       setCommPaneView('thoughts')

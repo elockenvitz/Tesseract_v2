@@ -7,11 +7,18 @@ import {
   AlertTriangle,
   Sparkles,
   ChevronRight,
+  Lightbulb,
+  MessageCircleQuestion,
 } from 'lucide-react'
+import type { RecentItem } from '../../hooks/useRecentQuickIdeas'
 
-// Types
+// ---------------------------------------------------------------------------
+// Types re-exported for backwards compat (hook still imports QuickIdeaSignal)
+// ---------------------------------------------------------------------------
+
 export type QuickIdeaSignal = 'bullish' | 'bearish' | 'neutral' | 'curious' | 'concerned' | 'excited'
 
+// Legacy QuickIdea kept for any external consumers; hook now returns RecentItem
 export interface QuickIdea {
   id: string
   text: string
@@ -23,14 +30,21 @@ export interface QuickIdea {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
 interface RecentQuickIdeasProps {
-  items: QuickIdea[]
-  onOpen: (id: string) => void
+  items: RecentItem[]
+  onOpen: (id: string, kind: RecentItem['kind']) => void
   onViewAll: () => void
   hasMore?: boolean
 }
 
-// Signal configuration
+// ---------------------------------------------------------------------------
+// Signal config (unchanged)
+// ---------------------------------------------------------------------------
+
 const SIGNAL_CONFIG: Record<QuickIdeaSignal, {
   icon: React.ComponentType<{ className?: string }>
   label: string
@@ -75,9 +89,20 @@ const SIGNAL_CONFIG: Record<QuickIdeaSignal, {
   },
 }
 
-/**
- * Format a date as a compact relative time string
- */
+// ---------------------------------------------------------------------------
+// Status label config for prompts
+// ---------------------------------------------------------------------------
+
+const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
+  open: { text: 'Open', cls: 'text-violet-600 dark:text-violet-400' },
+  responded: { text: 'Responded', cls: 'text-emerald-600 dark:text-emerald-400' },
+  closed: { text: 'Closed', cls: 'text-gray-400 dark:text-gray-500' },
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 export function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
   const now = new Date()
@@ -100,6 +125,10 @@ export function formatRelativeTime(dateString: string): string {
   })
 }
 
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
 function SignalPill({ signal }: { signal: QuickIdeaSignal }) {
   const config = SIGNAL_CONFIG[signal]
   const Icon = config.icon
@@ -117,46 +146,96 @@ function SignalPill({ signal }: { signal: QuickIdeaSignal }) {
   )
 }
 
-function QuickIdeaRow({
-  idea,
-  onClick,
-}: {
-  idea: QuickIdea
-  onClick: () => void
-}) {
+/** Subtle type tag: [PROMPT · OPEN] or [THOUGHT] */
+function TypeTag({ item }: { item: RecentItem }) {
+  if (item.kind === 'prompt') {
+    const st = STATUS_LABEL[item.status] || STATUS_LABEL.open
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium leading-none">
+        <MessageCircleQuestion className="h-3 w-3 text-violet-500 dark:text-violet-400" />
+        <span className="uppercase tracking-wide text-violet-600 dark:text-violet-400">Prompt</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span className={st.cls}>{st.text}</span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-medium leading-none">
+      <Lightbulb className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+      <span className="uppercase tracking-wide text-gray-400 dark:text-gray-500">Thought</span>
+    </span>
+  )
+}
+
+/** Meta line under the title — differs by item kind */
+function MetaLine({ item }: { item: RecentItem }) {
+  const parts: React.ReactNode[] = []
+
+  // Timestamp
+  parts.push(
+    <span key="time" className="text-[10px] text-gray-400 dark:text-gray-500">
+      {formatRelativeTime(item.createdAt)}
+    </span>
+  )
+
+  // Context tag (e.g. COIN)
+  if (item.contextTag) {
+    parts.push(
+      <span key="ctx-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
+      <span key="ctx" className="text-[10px] font-medium text-gray-500 dark:text-gray-400 truncate max-w-[60px]">
+        {item.contextTag.label}
+      </span>
+    )
+  }
+
+  // Prompt-specific: assignee
+  if (item.kind === 'prompt' && item.assigneeName) {
+    parts.push(
+      <span key="to-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
+      <span key="to" className="text-[10px] text-gray-400 dark:text-gray-500 truncate max-w-[80px]">
+        To: {item.assigneeName}
+      </span>
+    )
+  }
+
+  return <div className="flex items-center gap-1.5 mt-0.5">{parts}</div>
+}
+
+// ---------------------------------------------------------------------------
+// Row component
+// ---------------------------------------------------------------------------
+
+function RecentItemRow({ item, onClick }: { item: RecentItem; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       className="w-full flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left group cursor-pointer"
     >
-      {/* Signal icon */}
-      {idea.signal ? (
-        <SignalPill signal={idea.signal} />
-      ) : (
+      {/* Signal icon — only for thoughts (prompts have no sentiment) */}
+      {item.kind === 'thought' && item.signal ? (
+        <SignalPill signal={item.signal} />
+      ) : item.kind === 'thought' ? (
         <div className="w-5 h-5 rounded bg-gray-100 dark:bg-gray-700 flex-shrink-0" />
+      ) : (
+        // Prompt: subtle violet dot indicator
+        <div className="w-5 h-5 rounded bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
+          <MessageCircleQuestion className="h-3 w-3 text-violet-500 dark:text-violet-400" />
+        </div>
       )}
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2 leading-snug">
-          {idea.text}
+        {/* Type tag line */}
+        <TypeTag item={item} />
+
+        {/* Title / text */}
+        <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2 leading-snug mt-0.5">
+          {item.text}
         </p>
 
         {/* Meta row */}
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[10px] text-gray-400 dark:text-gray-500">
-            {formatRelativeTime(idea.createdAt)}
-          </span>
-
-          {idea.contextTag && (
-            <>
-              <span className="text-[10px] text-gray-300 dark:text-gray-600">·</span>
-              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 truncate max-w-[60px]">
-                {idea.contextTag.label}
-              </span>
-            </>
-          )}
-        </div>
+        <MetaLine item={item} />
       </div>
 
       {/* Hover chevron */}
@@ -164,6 +243,10 @@ function QuickIdeaRow({
     </button>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export function RecentQuickIdeas({
   items,
@@ -214,11 +297,11 @@ export function RecentQuickIdeas({
 
       {/* Fixed list (no scrolling) */}
       <div className="space-y-0.5">
-        {items.map((idea) => (
-          <QuickIdeaRow
-            key={idea.id}
-            idea={idea}
-            onClick={() => onOpen(idea.id)}
+        {items.map((item) => (
+          <RecentItemRow
+            key={item.id}
+            item={item}
+            onClick={() => onOpen(item.id, item.kind)}
           />
         ))}
       </div>

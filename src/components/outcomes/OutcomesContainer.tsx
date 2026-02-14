@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Star, Table2, LayoutGrid } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -75,7 +75,9 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
     priceTargets,
     priceTargetsByUser,
     isLoading: targetsLoading,
-    savePriceTarget
+    saveDraftPriceTarget,
+    publishPriceTarget,
+    discardDraft
   } = useAnalystPriceTargets({ assetId })
 
   // Fetch coverage data
@@ -187,15 +189,26 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
     savePreferences.mutate({ weight_by_role: weight })
   }
 
-  // Handle saving a price target
-  const handleSavePriceTarget = async (
+  // Handle saving a price target as draft
+  const handleSaveDraft = async (
     scenarioId: string,
-    data: { price: number; timeframe?: string; reasoning?: string; probability?: number }
+    data: { price: number; timeframe?: string; timeframeType?: import('../../hooks/useAnalystPriceTargets').TimeframeType; targetDate?: string; isRolling?: boolean; reasoning?: string; probability?: number }
   ) => {
-    await savePriceTarget.mutateAsync({
-      scenarioId,
-      ...data
-    })
+    await saveDraftPriceTarget.mutateAsync({ scenarioId, ...data })
+  }
+
+  // Handle publishing a price target (direct to published columns + revision events)
+  const handlePublishPriceTarget = async (
+    scenarioId: string,
+    data: { price: number; timeframe?: string; timeframeType?: import('../../hooks/useAnalystPriceTargets').TimeframeType; targetDate?: string; isRolling?: boolean; reasoning?: string; probability?: number },
+    scenarioName?: string
+  ) => {
+    await publishPriceTarget.mutateAsync({ scenarioId, scenarioName, ...data })
+  }
+
+  // Handle discarding a single target's draft
+  const handleDiscardDraft = async (targetId: string) => {
+    await discardDraft.mutateAsync(targetId)
   }
 
   // Handle creating a custom scenario
@@ -211,17 +224,15 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
     timeframe?: string
     reasoning?: string
   }>) => {
-    // Find each target and update its probability (and optionally price)
+    // Find each target and update its probability (and optionally price) as draft
     for (const update of updates) {
-      // Find the target to get its scenario
       const target = priceTargets?.find(t => t.id === update.targetId)
       if (target) {
-        // Only update if probability changed OR price changed
         const probChanged = update.probability !== target.probability
         const priceChanged = update.price !== undefined && update.price !== target.price
 
         if (probChanged || priceChanged) {
-          await savePriceTarget.mutateAsync({
+          await saveDraftPriceTarget.mutateAsync({
             scenarioId: target.scenario_id,
             price: update.price ?? target.price,
             timeframe: update.timeframe || target.timeframe || undefined,
@@ -235,6 +246,18 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
       }
     }
   }
+
+  // External edit trigger from ActionLoopModule
+  const [editTriggerKey, setEditTriggerKey] = useState(0)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if ((e as CustomEvent).detail?.assetId === assetId) {
+        setEditTriggerKey(k => k + 1)
+      }
+    }
+    window.addEventListener('actionloop-edit-targets', handler)
+    return () => window.removeEventListener('actionloop-edit-targets', handler)
+  }, [assetId])
 
   // Check if core data is still loading
   // Don't include authLoading - it resets on every mount. Use data existence checks instead.
@@ -446,7 +469,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                   <PriceTargetChart
                     assetId={assetId}
                     symbol={symbol}
-                    height={350}
+                    height={480}
                   />
                 </div>
               )}
@@ -480,7 +503,6 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                   const target = getUserTargets(activeTab).find(
                     t => t.scenario_id === scenario.id
                   )
-                  // Calculate sum of probabilities from other scenarios
                   const otherProbSum = getUserTargets(activeTab)
                     .filter(t => t.scenario_id !== scenario.id)
                     .reduce((sum, t) => sum + (t.probability || 0), 0)
@@ -490,8 +512,12 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                       scenario={scenario}
                       priceTarget={target}
                       isEditable={isOwnTab}
-                      onSave={isOwnTab ? (data) => handleSavePriceTarget(scenario.id, data) : undefined}
+                      onSaveDraft={isOwnTab ? (data) => handleSaveDraft(scenario.id, data) : undefined}
+                      onPublish={isOwnTab ? (data) => handlePublishPriceTarget(scenario.id, data, scenario.name) : undefined}
+                      onDiscardDraft={isOwnTab && target ? () => handleDiscardDraft(target.id) : undefined}
                       otherScenariosProbabilitySum={otherProbSum}
+                      currentPrice={currentPrice}
+                      triggerEditKey={scenario.is_default ? editTriggerKey : undefined}
                     />
                   )
                 })}
@@ -509,9 +535,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                   const target = getUserTargets(activeTab).find(
                     t => t.scenario_id === scenario.id
                   )
-                  // Only show if there's a target or if it's the user's own scenario
                   if (!target && scenario.created_by !== activeTab) return null
-                  // Calculate sum of probabilities from other scenarios
                   const otherProbSum = getUserTargets(activeTab)
                     .filter(t => t.scenario_id !== scenario.id)
                     .reduce((sum, t) => sum + (t.probability || 0), 0)
@@ -521,8 +545,11 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                       scenario={scenario}
                       priceTarget={target}
                       isEditable={isOwnTab && scenario.created_by === user?.id}
-                      onSave={isOwnTab ? (data) => handleSavePriceTarget(scenario.id, data) : undefined}
+                      onSaveDraft={isOwnTab ? (data) => handleSaveDraft(scenario.id, data) : undefined}
+                      onPublish={isOwnTab ? (data) => handlePublishPriceTarget(scenario.id, data, scenario.name) : undefined}
+                      onDiscardDraft={isOwnTab && target ? () => handleDiscardDraft(target.id) : undefined}
                       otherScenariosProbabilitySum={otherProbSum}
+                      currentPrice={currentPrice}
                     />
                   )
                 })}
@@ -544,7 +571,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
               <PriceTargetChart
                 assetId={assetId}
                 symbol={symbol}
-                height={350}
+                height={480}
                 selectedUserId={activeTab}
                 onUpdateProbabilities={isOwnTab ? handleUpdateProbabilities : undefined}
               />

@@ -67,7 +67,8 @@ import {
   ClipboardCheck,
   SlidersHorizontal,
   Grid3X3,
-  GitBranch
+  GitBranch,
+  RefreshCw
 } from 'lucide-react'
 import { SCENARIO_PRESETS, METRIC_PRESETS } from './FieldTypeRenderers'
 import {
@@ -81,6 +82,11 @@ import {
 import { useResearchFields } from '../../hooks/useResearchFields'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import {
+  isActionLoopGloballyHidden,
+  setActionLoopGlobalHidden,
+  clearAllActionLoopHidden,
+} from '../asset/ActionLoopModule'
 
 // Draft state types for local changes before saving
 interface DraftFieldOverride {
@@ -160,6 +166,9 @@ export function AssetPageFieldCustomizer({
   const { user } = useAuth()
   const [fieldToDelete, setFieldToDelete] = useState<{ id: string; name: string } | null>(null)
   const queryClient = useQueryClient()
+
+  // Header Modules visibility (Action Loop)
+  const [actionLoopVisible, setActionLoopVisible] = useState(() => !isActionLoopGloballyHidden())
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [showTemplateSelector, setShowTemplateSelector] = useState(false)
@@ -1845,6 +1854,40 @@ export function AssetPageFieldCustomizer({
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Header Modules — outside tile customization */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Header Modules</h3>
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-sm text-gray-700">Action Loop</span>
+                      <span className="text-[10px] text-gray-400">Ideas, decisions, follow-up</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const next = !actionLoopVisible
+                        setActionLoopVisible(next)
+                        setActionLoopGlobalHidden(!next)
+                        if (next) clearAllActionLoopHidden()
+                        window.dispatchEvent(new Event('actionloop-visibility-changed'))
+                      }}
+                      className={clsx(
+                        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                        actionLoopVisible ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform',
+                          actionLoopVisible ? 'translate-x-4' : 'translate-x-0'
+                        )}
+                      />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Two-Column Layout: Current Layout + Field Library */}

@@ -4,6 +4,7 @@ import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
+import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { PromptModal } from '../thoughts/PromptModal'
 import { ProposalQuickModal } from '../thoughts/ProposalQuickModal'
 import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
@@ -11,6 +12,7 @@ import { useDirectCounts } from '../../hooks/useDirectCounts'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
+import { useSidebarStore } from '../../stores/sidebarStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 
 interface ThoughtsSectionProps {
@@ -52,6 +54,17 @@ export function ThoughtsSection({
 
   // Captured context - locked when opening capture mode
   const [capturedContext, setCapturedContext] = useState<CapturedContext | null>(null)
+
+  // Auto-select capture mode from pending store value (one-shot)
+  const pendingCaptureType = useSidebarStore(s => s.pendingCaptureType)
+  const clearPendingCaptureType = useSidebarStore(s => s.clearPendingCaptureType)
+
+  useEffect(() => {
+    if (pendingCaptureType && sidebarMode === 'capture') {
+      handleOpenCapture(pendingCaptureType)
+      clearPendingCaptureType()
+    }
+  }, [pendingCaptureType, sidebarMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When opening capture mode, capture the current context
   const handleOpenCapture = (mode: 'idea' | 'trade_idea' | 'prompt' | 'proposal') => {
@@ -138,10 +151,11 @@ export function ThoughtsSection({
   }
 
   // Handle opening a recent idea - opens in inspect mode within the same sidebar
-  const handleOpenIdea = useCallback((id: string) => {
+  const handleOpenIdea = useCallback((id: string, kind?: string) => {
     if (onOpenInspector) {
-      // Open the quick thought in inspect mode (stays in sidebar)
-      onOpenInspector('quick_thought', id)
+      // Route prompts to their own detail view
+      const inspectType = kind === 'prompt' ? 'prompt' as const : 'quick_thought' as const
+      onOpenInspector(inspectType, id)
     }
   }, [onOpenInspector])
 
@@ -213,8 +227,13 @@ export function ThoughtsSection({
               embedded // Use embedded mode (no fixed positioning)
             />
           )}
-          {/* Future: Add other item type detail views here */}
-          {selectedItem.type !== 'quick_thought' && (
+          {selectedItem.type === 'prompt' && (
+            <PromptDetailView
+              promptId={selectedItem.id}
+              onClose={onBackToCapture}
+            />
+          )}
+          {selectedItem.type !== 'quick_thought' && selectedItem.type !== 'prompt' && (
             <div className="p-4 text-center text-gray-500">
               <p>Detail view for {selectedItem.type} coming soon</p>
             </div>

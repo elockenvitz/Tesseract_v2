@@ -724,6 +724,23 @@ export function ProbabilityDistributionModal({
     ? ((expectedValue - currentPrice) / currentPrice) * 100
     : 0
 
+  const horizonYears = useMemo(() => {
+    const baseTarget = targets.find(t => t.scenarioName.toLowerCase() === 'base')
+    const refTarget = baseTarget || targets.find(t => t.targetDate)
+    if (!refTarget?.targetDate) return null
+    const diffMs = new Date(refTarget.targetDate).getTime() - Date.now()
+    if (diffMs <= 0) return null
+    return diffMs / (365.25 * 24 * 60 * 60 * 1000)
+  }, [targets])
+
+  const annualizedReturn = useMemo(() => {
+    if (totalProbability === 0 || horizonYears == null) return null
+    if (horizonYears >= 0.9 && horizonYears <= 1.1) return null
+    const decimalReturn = expectedReturn / 100
+    if (1 + decimalReturn <= 0) return null
+    return (Math.pow(1 + decimalReturn, 1 / horizonYears) - 1) * 100
+  }, [expectedReturn, horizonYears, totalProbability])
+
   // Check if any prices have changed
   const hasChangedPrices = useMemo(() => {
     return targets.some(t => {
@@ -907,6 +924,11 @@ export function ProbabilityDistributionModal({
                       {expectedReturn >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                       {expectedReturn >= 0 ? '+' : ''}{expectedReturn.toFixed(1)}%
                     </div>
+                    {annualizedReturn != null && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        {annualizedReturn >= 0 ? '+' : ''}{annualizedReturn.toFixed(1)}%/yr annualized
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Total Probability</div>

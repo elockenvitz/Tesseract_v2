@@ -83,6 +83,15 @@ const typeConfig = {
     borderColor: 'border-blue-200',
     dotColor: 'bg-blue-500'
   }
+} as Record<string, { icon: React.ElementType; label: string; color: string; bgColor: string; borderColor: string; dotColor: string }>
+
+const fallbackConfig = {
+  icon: FileText,
+  label: 'Update',
+  color: 'text-gray-600',
+  bgColor: 'bg-gray-50',
+  borderColor: 'border-gray-200',
+  dotColor: 'bg-gray-400'
 }
 
 const milestoneConfig = {
@@ -197,7 +206,7 @@ interface TimelineEventItemProps {
 
 function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEventItemProps) {
   const [expanded, setExpanded] = useState(false)
-  const config = typeConfig[event.type]
+  const config = typeConfig[event.type] || fallbackConfig
   const Icon = config.icon
   const sentiment = detectSentiment(event.content)
   const significant = isSignificantChange(event)
@@ -412,7 +421,7 @@ function TimelineBar({ events, milestones }: TimelineBarProps) {
         const position = range > 0
           ? ((event.timestamp.getTime() - minDate) / range) * 100
           : 50
-        const config = typeConfig[event.type]
+        const config = typeConfig[event.type] || fallbackConfig
         const sentiment = detectSentiment(event.content)
 
         return (

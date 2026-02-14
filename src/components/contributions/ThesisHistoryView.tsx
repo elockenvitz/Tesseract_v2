@@ -2,29 +2,26 @@ import React, { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   Clock,
-  Target,
   Sparkles,
-  AlertTriangle,
   DollarSign,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Star,
-  User,
   ChevronRight,
-  List,
   GitCompare,
   Lightbulb,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Filter,
+  Zap,
+  Gauge
 } from 'lucide-react'
-import { formatDistanceToNow, format } from 'date-fns'
+import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 import { useHistoryEvolutionAnalysis, type HistoryEvent, type EvolutionAnalysis } from '../../hooks/useContributions'
+import { useAssetRevisions, useUpdateRevisionNote, type RevisionRow } from '../../hooks/useAssetRevisions'
 import { EvolutionOverview, type EvolutionStats, type Sentiment } from './EvolutionOverview'
 import { EvolutionTimeline } from './EvolutionTimeline'
-import { VersionComparison } from './VersionComparison'
+import { RevisionCompare } from './RevisionCompare'
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -36,8 +33,61 @@ interface ThesisHistoryViewProps {
   className?: string
 }
 
-type ViewMode = 'timeline' | 'list' | 'compare'
-type HistoryFilter = 'all' | 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'reference'
+type ViewMode = 'latest' | 'timeline' | 'compare'
+type HistoryFilter = 'all' | 'thesis' | 'where_different' | 'risks_to_thesis' | 'price_target' | 'rating' | 'reference'
+
+// ============================================================================
+// REVISION SESSION GROUPING (client-side until DB revision sessions exist)
+// ============================================================================
+
+interface RevisionSession {
+  id: string
+  userId: string
+  userName: string
+  startedAt: Date
+  lastActivityAt: Date
+  events: HistoryEvent[]
+}
+
+const MAX_SESSION_WINDOW_MIN = 30
+const INACTIVITY_CUTOFF_MIN = 10
+
+/** Groups events into revision sessions. Events must be sorted desc by timestamp. */
+function groupIntoSessions(events: HistoryEvent[]): RevisionSession[] {
+  if (events.length === 0) return []
+
+  const sessions: RevisionSession[] = []
+  let current: RevisionSession | null = null
+
+  // Walk events in chronological order so we build sessions forward
+  const chronological = [...events].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+  for (const event of chronological) {
+    const fitsCurrentSession =
+      current &&
+      current.userId === event.userId &&
+      differenceInMinutes(event.timestamp, current.startedAt) <= MAX_SESSION_WINDOW_MIN &&
+      differenceInMinutes(event.timestamp, current.lastActivityAt) <= INACTIVITY_CUTOFF_MIN
+
+    if (fitsCurrentSession && current) {
+      current.events.push(event)
+      current.lastActivityAt = event.timestamp
+    } else {
+      current = {
+        id: `session-${event.id}`,
+        userId: event.userId,
+        userName: event.userName,
+        startedAt: event.timestamp,
+        lastActivityAt: event.timestamp,
+        events: [event],
+      }
+      sessions.push(current)
+    }
+  }
+
+  // Return newest-first
+  return sessions.reverse()
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -164,15 +214,16 @@ function DiffView({ oldContent, newContent }: { oldContent: string | null; newCo
 // ============================================================================
 
 function TimelineEvent({ event }: { event: HistoryEvent }) {
-  const typeConfig = {
+  const typeConfig: Record<string, { color: string; label: string }> = {
     thesis: { color: 'text-primary-600', label: 'Investment Thesis' },
     where_different: { color: 'text-purple-600', label: 'Where Different' },
     risks_to_thesis: { color: 'text-amber-600', label: 'Risks to Thesis' },
     price_target: { color: 'text-green-600', label: 'Price Target' },
+    rating: { color: 'text-indigo-600', label: 'Rating' },
     reference: { color: 'text-blue-600', label: 'Supporting Docs' }
   }
 
-  const config = typeConfig[event.type]
+  const config = typeConfig[event.type] || { color: 'text-gray-600', label: event.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
 
   const priceChange = event.type === 'price_target' && event.priceTarget && event.previousPriceTarget
     ? ((event.priceTarget - event.previousPriceTarget) / event.previousPriceTarget) * 100
@@ -224,30 +275,424 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
 }
 
 // ============================================================================
-// AI INSIGHTS PANEL
+// REVISION SESSION CARD (for Latest Changes view)
 // ============================================================================
 
-interface AIInsightsPanelProps {
-  analysis: EvolutionAnalysis | null
-  isLoading: boolean
+const categoryConfig: Record<string, { label: string; color: string }> = {
+  thesis: { label: 'Thesis', color: 'text-primary-600' },
+  where_different: { label: 'Where Different', color: 'text-purple-600' },
+  risks_to_thesis: { label: 'Risks', color: 'text-amber-600' },
+  price_target: { label: 'Valuation & Targets', color: 'text-green-600' },
+  valuation_targets: { label: 'Valuation & Targets', color: 'text-green-600' },
+  rating: { label: 'Rating', color: 'text-indigo-600' },
+  reference: { label: 'Supporting', color: 'text-blue-600' },
 }
 
-function AIInsightsPanel({ analysis, isLoading }: AIInsightsPanelProps) {
-  const [expanded, setExpanded] = useState(true)
+const CONTEXT_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours
 
-  if (isLoading) {
+/** Whether the current user can edit contextualization on this revision. */
+function canEditContext(
+  revision: RevisionRow,
+  currentUserId: string | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!currentUserId) return false
+  if (revision.actor_user_id !== currentUserId) return false
+  const createdAt = new Date(revision.created_at).getTime()
+  return now.getTime() - createdAt <= CONTEXT_EDIT_WINDOW_MS
+}
+
+function ContextDisclosure({
+  revisionId,
+  text,
+  editable,
+  onSave,
+  isSaving,
+}: {
+  revisionId: string
+  text: string | null
+  editable: boolean
+  onSave: (revisionId: string, note: string | null) => void
+  isSaving: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(text || '')
+
+  // Nothing to show: no text and not editable
+  if (!text && !editable) return null
+
+  // No text but editable → show CTA
+  if (!text && editable) {
+    if (editing) {
+      return (
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+          <textarea
+            autoFocus
+            rows={2}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                onSave(revisionId, draft || null)
+                setEditing(false)
+              }
+              if (e.key === 'Escape') { setEditing(false); setDraft('') }
+            }}
+            placeholder="Why were these changes made? What prompted this revision?"
+            className="w-full text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 text-gray-800 dark:text-gray-200 placeholder-gray-400 resize-none"
+          />
+          <div className="flex items-center gap-2 mt-1.5">
+            <button
+              onClick={() => { onSave(revisionId, draft || null); setEditing(false) }}
+              disabled={isSaving || !draft.trim()}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:text-gray-300"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => { setEditing(false); setDraft('') }}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 animate-pulse">
-        <div className="h-4 bg-purple-200 rounded w-1/3 mb-3" />
-        <div className="space-y-2">
-          <div className="h-3 bg-purple-200 rounded w-full" />
-          <div className="h-3 bg-purple-200 rounded w-4/5" />
-          <div className="h-3 bg-purple-200 rounded w-3/5" />
+      <button
+        onClick={() => setEditing(true)}
+        className="w-full text-left px-3 py-1.5 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+      >
+        <span className="text-xs text-gray-400 hover:text-gray-500">Contextualize changes</span>
+      </button>
+    )
+  }
+
+  // Text exists → collapsed disclosure
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+      >
+        <ChevronRight className="w-3 h-3 text-gray-400" />
+        <span className="text-xs text-gray-500 font-medium">Context</span>
+      </button>
+    )
+  }
+
+  // Expanded: show text (with optional edit)
+  if (editing) {
+    return (
+      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+        <button
+          onClick={() => { setOpen(false); setEditing(false); setDraft(text || '') }}
+          className="flex items-center gap-1.5 mb-1.5"
+        >
+          <ChevronDown className="w-3 h-3 text-gray-400" />
+          <span className="text-xs text-gray-500 font-medium">Context</span>
+        </button>
+        <textarea
+          autoFocus
+          rows={2}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              onSave(revisionId, draft || null)
+              setEditing(false)
+            }
+            if (e.key === 'Escape') { setEditing(false); setDraft(text || '') }
+          }}
+          className="w-full text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 text-gray-800 dark:text-gray-200 placeholder-gray-400 resize-none"
+        />
+        <div className="flex items-center gap-2 mt-1.5">
+          <button
+            onClick={() => { onSave(revisionId, draft || null); setEditing(false) }}
+            disabled={isSaving}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:text-gray-300"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => { setEditing(false); setDraft(text || '') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     )
   }
 
+  return (
+    <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+      <div className="flex items-center justify-between mb-1">
+        <button
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-1.5"
+        >
+          <ChevronDown className="w-3 h-3 text-gray-400" />
+          <span className="text-xs text-gray-500 font-medium">Context</span>
+        </button>
+        {editable && (
+          <button
+            onClick={() => { setDraft(text || ''); setEditing(true) }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Edit
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{text}</p>
+    </div>
+  )
+}
+
+function RevisionSessionCard({
+  session,
+  defaultExpanded,
+  significantOnly,
+  revisionRow,
+  currentUserId,
+  viewFilter,
+  onSaveNote,
+  isSavingNote,
+}: {
+  session: RevisionSession
+  defaultExpanded: boolean
+  significantOnly: boolean
+  revisionRow?: RevisionRow
+  currentUserId?: string
+  viewFilter: 'aggregated' | string
+  onSaveNote?: (revisionId: string, note: string | null) => void
+  isSavingNote?: boolean
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+
+  // Filter events by significance if toggle is on
+  // Tier 1 (material structured): price_target, risks_to_thesis (add/remove)
+  // Tier 2 (text updates): thesis, where_different — hidden when significant only
+  // Tier 3 (supporting): reference — hidden when significant only
+  const visibleEvents = significantOnly
+    ? session.events.filter(e => e.type === 'price_target' || e.type === 'risks_to_thesis' || e.type === 'rating')
+    : session.events
+
+  // Group events by category
+  const categorized = useMemo(() => {
+    const groups: Record<string, HistoryEvent[]> = {}
+    for (const e of visibleEvents) {
+      const cat = e.type
+      if (!groups[cat]) groups[cat] = []
+      groups[cat].push(e)
+    }
+    return groups
+  }, [visibleEvents])
+
+  const materialCount = session.events.filter(
+    e => e.type === 'price_target' || e.type === 'risks_to_thesis' || e.type === 'rating'
+  ).length
+
+  const changeLabel = materialCount > 0
+    ? `${materialCount} material change${materialCount !== 1 ? 's' : ''}`
+    : `${session.events.length} change${session.events.length !== 1 ? 's' : ''}`
+
+  // Derive view scope label from viewFilter (aggregated = Firm View, userId = user's first name View)
+  const viewScopeLabel = viewFilter === 'aggregated'
+    ? 'Firm View'
+    : `${session.userName.split(' ')[0]} View`
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg transition-colors group"
+      >
+        <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 flex-shrink-0" />
+        <span className="text-xs text-gray-500">
+          {format(session.lastActivityAt, 'MMM d')}
+        </span>
+        <span className="text-gray-300">·</span>
+        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+          {session.userName}
+        </span>
+        {viewScopeLabel && (
+          <>
+            <span className="text-gray-300">·</span>
+            <span className="text-xs text-gray-400">{viewScopeLabel}</span>
+          </>
+        )}
+        <span className="text-gray-300">·</span>
+        <span className="text-xs text-gray-500">{changeLabel}</span>
+        {revisionRow?.revision_note && (
+          <>
+            <span className="text-gray-300">·</span>
+            <span className="text-xs text-blue-500 truncate max-w-[200px]">{revisionRow.revision_note}</span>
+          </>
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      {/* Session header */}
+      <button
+        onClick={() => !defaultExpanded && setExpanded(false)}
+        className={clsx(
+          'w-full flex items-center gap-2 px-3 py-2.5 text-left bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700',
+          !defaultExpanded && 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
+        )}
+      >
+        {!defaultExpanded && (
+          <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        )}
+        <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+          {session.userName}
+        </span>
+        {viewScopeLabel && (
+          <>
+            <span className="text-gray-300">·</span>
+            <span className="text-xs text-gray-400">{viewScopeLabel}</span>
+          </>
+        )}
+        <span className="text-gray-300">·</span>
+        <span className="text-xs text-gray-500" title={format(session.lastActivityAt, 'PPpp')}>
+          {formatDistanceToNow(session.lastActivityAt, { addSuffix: true })}
+        </span>
+        <span className="text-gray-300">·</span>
+        <span className="text-xs text-gray-500">{changeLabel}</span>
+      </button>
+
+      {/* Contextualization (only if DB revision exists) */}
+      {revisionRow && onSaveNote && (
+        <ContextDisclosure
+          revisionId={revisionRow.id}
+          text={revisionRow.revision_note}
+          editable={canEditContext(revisionRow, currentUserId)}
+          onSave={onSaveNote}
+          isSaving={isSavingNote || false}
+        />
+      )}
+
+      {/* Categorized changes */}
+      <div className="p-3 space-y-3">
+        {Object.entries(categorized).map(([cat, catEvents]) => {
+          const cfg = categoryConfig[cat] || { label: cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), color: 'text-gray-600' }
+          return (
+            <div key={cat}>
+              <p className={clsx('text-xs font-semibold mb-1.5', cfg.color)}>{cfg.label}</p>
+              <div className="space-y-0.5">
+                {catEvents.map(event => (
+                  <RevisionEventRow key={event.id} event={event} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Human-readable label for event type */
+const typeLabel: Record<string, string> = {
+  thesis: 'Investment Thesis',
+  where_different: 'Where Different',
+  risks_to_thesis: 'Risks to Thesis',
+  reference: 'Supporting reference',
+}
+
+function RevisionEventRow({ event }: { event: HistoryEvent }) {
+  // Price change with $ amounts (only when priceTarget is set)
+  if (event.type === 'price_target' && event.priceTarget != null) {
+    const priceChange = event.priceTarget && event.previousPriceTarget
+      ? ((event.priceTarget - event.previousPriceTarget) / event.previousPriceTarget) * 100
+      : null
+    return (
+      <div className="flex items-center gap-2 text-sm py-0.5">
+        <DollarSign className="w-3 h-3 text-green-500 flex-shrink-0" />
+        {event.scenarioLabel && (
+          <span className="text-xs font-medium text-gray-500">{event.scenarioLabel}:</span>
+        )}
+        {event.previousPriceTarget && (
+          <>
+            <span className="text-gray-400">${event.previousPriceTarget}</span>
+            <ChevronRight className="w-3 h-3 text-gray-300" />
+          </>
+        )}
+        <span className="font-semibold text-gray-900 dark:text-gray-100">${event.priceTarget}</span>
+        {priceChange !== null && (
+          <span className={clsx(
+            'text-xs px-1 rounded',
+            priceChange > 0 ? 'text-green-600' : priceChange < 0 ? 'text-red-600' : 'text-gray-500'
+          )}>
+            ({priceChange > 0 ? '+' : ''}{priceChange.toFixed(1)}%)
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // Price target content events (prob/expiry — have content but no priceTarget)
+  if (event.type === 'price_target' && event.content) {
+    return (
+      <div className="flex items-center gap-2 text-sm py-0.5">
+        <DollarSign className="w-3 h-3 text-green-500 flex-shrink-0" />
+        <span className="text-gray-700 dark:text-gray-300 text-xs">{event.content}</span>
+      </div>
+    )
+  }
+
+  // Rating event
+  if (event.type === 'rating') {
+    return (
+      <div className="flex items-center gap-2 text-sm py-0.5">
+        <Gauge className="w-3 h-3 text-indigo-500 flex-shrink-0" />
+        <span className="text-gray-700 dark:text-gray-300 text-xs">{event.content}</span>
+      </div>
+    )
+  }
+
+  // Text-based change: structured label like "Investment Thesis updated (excerpt): ..."
+  const friendlyType = typeLabel[event.type] || event.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  const verb = event.previousContent ? 'updated' : 'added'
+  const excerpt = event.content
+    ? event.content.substring(0, 100) + (event.content.length > 100 ? '…' : '')
+    : null
+
+  return (
+    <div className="flex items-start gap-2 text-sm py-0.5">
+      <span className="text-gray-500 text-xs mt-0.5 flex-shrink-0 whitespace-nowrap">
+        {friendlyType} {verb}{excerpt ? ':' : ''}
+      </span>
+      {excerpt && (
+        <span className="text-gray-500 dark:text-gray-400 text-xs line-clamp-1 italic">
+          {excerpt}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// AI INSIGHTS PANEL
+// ============================================================================
+
+interface AIInsightsPanelProps {
+  analysis: EvolutionAnalysis | null
+}
+
+function AIInsightsPanel({ analysis }: AIInsightsPanelProps) {
+  const [expanded, setExpanded] = useState(true)
+
+  // Don't show loading skeleton for cache checks — only render once we have data.
+  // The "Analyze evolution" link handles the generating state separately.
   if (!analysis) return null
 
   return (
@@ -342,8 +787,8 @@ interface ViewModeToggleProps {
 
 function ViewModeToggle({ mode, onChange }: ViewModeToggleProps) {
   const modes: { value: ViewMode; label: string; icon: React.ElementType }[] = [
+    { value: 'latest', label: 'Latest Changes', icon: Zap },
     { value: 'timeline', label: 'Timeline', icon: Clock },
-    { value: 'list', label: 'List', icon: List },
     { value: 'compare', label: 'Compare', icon: GitCompare },
   ]
 
@@ -376,8 +821,14 @@ function ViewModeToggle({ mode, onChange }: ViewModeToggleProps) {
 // ============================================================================
 
 export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHistoryViewProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('timeline')
+  const { user } = useAuth()
+  const [viewMode, setViewMode] = useState<ViewMode>('latest')
   const [typeFilter, setTypeFilter] = useState<HistoryFilter>('all')
+  const [significantOnly, setSignificantOnly] = useState(false)
+
+  // Fetch structured revision data (Phase 2)
+  const { revisions } = useAssetRevisions(assetId)
+  const updateNoteMutation = useUpdateRevisionNote(assetId)
 
   // Fetch contribution history
   const { data: contributionHistory = [], isLoading: loadingContributions } = useQuery({
@@ -526,8 +977,17 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         }
       }
     })
+    // Add revision actors
+    revisions.forEach(r => {
+      if (r.actor && !lookup[r.actor_user_id]) {
+        lookup[r.actor_user_id] = {
+          name: `${r.actor.first_name || ''} ${r.actor.last_name || ''}`.trim() || 'Unknown',
+          isCovering: coveringIds.has(r.actor_user_id)
+        }
+      }
+    })
     return lookup
-  }, [contributions, priceTargetHistory, referenceHistory, coveringIds])
+  }, [contributions, priceTargetHistory, referenceHistory, revisions, coveringIds])
 
   // Build timeline events
   const events = useMemo(() => {
@@ -553,7 +1013,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     // Add current contributions as latest events (if not in history)
     contributions.forEach((c: any) => {
       const hasHistory = contributionHistory.some((h: any) => h.contribution_id === c.id)
-      if (!hasHistory) {
+      if (!hasHistory && c.content) {
         const userInfo = userLookup[c.created_by] || { name: 'Unknown', isCovering: false }
         allEvents.push({
           id: `current-${c.id}`,
@@ -597,6 +1057,133 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
       })
     })
 
+    // Add price target changes from DB revision events (valuation_targets category)
+    // These are created when price targets are published via the draft/publish pattern
+    revisions.forEach(revision => {
+      const actorName = revision.actor
+        ? `${revision.actor.first_name || ''} ${revision.actor.last_name || ''}`.trim() || 'Unknown'
+        : 'Unknown'
+
+      revision.events
+        .filter(e => e.category === 'valuation_targets')
+        .forEach(revEvent => {
+          // Dedup: skip if there's already a price_target event from same user within 5min
+          const revTs = new Date(revEvent.created_at).getTime()
+          const isDuplicate = allEvents.some(existing =>
+            existing.type === 'price_target' &&
+            existing.userId === revision.actor_user_id &&
+            Math.abs(existing.timestamp.getTime() - revTs) < 5 * 60 * 1000
+          )
+          if (isDuplicate) return
+
+          // Parse field_key: targets.{scenario}.{metric} (new) or targets.{metric} (legacy)
+          const segments = revEvent.field_key.split('.')
+          let scenarioLabel: string | undefined
+          let metric: string
+
+          if (segments.length >= 3 && segments[0] === 'targets') {
+            // New format: targets.bull.price → scenario=Bull, metric=price
+            scenarioLabel = segments[1].charAt(0).toUpperCase() + segments[1].slice(1).replace(/_/g, ' ')
+            metric = segments[2]
+          } else if (segments.length === 2 && segments[0] === 'targets') {
+            // Legacy format: targets.price → no scenario, metric=price
+            metric = segments[1]
+          } else {
+            // Unknown field_key format
+            allEvents.push({
+              id: `rev-${revEvent.id}`,
+              type: 'price_target',
+              timestamp: new Date(revEvent.created_at),
+              userId: revision.actor_user_id,
+              userName: actorName,
+              content: 'Targets updated',
+            })
+            return
+          }
+
+          if (metric === 'price') {
+            allEvents.push({
+              id: `rev-${revEvent.id}`,
+              type: 'price_target',
+              timestamp: new Date(revEvent.created_at),
+              userId: revision.actor_user_id,
+              userName: actorName,
+              priceTarget: revEvent.after_value ? parseFloat(revEvent.after_value) : undefined,
+              previousPriceTarget: revEvent.before_value ? parseFloat(revEvent.before_value) : undefined,
+              scenarioLabel,
+            })
+          } else if (metric === 'prob' || metric === 'probability') {
+            const before = revEvent.before_value ? parseFloat(revEvent.before_value) : null
+            const after = revEvent.after_value ? parseFloat(revEvent.after_value) : null
+            const delta = before != null && after != null ? after - before : null
+            const deltaStr = delta != null ? `(${delta > 0 ? '+' : ''}${Math.round(delta)}pp)` : ''
+            const prefix = scenarioLabel ? `${scenarioLabel} prob` : 'Prob'
+            allEvents.push({
+              id: `rev-${revEvent.id}`,
+              type: 'price_target',
+              timestamp: new Date(revEvent.created_at),
+              userId: revision.actor_user_id,
+              userName: actorName,
+              content: `${prefix}: ${revEvent.before_value || '?'}% → ${revEvent.after_value || '?'}% ${deltaStr}`.trim(),
+            })
+          } else if (metric === 'expiry') {
+            const prefix = scenarioLabel ? `${scenarioLabel} expiry` : 'Expiry'
+            allEvents.push({
+              id: `rev-${revEvent.id}`,
+              type: 'price_target',
+              timestamp: new Date(revEvent.created_at),
+              userId: revision.actor_user_id,
+              userName: actorName,
+              content: `${prefix}: ${revEvent.before_value || 'none'} → ${revEvent.after_value || 'none'}`,
+            })
+          } else {
+            allEvents.push({
+              id: `rev-${revEvent.id}`,
+              type: 'price_target',
+              timestamp: new Date(revEvent.created_at),
+              userId: revision.actor_user_id,
+              userName: actorName,
+              content: 'Targets updated',
+            })
+          }
+        })
+
+      // Rating events (category === 'rating')
+      revision.events
+        .filter(e => e.category === 'rating')
+        .forEach(revEvent => {
+          const revTs = new Date(revEvent.created_at).getTime()
+          const isDuplicate = allEvents.some(existing =>
+            existing.type === 'rating' &&
+            existing.userId === revision.actor_user_id &&
+            Math.abs(existing.timestamp.getTime() - revTs) < 5 * 60 * 1000
+          )
+          if (isDuplicate) return
+
+          // Parse field_key: rating.{methodology}.value or rating.methodology
+          const rSegments = revEvent.field_key.split('.')
+          let ratingContent: string
+
+          if (rSegments.length >= 3 && rSegments[0] === 'rating' && rSegments[2] === 'value') {
+            const methodology = rSegments[1].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+            ratingContent = `Rating (${methodology}): ${revEvent.before_value || '?'} → ${revEvent.after_value || '?'}`
+          } else if (rSegments.length === 2 && rSegments[0] === 'rating' && rSegments[1] === 'methodology') {
+            ratingContent = `Rating methodology: ${revEvent.before_value || '?'} → ${revEvent.after_value || '?'}`
+          } else {
+            ratingContent = `Rating: ${revEvent.before_value || '?'} → ${revEvent.after_value || '?'}`
+          }
+
+          allEvents.push({
+            id: `rev-${revEvent.id}`,
+            type: 'rating',
+            timestamp: new Date(revEvent.created_at),
+            userId: revision.actor_user_id,
+            userName: actorName,
+            content: ratingContent,
+          })
+        })
+    })
+
     // Filter by viewFilter (user)
     let filtered = allEvents
     if (viewFilter !== 'aggregated') {
@@ -605,7 +1192,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
 
     // Sort by timestamp descending
     return filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-  }, [contributionHistory, contributions, priceTargetHistory, referenceHistory, userLookup, viewFilter])
+  }, [contributionHistory, contributions, priceTargetHistory, referenceHistory, revisions, userLookup, viewFilter])
 
   // Compute evolution stats
   const evolutionStats = useMemo((): EvolutionStats => {
@@ -658,7 +1245,6 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
   const userId = viewFilter !== 'aggregated' ? viewFilter : undefined
   const {
     analysis: evolutionAnalysis,
-    isLoading: isLoadingAnalysis,
     isGenerating: isGeneratingAnalysis,
     isStale: isAnalysisStale,
     generateAnalysis
@@ -673,6 +1259,12 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     if (typeFilter === 'all') return events
     return events.filter(e => e.type === typeFilter)
   }, [events, typeFilter])
+
+  // Group events into revision sessions for Latest Changes view
+  const sessions = useMemo(() => groupIntoSessions(filteredEvents), [filteredEvents])
+
+  // Find last editor info for the change intelligence header
+  const lastEditor = events.length > 0 ? events[0] : null
 
   const isLoading = loadingContributions || loadingTargets
 
@@ -699,9 +1291,10 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
 
   return (
     <div className={clsx('space-y-4', className)}>
-      {/* Evolution Overview */}
+      {/* Change Intelligence Header */}
       <EvolutionOverview
         stats={evolutionStats}
+        lastEditor={lastEditor ? { name: lastEditor.userName, date: lastEditor.timestamp } : undefined}
         isAnalyzing={isGeneratingAnalysis}
         hasAnalysis={!!evolutionAnalysis}
         isAnalysisStale={isAnalysisStale}
@@ -709,17 +1302,31 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
       />
 
       {/* AI Insights Panel */}
-      <AIInsightsPanel
-        analysis={evolutionAnalysis}
-        isLoading={isLoadingAnalysis}
-      />
+      <AIInsightsPanel analysis={evolutionAnalysis} />
 
       {/* View Mode Toggle & Filters */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+        <div className="flex items-center gap-3">
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
 
-        {/* Type filter (only show for list/timeline views) */}
-        {viewMode !== 'compare' && (
+          {/* Significant only toggle */}
+          <button
+            onClick={() => setSignificantOnly(!significantOnly)}
+            className={clsx(
+              'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors',
+              significantOnly
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                : 'bg-gray-100 text-gray-500 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+            )}
+            title="Show only material changes (thesis, targets, risks)"
+          >
+            <Filter className="w-3 h-3" />
+            Significant only
+          </button>
+        </div>
+
+        {/* Type filter (only show for timeline view) */}
+        {viewMode === 'timeline' && (
           <div className="flex items-center gap-1 flex-wrap">
             {filterConfig.map(f => (
               <button
@@ -740,6 +1347,52 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
       </div>
 
       {/* View Content */}
+      {viewMode === 'latest' && (() => {
+        // When significant-only, skip sessions with no Tier 1 events
+        const visibleSessions = significantOnly
+          ? sessions.filter(s => s.events.some(e => e.type === 'price_target' || e.type === 'risks_to_thesis' || e.type === 'rating'))
+          : sessions
+        return (
+        <div className="space-y-2">
+          {visibleSessions.length > 0 ? (
+            visibleSessions.map((session, idx) => {
+              // Match session to DB revision row by user + time overlap
+              const matchedRevision = revisions.find(r =>
+                r.actor_user_id === session.userId &&
+                Math.abs(new Date(r.last_activity_at).getTime() - session.lastActivityAt.getTime()) < 35 * 60 * 1000
+              )
+              return (
+                <RevisionSessionCard
+                  key={session.id}
+                  session={session}
+                  defaultExpanded={idx === 0}
+                  significantOnly={significantOnly}
+                  revisionRow={matchedRevision}
+                  currentUserId={user?.id}
+                  viewFilter={viewFilter}
+                  onSaveNote={(revId, note) => updateNoteMutation.mutate({ revisionId: revId, note })}
+                  isSavingNote={updateNoteMutation.isPending}
+                />
+              )
+            })
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">
+              {significantOnly ? 'No significant changes' : `No ${typeFilter !== 'all' ? typeFilter.replace('_', ' ') + ' ' : ''}changes`}
+            </p>
+          )}
+
+          {visibleSessions.length > 0 && (
+            <button
+              onClick={() => setViewMode('timeline')}
+              className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 transition-colors"
+            >
+              View all in Timeline →
+            </button>
+          )}
+        </div>
+        )
+      })()}
+
       {viewMode === 'timeline' && (
         <EvolutionTimeline
           events={filteredEvents}
@@ -747,24 +1400,12 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         />
       )}
 
-      {viewMode === 'list' && (
-        <div className="bg-white border border-gray-200 rounded-lg">
-          <div className="p-4">
-            {filteredEvents.length > 0 ? (
-              filteredEvents.map(event => (
-                <TimelineEvent key={event.id} event={event} />
-              ))
-            ) : (
-              <p className="text-sm text-gray-400 text-center py-2">
-                No {typeFilter.replace('_', ' ')} changes
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
       {viewMode === 'compare' && (
-        <VersionComparison events={events} />
+        <RevisionCompare
+          revisions={revisions}
+          viewFilter={viewFilter}
+          significantOnly={significantOnly}
+        />
       )}
     </div>
   )

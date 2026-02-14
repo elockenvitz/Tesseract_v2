@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { clsx } from 'clsx'
 import {
   ComposedChart,
@@ -67,7 +67,7 @@ type ChartDisplayMode = 'projection' | 'levels'
 // Status badge component
 function StatusBadge({ status }: { status: ChartTarget['status'] }) {
   const config = {
-    pending: { icon: Clock, color: 'text-amber-600 bg-amber-50', label: 'Pending' },
+    pending: { icon: Clock, color: 'text-amber-600 bg-amber-50', label: 'Active' },
     hit: { icon: CheckCircle, color: 'text-green-600 bg-green-50', label: 'Hit' },
     missed: { icon: AlertTriangle, color: 'text-red-600 bg-red-50', label: 'Missed' },
     expired: { icon: AlertTriangle, color: 'text-gray-600 bg-gray-50', label: 'Expired' },
@@ -88,7 +88,7 @@ export function PriceTargetChart({
   assetId,
   symbol,
   className,
-  height = 400,
+  height = 480,
   selectedUserId: propSelectedUserId,
   onTargetClick,
   onAddTarget,
@@ -103,6 +103,48 @@ export function PriceTargetChart({
   const [showProbabilityModal, setShowProbabilityModal] = useState(false)
   const [chartDisplayMode, setChartDisplayMode] = useState<ChartDisplayMode>('projection')
   const [showDistribution, setShowDistribution] = useState(false)
+  const [yZoom, setYZoom] = useState(0) // continuous zoom: 0 = auto, positive = zoom out, negative = zoom in
+
+  // Y-axis drag-to-zoom
+  const chartWrapperRef = useRef<HTMLDivElement>(null)
+  const yDragRef = useRef<{ startY: number; startZoom: number } | null>(null)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!yDragRef.current) return
+      const deltaY = e.clientY - yDragRef.current.startY
+      // Dragging down = zoom out (positive), dragging up = zoom in (negative)
+      // Scale: ~100px of drag = 1 zoom unit
+      setYZoom(yDragRef.current.startZoom + deltaY / 80)
+    }
+    const handleMouseUp = () => {
+      if (yDragRef.current) {
+        yDragRef.current = null
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
+
+  const handleYAxisMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    yDragRef.current = { startY: e.clientY, startZoom: yZoom }
+    document.body.style.cursor = 'ns-resize'
+    document.body.style.userSelect = 'none'
+  }, [yZoom])
+
+  const handleYAxisDoubleClick = useCallback(() => {
+    setYZoom(0)
+  }, [])
+
+  // Stable unique ID for SVG gradient to avoid conflicts when multiple charts exist
+  const gradientId = useMemo(() => `distGradient-${assetId}-${propSelectedUserId || 'all'}`, [assetId, propSelectedUserId])
 
   // Use prop user ID if provided, otherwise use internal state
   const effectiveUserId = propSelectedUserId || internalSelectedUserId
@@ -118,7 +160,6 @@ export function PriceTargetChart({
     currentPrice,
     priceChange,
     priceChangePercent,
-    riskRewardZones,
     riskRewardRatio,
     loading,
     fetching,
@@ -131,15 +172,6 @@ export function PriceTargetChart({
     selectedUserId: effectiveUserId,
     coveringOnly: effectiveViewMode === 'covering'
   })
-
-  // Find the furthest future target date
-  const maxTargetDate = useMemo(() => {
-    if (priceTargets.length === 0) return null
-    const futureDates = priceTargets
-      .filter(t => t.targetDate)
-      .map(t => new Date(t.targetDate!).getTime())
-    return futureDates.length > 0 ? new Date(Math.max(...futureDates)) : null
-  }, [priceTargets])
 
   // Transform historical data for Recharts - use timestamps for proper time scaling
   const chartData = useMemo(() => {
@@ -222,6 +254,7 @@ export function PriceTargetChart({
   }, [chartData, xAxisDomain, todayTimestamp])
 
   // Calculate Y-axis domain to include all price targets
+  // yZoom: 0 = auto, negative = zoom in (tighter), positive = zoom out (wider)
   const yAxisDomain = useMemo(() => {
     if (chartData.length === 0) return [0, 100]
 
@@ -233,10 +266,20 @@ export function PriceTargetChart({
 
     const min = Math.min(...allPrices)
     const max = Math.max(...allPrices)
-    const padding = (max - min) * 0.1
+    const range = max - min
+    // Base 15% padding, scaled by zoom level (each step is ~30% more/less padding)
+    const zoomMultiplier = Math.pow(1.3, yZoom)
+    const padding = range * 0.15 * zoomMultiplier
+    // Round domain bounds to clean numbers for nicer tick marks
+    const rawMin = Math.max(0, min - padding)
+    const rawMax = max + padding
+    // Round to nearest reasonable increment based on price magnitude
+    const step = range > 100 ? 10 : range > 20 ? 5 : range > 5 ? 1 : 0.5
+    const cleanMin = Math.floor(rawMin / step) * step
+    const cleanMax = Math.ceil(rawMax / step) * step
 
-    return [Math.max(0, min - padding), max + padding]
-  }, [chartData, priceTargets])
+    return [cleanMin, cleanMax]
+  }, [chartData, priceTargets, yZoom])
 
   // Group targets by scenario for display
   const targetsByScenario = useMemo(() => {
@@ -250,6 +293,76 @@ export function PriceTargetChart({
     })
     return grouped
   }, [priceTargets])
+
+  // EV, horizon, and distribution summary computations
+  const { evPrice, evReturn, hasEVData } = useMemo(() => {
+    const withProb = priceTargets.filter(t => t.probability != null && t.probability > 0 && t.price > 0)
+    if (withProb.length === 0 || currentPrice <= 0) return { evPrice: null, evReturn: null, hasEVData: false }
+    const totalProb = withProb.reduce((s, t) => s + t.probability!, 0)
+    const ev = withProb.reduce((s, t) => s + t.price * t.probability!, 0) / totalProb
+    return { evPrice: ev, evReturn: (ev - currentPrice) / currentPrice, hasEVData: true }
+  }, [priceTargets, currentPrice])
+
+  const horizonYears = useMemo(() => {
+    const baseTarget = priceTargets.find(t => t.scenarioName.toLowerCase() === 'base')
+    const refTarget = baseTarget || priceTargets.find(t => t.targetDate)
+    if (!refTarget?.targetDate) return null
+    const diffMs = new Date(refTarget.targetDate).getTime() - Date.now()
+    if (diffMs <= 0) return null
+    return diffMs / (365.25 * 24 * 60 * 60 * 1000)
+  }, [priceTargets])
+
+  const annualizedReturn = useMemo(() => {
+    if (evReturn == null || horizonYears == null) return null
+    if (horizonYears >= 0.9 && horizonYears <= 1.1) return null
+    if (1 + evReturn <= 0) return null
+    return Math.pow(1 + evReturn, 1 / horizonYears) - 1
+  }, [evReturn, horizonYears])
+
+  const distributionSummary = useMemo(() => {
+    if (!hasEVData || currentPrice <= 0) return null
+    const withProb = priceTargets.filter(t => t.probability != null && t.probability > 0 && t.price > 0)
+    if (withProb.length < 2) return null
+
+    const totalProb = withProb.reduce((s, t) => s + t.probability!, 0)
+    let bullContrib = 0
+    let bearContrib = 0
+    withProb.forEach(t => {
+      const normProb = t.probability! / totalProb
+      const ret = (t.price - currentPrice) / currentPrice
+      if (ret > 0) bullContrib += normProb * ret
+      else bearContrib += normProb * ret
+    })
+
+    const netSkew = bullContrib + bearContrib
+    let skewText: string
+    if (netSkew > 0.05) skewText = 'Bull-skewed'
+    else if (netSkew < -0.05) skewText = 'Bear-skewed'
+    else skewText = 'Balanced'
+
+    let horizonText = ''
+    if (horizonYears != null) {
+      if (horizonYears < 1) horizonText = `${Math.round(horizonYears * 12)}mo horizon`
+      else if (horizonYears < 1.5) horizonText = '1Y horizon'
+      else horizonText = `${horizonYears.toFixed(1)}Y horizon`
+    }
+
+    let maxContrib = 0
+    let driverName = ''
+    withProb.forEach(t => {
+      const normProb = t.probability! / totalProb
+      const contrib = Math.abs(normProb * ((t.price - currentPrice) / currentPrice))
+      if (contrib > maxContrib) {
+        maxContrib = contrib
+        driverName = t.scenarioName
+      }
+    })
+
+    const parts = [skewText]
+    if (horizonText) parts.push(horizonText)
+    if (driverName) parts.push(`${driverName}-driven`)
+    return parts.join(' \u00b7 ')
+  }, [priceTargets, currentPrice, hasEVData, horizonYears])
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -403,19 +516,43 @@ export function PriceTargetChart({
         <div className="flex flex-wrap items-center justify-between gap-4">
           {/* Left: Price Info */}
           <div className="flex items-center gap-4">
+            {/* Current Price - secondary */}
             <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              <div className="text-xs text-gray-500 dark:text-gray-400">Current</div>
+              <div className="text-lg font-semibold text-gray-900 dark:text-white">
                 ${currentPrice.toFixed(2)}
               </div>
               <div className={clsx(
-                'flex items-center gap-1 text-sm',
+                'flex items-center gap-1 text-xs',
                 priceChange >= 0 ? 'text-green-600' : 'text-red-600'
               )}>
-                {priceChange >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                <span>{priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}</span>
-                <span>({priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%)</span>
+                {priceChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                <span>{priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)} ({priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%)</span>
               </div>
             </div>
+
+            {/* EV + Expected Return - primary */}
+            {hasEVData && evPrice != null && evReturn != null && (
+              <>
+                <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Expected Value</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                    ${evPrice.toFixed(2)}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={clsx('text-sm font-semibold', evReturn >= 0 ? 'text-green-600' : 'text-red-600')}>
+                      {evReturn >= 0 ? '+' : ''}{(evReturn * 100).toFixed(1)}%
+                    </span>
+                    {annualizedReturn != null && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        ({annualizedReturn >= 0 ? '+' : ''}{(annualizedReturn * 100).toFixed(1)}%/yr)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Risk/Return - clickable to show probability distribution (only in individual view) */}
             {riskRewardRatio !== null && onUpdateProbabilities && (
@@ -427,7 +564,7 @@ export function PriceTargetChart({
                 <div className="text-xs text-gray-500 dark:text-gray-400">Risk/Return</div>
                 <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-1">
                   {riskRewardRatio.toFixed(2)}x
-                  <span className="text-xs text-primary-600 dark:text-primary-400">→</span>
+                  <span className="text-xs text-primary-600 dark:text-primary-400">{'\u2192'}</span>
                 </div>
               </button>
             )}
@@ -437,16 +574,6 @@ export function PriceTargetChart({
                 <div className="text-xs text-gray-500 dark:text-gray-400">Risk/Return</div>
                 <div className="font-semibold text-gray-900 dark:text-white">
                   {riskRewardRatio.toFixed(2)}x
-                </div>
-              </div>
-            )}
-
-            {/* Target timeline info */}
-            {maxTargetDate && (
-              <div className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div className="text-xs text-blue-600 dark:text-blue-400">Furthest Target</div>
-                <div className="font-semibold text-blue-700 dark:text-blue-300">
-                  {maxTargetDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                 </div>
               </div>
             )}
@@ -502,6 +629,7 @@ export function PriceTargetChart({
               <span className="hidden sm:inline">Distribution</span>
             </button>
 
+
             {/* Timeframe Selector */}
             <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
               {TIMEFRAMES.map(tf => (
@@ -550,10 +678,23 @@ export function PriceTargetChart({
 
           </div>
         </div>
+        {distributionSummary && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            {distributionSummary}
+          </div>
+        )}
       </div>
 
       {/* Chart */}
-      <div className="p-4">
+      <div className="p-4 relative" ref={chartWrapperRef}>
+        {/* Y-axis drag overlay — covers the left margin + Y-axis label area */}
+        <div
+          className="absolute top-4 left-4 bottom-4 z-10"
+          style={{ width: 80, cursor: 'ns-resize' }}
+          onMouseDown={handleYAxisMouseDown}
+          onDoubleClick={handleYAxisDoubleClick}
+          title="Drag to adjust Y-axis scale · Double-click to reset"
+        />
         <ResponsiveContainer width="100%" height={height}>
           <ComposedChart data={chartData} margin={{ top: 20, right: showDistribution ? 280 : 80, left: 20, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.5} />
@@ -768,7 +909,7 @@ export function PriceTargetChart({
                             y={y - 28}
                             textAnchor="middle"
                             fill={ann.target.scenarioColor}
-                            fontSize={isSelected ? 10 : 9}
+                            fontSize={isSelected ? 12 : 11}
                             fontWeight={isSelected ? 700 : 500}
                             style={{ cursor: 'pointer' }}
                             onClick={handleAnnotationClick}
@@ -845,7 +986,7 @@ export function PriceTargetChart({
                                 x={x2 + 14}
                                 y={y2 + 4}
                                 fill={target.scenarioColor}
-                                fontSize={11}
+                                fontSize={13}
                                 fontWeight={600}
                                 style={{ cursor: 'pointer' }}
                                 onClick={handleProjectionClick}
@@ -917,7 +1058,7 @@ export function PriceTargetChart({
                                 x={xEnd - 65}
                                 y={y + 4}
                                 fill={target.scenarioColor}
-                                fontSize={11}
+                                fontSize={13}
                                 fontWeight={600}
                                 style={{ cursor: 'pointer' }}
                                 onClick={handleLevelClick}
@@ -929,19 +1070,19 @@ export function PriceTargetChart({
                                 <g>
                                   <rect
                                     x={xStart + 5}
-                                    y={y - 10}
-                                    width={28}
-                                    height={16}
+                                    y={y - 11}
+                                    width={34}
+                                    height={18}
                                     rx={3}
                                     fill={target.scenarioColor}
                                     fillOpacity={0.9}
                                   />
                                   <text
-                                    x={xStart + 19}
+                                    x={xStart + 22}
                                     y={y + 2}
                                     textAnchor="middle"
                                     fill="#fff"
-                                    fontSize={9}
+                                    fontSize={11}
                                     fontWeight={600}
                                   >
                                     {target.probability}%
@@ -1041,7 +1182,7 @@ export function PriceTargetChart({
                         <g>
                           {/* Gradient */}
                           <defs>
-                            <linearGradient id="distGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <linearGradient id={gradientId} x1="0%" y1="100%" x2="0%" y2="0%">
                               {sortedTargets.map((target) => {
                                 const position = ((target.price - minPrice) / priceRange) * 100
                                 return (
@@ -1057,7 +1198,7 @@ export function PriceTargetChart({
                           </defs>
 
                           {/* Filled area */}
-                          <path d={areaPath} fill="url(#distGradient)" />
+                          <path d={areaPath} fill={`url(#${gradientId})`} style={onUpdateProbabilities ? { cursor: 'pointer' } : undefined} onClick={onUpdateProbabilities ? () => setShowProbabilityModal(true) : undefined} />
 
                           {/* Curve line */}
                           <path
@@ -1065,6 +1206,8 @@ export function PriceTargetChart({
                             fill="none"
                             stroke="#4f46e5"
                             strokeWidth={2}
+                            style={onUpdateProbabilities ? { cursor: 'pointer' } : undefined}
+                            onClick={onUpdateProbabilities ? () => setShowProbabilityModal(true) : undefined}
                           />
 
                           {/* Current price line */}
@@ -1090,7 +1233,7 @@ export function PriceTargetChart({
                             if (isNaN(y)) return null
 
                             return (
-                              <g key={`dist-${target.id}`}>
+                              <g key={`dist-${target.id}`} style={{ cursor: onUpdateProbabilities ? 'pointer' : undefined }} onClick={onUpdateProbabilities ? () => setShowProbabilityModal(true) : undefined}>
                                 {/* Horizontal connector line */}
                                 <line
                                   x1={x}
@@ -1106,7 +1249,7 @@ export function PriceTargetChart({
                                 <circle
                                   cx={x}
                                   cy={y}
-                                  r={7}
+                                  r={9}
                                   fill={target.scenarioColor}
                                   stroke="#fff"
                                   strokeWidth={2}
@@ -1116,7 +1259,7 @@ export function PriceTargetChart({
                                   x={distEndX}
                                   y={y + 4}
                                   textAnchor="start"
-                                  fontSize={11}
+                                  fontSize={13}
                                   fontWeight={600}
                                   fill={target.scenarioColor}
                                 >
@@ -1126,9 +1269,9 @@ export function PriceTargetChart({
                                 {prob > 0 && (
                                   <text
                                     x={x}
-                                    y={y + 3}
+                                    y={y + 4}
                                     textAnchor="middle"
-                                    fontSize={8}
+                                    fontSize={10}
                                     fontWeight={700}
                                     fill="#fff"
                                   >
@@ -1152,9 +1295,9 @@ export function PriceTargetChart({
                             />
                             <text
                               x={distStartX + 3}
-                              y={yAxis.scale(expectedPrice) - 5}
+                              y={yAxis.scale(expectedPrice) - 6}
                               textAnchor="start"
-                              fontSize={11}
+                              fontSize={13}
                               fontWeight={600}
                               fill="#4f46e5"
                             >
@@ -1264,6 +1407,37 @@ export function PriceTargetChart({
                   {selectedTarget.scenarioName}
                 </span>
                 <StatusBadge status={selectedTarget.status} />
+
+                {/* Metadata inline with badge */}
+                <span className="text-xs text-gray-400 dark:text-gray-500">·</span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">
+                  Set {new Date(selectedTarget.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">·</span>
+                <span className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                  {selectedTarget.timeframe || 'N/A'}
+                  {selectedTarget.isRolling ? (
+                    <span className="text-[10px] px-1 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">Rolling</span>
+                  ) : (
+                    <span className="text-[10px] px-1 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">Fixed</span>
+                  )}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">·</span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">
+                  {selectedTarget.isRolling ? (
+                    <span className="text-blue-600 dark:text-blue-400">No expiry</span>
+                  ) : selectedTarget.targetDate ? (
+                    <>Exp {new Date(selectedTarget.targetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+                  ) : (
+                    'No expiry'
+                  )}
+                </span>
+                {selectedTarget.probability ? (
+                  <>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">·</span>
+                    <span className="text-xs text-gray-700 dark:text-gray-300"><span className="text-gray-400 dark:text-gray-500">Prob </span><span className="font-medium">{selectedTarget.probability}%</span></span>
+                  </>
+                ) : null}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 by {selectedTarget.userName}
@@ -1273,91 +1447,16 @@ export function PriceTargetChart({
                   </span>
                 )}
               </div>
+              {selectedTarget.reasoning && (
+                <p className="text-sm text-gray-700 dark:text-gray-300 mt-1.5 leading-snug">
+                  {selectedTarget.reasoning}
+                </p>
+              )}
             </div>
           </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-            <div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Originally Set</div>
-              <div className="font-medium text-gray-900 dark:text-white">
-                {new Date(selectedTarget.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Timeframe</div>
-              <div className="font-medium text-gray-900 dark:text-white flex items-center gap-1.5">
-                {selectedTarget.timeframe || 'N/A'}
-                {selectedTarget.isRolling ? (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
-                    Rolling
-                  </span>
-                ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
-                    Fixed
-                  </span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                {selectedTarget.isRolling ? 'Rolling Target' : 'Expires'}
-              </div>
-              <div className="font-medium text-gray-900 dark:text-white">
-                {selectedTarget.isRolling ? (
-                  <span className="text-blue-600 dark:text-blue-400">Never</span>
-                ) : selectedTarget.targetDate ? (
-                  new Date(selectedTarget.targetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                ) : (
-                  'N/A'
-                )}
-              </div>
-            </div>
-            {selectedTarget.probability ? (
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Probability</div>
-                <div className="font-medium text-gray-900 dark:text-white">
-                  {selectedTarget.probability}%
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Current Price</div>
-                <div className="font-medium text-gray-900 dark:text-white">
-                  ${currentPrice.toFixed(2)}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {selectedTarget.reasoning && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Reasoning</div>
-              <div className="text-sm text-gray-700 dark:text-gray-300">
-                {selectedTarget.reasoning}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Risk/Reward Summary */}
-      <div className="px-4 pb-4">
-        <div className="grid grid-cols-3 gap-4 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-          {riskRewardZones.map(zone => (
-            <div key={zone.id} className="text-center">
-              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                {zone.scenarioName}
-              </div>
-              <div
-                className="text-lg font-semibold"
-                style={{ color: zone.color }}
-              >
-                {zone.percentChange > 0 ? '+' : ''}{zone.percentChange.toFixed(1)}%
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
       {/* Probability Distribution Modal */}
       <ProbabilityDistributionModal

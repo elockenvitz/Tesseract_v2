@@ -6,9 +6,10 @@ interface CardProps {
   className?: string
   padding?: 'none' | 'sm' | 'md' | 'lg'
   onClick?: () => void
+  id?: string
 }
 
-export function Card({ children, className, padding = 'md', onClick }: CardProps) {
+export function Card({ children, className, padding = 'md', onClick, id }: CardProps) {
   const paddingClasses = {
     none: '',
     sm: 'p-4',
@@ -18,6 +19,7 @@ export function Card({ children, className, padding = 'md', onClick }: CardProps
 
   return (
     <div
+      id={id}
       className={clsx(
         'bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow duration-200',
         paddingClasses[padding],

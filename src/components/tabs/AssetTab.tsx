@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2 } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useAssetModels } from '../../hooks/useAssetModels'
@@ -16,6 +16,7 @@ import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 import { AssetWorkflowSelector } from '../ui/AssetWorkflowSelector'
 import { WorkflowSelector } from '../ui/WorkflowSelector'
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
+import { ActionLoopModule } from '../asset/ActionLoopModule'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
@@ -34,7 +35,10 @@ import { useContributions, type ContributionVisibility } from '../../hooks/useCo
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
 import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePreferences'
-import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection, FirmConsensusPanel, PriceTargetsSummary } from '../outcomes'
+import { useAssetHeaderContext } from '../../hooks/useAssetHeaderContext'
+import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection, FirmConsensusPanel, PriceTargetsSummary, ViewWarningIndicator } from '../outcomes'
+import type { ViewScope } from '../../hooks/useExpectedValue'
+import { useViewWarnings } from '../../hooks/useViewWarnings'
 import { UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder } from '../research'
 import {
   ChecklistField,
@@ -245,6 +249,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showAssetPriorityDropdown, setShowAssetPriorityDropdown] = useState(false)
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
+  const [listsFocus, setListsFocus] = useState<string | null>(null)
+  const headerContext = useAssetHeaderContext(asset.id)
   const [addRefType, setAddRefType] = useState<'none' | 'note' | 'file' | 'model' | 'url'>('none')
   const [newRefUrl, setNewRefUrl] = useState('')
   const [newRefTitle, setNewRefTitle] = useState('')
@@ -408,6 +414,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
   }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, isTabStateInitialized])
+
+  // Focus-scroll into a Lists tab section when listsFocus is set
+  useEffect(() => {
+    if (!listsFocus || activeSubPage !== 'lists') return
+    // Expand the target section if collapsed
+    setCollapsedSections(prev => ({ ...prev, [listsFocus]: false }))
+    // Wait a tick for DOM to update, then scroll
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(`lists-section-${listsFocus}`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    setListsFocus(null)
+    return () => cancelAnimationFrame(raf)
+  }, [listsFocus, activeSubPage])
 
   // ---------- Queries ----------
   const { data: coverage } = useQuery({
@@ -655,6 +675,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Check if user is viewing their own tab
   const isViewingOwnThesisTab = user && researchViewFilter === user.id
 
+  // Derive view scope for rating divergence badges (accessibleUserIds derived after researchAnalysts below)
+  const ratingViewScope: ViewScope | undefined = React.useMemo(() => {
+    if (researchViewFilter === 'aggregated') return { type: 'firm' }
+    return { type: 'user', userId: researchViewFilter }
+  }, [researchViewFilter])
+
   // Build thesis status for each covering analyst
   const thesisStatuses = React.useMemo(() => {
     if (!coverage || !thesisContributions) return []
@@ -747,6 +773,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
     })
 
+    // Ensure current user is always in the list so they can switch to their own view
+    if (user?.id && !uniqueAnalysts.has(user.id)) {
+      const firstName = (user as any)?.user_metadata?.first_name || (user as any)?.raw_user_meta_data?.first_name
+      const lastName = (user as any)?.user_metadata?.last_name || (user as any)?.raw_user_meta_data?.last_name
+      let fullName = firstName && lastName ? `${firstName} ${lastName}` : user.email?.split('@')[0] || 'Unknown'
+      uniqueAnalysts.set(user.id, {
+        id: user.id,
+        name: fullName,
+        shortName: formatShortName(fullName),
+        role: null,
+        isCovering: false
+      })
+    }
+
     // Sort: covering analysts by role first, then contributors
     return Array.from(uniqueAnalysts.values()).sort((a, b) => {
       // Covering analysts come before non-covering
@@ -765,6 +805,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return a.name.localeCompare(b.name)
     })
   }, [coverage, thesisContributions, contributorProfiles, isLoadingContributorProfiles, user])
+
+  // Accessible analyst IDs for rating divergence badge filtering (must be after researchAnalysts)
+  const ratingAccessibleUserIds: string[] | undefined = React.useMemo(() => {
+    if (!researchAnalysts || researchAnalysts.length === 0) return undefined
+    const ids = researchAnalysts.map((a: { id: string }) => a.id)
+    if (user?.id && !ids.includes(user.id)) ids.push(user.id)
+    return ids
+  }, [researchAnalysts, user?.id])
 
   const { data: priceTargets } = useQuery({
     queryKey: ['price-targets', asset.id],
@@ -886,6 +934,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     enabled: !!asset.symbol && portfolioHoldings && portfolioHoldings.length > 0,
     staleTime: 15000, // Cache for 15 seconds
     refetchInterval: 30000, // Auto-refresh every 30 seconds
+  })
+
+  // Unified view warnings (composes divergence + EV mismatch + revision-based rules)
+  const viewWarnings = useViewWarnings({
+    assetId: asset.id,
+    viewScope: ratingViewScope,
+    currentPrice: currentQuote?.price,
+    accessibleUserIds: ratingAccessibleUserIds,
   })
 
   // Query to determine the effective workflow ID for this asset
@@ -2234,9 +2290,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="flex items-baseline gap-4">
                 <button
                   onClick={() => setShowTickerDropdown(!showTickerDropdown)}
-                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors"
+                  aria-haspopup="dialog"
+                  aria-expanded={showTickerDropdown}
+                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group"
                 >
-                  {asset.symbol}
+                  <span className="group-hover:underline underline-offset-4 decoration-gray-300">{asset.symbol}</span>
+                  <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showTickerDropdown && 'rotate-180')} />
                 </button>
                 <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-2xl font-bold" />
                 <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-xl font-semibold" />
@@ -2250,12 +2309,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     className="fixed inset-0 z-10"
                     onClick={() => setShowTickerDropdown(false)}
                   />
-                  <div className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-20 p-4 min-w-[300px]">
+                  <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-[70vh] overflow-y-auto">
                     <div className="space-y-4">
                       {/* Coverage */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-semibold text-gray-700">Coverage</h4>
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Coverage</h4>
                           {onNavigate && (
                             <button
                               onClick={() => {
@@ -2295,11 +2354,118 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
                       {/* Sector */}
                       {(asset.sector || fullAsset?.sector) && (
-                        <div className="pt-4 border-t border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Sector</h4>
-                          <p className="text-sm text-gray-900">{asset.sector || fullAsset?.sector}</p>
+                        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Sector</h4>
+                          <p className="text-sm text-gray-900 dark:text-gray-100">{asset.sector || fullAsset?.sector}</p>
                         </div>
                       )}
+
+                      {/* Context */}
+                      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Context</h4>
+                        {headerContext.isError ? (
+                          <p className="text-xs text-gray-400 italic">Context unavailable</p>
+                        ) : headerContext.isLoading ? (
+                          <div className="space-y-2">
+                            {[1, 2, 3, 4].map((i) => (
+                              <div key={i} className="h-5 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {/* Portfolios */}
+                            <div className="flex items-center justify-between py-1 group/row">
+                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <Briefcase className="w-3.5 h-3.5 text-gray-400" />
+                                <span>{headerContext.portfolios.length > 0
+                                  ? `${headerContext.portfolios.length} portfolio${headerContext.portfolios.length !== 1 ? 's' : ''}`
+                                  : 'No portfolios'}</span>
+                              </div>
+                              {headerContext.portfolios.length > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setShowTickerDropdown(false)
+                                    setActiveSubPage('lists')
+                                    setListsFocus('portfoliosContent')
+                                  }}
+                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                >
+                                  View
+                                </button>
+                              )}
+                            </div>
+                            {/* Lists */}
+                            <div className="flex items-center justify-between py-1 group/row">
+                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <List className="w-3.5 h-3.5 text-gray-400" />
+                                <span>{(() => {
+                                  const s = headerContext.listsShared.length
+                                  const p = headerContext.listsMine.length
+                                  if (s + p === 0) return 'No lists'
+                                  const parts: string[] = []
+                                  if (p > 0) parts.push(`${p} personal list${p !== 1 ? 's' : ''}`)
+                                  if (s > 0) parts.push(`${s} shared list${s !== 1 ? 's' : ''}`)
+                                  return parts.join(' · ')
+                                })()}</span>
+                              </div>
+                              {(headerContext.listsShared.length + headerContext.listsMine.length) > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setShowTickerDropdown(false)
+                                    setActiveSubPage('lists')
+                                    setListsFocus('listsContent')
+                                  }}
+                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                >
+                                  View
+                                </button>
+                              )}
+                            </div>
+                            {/* Themes */}
+                            <div className="flex items-center justify-between py-1 group/row">
+                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <Tag className="w-3.5 h-3.5 text-gray-400" />
+                                <span>{headerContext.themes.length > 0
+                                  ? `${headerContext.themes.length} theme${headerContext.themes.length !== 1 ? 's' : ''}`
+                                  : 'No themes'}</span>
+                              </div>
+                              {headerContext.themes.length > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setShowTickerDropdown(false)
+                                    setActiveSubPage('lists')
+                                    setListsFocus('themesContent')
+                                  }}
+                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                >
+                                  View
+                                </button>
+                              )}
+                            </div>
+                            {/* Projects */}
+                            <div className="flex items-center justify-between py-1 group/row">
+                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <FolderKanban className="w-3.5 h-3.5 text-gray-400" />
+                                <span>{headerContext.projectsCount > 0
+                                  ? `${headerContext.projectsCount} project${headerContext.projectsCount !== 1 ? 's' : ''}`
+                                  : 'No projects'}</span>
+                              </div>
+                              {headerContext.projectsCount > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setShowTickerDropdown(false)
+                                    setActiveSubPage('lists')
+                                    setListsFocus('projectsContent')
+                                  }}
+                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                >
+                                  View
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </>
@@ -2638,6 +2804,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </div>
               )}
 
+              {/* View warnings indicator - shows next to visibility */}
+              {activeSubPage === 'research' && (
+                <ViewWarningIndicator warnings={viewWarnings} />
+              )}
+
               {/* Customize button - only show when viewing own view */}
               {researchViewFilter === user?.id && (
                 <button
@@ -2727,6 +2898,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
+            {/* Action Loop — header chrome above tiles (not a customizable tile) */}
+            <ActionLoopModule
+              assetId={asset.id}
+              assetSymbol={asset.symbol}
+              viewFilter={researchViewFilter}
+              currentUserId={user?.id}
+              accessibleUserIds={ratingAccessibleUserIds}
+              currentPrice={currentQuote?.price}
+              viewUserDisplayName={
+                researchViewFilter !== 'aggregated'
+                  ? researchAnalysts.find(a => a.id === researchViewFilter)?.name
+                  : undefined
+              }
+              onNavigate={onNavigate}
+            />
+
             {/* Show loading skeleton while layout or contributions load/fetch */}
             {(layoutLoading || (isAggregatedView && (contributionsLoading || contributionsFetching))) ? (
               <div className="space-y-4">
@@ -2832,6 +3019,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             section={field.field_slug}
                             title={field.field_name}
                             activeTab={researchViewFilter}
+                            onTabChange={setResearchViewFilter}
                             defaultVisibility={sharedThesisVisibility}
                             hideViewModeButtons={true}
                             hideVisibility={true}
@@ -2876,7 +3064,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
@@ -2895,7 +3083,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
@@ -2903,6 +3091,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   <AnalystRatingsSection
                                     assetId={asset.id}
                                     isEditable={isViewingOwnThesisTab}
+                                    currentPrice={currentQuote?.price}
+                                    viewScope={ratingViewScope}
+                                    accessibleUserIds={ratingAccessibleUserIds}
                                   />
                                 </div>
                               )
@@ -2925,19 +3116,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             }
 
                             // Default: rich_text or other custom fields
+                            const anchorId = field.field_slug === 'risks_to_thesis'
+                              ? 'asset-warning-anchor-risks'
+                              : field.field_slug === 'thesis'
+                                ? 'asset-anchor-thesis'
+                                : undefined
                             return (
-                              <ContributionSection
-                                key={field.field_id}
-                                assetId={asset.id}
-                                section={field.field_slug}
-                                title={field.field_name}
-                                activeTab={researchViewFilter}
-                                defaultVisibility={sharedThesisVisibility}
-                                hideViewModeButtons={true}
-                                hideVisibility={true}
-                                sharedVisibility={sharedThesisVisibility}
-                                sharedTargetIds={sharedThesisTargetIds}
-                              />
+                              <div key={field.field_id} id={anchorId}>
+                                <ContributionSection
+                                  assetId={asset.id}
+                                  section={field.field_slug}
+                                  title={field.field_name}
+                                  activeTab={researchViewFilter}
+                                  onTabChange={setResearchViewFilter}
+                                  defaultVisibility={sharedThesisVisibility}
+                                  hideViewModeButtons={true}
+                                  hideVisibility={true}
+                                  sharedVisibility={sharedThesisVisibility}
+                                  sharedTargetIds={sharedThesisTargetIds}
+                                />
+                              </div>
                             )
                           })}
                       </div>
@@ -3106,7 +3304,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
@@ -3114,6 +3312,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 <AnalystRatingsSection
                                   assetId={asset.id}
                                   isEditable={isViewingOwnThesisTab}
+                                  currentPrice={currentQuote?.price}
+                                  viewScope={ratingViewScope}
+                                  accessibleUserIds={ratingAccessibleUserIds}
                                 />
                               </div>
                             )
@@ -3138,7 +3339,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
@@ -3154,19 +3355,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           }
 
                           // Default: rich_text or other text-based fields use ContributionSection
+                          const sectionAnchorId = field.field_slug === 'risks_to_thesis'
+                            ? 'asset-warning-anchor-risks'
+                            : field.field_slug === 'thesis'
+                              ? 'asset-anchor-thesis'
+                              : undefined
                           return (
-                            <ContributionSection
-                              key={field.field_id}
-                              assetId={asset.id}
-                              section={field.field_slug}
-                              title={field.field_name}
-                              activeTab={researchViewFilter}
-                              defaultVisibility={sharedThesisVisibility}
-                              hideViewModeButtons={true}
-                              hideVisibility={true}
-                              sharedVisibility={sharedThesisVisibility}
-                              sharedTargetIds={sharedThesisTargetIds}
-                            />
+                            <div key={field.field_id} id={sectionAnchorId}>
+                              <ContributionSection
+                                assetId={asset.id}
+                                section={field.field_slug}
+                                title={field.field_name}
+                                activeTab={researchViewFilter}
+                                onTabChange={setResearchViewFilter}
+                                defaultVisibility={sharedThesisVisibility}
+                                hideViewModeButtons={true}
+                                hideVisibility={true}
+                                sharedVisibility={sharedThesisVisibility}
+                                sharedTargetIds={sharedThesisTargetIds}
+                              />
+                            </div>
                           )
                         })}
                     </div>
@@ -3477,7 +3685,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               return (
                 <>
                   {/* Lists Section */}
-                  <Card padding="none">
+                  <Card padding="none" id="lists-section-listsContent">
                     <button
                       onClick={() => toggleSection('listsContent')}
                       className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -3542,7 +3750,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </Card>
 
                   {/* Themes Section */}
-                  <Card padding="none">
+                  <Card padding="none" id="lists-section-themesContent">
                     <button
                       onClick={() => toggleSection('themesContent')}
                       className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -3612,7 +3820,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </Card>
 
                   {/* Portfolios Section */}
-                  <Card padding="none">
+                  <Card padding="none" id="lists-section-portfoliosContent">
                     <button
                       onClick={() => toggleSection('portfoliosContent')}
                       className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -3730,7 +3938,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </Card>
 
                   {/* Projects Section */}
-                  <Card padding="none">
+                  <Card padding="none" id="lists-section-projectsContent">
                     <button
                       onClick={() => toggleSection('projectsContent')}
                       className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"

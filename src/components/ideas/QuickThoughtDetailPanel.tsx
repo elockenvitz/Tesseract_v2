@@ -311,7 +311,7 @@ export function QuickThoughtDetailPanel({
             <span className="text-gray-300">·</span>
             {(() => {
               const typeKey = (thought.idea_type || 'thought') as IdeaType
-              const typeConfig = ideaTypeConfig[typeKey]
+              const typeConfig = ideaTypeConfig[typeKey] || ideaTypeConfig.thought
               const TypeIcon = typeConfig.icon
               return (
                 <span className={clsx('inline-flex items-center gap-0.5', typeConfig.color)}>

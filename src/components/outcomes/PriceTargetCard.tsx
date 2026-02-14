@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
-import { DollarSign, Clock, Edit2, Check, X, Trash2, MessageSquare, Calendar, RefreshCw, RotateCcw, AlertTriangle } from 'lucide-react'
+import { DollarSign, Clock, Edit2, Trash2, MessageSquare, Calendar, RefreshCw, RotateCcw, AlertTriangle, FileEdit, Upload } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
 import type { AnalystPriceTarget, TimeframeType } from '../../hooks/useAnalystPriceTargets'
+import { hasDraft } from '../../hooks/useAnalystPriceTargets'
 
 // Calculate expiration date from created_at + timeframe
 function calculateExpirationDate(createdAt: string, timeframe: string | null): Date | null {
@@ -73,6 +75,16 @@ function getTimeRemaining(expirationDate: Date): { text: string; isExpired: bool
   return { text: `${years}y ${remainingMonths}m remaining`, isExpired: false, isUrgent: false }
 }
 
+type PriceTargetData = {
+  price: number
+  timeframe?: string
+  timeframeType?: TimeframeType
+  targetDate?: string
+  isRolling?: boolean
+  reasoning?: string
+  probability?: number
+}
+
 interface PriceTargetCardProps {
   scenario: {
     id: string
@@ -82,21 +94,19 @@ interface PriceTargetCardProps {
   }
   priceTarget?: AnalystPriceTarget
   isEditable?: boolean
-  onSave?: (data: {
-    price: number
-    timeframe?: string
-    timeframeType?: TimeframeType
-    targetDate?: string
-    isRolling?: boolean
-    reasoning?: string
-    probability?: number
-  }) => Promise<void>
+  onSaveDraft?: (data: PriceTargetData) => Promise<void>
+  onPublish?: (data: PriceTargetData) => Promise<void>
+  onDiscardDraft?: () => Promise<void>
   onDelete?: () => Promise<void>
   compact?: boolean
   showReasoning?: boolean
   className?: string
   /** Sum of probabilities from other scenarios (for validation that total doesn't exceed 100%) */
   otherScenariosProbabilitySum?: number
+  /** Current market price - used to show % change on the tile */
+  currentPrice?: number
+  /** When incremented, triggers edit mode on default scenarios */
+  triggerEditKey?: number
 }
 
 const PRESET_TIMEFRAMES = [
@@ -111,14 +121,19 @@ export function PriceTargetCard({
   scenario,
   priceTarget,
   isEditable = false,
-  onSave,
+  onSaveDraft,
+  onPublish,
+  onDiscardDraft,
   onDelete,
   compact = false,
   showReasoning = true,
   className,
-  otherScenariosProbabilitySum = 0
+  otherScenariosProbabilitySum = 0,
+  currentPrice,
+  triggerEditKey
 }: PriceTargetCardProps) {
   const [isEditing, setIsEditing] = useState(false)
+  const [viewingDraft, setViewingDraft] = useState(false)
   const [price, setPrice] = useState('')
   const [timeframeType, setTimeframeType] = useState<TimeframeType>('preset')
   const [timeframe, setTimeframe] = useState('12 months')
@@ -128,6 +143,8 @@ export function PriceTargetCard({
   const [reasoning, setReasoning] = useState('')
   const [probability, setProbability] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
+  const [isDiscarding, setIsDiscarding] = useState(false)
 
   // Calculate max allowed probability (100 minus what others have)
   const maxProbability = Math.max(0, 100 - otherScenariosProbabilitySum)
@@ -185,36 +202,108 @@ export function PriceTargetCard({
     return null
   }, [isRolling, timeframeType, targetDate, timeframe])
 
+  // Whether this card has a pending draft
+  const isDraft = priceTarget ? hasDraft(priceTarget) : false
+  // Whether this is a placeholder row (price=0, no timeframe) that hasn't been published yet
+  const isPlaceholder = priceTarget ? priceTarget.price === 0 && !priceTarget.timeframe : false
+
   // Sync state from priceTarget when entering edit mode
+  // If there's a draft, pre-fill from draft values; otherwise from published values
   const startEditing = () => {
-    setPrice(priceTarget?.price?.toString() || '')
-    setTimeframeType(priceTarget?.timeframe_type || 'preset')
-    setTimeframe(priceTarget?.timeframe || '12 months')
-    setTargetDate(priceTarget?.target_date || '')
-    setIsRolling(priceTarget?.is_rolling ?? false)
-    setCustomTimeframe(priceTarget?.timeframe_type === 'custom' ? priceTarget?.timeframe || '' : '')
-    setReasoning(priceTarget?.reasoning || '')
-    setProbability(priceTarget?.probability?.toString() || '')
+    if (priceTarget && isDraft) {
+      setPrice(priceTarget.draft_price?.toString() || priceTarget.price?.toString() || '')
+      setTimeframeType((priceTarget.draft_timeframe_type as TimeframeType) || priceTarget.timeframe_type || 'preset')
+      setTimeframe(priceTarget.draft_timeframe || priceTarget.timeframe || '12 months')
+      setTargetDate(priceTarget.draft_target_date || priceTarget.target_date || '')
+      setIsRolling(priceTarget.draft_is_rolling ?? priceTarget.is_rolling ?? false)
+      const tfType = (priceTarget.draft_timeframe_type as TimeframeType) || priceTarget.timeframe_type
+      setCustomTimeframe(tfType === 'custom' ? (priceTarget.draft_timeframe || priceTarget.timeframe || '') : '')
+      setReasoning(priceTarget.draft_reasoning || priceTarget.reasoning || '')
+      setProbability(priceTarget.draft_probability?.toString() || priceTarget.probability?.toString() || '')
+    } else {
+      setPrice(priceTarget?.price?.toString() || '')
+      setTimeframeType(priceTarget?.timeframe_type || 'preset')
+      setTimeframe(priceTarget?.timeframe || '12 months')
+      setTargetDate(priceTarget?.target_date || '')
+      setIsRolling(priceTarget?.is_rolling ?? false)
+      setCustomTimeframe(priceTarget?.timeframe_type === 'custom' ? priceTarget?.timeframe || '' : '')
+      setReasoning(priceTarget?.reasoning || '')
+      setProbability(priceTarget?.probability?.toString() || '')
+    }
     setIsEditing(true)
   }
 
-  const handleSave = async () => {
-    if (!onSave || !price || !isProbabilityValid) return
+  // External edit trigger from ActionLoopModule
+  useEffect(() => {
+    if (triggerEditKey && triggerEditKey > 0 && scenario.is_default && isEditable) {
+      startEditing()
+    }
+  }, [triggerEditKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getFormData = (): PriceTargetData => ({
+    price: parseFloat(price),
+    timeframe: timeframeType === 'custom' ? customTimeframe : timeframe,
+    timeframeType,
+    targetDate: timeframeType === 'date' ? targetDate : undefined,
+    isRolling: timeframeType === 'preset' ? isRolling : false,
+    reasoning: reasoning || undefined,
+    probability: probability ? parseFloat(probability) : undefined
+  })
+
+  const handleSaveDraft = async () => {
+    if (!onSaveDraft || !price || !isProbabilityValid) return
     setIsSaving(true)
     try {
-      await onSave({
-        price: parseFloat(price),
-        timeframe: timeframeType === 'custom' ? customTimeframe : timeframe,
-        timeframeType,
-        targetDate: timeframeType === 'date' ? targetDate : undefined,
-        isRolling: timeframeType === 'preset' ? isRolling : false,
-        reasoning: reasoning || undefined,
-        probability: probability ? parseFloat(probability) : undefined
-      })
+      await onSaveDraft(getFormData())
       setIsEditing(false)
+      setViewingDraft(false)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handlePublish = async () => {
+    if (!onPublish) return
+
+    // When publishing from editor, use form data. When from draft view, use draft values.
+    if (isEditing) {
+      if (!price || !isProbabilityValid) return
+      setIsPublishing(true)
+      try {
+        await onPublish(getFormData())
+        setIsEditing(false)
+        setViewingDraft(false)
+      } finally {
+        setIsPublishing(false)
+      }
+    } else if (priceTarget && isDraft && priceTarget.draft_price != null) {
+      setIsPublishing(true)
+      try {
+        await onPublish({
+          price: priceTarget.draft_price,
+          timeframe: priceTarget.draft_timeframe || undefined,
+          timeframeType: (priceTarget.draft_timeframe_type as TimeframeType) || undefined,
+          targetDate: priceTarget.draft_target_date || undefined,
+          isRolling: priceTarget.draft_is_rolling ?? undefined,
+          reasoning: priceTarget.draft_reasoning || undefined,
+          probability: priceTarget.draft_probability ?? undefined,
+        })
+        setViewingDraft(false)
+      } finally {
+        setIsPublishing(false)
+      }
+    }
+  }
+
+  const handleDiscardDraft = async () => {
+    if (!onDiscardDraft) return
+    setIsDiscarding(true)
+    try {
+      await onDiscardDraft()
+      setViewingDraft(false)
+      setIsEditing(false)
+    } finally {
+      setIsDiscarding(false)
     }
   }
 
@@ -292,8 +381,24 @@ export function PriceTargetCard({
               Custom
             </span>
           )}
+          {/* Draft badge — clickable toggle between draft/published view */}
+          {isDraft && isEditable && !isEditing && (
+            <button
+              onClick={() => setViewingDraft(!viewingDraft)}
+              className={clsx(
+                'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors',
+                viewingDraft
+                  ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-600'
+                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40'
+              )}
+              title={viewingDraft ? 'Click to view published' : 'Click to view draft'}
+            >
+              <FileEdit className="w-3 h-3 mr-1" />
+              Draft
+            </button>
+          )}
         </div>
-        {isEditable && priceTarget && !isEditing && (
+        {isEditable && priceTarget && !isEditing && !viewingDraft && (
           <div className="flex items-center gap-1">
             <button
               onClick={startEditing}
@@ -561,38 +666,122 @@ export function PriceTargetCard({
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Action buttons: Cancel | Save Draft | Publish */}
           <div className="flex items-center justify-end gap-2 pt-1">
             <button
               onClick={handleCancel}
-              className="px-3 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-              disabled={isSaving}
+              className="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              disabled={isSaving || isPublishing}
             >
               Cancel
             </button>
-            <button
-              onClick={handleSave}
-              disabled={!price || isSaving || !isProbabilityValid}
-              className="px-3 py-1 text-xs bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-            >
-              {isSaving ? (
-                <>Saving...</>
-              ) : (
-                <>
-                  <Check className="w-3 h-3" />
-                  Save
-                </>
+            {onSaveDraft && (
+              <button
+                onClick={handleSaveDraft}
+                disabled={!price || isSaving || isPublishing || !isProbabilityValid}
+                className="px-3 py-1.5 text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 dark:text-amber-400 dark:bg-amber-900/20 dark:hover:bg-amber-900/40 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <FileEdit className="w-3 h-3" />
+                {isSaving ? 'Saving...' : 'Save Draft'}
+              </button>
+            )}
+            {onPublish && (
+              <button
+                onClick={handlePublish}
+                disabled={!price || isSaving || isPublishing || !isProbabilityValid}
+                className="px-3 py-1.5 text-xs font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <Upload className="w-3 h-3" />
+                {isPublishing ? 'Publishing...' : 'Publish'}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : priceTarget && viewingDraft && isDraft ? (
+        /* ── Draft view: amber banner with draft values + Continue Editing / Discard ── */
+        <div className="space-y-3">
+          <div className="bg-amber-50/50 dark:bg-amber-900/10 -mx-4 px-4 py-3 border-l-2 border-amber-400">
+            <div className="text-[10px] text-amber-600 dark:text-amber-400 mb-2">
+              Draft saved {priceTarget.draft_updated_at
+                ? formatDistanceToNow(new Date(priceTarget.draft_updated_at), { addSuffix: true })
+                : 'recently'}
+            </div>
+            {/* Draft price */}
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-amber-700 dark:text-amber-400">
+                ${(priceTarget.draft_price ?? 0).toFixed(2)}
+              </span>
+              {currentPrice != null && currentPrice > 0 && priceTarget.draft_price != null && priceTarget.draft_price > 0 && (
+                <span className={clsx(
+                  'text-sm font-semibold',
+                  priceTarget.draft_price > currentPrice ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                )}>
+                  {priceTarget.draft_price > currentPrice ? '+' : ''}
+                  {(((priceTarget.draft_price - currentPrice) / currentPrice) * 100).toFixed(1)}%
+                </span>
               )}
+            </div>
+            {/* Draft probability */}
+            {priceTarget.draft_probability != null && (
+              <div className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                <span className="font-medium">{priceTarget.draft_probability}%</span> probability
+              </div>
+            )}
+            {/* Draft reasoning */}
+            {priceTarget.draft_reasoning && (
+              <div className="flex items-start gap-1.5 mt-2">
+                <MessageSquare className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-700 dark:text-amber-400 line-clamp-2">
+                  {priceTarget.draft_reasoning}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Draft action buttons */}
+          <div className="flex items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-700">
+            <button
+              onClick={startEditing}
+              className="flex items-center px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 dark:text-amber-400 dark:bg-amber-900/20 dark:hover:bg-amber-900/40 rounded-md"
+            >
+              <Edit2 className="w-3.5 h-3.5 mr-1.5" />
+              Continue Editing
+            </button>
+            <button
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-md disabled:opacity-50"
+            >
+              <Upload className="w-3.5 h-3.5 mr-1.5" />
+              {isPublishing ? 'Publishing...' : 'Publish'}
+            </button>
+            <button
+              onClick={handleDiscardDraft}
+              disabled={isDiscarding}
+              className="flex items-center px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 rounded-md disabled:opacity-50"
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+              {isDiscarding ? 'Discarding...' : 'Discard'}
             </button>
           </div>
         </div>
-      ) : priceTarget ? (
+      ) : priceTarget && !isPlaceholder ? (
+        /* ── Published view (normal display) ── */
         <div className="space-y-2">
           {/* Price display */}
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold text-gray-900 dark:text-white">
               ${priceTarget.price.toFixed(2)}
             </span>
+            {currentPrice != null && currentPrice > 0 && (
+              <span className={clsx(
+                'text-sm font-semibold',
+                priceTarget.price > currentPrice ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+              )}>
+                {priceTarget.price > currentPrice ? '+' : ''}
+                {(((priceTarget.price - currentPrice) / currentPrice) * 100).toFixed(1)}%
+              </span>
+            )}
             {priceTarget.is_rolling ? (
               <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                 <RefreshCw className="w-3 h-3" />

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
@@ -7,11 +7,23 @@ import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../hooks/useAuth'
 import type { ItemType } from '../../../hooks/ideas/types'
 
+type InteractionMode = 'comment' | 'response'
+
 interface IdeaCommentsProps {
   itemId: string
   itemType: ItemType
   maxVisible?: number
   className?: string
+  /** Controls language: "comment" (default) or "response" (for prompts). */
+  interactionMode?: InteractionMode
+  /** When true, hides the composer and shows disabledMessage instead. */
+  disabled?: boolean
+  /** Message shown when composer is disabled (e.g. "This prompt is resolved."). */
+  disabledMessage?: string
+  /** Override the default empty-state text (e.g. "Awaiting response from Dan."). */
+  emptyStateOverride?: string
+  /** Called when the item count changes so parent can display it. */
+  onCountChange?: (count: number) => void
 }
 
 interface Comment {
@@ -33,8 +45,19 @@ export function IdeaComments({
   itemId,
   itemType,
   maxVisible = 3,
-  className
+  className,
+  interactionMode = 'comment',
+  disabled = false,
+  disabledMessage,
+  emptyStateOverride,
+  onCountChange,
 }: IdeaCommentsProps) {
+  const isResponse = interactionMode === 'response'
+  const nounSingular = isResponse ? 'response' : 'comment'
+  const nounPlural = isResponse ? 'responses' : 'comments'
+  const composerPlaceholder = isResponse ? 'Write a response...' : 'Write a comment...'
+  const collapsedCta = isResponse ? '+ Write a response...' : '+ Add a comment...'
+  const emptyLabel = isResponse ? 'No responses yet' : 'No comments yet'
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [showAll, setShowAll] = useState(false)
@@ -105,6 +128,11 @@ export function IdeaComments({
     }
   }
 
+  // Report count to parent when it changes
+  useEffect(() => {
+    onCountChange?.(comments.length)
+  }, [comments.length, onCountChange])
+
   const visibleComments = showAll ? comments : comments.slice(0, maxVisible)
   const hasMore = comments.length > maxVisible
 
@@ -124,8 +152,8 @@ export function IdeaComments({
 
   return (
     <div className={clsx('flex flex-col', className)}>
-      {/* Add comment - collapsed by default, expands on click */}
-      {user && (
+      {/* Composer — hidden when disabled */}
+      {user && !disabled && (
         <div className="mb-2">
           {isCommentInputExpanded ? (
             /* Expanded: input + send button */
@@ -135,7 +163,7 @@ export function IdeaComments({
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 onBlur={handleInputBlur}
-                placeholder="Write a comment..."
+                placeholder={composerPlaceholder}
                 autoFocus
                 className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-gray-300"
               />
@@ -158,10 +186,15 @@ export function IdeaComments({
               onClick={() => setIsCommentInputExpanded(true)}
               className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
             >
-              + Add a comment...
+              {collapsedCta}
             </button>
           )}
         </div>
+      )}
+
+      {/* Disabled message (e.g. prompt is resolved) */}
+      {user && disabled && disabledMessage && (
+        <p className="mb-2 text-[11px] text-gray-400 dark:text-gray-500 italic">{disabledMessage}</p>
       )}
 
       {/* Comments section with stable height during loading */}
@@ -180,7 +213,7 @@ export function IdeaComments({
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1 text-xs text-gray-500">
                 <MessageSquare className="h-3.5 w-3.5" />
-                <span>{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
+                <span>{comments.length} {comments.length === 1 ? nounSingular : nounPlural}</span>
               </div>
               {hasMore && (
                 <button
@@ -234,8 +267,8 @@ export function IdeaComments({
             </div>
           </>
         ) : (
-          /* Empty state: ONE helper line only, no "0 comments" label */
-          <p className="text-[11px] text-gray-400 text-center py-1">No comments yet</p>
+          /* Empty state — uses override if provided */
+          <p className="text-[11px] text-gray-400 text-center py-1">{emptyStateOverride || emptyLabel}</p>
         )}
       </div>
     </div>
