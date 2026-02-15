@@ -1,11 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__supabase__execute_sql",
+      "Bash(npx tsc:*)",
+      "Bash(powershell:*)",
+      "Bash(npm run build:*)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "supabase"
-  ],
-  "permissions": {
-    "allow": [
-      "mcp__supabase__execute_sql"
-    ]
-  }
+  ]
 }

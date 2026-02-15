@@ -13,6 +13,7 @@ import { AddTeamMemberModal } from '../portfolios/AddTeamMemberModal'
 import { getContentPreview } from '../../utils/stripHtml'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { TabStateManager } from '../../lib/tabStateManager'
+import { PortfolioDecisionView } from '../portfolio/PortfolioDecisionView'
 
 interface PortfolioTabProps {
   portfolio: any
@@ -790,6 +791,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              <PortfolioDecisionView portfolioId={portfolio.id} />
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card>
                   <div className="flex items-center">

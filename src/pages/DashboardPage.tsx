@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { arrayMove } from '@dnd-kit/sortable'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
@@ -39,8 +40,16 @@ import { CoveragePage } from './CoveragePage'
 import { OrganizationPage } from './OrganizationPage'
 import { AttentionPage } from './AttentionPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
-import { AttentionDashboard, type QuickCaptureMode } from '../components/attention'
-import type { AttentionItem, AttentionType } from '../types/attention'
+import type { AttentionType } from '../types/attention'
+import type { DashboardItem } from '../types/dashboard-item'
+import type { CockpitBand } from '../types/cockpit'
+import { DashboardFilters } from '../components/dashboard/DashboardFilters'
+import { DecisionLoadStrip } from '../components/dashboard/DecisionLoadStrip'
+import { BandSection } from '../components/dashboard/BandSection'
+import { DashboardPipelineStrip } from '../components/dashboard/DashboardPipelineStrip'
+import { useDashboardScope } from '../hooks/useDashboardScope'
+import { useCockpitFeed } from '../hooks/useCockpitFeed'
+import { useAuth } from '../hooks/useAuth'
 
 // Helper to get initial tab state synchronously (avoids flash on refresh)
 function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
@@ -89,6 +98,54 @@ export function DashboardPage() {
       TabStateManager.saveMainTabState(tabs, activeTabId, existingTabStates)
     }
   }, [tabs, activeTabId, isInitialized])
+
+  // Auth
+  const { user } = useAuth()
+
+  // Dashboard scope (portfolio, coverage, urgent filters)
+  const [scope, setScope] = useDashboardScope()
+
+  // Portfolio list for scope bar
+  const { data: portfolios = [] } = useQuery({
+    queryKey: ['user-portfolios', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return []
+      const [ownedRes, teamRes] = await Promise.all([
+        supabase.from('portfolios').select('id, name').eq('created_by', user.id),
+        supabase
+          .from('portfolio_team')
+          .select('portfolio_id, portfolios:portfolio_id(id, name)')
+          .eq('user_id', user.id),
+      ])
+      const owned = ownedRes.data ?? []
+      const team = (teamRes.data ?? [])
+        .map((t: any) => t.portfolios)
+        .filter(Boolean)
+      const all = [...owned, ...team]
+      const unique = Array.from(new Map(all.map(p => [p.id, p])).values())
+      return unique as { id: string; name: string }[]
+    },
+    enabled: !!user?.id,
+    staleTime: 300_000,
+  })
+
+  // Collapse-all trigger for bands (increment → force collapse non-NOW)
+  const [collapseAllTrigger, setCollapseAllTrigger] = useState(0)
+  const handleCollapseAll = useCallback(() => setCollapseAllTrigger(v => v + 1), [])
+
+  // Stable navigate ref — handleSearchResult is defined below but onClick closures
+  // only fire on user interaction (never during render), so a ref is safe.
+  const navigateRef = useRef<(detail: any) => void>(() => {})
+  const stableNavigate = useCallback(
+    (detail: any) => navigateRef.current(detail),
+    [],
+  )
+
+  // Cockpit feed — merges Decision Engine + Attention System → stacked view model
+  const cockpit = useCockpitFeed(
+    { portfolioId: scope.portfolioId, urgentOnly: scope.urgentOnly },
+    stableNavigate,
+  )
 
   const handleSearchResult = async (result: any) => {
     console.log(`🎯 DashboardPage: handleSearchResult called with:`, {
@@ -199,6 +256,19 @@ export function DashboardPage() {
     setTabs(updatedTabs)
     setActiveTabId(result.id)
   }
+
+  // Keep navigate ref in sync with latest handleSearchResult
+  navigateRef.current = handleSearchResult
+
+  // Decision engine action dispatch → tab navigation
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail) handleSearchResult(detail)
+    }
+    window.addEventListener('decision-engine-action', handler)
+    return () => window.removeEventListener('decision-engine-action', handler)
+  })
 
   const handleTabChange = (tabId: string) => {
     setTabs(tabs.map(tab => ({ ...tab, isActive: tab.id === tabId })))
@@ -557,120 +627,134 @@ export function DashboardPage() {
     }
   }
 
-  // Dashboard content - focused on priorities only
-  // Action/navigation buttons moved to New Tab for intentional discovery
+  const handleViewAll = (type: AttentionType) => {
+    handleSearchResult({
+      id: 'priorities',
+      title: 'All Priorities',
+      type: 'priorities' as any,
+      data: { filterType: type }
+    })
+  }
+
+  const handleOpenTradeQueue = (filter?: string) => {
+    handleSearchResult({
+      id: 'trade-queue',
+      title: 'Trade Queue',
+      type: 'trade-queue',
+      data: filter ? { stageFilter: filter } : undefined,
+    })
+  }
+
+  // Scroll to a band element
+  const handleScrollToBand = (band: CockpitBand) => {
+    const el = document.getElementById(`band-${band}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // Row click → navigate to item's primary action
+  const handleRowClick = useCallback((item: DashboardItem) => {
+    item.primaryAction.onClick()
+  }, [])
+
+  // Keyboard shortcuts: D→DECIDE, A→ADVANCE, I→INVESTIGATE (only when dashboard is active)
+  useEffect(() => {
+    if (activeTab?.type !== 'dashboard') return
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (e.key === 'd' || e.key === 'D') {
+        handleScrollToBand('DECIDE')
+      } else if (e.key === 'a' || e.key === 'A') {
+        handleScrollToBand('ADVANCE')
+      } else if (e.key === 'i' || e.key === 'I') {
+        handleScrollToBand('INVESTIGATE')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeTab?.type])
 
   const renderDashboardContent = () => {
     return (
       <div className="h-full overflow-auto">
-      <div className="space-y-6 p-1">
-        {/* Priorities Dashboard - "What matters now" */}
-        <AttentionDashboard
-          onNavigate={(item: AttentionItem) => {
-            // Navigate based on source_type and source_id for reliable routing
-            const { source_type, source_id, title, context } = item
+        {/*
+         * Decision Cockpit
+         *
+         * Stacked decision surface with four ranked bands:
+         *   DECIDE      — capital allocation & execution decisions
+         *   ADVANCE     — research, modeling, follow-up work
+         *   AWARE       — intelligence signals, monitoring
+         *   INVESTIGATE — system flags & team prompts
+         *
+         * Layout: Filters → Decision Load → DECIDE → ADVANCE → AWARE → INVESTIGATE → Pipeline
+         */}
+        <div className="p-3 space-y-3">
+          {/* Integrated filter row */}
+          <DashboardFilters
+            scope={scope}
+            onScopeChange={setScope}
+            portfolios={portfolios}
+            onCollapseAll={handleCollapseAll}
+          />
 
-            switch (source_type) {
-              case 'project':
-                handleSearchResult({ id: source_id, title, type: 'project', data: { id: source_id } })
-                break
-              case 'project_deliverable':
-                // Navigate to the parent project
-                handleSearchResult({
-                  id: context?.project_id || source_id,
-                  title: item.subtitle || 'Project',
-                  type: 'project',
-                  data: { id: context?.project_id || source_id }
-                })
-                break
-              case 'trade_queue_item':
-                handleSearchResult({
-                  id: 'trade-queue',
-                  title: 'Trade Queue',
-                  type: 'trade-queue',
-                  data: { selectedTradeId: source_id }
-                })
-                break
-              case 'list_suggestion':
-                handleSearchResult({
-                  id: context?.list_id || source_id,
-                  title: 'List',
-                  type: 'list',
-                  data: { id: context?.list_id || source_id }
-                })
-                break
-              case 'notification':
-                // Navigate based on notification context
-                if (context?.asset_id) {
-                  handleSearchResult({ id: context.asset_id, title, type: 'asset', data: { id: context.asset_id } })
-                } else if (context?.project_id) {
-                  handleSearchResult({ id: context.project_id, title, type: 'project', data: { id: context.project_id } })
-                }
-                break
-              case 'workflow_item':
-                handleSearchResult({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })
-                break
-              default:
-                // Fallback: try to navigate based on context or source URL pattern
-                if (context?.asset_id) {
-                  handleSearchResult({ id: context.asset_id, title, type: 'asset', data: { id: context.asset_id } })
-                } else if (context?.project_id) {
-                  handleSearchResult({ id: context.project_id, title, type: 'project', data: { id: context.project_id } })
-                } else {
-                  // Last resort: parse the source_url
-                  const parts = item.source_url.split('/')
-                  const type = parts[1]
-                  const id = parts[2]
-                  handleSearchResult({ id: id || type, title, type: type as any, data: { id } })
-                }
-            }
-          }}
-          onQuickCapture={(item: AttentionItem, mode: QuickCaptureMode) => {
-            // Open the thoughts capture pane with context from the attention item
-            // Extract context from the attention item's source
-            let contextType: string | undefined
-            let contextId: string | undefined
-            let contextTitle: string | undefined
+          {/* Decision load summary */}
+          <DecisionLoadStrip
+            summary={cockpit.viewModel.summary}
+            isLoading={cockpit.isLoading}
+            onScrollToBand={handleScrollToBand}
+          />
 
-            // Map attention source types to context types for thoughts
-            if (item.source_type === 'project' || item.source_type === 'project_deliverable') {
-              contextType = 'project'
-              contextId = item.context?.project_id || item.source_id
-              contextTitle = item.title
-            } else if (item.source_type === 'trade_queue_item') {
-              // Navigate to trade queue for trade items
-              handleSearchResult({ id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', data: { selectedTradeId: item.source_id } })
-              return
-            } else if (item.context?.asset_id) {
-              contextType = 'asset'
-              contextId = item.context.asset_id
-              contextTitle = item.title
-            } else if (item.context?.list_id) {
-              contextType = 'list'
-              contextId = item.context.list_id
-              contextTitle = item.title
-            }
+          {/* DECIDE — Requires Decision (always expanded) */}
+          <BandSection
+            id="band-DECIDE"
+            bandData={cockpit.viewModel.decide}
+            defaultExpanded
+            collapseAllTrigger={collapseAllTrigger}
+            onItemClick={handleRowClick}
+            onSnooze={cockpit.snooze}
+          />
 
-            // Dispatch event to open thoughts capture
-            window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-              detail: { contextType, contextId, contextTitle }
-            }))
-          }}
-          onViewAll={(type: AttentionType) => {
-            // Navigate to the All Priorities page filtered by type
-            handleSearchResult({
-              id: 'priorities',
-              title: 'All Priorities',
-              type: 'priorities' as any,
-              data: { filterType: type }
-            })
-          }}
-          maxItemsPerSection={5}
-          showScore={import.meta.env.DEV}
-        />
+          {/* ADVANCE — Needs Progress */}
+          <BandSection
+            id="band-ADVANCE"
+            bandData={cockpit.viewModel.advance}
+            defaultExpanded
+            collapseAllTrigger={collapseAllTrigger}
+            onItemClick={handleRowClick}
+            onSnooze={cockpit.snooze}
+          />
+
+          {/* AWARE — Monitoring (hidden in urgent-only mode) */}
+          {!scope.urgentOnly && (
+            <BandSection
+              id="band-AWARE"
+              bandData={cockpit.viewModel.aware}
+              collapseAllTrigger={collapseAllTrigger}
+              onItemClick={handleRowClick}
+              onSnooze={cockpit.snooze}
+            />
+          )}
+
+          {/* INVESTIGATE — System flags & team prompts (hidden in urgent-only mode) */}
+          {!scope.urgentOnly && (
+            <BandSection
+              id="band-INVESTIGATE"
+              bandData={cockpit.viewModel.investigate}
+              collapseAllTrigger={collapseAllTrigger}
+              onItemClick={handleRowClick}
+              onSnooze={cockpit.snooze}
+            />
+          )}
+
+          {/* Pipeline summary strip */}
+          <DashboardPipelineStrip
+            stats={cockpit.pipelineStats}
+            isLoading={cockpit.isLoading}
+            onOpenTradeQueue={handleOpenTradeQueue}
+          />
+        </div>
       </div>
-    </div>
-  )
+    )
   }
 
   return (

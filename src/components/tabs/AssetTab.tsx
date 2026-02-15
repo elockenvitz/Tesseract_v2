@@ -16,7 +16,7 @@ import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 import { AssetWorkflowSelector } from '../ui/AssetWorkflowSelector'
 import { WorkflowSelector } from '../ui/WorkflowSelector'
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
-import { ActionLoopModule } from '../asset/ActionLoopModule'
+import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
@@ -2898,21 +2898,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
-            {/* Action Loop — header chrome above tiles (not a customizable tile) */}
-            <ActionLoopModule
-              assetId={asset.id}
-              assetSymbol={asset.symbol}
-              viewFilter={researchViewFilter}
-              currentUserId={user?.id}
-              accessibleUserIds={ratingAccessibleUserIds}
-              currentPrice={currentQuote?.price}
-              viewUserDisplayName={
-                researchViewFilter !== 'aggregated'
-                  ? researchAnalysts.find(a => a.id === researchViewFilter)?.name
-                  : undefined
-              }
-              onNavigate={onNavigate}
-            />
+            {/* Decision Engine — filtered view for this asset */}
+            <AssetDecisionView assetId={asset.id} />
 
             {/* Show loading skeleton while layout or contributions load/fetch */}
             {(layoutLoading || (isAggregatedView && (contributionsLoading || contributionsFetching))) ? (
