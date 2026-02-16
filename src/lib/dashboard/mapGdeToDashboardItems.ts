@@ -150,10 +150,10 @@ function assignBandFromAttention(item: AttentionItem): DashboardBand {
 // ---------------------------------------------------------------------------
 
 function assignSeverityFromEngine(item: DecisionItem, type: DashboardItemType, ageDays: number): DashboardSeverity {
-  // Proposals: age-based
+  // Proposals: use engine severity (age + urgency computed in evaluator)
   if (type === 'DECISION' && (item.id.startsWith('a1-') || item.titleKey === 'PROPOSAL_AWAITING_DECISION')) {
-    if (ageDays >= DECISION_HIGH_DAYS) return 'HIGH'
-    if (ageDays >= DECISION_MED_DAYS) return 'MED'
+    if (item.severity === 'red') return 'HIGH'
+    if (item.severity === 'orange') return 'MED'
     return 'LOW'
   }
 
@@ -190,6 +190,7 @@ function assignSeverityFromEngine(item: DecisionItem, type: DashboardItemType, a
   // Fallback from engine severity
   if (item.severity === 'red') return 'HIGH'
   if (item.severity === 'orange') return 'MED'
+  if (item.severity === 'yellow') return 'LOW'
   return 'LOW'
 }
 
@@ -453,6 +454,9 @@ export function mapDecisionItem(
   if (item.context.overdueDays != null) meta.overdueDays = item.context.overdueDays
   if (item.context.ratingFrom) meta.ratingFrom = item.context.ratingFrom
   if (item.context.ratingTo) meta.ratingTo = item.context.ratingTo
+  if (item.context.proposedWeight != null) meta.proposedWeight = item.context.proposedWeight
+  if (item.context.isPairTrade) meta.isPairTrade = true
+  if (item.context.stage) meta.stage = item.context.stage
 
   return {
     id: item.id,
@@ -510,10 +514,34 @@ export function mapAttentionItem(
     owner: item.primary_owner_user_id
       ? { name: undefined, role: undefined } // ID available; name resolved at render
       : undefined,
+    meta: buildAttentionMeta(item),
     contextChips: extractChipsFromAttention(item, now),
     primaryAction,
     secondaryActions: [buildSnoozeAction(`attn-${item.attention_id}`, onSnooze)],
   }
+}
+
+function buildAttentionMeta(
+  item: AttentionItem,
+): import('../../types/dashboard-item').DashboardItemMeta | undefined {
+  if (item.source_type === 'project_deliverable') {
+    const meta: import('../../types/dashboard-item').DashboardItemMeta = {}
+    meta.projectName = item.subtitle || 'Unknown Project'
+    if (item.due_at) {
+      const overdue = Math.floor((Date.now() - new Date(item.due_at).getTime()) / 86400000)
+      if (overdue > 0) meta.overdueDays = overdue
+    }
+    return meta
+  }
+  if (item.source_type === 'project') {
+    const meta: import('../../types/dashboard-item').DashboardItemMeta = {}
+    if (item.due_at) {
+      const overdue = Math.floor((Date.now() - new Date(item.due_at).getTime()) / 86400000)
+      if (overdue > 0) meta.overdueDays = overdue
+    }
+    return meta
+  }
+  return undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -526,7 +554,7 @@ export function mapAllToDashboardItems(
   attentionItems: AttentionItem[],
   navigate: NavigateFn,
   onSnooze: (id: string, hours: number) => void,
-  portfolioFilter: string | null,
+  portfolioFilter: Set<string>,
 ): DashboardItem[] {
   const now = new Date()
   const items: DashboardItem[] = []
@@ -543,7 +571,7 @@ export function mapAllToDashboardItems(
 
   // Map engine items (apply portfolio filter)
   for (const item of flatEngine) {
-    if (portfolioFilter && item.context.portfolioId && item.context.portfolioId !== portfolioFilter) {
+    if (portfolioFilter.size > 0 && item.context.portfolioId && !portfolioFilter.has(item.context.portfolioId)) {
       continue
     }
     items.push(mapDecisionItem(item, navigate, onSnooze, now))

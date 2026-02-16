@@ -23,6 +23,7 @@ export const TIER_WEIGHT: Record<DecisionTier, number> = {
 export const SEVERITY_WEIGHT: Record<DecisionSeverity, number> = {
   red: 10000,
   orange: 7000,
+  yellow: 5000,
   blue: 3000,
   gray: 1000,
 }

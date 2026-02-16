@@ -112,28 +112,25 @@ describe('Band assignment from engine items', () => {
 // ---------------------------------------------------------------------------
 
 describe('Severity assignment', () => {
-  it(`proposal > ${DECISION_HIGH_DAYS}d → HIGH`, () => {
-    const old = new Date(NOW.getTime() - (DECISION_HIGH_DAYS + 1) * 86400000).toISOString()
+  it('proposal with red engine severity → HIGH', () => {
     const item = mapDecisionItem(
-      makeEngineItem({ id: 'a1-proposal-x', createdAt: old }),
+      makeEngineItem({ id: 'a1-proposal-x', severity: 'red' }),
       navigate, onSnooze, NOW,
     )
     expect(item.severity).toBe('HIGH')
   })
 
-  it(`proposal ${DECISION_MED_DAYS}–${DECISION_HIGH_DAYS}d → MED`, () => {
-    const mid = new Date(NOW.getTime() - (DECISION_MED_DAYS + 1) * 86400000).toISOString()
+  it('proposal with orange engine severity → MED', () => {
     const item = mapDecisionItem(
-      makeEngineItem({ id: 'a1-proposal-x', createdAt: mid }),
+      makeEngineItem({ id: 'a1-proposal-x', severity: 'orange' }),
       navigate, onSnooze, NOW,
     )
     expect(item.severity).toBe('MED')
   })
 
-  it('proposal < 3d → LOW', () => {
-    const recent = new Date(NOW.getTime() - 1 * 86400000).toISOString()
+  it('proposal with blue engine severity → LOW', () => {
     const item = mapDecisionItem(
-      makeEngineItem({ id: 'a1-proposal-x', createdAt: recent }),
+      makeEngineItem({ id: 'a1-proposal-x', severity: 'blue' }),
       navigate, onSnooze, NOW,
     )
     expect(item.severity).toBe('LOW')
@@ -265,16 +262,16 @@ describe('splitByBand', () => {
   })
 
   it('sorts NOW by severity desc then age desc', () => {
-    // Use a4-deliverable with red severity for HIGH, and a1-proposal with recent date for LOW
+    // Use a4-deliverable with red severity for HIGH, and a1-proposal with blue (waiting) for LOW
     const high = mapDecisionItem(
       makeEngineItem({ id: 'a4-deliverable-h', severity: 'red', category: 'project', createdAt: '2026-02-14T00:00:00Z' }),
       navigate, onSnooze, NOW,
     )
     const low = mapDecisionItem(
-      makeEngineItem({ id: 'a1-proposal-l', severity: 'red', createdAt: '2026-02-14T00:00:00Z' }),
+      makeEngineItem({ id: 'a1-proposal-l', severity: 'blue', createdAt: '2026-02-14T00:00:00Z' }),
       navigate, onSnooze, NOW,
     )
-    // deliverable-h → HIGH (red deliverable), proposal-l → LOW (1d old)
+    // deliverable-h → HIGH (red deliverable), proposal-l → LOW (blue = waiting)
     expect(high.severity).toBe('HIGH')
     expect(low.severity).toBe('LOW')
     const { now } = splitByBand([low, high])

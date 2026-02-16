@@ -85,6 +85,8 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
           id, asset_id, portfolio_id, action, stage, rationale,
           decision_outcome, decided_at, outcome, outcome_at,
           visibility_tier, created_by, created_at, updated_at,
+          pair_id, pair_trade_id, pair_leg_type,
+          proposed_weight, urgency,
           assets:asset_id (id, symbol, company_name),
           portfolios:portfolio_id (id, name)
         `)
@@ -94,11 +96,68 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         .limit(100)
 
       if (error) throw error
-      return (data || []).map((d: any) => ({
+      const rows = (data || []).map((d: any) => ({
         ...d,
         asset_symbol: d.assets?.symbol,
         portfolio_name: d.portfolios?.name,
       }))
+
+      // Group pair trade legs into synthetic combined rows.
+      // Support both pair_id (new) and pair_trade_id (legacy).
+      const pairGroups = new Map<string, any[]>()
+      const singles: any[] = []
+      for (const row of rows) {
+        const pairKey = row.pair_id || row.pair_trade_id
+        if (pairKey) {
+          const group = pairGroups.get(pairKey) || []
+          group.push(row)
+          pairGroups.set(pairKey, group)
+        } else {
+          singles.push(row)
+        }
+      }
+
+      for (const [pairId, legs] of pairGroups) {
+        if (legs.length < 2) {
+          // Single leg without partner — treat as normal
+          singles.push(...legs)
+          continue
+        }
+
+        // Split legs by action: buy/add = long side, sell/trim = short side
+        const buyLegs = legs.filter((l: any) => l.action === 'buy' || l.action === 'add')
+        const sellLegs = legs.filter((l: any) => l.action === 'sell' || l.action === 'trim')
+
+        // Build ticker labels (e.g., "LLY, PFE" / "CLOV, GH")
+        const buyTickers = buyLegs.map((l: any) => l.assets?.symbol || l.asset_symbol || '').filter(Boolean)
+        const sellTickers = sellLegs.map((l: any) => l.assets?.symbol || l.asset_symbol || '').filter(Boolean)
+
+        const combinedTicker = [
+          buyTickers.length > 0 ? buyTickers.join(', ') : null,
+          sellTickers.length > 0 ? sellTickers.join(', ') : null,
+        ].filter(Boolean).join(' / ')
+
+        const baseLeg = buyLegs[0] || legs[0]
+
+        // Synthetic combined row
+        singles.push({
+          ...baseLeg,
+          id: `pair-${pairId}`,
+          asset_symbol: combinedTicker,
+          assets: { ...baseLeg.assets, symbol: combinedTicker },
+          _isPairTrade: true,
+          _pairLegIds: legs.map((l: any) => l.id),
+          _buyTickers: buyTickers,
+          _sellTickers: sellTickers,
+          // Use earliest created_at for age
+          created_at: legs.reduce(
+            (earliest: string, l: any) => l.created_at < earliest ? l.created_at : earliest,
+            legs[0].created_at,
+          ),
+        })
+      }
+
+      return singles
     },
     enabled: !!coverage?.portfolioIds?.length,
     staleTime: 60_000,

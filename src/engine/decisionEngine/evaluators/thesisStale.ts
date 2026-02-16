@@ -1,5 +1,5 @@
 /**
- * Thesis Stale — ORANGE after 90 days, RED after 180 days.
+ * Thesis Stale — YELLOW after 90 days, ORANGE after 135 days, RED after 180 days.
  *
  * Always surfaces as an action item (stale thesis is actionable).
  * Category: risk.
@@ -7,7 +7,8 @@
 
 import type { DecisionItem, DecisionSeverity } from '../types'
 
-const ORANGE_THRESHOLD_DAYS = 90
+const YELLOW_THRESHOLD_DAYS = 90
+const ORANGE_THRESHOLD_DAYS = 135
 const RED_THRESHOLD_DAYS = 180
 
 export function evaluateThesisStale(data: {
@@ -20,9 +21,12 @@ export function evaluateThesisStale(data: {
   for (const thesis of data.thesisUpdates) {
     const updatedAt = new Date(thesis.updated_at)
     const daysSince = Math.floor((data.now.getTime() - updatedAt.getTime()) / 86400000)
-    if (daysSince < ORANGE_THRESHOLD_DAYS) continue
+    if (daysSince < YELLOW_THRESHOLD_DAYS) continue
 
-    const severity: DecisionSeverity = daysSince >= RED_THRESHOLD_DAYS ? 'red' : 'orange'
+    const severity: DecisionSeverity =
+      daysSince >= RED_THRESHOLD_DAYS ? 'red'
+      : daysSince >= ORANGE_THRESHOLD_DAYS ? 'orange'
+      : 'yellow'
     const ticker = thesis.asset_symbol || thesis.assets?.symbol || ''
 
     items.push({

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { clsx } from 'clsx'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -44,9 +45,11 @@ import type { AttentionType } from '../types/attention'
 import type { DashboardItem } from '../types/dashboard-item'
 import type { CockpitBand } from '../types/cockpit'
 import { DashboardFilters } from '../components/dashboard/DashboardFilters'
-import { DecisionLoadStrip } from '../components/dashboard/DecisionLoadStrip'
+import { DecisionSnapshotBar } from '../components/dashboard/DecisionSnapshotBar'
 import { BandSection } from '../components/dashboard/BandSection'
-import { DashboardPipelineStrip } from '../components/dashboard/DashboardPipelineStrip'
+import { AdvanceBandSection } from '../components/dashboard/AdvanceBandSection'
+import { TradePipelineLoop, type StageKey } from '../components/dashboard/TradePipelineLoop'
+import { SystemInsightCard } from '../components/dashboard/SystemInsightCard'
 import { useDashboardScope } from '../hooks/useDashboardScope'
 import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
@@ -111,10 +114,10 @@ export function DashboardPage() {
     queryFn: async () => {
       if (!user?.id) return []
       const [ownedRes, teamRes] = await Promise.all([
-        supabase.from('portfolios').select('id, name').eq('created_by', user.id),
+        supabase.from('portfolios').select('id, name, team_id, teams:team_id(id, name)').eq('created_by', user.id),
         supabase
           .from('portfolio_team')
-          .select('portfolio_id, portfolios:portfolio_id(id, name)')
+          .select('portfolio_id, portfolios:portfolio_id(id, name, team_id, teams:team_id(id, name))')
           .eq('user_id', user.id),
       ])
       const owned = ownedRes.data ?? []
@@ -123,15 +126,17 @@ export function DashboardPage() {
         .filter(Boolean)
       const all = [...owned, ...team]
       const unique = Array.from(new Map(all.map(p => [p.id, p])).values())
-      return unique as { id: string; name: string }[]
+      return unique as { id: string; name: string; team_id: string | null; teams: { id: string; name: string } | null }[]
     },
     enabled: !!user?.id,
     staleTime: 300_000,
   })
 
-  // Collapse-all trigger for bands (increment → force collapse non-NOW)
-  const [collapseAllTrigger, setCollapseAllTrigger] = useState(0)
-  const handleCollapseAll = useCallback(() => setCollapseAllTrigger(v => v + 1), [])
+  // Track DECIDE expanded state — controls right column visibility
+  const [decideExpanded, setDecideExpanded] = useState(true)
+
+  // Pipeline stage filter — clicking a stage in TradePipelineLoop filters DECIDE
+  const [pipelineStage, setPipelineStage] = useState<StageKey | null>(null)
 
   // Stable navigate ref — handleSearchResult is defined below but onClick closures
   // only fire on user interaction (never during render), so a ref is safe.
@@ -143,7 +148,7 @@ export function DashboardPage() {
 
   // Cockpit feed — merges Decision Engine + Attention System → stacked view model
   const cockpit = useCockpitFeed(
-    { portfolioId: scope.portfolioId, urgentOnly: scope.urgentOnly },
+    { portfolioIds: scope.portfolioIds, urgentOnly: scope.urgentOnly },
     stableNavigate,
   )
 
@@ -656,6 +661,60 @@ export function DashboardPage() {
     item.primaryAction.onClick()
   }, [])
 
+  // Selected portfolio name for snapshot bar
+  const selectedPortfolioName = useMemo(() => {
+    if (scope.portfolioIds.length === 0) return null
+    if (scope.portfolioIds.length === 1) {
+      return portfolios.find(p => p.id === scope.portfolioIds[0])?.name ?? null
+    }
+    return `${scope.portfolioIds.length} portfolios`
+  }, [scope.portfolioIds, portfolios])
+
+  // Filtered DECIDE band — when a pipeline stage is selected, show only matching stacks
+  const filteredDecide = useMemo(() => {
+    if (!pipelineStage) return cockpit.viewModel.decide
+
+    // Map pipeline stage → stack kinds to show
+    const kindFilter: Record<StageKey, string[]> = {
+      deciding: ['proposal'],
+      modeling: ['simulation'],
+      executing: ['execution'],
+    }
+    const allowedKinds = new Set(kindFilter[pipelineStage])
+
+    // Pull matching stacks from ALL bands (modeling items are normally in ADVANCE)
+    const allStacks = [
+      ...cockpit.viewModel.decide.stacks,
+      ...cockpit.viewModel.advance.stacks,
+      ...cockpit.viewModel.aware.stacks,
+    ]
+    let filtered = allStacks.filter(s => allowedKinds.has(s.kind))
+
+    // For modeling: filter simulation stacks to only 'simulating' stage items
+    // and rename to "Ideas Being Modeled"
+    if (pipelineStage === 'modeling') {
+      filtered = filtered.map(stack => {
+        const modelingItems = stack.itemsAll.filter(i => i.meta?.stage === 'simulating')
+        if (modelingItems.length === 0 && stack.itemsAll.length > 0) return null
+        return {
+          ...stack,
+          title: 'Ideas Being Modeled',
+          itemsAll: modelingItems,
+          itemsPreview: modelingItems.slice(0, 3),
+          count: modelingItems.length,
+        }
+      }).filter(Boolean) as typeof filtered
+    }
+
+    const totalItems = filtered.reduce((sum, s) => sum + s.count, 0)
+
+    return {
+      ...cockpit.viewModel.decide,
+      stacks: filtered,
+      totalItems,
+    }
+  }, [cockpit.viewModel, pipelineStage])
+
   // Keyboard shortcuts: D→DECIDE, A→ADVANCE, I→INVESTIGATE (only when dashboard is active)
   useEffect(() => {
     if (activeTab?.type !== 'dashboard') return
@@ -678,80 +737,94 @@ export function DashboardPage() {
     return (
       <div className="h-full overflow-auto">
         {/*
-         * Decision Cockpit
+         * Decision Cockpit — Command Center Layout
          *
-         * Stacked decision surface with four ranked bands:
-         *   DECIDE      — capital allocation & execution decisions
-         *   ADVANCE     — research, modeling, follow-up work
-         *   AWARE       — intelligence signals, monitoring
-         *   INVESTIGATE — system flags & team prompts
-         *
-         * Layout: Filters → Decision Load → DECIDE → ADVANCE → AWARE → INVESTIGATE → Pipeline
+         * Row 1: Filters
+         * Row 2: DecisionSnapshotBar (full width — scan in 5-8 seconds)
+         * Row 3: [DECIDE section | Pipeline + Insight] (two-column grid)
+         * Row 4: ADVANCE summary cards (collapsed by default)
+         * Row 5: AWARE + INVESTIGATE (compact, collapsed)
          */}
         <div className="p-3 space-y-3">
-          {/* Integrated filter row */}
+          {/* Row 1: Integrated filter row */}
           <DashboardFilters
             scope={scope}
             onScopeChange={setScope}
             portfolios={portfolios}
-            onCollapseAll={handleCollapseAll}
           />
 
-          {/* Decision load summary */}
-          <DecisionLoadStrip
-            summary={cockpit.viewModel.summary}
+          {/* Row 2: Decision Snapshot Bar */}
+          <DecisionSnapshotBar
+            viewModel={cockpit.viewModel}
+            pipelineStats={cockpit.pipelineStats}
             isLoading={cockpit.isLoading}
+            portfolioName={selectedPortfolioName}
             onScrollToBand={handleScrollToBand}
+            onOpenTradeQueue={handleOpenTradeQueue}
           />
 
-          {/* DECIDE — Requires Decision (always expanded) */}
-          <BandSection
-            id="band-DECIDE"
-            bandData={cockpit.viewModel.decide}
-            defaultExpanded
-            collapseAllTrigger={collapseAllTrigger}
-            onItemClick={handleRowClick}
-            onSnooze={cockpit.snooze}
-          />
+          {/* Row 3: Two-column — DECIDE (primary) + Pipeline & Insight (secondary) */}
+          <div className={clsx(
+            'grid grid-cols-1 gap-3',
+            decideExpanded && 'lg:grid-cols-[1fr_320px] items-stretch',
+          )}>
+            {/* Left: DECIDE — Requires Decision */}
+            <BandSection
+              id="band-DECIDE"
+              bandData={filteredDecide}
+              defaultExpanded
+              onItemClick={handleRowClick}
+              onSnooze={cockpit.snooze}
+              onExpandedChange={setDecideExpanded}
+            />
 
-          {/* ADVANCE — Needs Progress */}
-          <BandSection
+            {/* Right: Pipeline + System Insight — visible when DECIDE is expanded */}
+            {decideExpanded && (
+              <div className="flex flex-col gap-3">
+                <TradePipelineLoop
+                  stats={cockpit.pipelineStats}
+                  isLoading={cockpit.isLoading}
+                  onOpenTradeQueue={handleOpenTradeQueue}
+                  activeStage={pipelineStage}
+                  onStageSelect={setPipelineStage}
+                />
+                <SystemInsightCard
+                  viewModel={cockpit.viewModel}
+                  pipelineStats={cockpit.pipelineStats}
+                  onScrollToBand={handleScrollToBand}
+                  onOpenTradeQueue={handleOpenTradeQueue}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Row 4: ADVANCE — Summary cards (collapsed by default) */}
+          <AdvanceBandSection
             id="band-ADVANCE"
             bandData={cockpit.viewModel.advance}
-            defaultExpanded
-            collapseAllTrigger={collapseAllTrigger}
             onItemClick={handleRowClick}
             onSnooze={cockpit.snooze}
           />
 
-          {/* AWARE — Monitoring (hidden in urgent-only mode) */}
+          {/* Row 5: AWARE — Monitoring (hidden in urgent-only mode) */}
           {!scope.urgentOnly && (
             <BandSection
               id="band-AWARE"
               bandData={cockpit.viewModel.aware}
-              collapseAllTrigger={collapseAllTrigger}
               onItemClick={handleRowClick}
               onSnooze={cockpit.snooze}
             />
           )}
 
-          {/* INVESTIGATE — System flags & team prompts (hidden in urgent-only mode) */}
+          {/* Row 5b: INVESTIGATE — System flags & team prompts */}
           {!scope.urgentOnly && (
             <BandSection
               id="band-INVESTIGATE"
               bandData={cockpit.viewModel.investigate}
-              collapseAllTrigger={collapseAllTrigger}
               onItemClick={handleRowClick}
               onSnooze={cockpit.snooze}
             />
           )}
-
-          {/* Pipeline summary strip */}
-          <DashboardPipelineStrip
-            stats={cockpit.pipelineStats}
-            isLoading={cockpit.isLoading}
-            onOpenTradeQueue={handleOpenTradeQueue}
-          />
         </div>
       </div>
     )

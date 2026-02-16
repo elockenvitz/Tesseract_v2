@@ -217,10 +217,10 @@ export function computeExecutionStats(tradeIdeas: any[]): ExecutionStats {
     if (idea.stage === 'deciding' && !idea.decision_outcome) {
       decidingAges.push(ageDays)
       if (decidingOldest == null || ageDays > decidingOldest) decidingOldest = ageDays
-    } else if (idea.stage === 'active' && !idea.decision_outcome) {
+    } else if (idea.stage === 'simulating' && !idea.decision_outcome) {
       modelingAges.push(ageDays)
       if (modelingOldest == null || ageDays > modelingOldest) modelingOldest = ageDays
-    } else if (idea.stage === 'active' && idea.decision_outcome === 'accepted' && !idea.outcome) {
+    } else if (idea.decision_outcome === 'accepted' && !idea.outcome) {
       executingAges.push(ageDays)
       if (executingOldest == null || ageDays > executingOldest) executingOldest = ageDays
     }

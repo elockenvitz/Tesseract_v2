@@ -106,9 +106,9 @@ function makeThesisUpdate(assetId: string, overrides: Record<string, any> = {}):
 // ---------------------------------------------------------------------------
 
 describe('A1: Proposal Awaiting Decision', () => {
-  it('fires RED for deciding stage with no decision after 3+ days', () => {
+  it('fires RED (stale) for proposal 10+ days old', () => {
     const result = runGlobalDecisionEngine(baseArgs({
-      tradeIdeas: [makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(4) })],
+      tradeIdeas: [makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(12) })],
     }))
     const a1 = result.actionItems.find(i => i.id === 'a1-proposal-t1')
     expect(a1).toBeDefined()
@@ -117,11 +117,31 @@ describe('A1: Proposal Awaiting Decision', () => {
     expect(a1!.category).toBe('process')
   })
 
-  it('does NOT fire for deciding stage < 3 days old', () => {
+  it('fires ORANGE (aging) for proposal 5-9 days old', () => {
     const result = runGlobalDecisionEngine(baseArgs({
-      tradeIdeas: [makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(1) })],
+      tradeIdeas: [makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(7) })],
     }))
-    expect(result.actionItems.find(i => i.id === 'a1-proposal-t1')).toBeUndefined()
+    const a1 = result.actionItems.find(i => i.id === 'a1-proposal-t1')
+    expect(a1).toBeDefined()
+    expect(a1!.severity).toBe('orange')
+  })
+
+  it('fires BLUE (waiting) for proposal < 5 days old', () => {
+    const result = runGlobalDecisionEngine(baseArgs({
+      tradeIdeas: [makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(2) })],
+    }))
+    const a1 = result.actionItems.find(i => i.id === 'a1-proposal-t1')
+    expect(a1).toBeDefined()
+    expect(a1!.severity).toBe('blue')
+  })
+
+  it('fires even for brand new proposals (no age gate)', () => {
+    const result = runGlobalDecisionEngine(baseArgs({
+      tradeIdeas: [makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(0) })],
+    }))
+    const a1 = result.actionItems.find(i => i.id === 'a1-proposal-t1')
+    expect(a1).toBeDefined()
+    expect(a1!.severity).toBe('blue')
   })
 
   it('does NOT fire if decision_outcome is set', () => {
@@ -178,24 +198,35 @@ describe('A2: Execution Not Confirmed', () => {
 // A3: Idea Not Simulated
 // ---------------------------------------------------------------------------
 
-describe('A3: Idea Not Simulated', () => {
-  it('fires ORANGE for unsimulated idea after 3+ days', () => {
+describe('A3: Ideas Being Worked On', () => {
+  it('fires ORANGE for idea in "idea" stage', () => {
     const result = runGlobalDecisionEngine(baseArgs({
-      tradeIdeas: [makeIdea('t1', { stage: 'active', created_at: daysAgo(5) })],
+      tradeIdeas: [makeIdea('t1', { stage: 'idea', created_at: daysAgo(5) })],
       proposals: [],
     }))
     const a3 = result.actionItems.find(i => i.id === 'a3-unsimulated-t1')
     expect(a3).toBeDefined()
     expect(a3!.severity).toBe('orange')
     expect(a3!.ctas[0].actionKey).toBe('OPEN_TRADE_LAB_SIMULATION')
+    expect(a3!.context.stage).toBe('idea')
   })
 
-  it('does NOT fire if idea has a proposal', () => {
+  it('fires ORANGE for idea in "simulating" stage', () => {
     const result = runGlobalDecisionEngine(baseArgs({
-      tradeIdeas: [makeIdea('t1', { stage: 'active', created_at: daysAgo(5) })],
-      proposals: [{ id: 'v1', trade_queue_item_id: 't1', asset_id: 'a1' }],
+      tradeIdeas: [makeIdea('t1', { stage: 'simulating', created_at: daysAgo(2) })],
     }))
-    expect(result.actionItems.find(i => i.id === 'a3-unsimulated-t1')).toBeUndefined()
+    const a3 = result.actionItems.find(i => i.id === 'a3-unsimulated-t1')
+    expect(a3).toBeDefined()
+    expect(a3!.severity).toBe('orange')
+    expect(a3!.context.stage).toBe('simulating')
+  })
+
+  it('fires even for recently created ideas (no age threshold)', () => {
+    const result = runGlobalDecisionEngine(baseArgs({
+      tradeIdeas: [makeIdea('t1', { stage: 'idea', created_at: daysAgo(0) })],
+    }))
+    const a3 = result.actionItems.find(i => i.id === 'a3-unsimulated-t1')
+    expect(a3).toBeDefined()
   })
 
   it('does NOT fire if idea is in deciding stage', () => {
@@ -206,9 +237,9 @@ describe('A3: Idea Not Simulated', () => {
     expect(result.actionItems.find(i => i.id === 'a3-unsimulated-t1')).toBeUndefined()
   })
 
-  it('does NOT fire for idea < 3 days old', () => {
+  it('does NOT fire if idea has an outcome', () => {
     const result = runGlobalDecisionEngine(baseArgs({
-      tradeIdeas: [makeIdea('t1', { stage: 'active', created_at: daysAgo(1) })],
+      tradeIdeas: [makeIdea('t1', { stage: 'idea', outcome: 'executed' })],
     }))
     expect(result.actionItems.find(i => i.id === 'a3-unsimulated-t1')).toBeUndefined()
   })
@@ -306,15 +337,26 @@ describe('Rating Changed, No Follow-up', () => {
 // ---------------------------------------------------------------------------
 
 describe('Thesis Stale', () => {
-  it('fires ORANGE action for thesis 90+ days old', () => {
+  it('fires YELLOW action for thesis 90+ days old', () => {
     const result = runGlobalDecisionEngine(baseArgs({
       thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(100) })],
     }))
     const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
     expect(thesis).toBeDefined()
-    expect(thesis!.severity).toBe('orange')
+    expect(thesis!.severity).toBe('yellow')
     expect(thesis!.surface).toBe('action')
     expect(thesis!.category).toBe('risk')
+    expect(thesis!.dismissible).toBe(false)
+  })
+
+  it('fires ORANGE action for thesis 135+ days old', () => {
+    const result = runGlobalDecisionEngine(baseArgs({
+      thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(150) })],
+    }))
+    const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
+    expect(thesis).toBeDefined()
+    expect(thesis!.severity).toBe('orange')
+    expect(thesis!.surface).toBe('action')
     expect(thesis!.dismissible).toBe(false)
   })
 
@@ -586,7 +628,7 @@ describe('Edge Cases', () => {
       tradeIdeas: [
         makeIdea('t1', { stage: 'deciding', updated_at: daysAgo(5) }),
         makeIdea('t2', { decision_outcome: 'accepted', decided_at: daysAgo(4), outcome: null }),
-        makeIdea('t3', { stage: 'active', created_at: daysAgo(6) }),
+        makeIdea('t3', { stage: 'idea', created_at: daysAgo(6) }),
       ],
       proposals: [],
       ratingChanges: [makeRatingChange('rc1', { asset_id: 'a2' })],

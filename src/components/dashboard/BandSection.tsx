@@ -1,8 +1,8 @@
 /**
  * BandSection — Renders one CockpitBandData (DECIDE / ADVANCE / AWARE).
  *
- * Collapsible header with count badge and oldest-days indicator.
- * Body renders ActionStackCards. DECIDE is always expanded.
+ * Collapsible header with count badge.
+ * Body renders ActionStackCards.
  * Collapse state persisted in localStorage.
  */
 
@@ -87,8 +87,8 @@ interface BandSectionProps {
   defaultExpanded?: boolean
   onItemClick?: (item: DashboardItem) => void
   onSnooze?: (itemId: string, hours: number) => void
-  /** Increment to force-collapse all non-DECIDE bands */
-  collapseAllTrigger?: number
+  /** Notifies parent when expanded state changes */
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 export function BandSection({
@@ -97,42 +97,47 @@ export function BandSection({
   defaultExpanded = false,
   onItemClick,
   onSnooze,
-  collapseAllTrigger = 0,
+  onExpandedChange,
 }: BandSectionProps) {
   const band = bandData.band
   const style = BAND_STYLE[band]
   const storageKey = `cockpit-band-${band}`
-  const isDecide = band === 'DECIDE'
 
-  // DECIDE always expanded; others persist in localStorage
-  const [expanded, setExpanded] = useState(() => {
-    if (isDecide) return true
-    return readBool(storageKey, defaultExpanded)
-  })
+  const [expanded, setExpanded] = useState(() =>
+    readBool(storageKey, defaultExpanded),
+  )
 
   // Persist expand/collapse
   useEffect(() => {
-    if (!isDecide) writeBool(storageKey, expanded)
-  }, [expanded, isDecide, storageKey])
+    writeBool(storageKey, expanded)
+  }, [expanded, storageKey])
 
-  // React to collapse-all (skip DECIDE)
+  // Notify parent of expanded state changes
   useEffect(() => {
-    if (collapseAllTrigger > 0 && !isDecide) {
-      setExpanded(false)
-    }
-  }, [collapseAllTrigger, isDecide])
+    onExpandedChange?.(expanded)
+  }, [expanded, onExpandedChange])
 
   const toggleExpanded = useCallback(() => {
-    if (isDecide) return
     setExpanded(e => !e)
-  }, [isDecide])
+  }, [])
 
   // ---- Empty state ----
   if (bandData.stacks.length === 0) {
     return (
       <div id={id} className={style.container}>
-        <div className={clsx('flex items-center gap-2 px-3 py-2.5', style.headerBg)}>
-          <ChevronRight className={clsx('w-3.5 h-3.5', style.icon)} />
+        <button
+          onClick={toggleExpanded}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2.5 text-left',
+            'hover:bg-gray-50/30 dark:hover:bg-gray-700/20 transition-colors',
+            style.headerBg,
+          )}
+        >
+          {expanded ? (
+            <ChevronDown className={clsx('w-3.5 h-3.5 shrink-0', style.icon)} />
+          ) : (
+            <ChevronRight className={clsx('w-3.5 h-3.5 shrink-0', style.icon)} />
+          )}
           <h2 className={clsx('text-[13px] font-semibold', style.title)}>
             {bandData.title}
           </h2>
@@ -140,41 +145,11 @@ export function BandSection({
           <span className="text-[11px] text-gray-400 dark:text-gray-500 italic">
             {EMPTY_STATE[band]}
           </span>
-        </div>
+        </button>
       </div>
     )
   }
 
-  // ---- DECIDE: always expanded ----
-  if (isDecide) {
-    return (
-      <div id={id} className={style.container}>
-        <div className={clsx('flex items-center gap-2 px-3 py-2.5', style.headerBg)}>
-          <h2 className={clsx('text-[13px] font-semibold', style.title)}>
-            {bandData.title}
-          </h2>
-          <span className={clsx(
-            'text-[11px] font-bold px-1.5 py-px rounded-full tabular-nums min-w-[20px] text-center',
-            style.badge,
-          )}>
-            {bandData.totalItems}
-          </span>
-        </div>
-        <div className="p-2 space-y-2">
-          {bandData.stacks.map(stack => (
-            <ActionStackCard
-              key={stack.stackKey}
-              stack={stack}
-              onItemClick={onItemClick}
-              onSnooze={onSnooze}
-            />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // ---- ADVANCE / AWARE: collapsible ----
   return (
     <div id={id} className={style.container}>
       <button
@@ -208,7 +183,7 @@ export function BandSection({
               stack={stack}
               onItemClick={onItemClick}
               onSnooze={onSnooze}
-              hideItemActions={band === 'AWARE'}
+              hideItemActions
             />
           ))}
         </div>

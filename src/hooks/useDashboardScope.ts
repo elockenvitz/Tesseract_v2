@@ -10,15 +10,16 @@ import { useState, useCallback } from 'react'
 export type CoverageMode = 'mine' | 'assigned' | 'visible'
 
 export interface DashboardScope {
-  portfolioId: string | null
+  portfolioIds: string[]
   coverageMode: CoverageMode
   urgentOnly: boolean
 }
 
 function readFromURL(): DashboardScope {
   const params = new URLSearchParams(window.location.search)
+  const portfolioParam = params.get('portfolios') || params.get('portfolio') || ''
   return {
-    portfolioId: params.get('portfolio') || null,
+    portfolioIds: portfolioParam ? portfolioParam.split(',').filter(Boolean) : [],
     coverageMode: (params.get('coverage') as CoverageMode) || 'mine',
     urgentOnly: params.get('urgent') === '1',
   }
@@ -27,10 +28,13 @@ function readFromURL(): DashboardScope {
 function writeToURL(scope: DashboardScope): void {
   const params = new URLSearchParams(window.location.search)
 
-  if (scope.portfolioId) {
-    params.set('portfolio', scope.portfolioId)
+  // Clean up legacy single-portfolio param
+  params.delete('portfolio')
+
+  if (scope.portfolioIds.length > 0) {
+    params.set('portfolios', scope.portfolioIds.join(','))
   } else {
-    params.delete('portfolio')
+    params.delete('portfolios')
   }
 
   if (scope.coverageMode !== 'mine') {

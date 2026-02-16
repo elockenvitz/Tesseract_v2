@@ -32,12 +32,12 @@ interface StackConfig {
 const STACK_CONFIG: Record<CockpitStackKind, StackConfig> = {
   proposal:    { title: 'Proposals Awaiting Decision', icon: 'Scale',          accentColor: 'red',   ctaLabel: 'Review All' },
   execution:   { title: 'Execution Confirmations',     icon: 'CheckCircle2',   accentColor: 'red',   ctaLabel: 'Confirm' },
-  simulation:  { title: 'Ideas Not Simulated',         icon: 'FlaskConical',   accentColor: 'amber', ctaLabel: 'Open Trade Lab' },
-  thesis:      { title: 'Stale Thesis',                icon: 'FileText',       accentColor: 'amber', ctaLabel: 'Review' },
+  simulation:  { title: 'Ideas Being Worked On',        icon: 'FlaskConical',   accentColor: 'amber', ctaLabel: 'Open Trade Lab' },
+  thesis:      { title: 'Stale Thesis',                icon: 'FileText',       accentColor: 'amber', ctaLabel: 'Review Assets' },
   deliverable: { title: 'Overdue Deliverables',        icon: 'ListTodo',       accentColor: 'amber', ctaLabel: 'Open Projects' },
   rating:      { title: 'Rating Changes',              icon: 'AlertTriangle',  accentColor: 'blue',  ctaLabel: 'Create Ideas' },
   signal:      { title: 'Intelligence Signals',        icon: 'Radar',          accentColor: 'blue',  ctaLabel: 'View' },
-  project:     { title: 'Projects Needing Attention',  icon: 'FolderKanban',   accentColor: 'amber', ctaLabel: 'Open' },
+  project:     { title: 'Projects Needing Attention',  icon: 'FolderKanban',   accentColor: 'amber', ctaLabel: 'Open Projects' },
   prompt:      { title: 'Team Prompts',                icon: 'MessageSquare',  accentColor: 'violet', ctaLabel: 'Respond' },
   flag:        { title: 'System Flags',                icon: 'Flag',           accentColor: 'cyan',  ctaLabel: 'Review' },
   other:       { title: 'Other Items',                 icon: 'HelpCircle',     accentColor: 'gray',  ctaLabel: 'Open' },
@@ -170,17 +170,17 @@ export function formatStackSubtitle(
 ): string {
   const parts: string[] = []
 
-  if (oldestDays > 0) {
-    parts.push(`Oldest ${oldestDays}d`)
+  if (band === 'DECIDE' && oldestDays >= 7) {
+    parts.push(`${oldestDays}d stalling`)
+  } else if (band === 'ADVANCE' && oldestDays >= 14) {
+    parts.push(`${oldestDays}d since last review`)
   }
 
   if (portfolioCount > 0) {
     parts.push(`${portfolioCount} portfolio${portfolioCount !== 1 ? 's' : ''}`)
   }
 
-  if (band === 'DECIDE') {
-    parts.push('blocking decision')
-  } else if (band === 'ADVANCE') {
+  if (band === 'ADVANCE') {
     parts.push(`${count} item${count !== 1 ? 's' : ''} pending`)
   } else if (band === 'INVESTIGATE') {
     parts.push(`${count} to review`)
@@ -242,6 +242,15 @@ export function getStackCTA(
       }
 
     case 'thesis':
+      return {
+        label: config.ctaLabel,
+        onClick: () => navigate({
+          type: 'lists',
+          id: 'lists',
+          title: 'Lists',
+        }),
+      }
+
     case 'rating':
     case 'signal':
     case 'other':

@@ -1,13 +1,12 @@
 /**
- * A3: Idea Not Simulated — ORANGE after 3 days since idea creation.
+ * A3: Ideas Being Worked On — trade ideas in the pre-deciding pipeline.
  *
- * Condition: trade idea exists (active, no outcome), no proposal/variant found,
- * created >= 3 days ago.
+ * Captures ALL active trade ideas in 'idea' or 'simulating' stages.
+ * These appear in ADVANCE as "Ideas Being Worked On" and can be
+ * filtered to "Ideas Being Modeled" (simulating only) via the pipeline.
  */
 
 import type { DecisionItem } from '../types'
-
-const UNSIMULATED_THRESHOLD_DAYS = 3
 
 export function evaluateIdeaNotSimulated(data: {
   tradeIdeas?: any[]
@@ -17,51 +16,64 @@ export function evaluateIdeaNotSimulated(data: {
   const items: DecisionItem[] = []
   if (!data.tradeIdeas) return items
 
-  // Build set of idea IDs that have proposals/variants
-  const simulatedIds = new Set<string>()
-  if (data.proposals) {
-    for (const p of data.proposals) {
-      if (p.trade_queue_item_id) simulatedIds.add(p.trade_queue_item_id)
-    }
-  }
-
   for (const idea of data.tradeIdeas) {
     // Only active ideas without an outcome
     if (idea.outcome != null) continue
-    // Skip if already at deciding stage or beyond (has a proposal flow)
-    if (idea.stage === 'deciding') continue
-    // Skip if simulated
-    if (simulatedIds.has(idea.id)) continue
+    // Only pre-deciding stages (idea + simulating)
+    if (idea.stage !== 'idea' && idea.stage !== 'simulating') continue
 
     const createdAt = new Date(idea.created_at)
     const ageDays = Math.floor((data.now.getTime() - createdAt.getTime()) / 86400000)
-    if (ageDays < UNSIMULATED_THRESHOLD_DAYS) continue
 
     const ticker = idea.assets?.symbol || idea.asset_symbol || ''
     const portfolio = idea.portfolios?.name || idea.portfolio_name || ''
+    const isPair = !!idea._isPairTrade
+    const tradeIdeaId = isPair ? idea._pairLegIds?.[0] ?? idea.id : idea.id
+
+    // Build pair trade display strings
+    const buyTickers: string[] = idea._buyTickers ?? []
+    const sellTickers: string[] = idea._sellTickers ?? []
+    const pairActionLabel = isPair
+      ? [
+          buyTickers.length > 0 ? `Buy ${buyTickers.join(', ')}` : null,
+          sellTickers.length > 0 ? `Sell ${sellTickers.join(', ')}` : null,
+        ].filter(Boolean).join(' / ')
+      : null
+
+    const isModeling = idea.stage === 'simulating'
 
     items.push({
       id: `a3-unsimulated-${idea.id}`,
       surface: 'action',
       severity: 'orange',
       category: 'process',
-      title: 'Idea Not Simulated',
+      title: isPair
+        ? (isModeling ? 'Pair Trade Being Modeled' : 'Pair Trade Being Worked On')
+        : (isModeling ? 'Idea Being Modeled' : 'Idea Being Worked On'),
       titleKey: 'IDEA_NOT_SIMULATED',
-      description: 'Trade idea created without portfolio impact test.',
+      description: isModeling
+        ? (isPair ? `Pair trade ${ticker} is being modeled.` : 'Trade idea is being modeled.')
+        : (isPair ? `Pair trade ${ticker} is in the pipeline.` : 'Trade idea is in the pipeline.'),
       chips: [
         { label: 'Ticker', value: ticker },
+        ...(isPair ? [{ label: 'Type', value: 'Pair' }] : []),
         { label: 'Age', value: `${ageDays}d` },
         ...(portfolio ? [{ label: 'Portfolio', value: portfolio }] : []),
       ],
       context: {
         assetId: idea.asset_id,
         assetTicker: ticker,
-        tradeIdeaId: idea.id,
+        tradeIdeaId,
         portfolioId: idea.portfolio_id,
         portfolioName: portfolio || undefined,
+        action: pairActionLabel
+          ?? (idea.action ? idea.action.charAt(0).toUpperCase() + idea.action.slice(1) : undefined),
+        proposedWeight: idea.proposed_weight ?? undefined,
+        isPairTrade: isPair || undefined,
+        stage: idea.stage,
       },
       ctas: [
-        { label: 'Simulate', actionKey: 'OPEN_TRADE_LAB_SIMULATION', kind: 'primary', payload: { assetId: idea.asset_id, tradeIdeaId: idea.id } },
+        { label: 'Simulate', actionKey: 'OPEN_TRADE_LAB_SIMULATION', kind: 'primary', payload: { assetId: idea.asset_id, tradeIdeaId } },
       ],
       dismissible: false,
       decisionTier: 'capital',

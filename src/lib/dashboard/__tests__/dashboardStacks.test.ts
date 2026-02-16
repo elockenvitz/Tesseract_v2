@@ -161,9 +161,14 @@ describe('computeAttentionScore', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatStackSubtitle', () => {
-  it('full subtitle with age, portfolios, and band context', () => {
+  it('DECIDE with stalling age shows stalling label', () => {
     const result = formatStackSubtitle(13, 3, 'DECIDE', 5)
-    expect(result).toBe('Oldest 13d \u00B7 3 portfolios \u00B7 blocking decision')
+    expect(result).toBe('13d stalling \u00B7 3 portfolios \u00B7 blocking decision')
+  })
+
+  it('DECIDE below threshold omits age', () => {
+    const result = formatStackSubtitle(5, 2, 'DECIDE', 3)
+    expect(result).toBe('2 portfolios \u00B7 blocking decision')
   })
 
   it('no age omits age part', () => {
@@ -171,9 +176,14 @@ describe('formatStackSubtitle', () => {
     expect(result).toBe('1 portfolio \u00B7 2 items pending')
   })
 
-  it('singular portfolio', () => {
+  it('ADVANCE with stale age shows since-last-review', () => {
+    const result = formatStackSubtitle(15, 1, 'ADVANCE', 3)
+    expect(result).toBe('15d since last review \u00B7 1 portfolio \u00B7 3 items pending')
+  })
+
+  it('AWARE below threshold omits age', () => {
     const result = formatStackSubtitle(5, 1, 'AWARE', 3)
-    expect(result).toBe('Oldest 5d \u00B7 1 portfolio \u00B7 3 signals')
+    expect(result).toBe('1 portfolio \u00B7 3 signals')
   })
 })
 

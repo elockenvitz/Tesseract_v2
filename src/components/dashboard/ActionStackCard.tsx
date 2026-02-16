@@ -12,7 +12,7 @@
  *                      "Show all N items" (expand toggle)
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { clsx } from 'clsx'
 import {
   Scale,
@@ -101,8 +101,30 @@ export function ActionStackCard({
 }: ActionStackCardProps) {
   const [expanded, setExpanded] = useState(false)
   const Icon = ICON_MAP[stack.icon] ?? HelpCircle
-  const visibleItems = expanded ? stack.itemsAll : stack.itemsPreview
-  const hasMore = stack.count > stack.itemsPreview.length
+  const isDecide = stack.band === 'DECIDE'
+  // DECIDE shows up to 6 items before collapsing; others show 3
+  const previewLimit = isDecide ? 6 : stack.itemsPreview.length
+  const previewItems = isDecide ? stack.itemsAll.slice(0, previewLimit) : stack.itemsPreview
+  const visibleItems = expanded ? stack.itemsAll : previewItems
+  const hasMore = stack.count > previewLimit
+
+  // Microcopy for DECIDE stacks: "7 items · 2 stale (>10d) · 3 aging (>5d)"
+  const decideMicrocopy = useMemo(() => {
+    if (!isDecide) return null
+    const isProposalStack = stack.kind === 'proposal'
+    if (isProposalStack) {
+      const stale = stack.itemsAll.filter(i => i.severity === 'HIGH').length
+      const aging = stack.itemsAll.filter(i => i.severity === 'MED').length
+      const parts: string[] = [`${stack.count} item${stack.count !== 1 ? 's' : ''}`]
+      if (stale > 0) parts.push(`${stale} stale (>10d)`)
+      if (aging > 0) parts.push(`${aging} aging (>5d)`)
+      return parts.join(' \u00B7 ')
+    }
+    const highCount = stack.itemsAll.filter(i => i.severity === 'HIGH').length
+    const parts: string[] = [`${stack.count} item${stack.count !== 1 ? 's' : ''}`]
+    if (highCount > 0) parts.push(`${highCount} high impact`)
+    return parts.join(' \u00B7 ')
+  }, [isDecide, stack])
 
   const toggleExpanded = useCallback(() => setExpanded(e => !e), [])
 
@@ -150,6 +172,13 @@ export function ActionStackCard({
         <div className="text-[11px] text-gray-400 dark:text-gray-500 leading-tight pl-6">
           {stack.subtitle}
         </div>
+
+        {/* DECIDE microcopy: "7 items · 3 high impact · oldest 13d" */}
+        {decideMicrocopy && (
+          <div className="text-[10px] text-gray-400 dark:text-gray-500 pl-6 tabular-nums">
+            {decideMicrocopy}
+          </div>
+        )}
       </div>
 
       {/* Item rows */}
@@ -161,6 +190,7 @@ export function ActionStackCard({
               item={item}
               onItemClick={onItemClick}
               hideAction={hideItemActions}
+              showImpact={isDecide}
             />
           ))}
         </div>
@@ -180,7 +210,7 @@ export function ActionStackCard({
           ) : (
             <>
               <ChevronRight className="w-3 h-3" />
-              Show all {stack.count} items
+              {isDecide ? `View all ${stack.count}` : `Show all ${stack.count} items`}
             </>
           )}
         </button>

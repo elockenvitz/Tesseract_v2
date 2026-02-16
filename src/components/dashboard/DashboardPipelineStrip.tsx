@@ -2,7 +2,7 @@
  * DashboardPipelineStrip — Visual pipeline card.
  *
  * Shows trade idea flow through stages as a horizontal funnel:
- *   [Awaiting Decision] → [Modeling] → [Executing]
+ *   [Modeling] → [Awaiting Decision] → [Executing]
  *
  * Each stage is a clickable segment with count, median age, and visual weight.
  * Colored to indicate bottlenecks (red if count > 0 and median high).
@@ -60,22 +60,8 @@ export function DashboardPipelineStrip({
         )}
       </div>
 
-      {/* Pipeline stages */}
+      {/* Pipeline stages — ordered by process flow: Model → Decide → Execute */}
       <div className="flex items-stretch">
-        <PipelineStage
-          label="Awaiting Decision"
-          count={deciding.count}
-          medianDays={deciding.medianDays}
-          oldestDays={deciding.oldestDays}
-          accentClass={deciding.count > 0
-            ? 'text-red-600 dark:text-red-400'
-            : 'text-gray-400 dark:text-gray-500'}
-          bgClass={deciding.count > 0
-            ? 'bg-red-50/40 dark:bg-red-950/10'
-            : ''}
-          onClick={() => onOpenTradeQueue('deciding')}
-        />
-        <ArrowRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 shrink-0 self-center -mx-0.5 z-10" />
         <PipelineStage
           label="Modeling"
           count={modeling.count}
@@ -88,6 +74,20 @@ export function DashboardPipelineStrip({
             ? 'bg-amber-50/30 dark:bg-amber-950/10'
             : ''}
           onClick={() => onOpenTradeQueue('modeling')}
+        />
+        <ArrowRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 shrink-0 self-center -mx-0.5 z-10" />
+        <PipelineStage
+          label="Awaiting Decision"
+          count={deciding.count}
+          medianDays={deciding.medianDays}
+          oldestDays={deciding.oldestDays}
+          accentClass={deciding.count > 0
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-gray-400 dark:text-gray-500'}
+          bgClass={deciding.count > 0
+            ? 'bg-red-50/40 dark:bg-red-950/10'
+            : ''}
+          onClick={() => onOpenTradeQueue('deciding')}
         />
         <ArrowRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 shrink-0 self-center -mx-0.5 z-10" />
         <PipelineStage

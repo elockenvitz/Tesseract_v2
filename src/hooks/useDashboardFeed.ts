@@ -29,7 +29,7 @@ import type { ExecutionStats } from '../components/dashboard/ExecutionSnapshotCa
 // ---------------------------------------------------------------------------
 
 export interface DashboardFeedFilters {
-  portfolioId: string | null
+  portfolioIds: string[]
   urgentOnly: boolean
 }
 
@@ -78,14 +78,21 @@ export function useDashboardFeed(
     isLoading: attentionLoading,
   } = useAttention({ windowHours: 24 })
 
+  // ---- Portfolio filter set (empty = all) ----
+  const portfolioSet = useMemo(
+    () => new Set(filters.portfolioIds),
+    [filters.portfolioIds],
+  )
+  const hasPortfolioFilter = portfolioSet.size > 0
+
   // ---- Pipeline stats ----
   const pipelineStats = useMemo(() => {
     let ideas = tradeIdeas
-    if (filters.portfolioId) {
-      ideas = ideas.filter((i: any) => i.portfolio_id === filters.portfolioId)
+    if (hasPortfolioFilter) {
+      ideas = ideas.filter((i: any) => portfolioSet.has(i.portfolio_id))
     }
     return computeExecutionStats(ideas)
-  }, [tradeIdeas, filters.portfolioId])
+  }, [tradeIdeas, portfolioSet, hasPortfolioFilter])
 
   // ---- Flatten attention sections ----
   const flatAttentionItems = useMemo(() => {
@@ -99,21 +106,21 @@ export function useDashboardFeed(
 
   // ---- Flatten engine rollups for portfolio filter ----
   const filteredEngineAction = useMemo(() => {
-    if (filters.portfolioId) {
+    if (hasPortfolioFilter) {
       return flattenForFilter(
         engineSlice.action,
-        i => i.context.portfolioId === filters.portfolioId,
+        i => portfolioSet.has(i.context.portfolioId),
       )
     }
     return engineSlice.action
-  }, [engineSlice.action, filters.portfolioId])
+  }, [engineSlice.action, portfolioSet, hasPortfolioFilter])
 
   const filteredEngineIntel = useMemo(() => {
-    if (filters.portfolioId) {
-      return engineSlice.intel.filter(i => i.context.portfolioId === filters.portfolioId)
+    if (hasPortfolioFilter) {
+      return engineSlice.intel.filter(i => portfolioSet.has(i.context.portfolioId))
     }
     return engineSlice.intel
-  }, [engineSlice.intel, filters.portfolioId])
+  }, [engineSlice.intel, portfolioSet, hasPortfolioFilter])
 
   // ---- Map everything to DashboardItem[] ----
   const allItems = useMemo(() => {
@@ -123,9 +130,9 @@ export function useDashboardFeed(
       flatAttentionItems,
       navigate,
       handleSnooze,
-      filters.portfolioId,
+      portfolioSet,
     )
-  }, [filteredEngineAction, filteredEngineIntel, flatAttentionItems, navigate, handleSnooze, filters.portfolioId])
+  }, [filteredEngineAction, filteredEngineIntel, flatAttentionItems, navigate, handleSnooze, portfolioSet])
 
   // ---- Filter snoozed + urgent-only, split by band ----
   const { now, soon, aware, totalCount } = useMemo(() => {

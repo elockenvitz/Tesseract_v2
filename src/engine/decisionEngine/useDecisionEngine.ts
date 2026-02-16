@@ -128,6 +128,8 @@ export function useDecisionEngine(): UseDecisionEngineResult {
           id, asset_id, portfolio_id, action, stage, rationale,
           decision_outcome, decided_at, outcome, outcome_at,
           visibility_tier, created_by, created_at, updated_at,
+          pair_id, pair_trade_id, pair_leg_type,
+          proposed_weight, urgency,
           assets:asset_id (id, symbol, company_name),
           portfolios:portfolio_id (id, name)
         `)
@@ -137,11 +139,68 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         .limit(100)
 
       if (error) throw error
-      return (data || []).map((d: any) => ({
+      const rows = (data || []).map((d: any) => ({
         ...d,
         asset_symbol: d.assets?.symbol,
         portfolio_name: d.portfolios?.name,
       }))
+
+      // Group pair trade legs into synthetic combined rows.
+      // Support both pair_id (new) and pair_trade_id (legacy).
+      const pairGroups = new Map<string, any[]>()
+      const singles: any[] = []
+      for (const row of rows) {
+        const pairKey = row.pair_id || row.pair_trade_id
+        if (pairKey) {
+          const group = pairGroups.get(pairKey) || []
+          group.push(row)
+          pairGroups.set(pairKey, group)
+        } else {
+          singles.push(row)
+        }
+      }
+
+      for (const [pairId, legs] of pairGroups) {
+        if (legs.length < 2) {
+          // Single leg without partner — treat as normal
+          singles.push(...legs)
+          continue
+        }
+
+        // Split legs by action: buy/add = long side, sell/trim = short side
+        const buyLegs = legs.filter((l: any) => l.action === 'buy' || l.action === 'add')
+        const sellLegs = legs.filter((l: any) => l.action === 'sell' || l.action === 'trim')
+
+        // Build ticker labels (e.g., "LLY, PFE" / "CLOV, GH")
+        const buyTickers = buyLegs.map((l: any) => l.assets?.symbol || l.asset_symbol || '').filter(Boolean)
+        const sellTickers = sellLegs.map((l: any) => l.assets?.symbol || l.asset_symbol || '').filter(Boolean)
+
+        const combinedTicker = [
+          buyTickers.length > 0 ? buyTickers.join(', ') : null,
+          sellTickers.length > 0 ? sellTickers.join(', ') : null,
+        ].filter(Boolean).join(' / ')
+
+        const baseLeg = buyLegs[0] || legs[0]
+
+        // Synthetic combined row
+        singles.push({
+          ...baseLeg,
+          id: `pair-${pairId}`,
+          asset_symbol: combinedTicker,
+          assets: { ...baseLeg.assets, symbol: combinedTicker },
+          _isPairTrade: true,
+          _pairLegIds: legs.map((l: any) => l.id),
+          _buyTickers: buyTickers,
+          _sellTickers: sellTickers,
+          // Use earliest created_at for age
+          created_at: legs.reduce(
+            (earliest: string, l: any) => l.created_at < earliest ? l.created_at : earliest,
+            legs[0].created_at,
+          ),
+        })
+      }
+
+      return singles
     },
     enabled: !!coverage?.portfolioIds?.length,
     staleTime: 60_000,
@@ -155,7 +214,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
 
       const { data, error } = await supabase
         .from('lab_variants')
-        .select('id, trade_queue_item_id, asset_id')
+        .select('id, trade_queue_item_id, asset_id, sizing_input, computed')
         .not('trade_queue_item_id', 'is', null)
         .limit(200)
 
@@ -174,7 +233,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
 
       const { data: ratings } = await supabase
         .from('analyst_ratings')
-        .select('id, asset_id, user_id, updated_at')
+        .select('id, asset_id, user_id, updated_at, assets:asset_id (symbol)')
         .in('asset_id', coverage.assetIds)
 
       if (!ratings?.length) return []
@@ -202,7 +261,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         return {
           ...h,
           asset_id: rating?.asset_id,
-          asset_symbol: '',
+          asset_symbol: (rating as any)?.assets?.symbol || '',
         }
       })
     },
@@ -288,7 +347,43 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     staleTime: 120_000,
   })
 
-  // ---- 7. Run engine (memoized) ----
+  // ---- 7. Enrich trade ideas with variant sizing ----
+  const enrichedTradeIdeas = useMemo(() => {
+    if (!tradeIdeas?.length || !proposals?.length) return tradeIdeas ?? []
+
+    // Build map: trade_queue_item_id → target_weight from variant computed data
+    const weightByItemId = new Map<string, number>()
+    for (const p of proposals) {
+      if (p.trade_queue_item_id && p.computed?.target_weight != null) {
+        weightByItemId.set(p.trade_queue_item_id, p.computed.target_weight)
+      }
+    }
+
+    if (weightByItemId.size === 0) return tradeIdeas
+
+    return tradeIdeas.map((idea: any) => {
+      // For pair trades, sum target weights from all leg IDs
+      if (idea._isPairTrade && idea._pairLegIds) {
+        let totalWeight = 0
+        let found = false
+        for (const legId of idea._pairLegIds) {
+          const w = weightByItemId.get(legId)
+          if (w != null) {
+            totalWeight += w
+            found = true
+          }
+        }
+        if (found) return { ...idea, proposed_weight: totalWeight }
+        return idea
+      }
+
+      const w = weightByItemId.get(idea.id)
+      if (w != null) return { ...idea, proposed_weight: w }
+      return idea
+    })
+  }, [tradeIdeas, proposals])
+
+  // ---- 8. Run engine (memoized) ----
   const result = useMemo<GlobalDecisionEngineResult | null>(() => {
     if (!userId || coverageLoading) return null
 
@@ -300,14 +395,14 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         portfolioIds: coverage?.portfolioIds ?? [],
       },
       data: {
-        tradeIdeas: tradeIdeas ?? [],
+        tradeIdeas: enrichedTradeIdeas,
         proposals: proposals ?? [],
         ratingChanges: ratingChanges ?? [],
         thesisUpdates: thesisUpdates ?? [],
         projects: projects ?? [],
       },
     })
-  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
+  }, [userId, coverage, enrichedTradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
 
   // ---- 8. Selectors ----
   // Rollup items have children — asset/portfolio selectors unwrap them

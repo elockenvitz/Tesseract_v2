@@ -5,7 +5,7 @@
  * and potentially by asset-level action loop.
  */
 
-export type DecisionSeverity = 'red' | 'orange' | 'blue' | 'gray'
+export type DecisionSeverity = 'red' | 'orange' | 'yellow' | 'blue' | 'gray'
 export type DecisionSurface = 'action' | 'intel'
 export type DecisionCategory =
   | 'process'
@@ -39,6 +39,12 @@ export type DecisionContext = {
   urgency?: string
   /** Rationale text from trade idea */
   rationale?: string
+  /** Proposed weight % for trade proposals */
+  proposedWeight?: number
+  /** Whether this item represents a pair trade */
+  isPairTrade?: boolean
+  /** Original trade queue stage (idea, simulating, deciding) */
+  stage?: string
 }
 
 export type DecisionCTA = {
