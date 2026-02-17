@@ -80,7 +80,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
           .eq('created_by', userId),
         supabase
           .from('portfolio_team')
-          .select('portfolio_id')
+          .select('portfolio_id, role')
           .eq('user_id', userId),
       ])
 
@@ -89,6 +89,17 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         ...(teamRes.data?.map(t => t.portfolio_id) ?? []),
       ]
       const uniquePortfolioIds = [...new Set(portfolioIds)]
+
+      // Build role map: portfolio owners are implicitly PMs
+      const roleByPortfolioId: Record<string, string> = {}
+      for (const p of ownedRes.data ?? []) {
+        roleByPortfolioId[p.id] = 'Portfolio Manager'
+      }
+      for (const t of teamRes.data ?? []) {
+        if (!roleByPortfolioId[t.portfolio_id]) {
+          roleByPortfolioId[t.portfolio_id] = t.role || 'Analyst'
+        }
+      }
 
       // Assets from portfolio holdings + assets user has researched
       const [holdingsRes, researchedRes] = await Promise.all([
@@ -110,7 +121,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         ...(researchedRes.data?.map(c => c.asset_id) ?? []),
       ])]
 
-      return { portfolioIds: uniquePortfolioIds, assetIds }
+      return { portfolioIds: uniquePortfolioIds, assetIds, roleByPortfolioId }
     },
     enabled: !!userId,
     staleTime: 300_000,
@@ -206,7 +217,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     staleTime: 60_000,
   })
 
-  // ---- 3. Fetch proposals ----
+  // ---- 3. Fetch lab variant proposals (for sizing enrichment) ----
   const { data: proposals, isLoading: proposalsLoading } = useQuery({
     queryKey: ['decision-engine-proposals', userId, coverage?.portfolioIds],
     queryFn: async () => {
@@ -223,6 +234,29 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     },
     enabled: !!coverage?.portfolioIds?.length,
     staleTime: 120_000,
+  })
+
+  // ---- 3b. Fetch active trade_proposals (multi-portfolio proposals) ----
+  const { data: tradeProposals, isLoading: tradeProposalsLoading } = useQuery({
+    queryKey: ['decision-engine-trade-proposals', userId, coverage?.portfolioIds],
+    queryFn: async () => {
+      if (!coverage?.portfolioIds?.length) return []
+
+      const { data, error } = await supabase
+        .from('trade_proposals')
+        .select(`
+          id, trade_queue_item_id, portfolio_id, weight, shares,
+          is_active,
+          portfolios:portfolio_id (id, name)
+        `)
+        .eq('is_active', true)
+        .in('portfolio_id', coverage.portfolioIds)
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!coverage?.portfolioIds?.length,
+    staleTime: 60_000,
   })
 
   // ---- 4. Fetch rating changes ----
@@ -383,6 +417,61 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     })
   }, [tradeIdeas, proposals])
 
+  // ---- 7b. Expand deciding trade ideas by their trade_proposals ----
+  // A single trade_queue_item in 'deciding' can have active proposals
+  // across multiple portfolios. Expand into one row per proposal so the
+  // evaluator creates a DecisionItem for each portfolio.
+  const expandedTradeIdeas = useMemo(() => {
+    if (!tradeProposals?.length) return enrichedTradeIdeas
+
+    // Group proposals by trade_queue_item_id
+    const proposalsByItemId = new Map<string, any[]>()
+    for (const tp of tradeProposals) {
+      const list = proposalsByItemId.get(tp.trade_queue_item_id) || []
+      list.push(tp)
+      proposalsByItemId.set(tp.trade_queue_item_id, list)
+    }
+
+    const result: any[] = []
+    for (const idea of enrichedTradeIdeas) {
+      if (idea.stage !== 'deciding' || idea.decision_outcome != null) {
+        result.push(idea)
+        continue
+      }
+
+      // Check for pair trade — use first leg ID for lookup
+      const lookupId = idea._isPairTrade && idea._pairLegIds
+        ? idea._pairLegIds[0]
+        : idea.id
+      const proposals = proposalsByItemId.get(lookupId)
+
+      if (!proposals || proposals.length <= 1) {
+        // No multi-portfolio expansion needed
+        result.push(idea)
+        continue
+      }
+
+      // Expand: one row per proposal portfolio
+      for (const tp of proposals) {
+        const portfolioName = (tp.portfolios as any)?.name || 'Unknown'
+        result.push({
+          ...idea,
+          // Override portfolio to match this proposal
+          portfolio_id: tp.portfolio_id,
+          portfolios: tp.portfolios,
+          portfolio_name: portfolioName,
+          // Use proposal weight if available
+          proposed_weight: tp.weight != null ? Number(tp.weight) : idea.proposed_weight,
+          // Unique ID per expansion so dedup doesn't collapse them
+          id: `${idea.id}__portfolio_${tp.portfolio_id}`,
+          _originalTradeIdeaId: idea.id,
+        })
+      }
+    }
+
+    return result
+  }, [enrichedTradeIdeas, tradeProposals])
+
   // ---- 8. Run engine (memoized) ----
   const result = useMemo<GlobalDecisionEngineResult | null>(() => {
     if (!userId || coverageLoading) return null
@@ -395,14 +484,15 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         portfolioIds: coverage?.portfolioIds ?? [],
       },
       data: {
-        tradeIdeas: enrichedTradeIdeas,
+        tradeIdeas: expandedTradeIdeas,
         proposals: proposals ?? [],
         ratingChanges: ratingChanges ?? [],
         thesisUpdates: thesisUpdates ?? [],
         projects: projects ?? [],
+        roleByPortfolioId: coverage?.roleByPortfolioId ?? {},
       },
     })
-  }, [userId, coverage, enrichedTradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
+  }, [userId, coverage, expandedTradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
 
   // ---- 8. Selectors ----
   // Rollup items have children — asset/portfolio selectors unwrap them
@@ -437,7 +527,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
   }, [result])
 
   const isLoading = coverageLoading || ideasLoading || proposalsLoading ||
-    ratingsLoading || thesisLoading || projectsLoading
+    tradeProposalsLoading || ratingsLoading || thesisLoading || projectsLoading
 
   return {
     result,

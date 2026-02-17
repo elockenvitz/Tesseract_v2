@@ -4,8 +4,8 @@
  * Tiers: Stale (10d+ red), Aging (5d+ orange), Waiting (<5d blue).
  * Urgency field from the trade idea bumps severity up one tier.
  *
- * When user is an analyst (not the proposal's owner/PM), the item shows
- * "Awaiting PM" status with a "Prompt PM" CTA instead of "Review".
+ * Uses per-portfolio role to determine whether the current user is
+ * the decision maker (PM) or should prompt the PM.
  */
 
 import type { DecisionItem, DecisionSeverity } from '../types'
@@ -24,11 +24,10 @@ export function evaluateProposalAwaiting(data: {
   now: Date
   userId?: string
   role?: string
+  roleByPortfolioId?: Record<string, string>
 }): DecisionItem[] {
   const items: DecisionItem[] = []
   if (!data.tradeIdeas) return items
-
-  const isAnalyst = data.role === 'analyst'
 
   for (const idea of data.tradeIdeas) {
     if (idea.stage !== 'deciding' || idea.decision_outcome != null) continue
@@ -40,12 +39,15 @@ export function evaluateProposalAwaiting(data: {
     const ticker = idea.assets?.symbol || idea.asset_symbol || ''
     const isPair = !!idea._isPairTrade
 
-    // Analyst who didn't create the proposal → can't review, can only prompt PM
-    const isCreator = data.userId && idea.created_by === data.userId
-    const needsPM = isAnalyst && !isCreator
+    // Determine if user is the PM (decision maker) for this proposal's portfolio
+    const portfolioRole = data.roleByPortfolioId?.[idea.portfolio_id]
+    const isPM = portfolioRole === 'Portfolio Manager'
+    const needsPM = !isPM
 
     // For pair trades, navigate to the first leg's trade queue entry
-    const tradeIdeaId = isPair ? idea._pairLegIds?.[0] ?? idea.id : idea.id
+    // For expanded multi-portfolio items, use the original trade idea ID
+    const baseId = idea._originalTradeIdeaId ?? idea.id
+    const tradeIdeaId = isPair ? idea._pairLegIds?.[0] ?? baseId : baseId
 
     const ctas = needsPM
       ? [{

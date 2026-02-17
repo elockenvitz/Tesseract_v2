@@ -15,9 +15,9 @@ import {
   SlidersHorizontal, CalendarRange, Trash2, Check, CheckSquare, Square,
   Download, Tag, ListPlus, AlertCircle, Loader2, MoreHorizontal, Clock,
   TrendingDown, Bell, RefreshCw, Activity, Settings2, GripVertical, Eye, EyeOff,
-  ChevronRight, Pin, PinOff, Save, Columns3, GitBranch, FolderTree,
+  ChevronRight, ChevronLeft, Pin, PinOff, Save, Columns3, GitBranch, FolderTree,
   Layers, GripHorizontal, FolderOpen, Folder, Maximize2, Minimize2, Users, FileEdit,
-  Flag, Keyboard, HelpCircle, Sparkles, AlertTriangle, Zap, WrapText
+  Flag, Keyboard, HelpCircle, Sparkles, AlertTriangle, Zap, WrapText, FolderPlus
 } from 'lucide-react'
 import { PriorityBadge } from '../ui/PriorityBadge'
 import { supabase } from '../../lib/supabase'
@@ -47,30 +47,28 @@ import { QuickPromptInput } from './QuickPromptInput'
 import { AIColumnCell } from './AIColumnCell'
 import { useUserAssetPriorities, useFirmAssetPriorities, useSpecificUserPriorities, Priority } from '../../hooks/useUserAssetPriority'
 import { MiniChart } from '../ideas/widgets/MiniChart'
+import { PriceTargetsSummary } from '../outcomes/PriceTargetsSummary'
 import './table-styles.css'
 
 // ============================================================================
 // Types & Constants
 // ============================================================================
 
-type ViewMode = 'table' | 'kanban' | 'tree'
-type GroupByOption = 'none' | 'sector' | 'priority' | 'stage' | 'theme'
+type ViewMode = 'table' | 'kanban'
+type GroupByOption = 'none' | 'sector' | 'priority' | 'stage' | 'listGroup' | 'contributor'
 type DensityMode = 'comfortable' | 'compact' | 'ultra'
-type KanbanOrganization = 'priority' | 'stage' | 'workflow'
-type TreeOrganization = 'theme' | 'sector' | 'priority' | 'list' | 'workflow' | 'portfolio'
+type KanbanOrganization = 'priority' | 'stage'
 
 const GROUP_BY_OPTIONS: { value: GroupByOption; label: string; icon: any }[] = [
   { value: 'none', label: 'No Grouping', icon: List },
   { value: 'sector', label: 'By Sector', icon: Layers },
   { value: 'priority', label: 'By Priority', icon: AlertCircle },
-  { value: 'stage', label: 'By Stage', icon: GitBranch },
-  { value: 'theme', label: 'By Theme', icon: FolderTree }
+  { value: 'stage', label: 'By Stage', icon: GitBranch }
 ]
 
 const KANBAN_ORGANIZATION_OPTIONS: { value: KanbanOrganization; label: string; icon: any }[] = [
   { value: 'priority', label: 'Priority', icon: AlertCircle },
-  { value: 'stage', label: 'Process Stage', icon: Target },
-  { value: 'workflow', label: 'Workflow', icon: GitBranch }
+  { value: 'stage', label: 'Process Stage', icon: Target }
 ]
 
 const PROCESS_STAGES: Record<string, { label: string; color: string }> = {
@@ -134,7 +132,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'avg_volume', label: 'Avg Volume', visible: false, width: 100, minWidth: 80, sortable: true, pinned: false, category: 'price' },
 
   // Research columns
-  { id: 'coverage', label: 'Coverage', visible: true, width: 140, minWidth: 100, sortable: true, pinned: false, category: 'research' },
+  { id: 'coverage', label: 'Covered By', visible: true, width: 140, minWidth: 100, sortable: true, pinned: false, category: 'research' },
   { id: 'priority', label: 'My Priority', visible: true, width: 100, minWidth: 80, sortable: true, pinned: false, category: 'research', prioritySource: 'my' },
   { id: 'rating', label: 'Rating', visible: false, width: 80, minWidth: 60, sortable: true, pinned: false, category: 'research' },
   { id: 'price_target', label: 'Price Target', visible: false, width: 100, minWidth: 80, sortable: true, pinned: false, category: 'research' },
@@ -146,6 +144,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'where_different', label: 'Where Different', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'risks_to_thesis', label: 'Risks to Thesis', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'notes', label: 'Notes', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
+  { id: 'listNote', label: 'List Note', visible: false, width: 180, minWidth: 100, sortable: false, pinned: false, category: 'research' },
 
   // Workflow columns
   { id: 'workflows', label: 'Workflows', visible: true, width: 120, minWidth: 80, sortable: true, pinned: false, category: 'workflow' },
@@ -178,11 +177,20 @@ const COLUMN_CATEGORIES = {
 
 // Expanded row height scales with density
 const expandedRowHeightS = {
-  comfortable: 320,
-  compact: 280,
-  ultra: 220,
-  micro: 180,
+  comfortable: 360,
+  compact: 320,
+  ultra: 260,
+  micro: 220,
 } as const
+
+const RESEARCH_FIELDS = [
+  { key: 'thesis', label: 'Thesis' },
+  { key: 'bull_case', label: 'Bull Case' },
+  { key: 'bear_case', label: 'Bear Case' },
+  { key: 'base_case', label: 'Base Case' },
+  { key: 'where_different', label: 'Where Different' },
+  { key: 'risks_to_thesis', label: 'Key Risks' },
+] as const
 
 function summarizeText(text: string | null | undefined, maxLength: number = 60): string {
   if (!text) return ''
@@ -216,12 +224,61 @@ interface AssetTableViewProps {
   hideToolbar?: boolean
   /** Fill available height - use flex layout to fill parent container */
   fillHeight?: boolean
-  /** Callback to remove asset from list (shows in right-click menu instead of delete) */
-  onRemoveFromList?: (assetId: string) => void
+  /** Callback to remove a row from list. Receives the row ID (_rowId), not asset ID.
+   *  In list context, rowId is the asset_list_items.id for that specific row. */
+  onRemoveFromList?: (rowId: string) => void
+  /** Per-row removal permission check. Takes the row ID (_rowId || asset.id).
+   *  In collaborative lists, the same asset may appear twice with different owners;
+   *  this check is per-row so each instance can have different removability. */
+  canRemoveRow?: (rowId: string) => boolean
+  /** Callback to update the list-specific note for a row */
+  onUpdateListNote?: (rowId: string, note: string) => void
   /** List ID for inline add functionality */
   listId?: string
   /** IDs of assets already in the list (to prevent duplicates) */
   existingAssetIds?: string[]
+  /** List group data for 'listGroup' grouping mode */
+  listGroupData?: { id: string; name: string; color: string | null; sort_order: number }[]
+  /** Override the initial groupBy option (e.g., 'contributor' for collaborative lists) */
+  initialGroupBy?: GroupByOption
+  /** Callback for manual reorder drag within a list */
+  onReorderItem?: (fromIndex: number, toIndex: number) => void
+  /** Callback for moving an item to a different list group */
+  onMoveItemToGroup?: (assetId: string, groupId: string | null) => void
+  /** Callback to rename a list group */
+  onRenameGroup?: (groupId: string, name: string) => void
+  /** Callback to delete a list group */
+  onDeleteGroup?: (groupId: string) => void
+  /** Callback to create a new list group */
+  onCreateGroup?: (params: { name: string; color: string }) => void
+  /** Callback to open "Create Trade Idea" modal for a specific asset */
+  onCreateTradeIdea?: (assetId: string) => void
+  /** Custom kanban boards saved to this list */
+  kanbanBoards?: { id: string; name: string }[]
+  /** Currently active kanban board ID */
+  activeKanbanBoardId?: string | null
+  /** Callback when user selects a kanban board (null = back to preset) */
+  onSelectKanbanBoard?: (boardId: string | null) => void
+  /** Callback to create a new kanban board — returns the created board */
+  onCreateKanbanBoard?: (name: string) => Promise<{ id: string }>
+  /** Callback to delete a kanban board */
+  onDeleteKanbanBoard?: (boardId: string) => void
+  /** Callback to rename a kanban board */
+  onRenameKanbanBoard?: (boardId: string, name: string) => void
+  /** Lanes for the active kanban board */
+  kanbanBoardLanes?: { id: string; name: string; color: string; sort_order: number }[]
+  /** Lane-item assignments for the active kanban board */
+  kanbanBoardLaneItems?: { lane_id: string; asset_list_item_id: string }[]
+  /** Callback to create a lane on the active board */
+  onCreateKanbanLane?: (name: string, color: string) => void
+  /** Callback to delete a lane */
+  onDeleteKanbanLane?: (laneId: string) => void
+  /** Callback to rename a lane */
+  onRenameKanbanLane?: (laneId: string, name: string) => void
+  /** Callback to assign an asset to a lane (takes asset ID, parent maps to list item ID) */
+  onAssignToKanbanLane?: (laneId: string, assetId: string) => void
+  /** Callback to remove an asset from its lane (takes asset ID) */
+  onRemoveFromKanbanLane?: (assetId: string) => void
 }
 
 // ============================================================================
@@ -243,8 +300,31 @@ export function AssetTableView({
   hideToolbar = false,
   fillHeight = false,
   onRemoveFromList,
+  canRemoveRow,
+  onUpdateListNote,
   listId,
-  existingAssetIds = []
+  existingAssetIds = [],
+  listGroupData,
+  initialGroupBy,
+  onReorderItem,
+  onMoveItemToGroup,
+  onRenameGroup,
+  onDeleteGroup,
+  onCreateGroup,
+  onCreateTradeIdea,
+  kanbanBoards,
+  activeKanbanBoardId,
+  onSelectKanbanBoard,
+  onCreateKanbanBoard,
+  onDeleteKanbanBoard,
+  onRenameKanbanBoard,
+  kanbanBoardLanes,
+  kanbanBoardLaneItems,
+  onCreateKanbanLane,
+  onDeleteKanbanLane,
+  onRenameKanbanLane,
+  onAssignToKanbanLane,
+  onRemoveFromKanbanLane
 }: AssetTableViewProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -346,7 +426,7 @@ export function AssetTableView({
   const [selectedStages, setSelectedStages] = useState<string[]>([])
 
   // Sort state
-  const [sortBy, setSortBy] = useState('updated_at')
+  const [sortBy, setSortBy] = useState<string | null>('updated_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // UI state
@@ -371,12 +451,16 @@ export function AssetTableView({
     return [...DEFAULT_COLUMNS, ...extraColumns]
   })
   const [showColumnSettings, setShowColumnSettings] = useState(false)
+  const [draftColumns, setDraftColumns] = useState<ColumnConfig[]>([])
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
   const [editingCell, setEditingCell] = useState<{ assetId: string; field: 'priority' | 'stage'; x: number; y: number } | null>(null)
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editingNoteValue, setEditingNoteValue] = useState('')
+  // List note inline editor state (keyed by _rowId, separate from asset notes)
+  const [editingListNoteRowId, setEditingListNoteRowId] = useState<string | null>(null)
+  const [editingListNoteValue, setEditingListNoteValue] = useState('')
   const [workflowPopover, setWorkflowPopover] = useState<{ assetId: string; x: number; y: number } | null>(null)
   const [columnContextMenu, setColumnContextMenu] = useState<{ columnId: string; x: number; y: number } | null>(null)
   const [addColumnDropdown, setAddColumnDropdown] = useState<{ x: number; y: number } | null>(null)
@@ -388,12 +472,30 @@ export function AssetTableView({
   const [activeTableFilter, setActiveTableFilter] = useState<string | null>(null)
 
   // Row context menu state
-  const [rowContextMenu, setRowContextMenu] = useState<{ assetId: string; x: number; y: number } | null>(null)
+  const [rowContextMenu, setRowContextMenu] = useState<{ assetId: string; rowId: string; x: number; y: number } | null>(null)
 
   // Grouping state
-  const [groupBy, setGroupBy] = useState<GroupByOption>('none')
+  const [groupBy, setGroupBy] = useState<GroupByOption>(initialGroupBy || 'none')
   const [showGroupByMenu, setShowGroupByMenu] = useState(false)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+
+  // Group editing state (for listGroup inline rename and kebab menu)
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+  const [editingGroupName, setEditingGroupName] = useState('')
+  const [groupKebabMenu, setGroupKebabMenu] = useState<{ groupId: string; x: number; y: number } | null>(null)
+
+  // Inline new group creation state
+  const [showInlineNewGroup, setShowInlineNewGroup] = useState(false)
+  const [inlineNewGroupName, setInlineNewGroupName] = useState('')
+  const [inlineNewGroupColor, setInlineNewGroupColor] = useState('#6366f1')
+  const [showInlineColorPicker, setShowInlineColorPicker] = useState(false)
+  const inlineNewGroupInputRef = useRef<HTMLInputElement>(null)
+
+  // Group drag-and-drop state (for moving assets between custom groups)
+  const [dragGroupAssetId, setDragGroupAssetId] = useState<string | null>(null)
+  const [dragGroupSourceKey, setDragGroupSourceKey] = useState<string | null>(null)
+  const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null)
+  const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Kanban state
   const [kanbanOrganization, setKanbanOrganization] = useState<KanbanOrganization>('priority')
@@ -402,9 +504,26 @@ export function AssetTableView({
   const [fullscreenKanbanColumn, setFullscreenKanbanColumn] = useState<string | null>(null)
   const [draggedAsset, setDraggedAsset] = useState<string | null>(null)
 
-  // Tree state
-  const [treeOrganization, setTreeOrganization] = useState<TreeOrganization>('sector')
-  const [expandedTreeNodes, setExpandedTreeNodes] = useState<Set<string>>(new Set(['root']))
+  // Custom kanban lane management state
+  const [showNewLaneInput, setShowNewLaneInput] = useState(false)
+  const [newLaneName, setNewLaneName] = useState('')
+  const [newLaneColor, setNewLaneColor] = useState('#6366f1')
+  const [editingLaneId, setEditingLaneId] = useState<string | null>(null)
+  const [editingLaneName, setEditingLaneName] = useState('')
+  const [laneKebabMenu, setLaneKebabMenu] = useState<string | null>(null)
+  const newLaneInputRef = useRef<HTMLInputElement>(null)
+
+  // Custom kanban board creation state
+  const [showNewBoardInput, setShowNewBoardInput] = useState(false)
+  const [newBoardName, setNewBoardName] = useState('')
+  const newBoardInputRef = useRef<HTMLInputElement>(null)
+  const [editingBoardId, setEditingBoardId] = useState<string | null>(null)
+  const [editingBoardName, setEditingBoardName] = useState('')
+  const [boardKebabMenu, setBoardKebabMenu] = useState<string | null>(null)
+
+  // Row drag-reorder state
+  const [dragRowIndex, setDragRowIndex] = useState<number | null>(null)
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
 
   // Refs
   const tableContainerRef = useRef<HTMLDivElement>(null)
@@ -726,27 +845,36 @@ export function AssetTableView({
       filtered = filtered.filter(a => selectedStages.includes(a.process_stage))
     }
 
-    filtered = [...filtered].sort((a, b) => {
-      let aValue: any, bValue: any
-      switch (sortBy) {
-        case 'symbol': aValue = a.symbol || ''; bValue = b.symbol || ''; break
-        case 'current_price': aValue = Number(a.current_price) || 0; bValue = Number(b.current_price) || 0; break
-        case 'priority':
-          const priorityOrder = { critical: 5, high: 4, medium: 3, low: 2, none: 1 }
-          const aPriority = getUserPriority(a.id) || 'none'
-          const bPriority = getUserPriority(b.id) || 'none'
-          aValue = priorityOrder[aPriority as keyof typeof priorityOrder] || 0
-          bValue = priorityOrder[bPriority as keyof typeof priorityOrder] || 0
-          break
-        case 'updated_at':
-        default:
-          aValue = new Date(a.updated_at || 0).getTime()
-          bValue = new Date(b.updated_at || 0).getTime()
-          break
-      }
-      if (typeof aValue === 'string') return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue)
-      return sortOrder === 'asc' ? aValue - bValue : bValue - aValue
-    })
+    // When sortBy is null (manual mode), sort by _sortOrder (persisted drag order)
+    if (sortBy === null) {
+      filtered = [...filtered].sort((a, b) => (a._sortOrder ?? 999999) - (b._sortOrder ?? 999999))
+    } else {
+      filtered = [...filtered].sort((a, b) => {
+        let aValue: any, bValue: any
+        switch (sortBy) {
+          case 'symbol': aValue = a.symbol || ''; bValue = b.symbol || ''; break
+          case 'current_price': aValue = Number(a.current_price) || 0; bValue = Number(b.current_price) || 0; break
+          case 'priority':
+            const priorityOrder = { critical: 5, high: 4, medium: 3, low: 2, none: 1 }
+            const aPriority = getUserPriority(a.id) || 'none'
+            const bPriority = getUserPriority(b.id) || 'none'
+            aValue = priorityOrder[aPriority as keyof typeof priorityOrder] || 0
+            bValue = priorityOrder[bPriority as keyof typeof priorityOrder] || 0
+            break
+          case 'manual':
+            aValue = a._sortOrder ?? 999999
+            bValue = b._sortOrder ?? 999999
+            break
+          case 'updated_at':
+          default:
+            aValue = new Date(a.updated_at || 0).getTime()
+            bValue = new Date(b.updated_at || 0).getTime()
+            break
+        }
+        if (typeof aValue === 'string') return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue)
+        return sortOrder === 'asc' ? aValue - bValue : bValue - aValue
+      })
+    }
 
     return filtered
   }, [assets, searchQuery, selectedPriorities, selectedSectors, selectedStages, sortBy, sortOrder])
@@ -764,7 +892,8 @@ export function AssetTableView({
         case 'sector': key = asset.sector || 'Uncategorized'; break
         case 'priority': key = getUserPriority(asset.id) || 'none'; break
         case 'stage': key = asset.process_stage || 'unassigned'; break
-        case 'theme': key = asset.theme || 'Unassigned'; break
+        case 'listGroup': key = asset._listGroupId || '__ungrouped__'; break
+        case 'contributor': key = asset._addedBy || '__unknown__'; break
         default: key = 'Other'
       }
       if (!groupMap.has(key)) groupMap.set(key, [])
@@ -772,7 +901,7 @@ export function AssetTableView({
     })
 
     // Convert to array with labels and colors
-    groupMap.forEach((assets, key) => {
+    groupMap.forEach((groupAssets, key) => {
       let label = key
       let color: string | undefined
 
@@ -784,21 +913,70 @@ export function AssetTableView({
         const stage = PROCESS_STAGES[key]
         label = stage?.label || (key === 'unassigned' ? 'No Stage' : key)
         color = stage?.color
+      } else if (groupBy === 'listGroup') {
+        if (key === '__ungrouped__') {
+          label = 'Ungrouped'
+        } else {
+          const gd = listGroupData?.find(g => g.id === key)
+          label = gd?.name || 'Unknown Group'
+          if (gd?.color) color = gd.color
+        }
+      } else if (groupBy === 'contributor') {
+        if (key === '__unknown__') {
+          label = 'Unknown'
+        } else if (key === user?.id) {
+          label = 'You'
+        } else {
+          // Use the first asset's _addedByUser for display name
+          const first = groupAssets[0]
+          const u = first?._addedByUser
+          if (u?.first_name && u?.last_name) label = `${u.first_name} ${u.last_name}`
+          else if (u?.email) label = u.email
+          else label = key
+        }
       }
 
-      groups.push({ key, label, color, assets })
+      groups.push({ key, label, color, assets: groupAssets })
     })
+
+    // For listGroup mode, add empty groups from listGroupData that have no assets yet
+    if (groupBy === 'listGroup' && listGroupData) {
+      const existingKeys = new Set(groups.map(g => g.key))
+      listGroupData.forEach(gd => {
+        if (!existingKeys.has(gd.id)) {
+          groups.push({ key: gd.id, label: gd.name, color: gd.color || undefined, assets: [] })
+        }
+      })
+    }
 
     // Sort groups
     if (groupBy === 'priority') {
       const order = ['high', 'medium', 'low', 'none']
       groups.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+    } else if (groupBy === 'listGroup') {
+      // Sort by list group sort_order, ungrouped at end
+      const orderMap = new Map<string, number>()
+      listGroupData?.forEach(g => orderMap.set(g.id, g.sort_order))
+      groups.sort((a, b) => {
+        if (a.key === '__ungrouped__') return 1
+        if (b.key === '__ungrouped__') return -1
+        return (orderMap.get(a.key) ?? 999) - (orderMap.get(b.key) ?? 999)
+      })
+    } else if (groupBy === 'contributor') {
+      // Current user's group first, then alphabetical
+      groups.sort((a, b) => {
+        if (a.key === user?.id) return -1
+        if (b.key === user?.id) return 1
+        if (a.key === '__unknown__') return 1
+        if (b.key === '__unknown__') return -1
+        return a.label.localeCompare(b.label)
+      })
     } else {
       groups.sort((a, b) => a.label.localeCompare(b.label))
     }
 
     return groups
-  }, [filteredAssets, groupBy])
+  }, [filteredAssets, groupBy, listGroupData, user?.id])
 
   // Active filters
   const activeFilters = useMemo(() => {
@@ -818,8 +996,13 @@ export function AssetTableView({
 
   // Handlers
   const handleSort = (field: string) => {
-    if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
-    else { setSortBy(field); setSortOrder('desc') }
+    if (sortBy === field) {
+      if (sortOrder === 'desc') setSortOrder('asc')
+      else if (onReorderItem) { setSortBy(null); setSortOrder('desc') }
+      else setSortOrder('desc')
+    } else {
+      setSortBy(field); setSortOrder('desc')
+    }
   }
 
   const handleAssetClick = (asset: any) => {
@@ -999,14 +1182,6 @@ export function AssetTableView({
     setExpandedMetricColumn(prev => prev?.assetId === assetId ? null : prev)
   }, [])
 
-  const toggleTreeNode = useCallback((nodeKey: string) => {
-    setExpandedTreeNodes(prev => {
-      const next = new Set(prev)
-      if (next.has(nodeKey)) next.delete(nodeKey)
-      else next.add(nodeKey)
-      return next
-    })
-  }, [])
 
   const visibleColumns = useMemo(() => {
     // Pinned columns go to the left (after select), unpinned columns follow
@@ -1045,17 +1220,24 @@ export function AssetTableView({
   // Force virtualizer remount when density changes
   const prevDensityRef = useRef(density)
 
+  // Virtualization is only used for the flat (ungrouped) table view.
+  // Grouped views render group headers with collapsible sections and potentially
+  // drag-reorder handles — virtualizer can't handle mixed row heights and
+  // interleaved group dividers safely, so we skip it entirely when grouped.
+  const useVirtualization = viewMode === 'table' && groupBy === 'none'
+
   // Virtual scrolling with dynamic measurement for wrap text
   // Key includes version to force remount when collapsing (needed to clear measurement cache)
   const virtualizerKey = `${density}-${hasWrapTextColumn}-${virtualizerVersion}`
   const rowVirtualizer = useVirtualizer({
-    count: filteredAssets.length,
+    count: useVirtualization ? filteredAssets.length : 0,
     getScrollElement: () => tableContainerRef.current,
     // Include density and expanded state in item key to invalidate cache when these change
     getItemKey: useCallback((index: number) => {
       const asset = filteredAssets[index]
       const isExpanded = asset?.id === expandedRowId
-      return `${asset?.id}-${density}-${isExpanded ? 'expanded' : 'collapsed'}`
+      const rowId = asset?._rowId || asset?.id
+      return `${rowId}-${density}-${isExpanded ? 'expanded' : 'collapsed'}`
     }, [filteredAssets, density, expandedRowId]),
     estimateSize: useCallback((index: number) => {
       const asset = filteredAssets[index]
@@ -1205,7 +1387,7 @@ export function AssetTableView({
 
   // State for inline insert - stores the row index for visual positioning and the list item ID for stable targeting
   const [insertAboveRow, setInsertAboveRow] = useState<number | null>(null)
-  const [insertTargetId, setInsertTargetId] = useState<string | null>(null) // The _listItemId of the target row
+  const [insertTargetId, setInsertTargetId] = useState<string | null>(null) // The _rowId of the target row
   const insertTargetIdRef = useRef<string | null>(null) // Ref to always have latest value in callbacks
   const insertInputRef = useRef<HTMLInputElement>(null)
 
@@ -1218,7 +1400,7 @@ export function AssetTableView({
   const openInsertAbove = useCallback(() => {
     if (!focusedCell || !listId) return
     const targetAsset = filteredAssets[focusedCell.rowIndex]
-    const targetId = targetAsset?._listItemId || null
+    const targetId = targetAsset?._rowId || null
     setInsertAboveRow(focusedCell.rowIndex)
     setInsertTargetId(targetId)
     insertTargetIdRef.current = targetId // Set ref immediately for callback use
@@ -1559,20 +1741,148 @@ export function AssetTableView({
     setEditingNoteValue('')
   }, [editingNoteValue, quickEditMutation])
 
+  // List note editing helpers (saves to asset_list_items.notes via parent callback)
+  const startEditingListNote = useCallback((rowId: string, currentNote: string) => {
+    setEditingListNoteRowId(rowId)
+    setEditingListNoteValue(currentNote || '')
+  }, [])
+
+  const cancelListNoteEdit = useCallback(() => {
+    setEditingListNoteRowId(null)
+    setEditingListNoteValue('')
+  }, [])
+
+  const saveListNote = useCallback((rowId: string) => {
+    if (onUpdateListNote) {
+      onUpdateListNote(rowId, editingListNoteValue)
+    }
+    setEditingListNoteRowId(null)
+    setEditingListNoteValue('')
+  }, [editingListNoteValue, onUpdateListNote])
+
   // Kanban drag handlers
   const handleKanbanDragStart = useCallback((assetId: string) => setDraggedAsset(assetId), [])
   const handleKanbanDragOver = useCallback((e: React.DragEvent) => e.preventDefault(), [])
-  const handleKanbanDrop = useCallback((targetPriority: string) => {
-    if (draggedAsset && kanbanOrganization === 'priority') {
-      quickEditMutation.mutate({ assetId: draggedAsset, field: 'priority', value: targetPriority })
+  const handleKanbanDrop = useCallback((targetKey: string) => {
+    if (!draggedAsset) { setDraggedAsset(null); return }
+    if (activeKanbanBoardId) {
+      if (targetKey === 'unassigned') {
+        onRemoveFromKanbanLane?.(draggedAsset)
+      } else {
+        onAssignToKanbanLane?.(targetKey, draggedAsset)
+      }
+    } else if (kanbanOrganization === 'priority') {
+      quickEditMutation.mutate({ assetId: draggedAsset, field: 'priority', value: targetKey })
     }
     setDraggedAsset(null)
-  }, [draggedAsset, kanbanOrganization, quickEditMutation])
+  }, [draggedAsset, activeKanbanBoardId, kanbanOrganization, quickEditMutation, onAssignToKanbanLane, onRemoveFromKanbanLane])
+
+  const canDragKanban = kanbanOrganization === 'priority' || !!activeKanbanBoardId
+
+  // Row drag-reorder
+  const canDragRows = !!onReorderItem && sortBy === null && groupBy === 'none'
+  const dragHandleWidth = 24
+
+  const handleRowDragStart = useCallback((e: React.DragEvent, rowIndex: number) => {
+    setDragRowIndex(rowIndex)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(rowIndex))
+  }, [])
+
+  const handleRowDragOver = useCallback((e: React.DragEvent, rowIndex: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    // Determine if drop should be above or below this row
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const midY = rect.top + rect.height / 2
+    const targetIdx = e.clientY < midY ? rowIndex : rowIndex + 1
+    setDropTargetIndex(targetIdx)
+  }, [])
+
+  const handleRowDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (dragRowIndex !== null && dropTargetIndex !== null && onReorderItem) {
+      const adjustedTarget = dropTargetIndex > dragRowIndex ? dropTargetIndex - 1 : dropTargetIndex
+      if (adjustedTarget !== dragRowIndex) {
+        onReorderItem(dragRowIndex, adjustedTarget)
+      }
+    }
+    setDragRowIndex(null)
+    setDropTargetIndex(null)
+  }, [dragRowIndex, dropTargetIndex, onReorderItem])
+
+  const handleRowDragEnd = useCallback(() => {
+    setDragRowIndex(null)
+    setDropTargetIndex(null)
+  }, [])
+
+  // Group drag-and-drop (move assets between custom groups)
+  const canDragGroupedRows = groupBy === 'listGroup' && !!onMoveItemToGroup
+
+  const handleGroupedRowDragStart = useCallback((e: React.DragEvent, assetId: string, symbol: string, sourceGroupKey: string) => {
+    setDragGroupAssetId(assetId)
+    setDragGroupSourceKey(sourceGroupKey)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', assetId)
+    // Compact drag ghost pill
+    const ghost = document.createElement('div')
+    ghost.textContent = symbol
+    ghost.style.cssText = 'position:fixed;top:-100px;left:-100px;padding:4px 12px;background:#3b82f6;color:#fff;border-radius:6px;font-size:13px;font-weight:600;font-family:system-ui;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18);'
+    document.body.appendChild(ghost)
+    e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2)
+    requestAnimationFrame(() => document.body.removeChild(ghost))
+  }, [])
+
+  const handleGroupedDragOver = useCallback((e: React.DragEvent, groupKey: string) => {
+    if (!dragGroupAssetId) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dropTargetGroupId !== groupKey) {
+      setDropTargetGroupId(groupKey)
+      // Auto-expand collapsed groups after a short hover
+      if (collapsedGroups.has(groupKey)) {
+        if (dragExpandTimerRef.current) clearTimeout(dragExpandTimerRef.current)
+        dragExpandTimerRef.current = setTimeout(() => {
+          setCollapsedGroups(prev => {
+            const next = new Set(prev)
+            next.delete(groupKey)
+            return next
+          })
+        }, 400)
+      }
+    }
+  }, [dragGroupAssetId, dropTargetGroupId, collapsedGroups])
+
+  const handleGroupedDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if truly leaving the group container (not entering a child)
+    const related = e.relatedTarget as HTMLElement | null
+    if (!related || !e.currentTarget.contains(related)) {
+      setDropTargetGroupId(null)
+      if (dragExpandTimerRef.current) { clearTimeout(dragExpandTimerRef.current); dragExpandTimerRef.current = null }
+    }
+  }, [])
+
+  const handleGroupedDrop = useCallback((e: React.DragEvent, groupKey: string) => {
+    e.preventDefault()
+    if (dragGroupAssetId && onMoveItemToGroup && groupKey !== dragGroupSourceKey) {
+      onMoveItemToGroup(dragGroupAssetId, groupKey === '__ungrouped__' ? null : groupKey)
+    }
+    setDragGroupAssetId(null)
+    setDragGroupSourceKey(null)
+    setDropTargetGroupId(null)
+    if (dragExpandTimerRef.current) { clearTimeout(dragExpandTimerRef.current); dragExpandTimerRef.current = null }
+  }, [dragGroupAssetId, dragGroupSourceKey, onMoveItemToGroup])
+
+  const handleGroupedRowDragEnd = useCallback(() => {
+    setDragGroupAssetId(null)
+    setDragGroupSourceKey(null)
+    setDropTargetGroupId(null)
+    if (dragExpandTimerRef.current) { clearTimeout(dragExpandTimerRef.current); dragExpandTimerRef.current = null }
+  }, [])
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (columnSettingsRef.current && !columnSettingsRef.current.contains(e.target as Node)) setShowColumnSettings(false)
       if (groupByMenuRef.current && !groupByMenuRef.current.contains(e.target as Node)) setShowGroupByMenu(false)
       // Close column context menu if clicking outside
       if (columnContextMenu) {
@@ -1626,269 +1936,491 @@ export function AssetTableView({
           setPrioritySourceSearch('')
         }
       }
+      // Close group kebab menu if clicking outside
+      if (groupKebabMenu) {
+        const target = e.target as HTMLElement
+        if (!target.closest('.group-kebab-menu')) {
+          setGroupKebabMenu(null)
+        }
+      }
     }
-    if (showColumnSettings || showGroupByMenu || columnContextMenu || activeTableFilter || workflowPopover || rowContextMenu || addColumnDropdown || priorityColumnPicker || prioritySourceSelector) document.addEventListener('mousedown', handleClick)
+    if (showGroupByMenu || columnContextMenu || activeTableFilter || workflowPopover || rowContextMenu || addColumnDropdown || priorityColumnPicker || prioritySourceSelector || groupKebabMenu) document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showColumnSettings, showGroupByMenu, columnContextMenu, activeTableFilter, workflowPopover, rowContextMenu, addColumnDropdown, priorityColumnPicker, prioritySourceSelector])
+  }, [showGroupByMenu, columnContextMenu, activeTableFilter, workflowPopover, rowContextMenu, addColumnDropdown, priorityColumnPicker, prioritySourceSelector, groupKebabMenu])
 
   // Render metric detail expansion panel
   const renderMetricDetail = useCallback((asset: any, columnId: string, quote: any, coverage: any[], workflows: any[]) => {
-    // Widget card wrapper for consistent styling
-    const WidgetCard = ({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) => (
-      <div className={clsx('bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden', className)}>
-        <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
-          <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{title}</h5>
+    const price = quote?.price || asset.current_price
+    const changeP = quote?.changePercent
+
+    // --- LEFT ZONE: Price + sparkline + stats ---
+    const leftZone = (
+      <div className="flex flex-col h-full">
+        <div className="mb-1.5">
+          <div className="text-xl font-bold text-gray-900 font-mono leading-none">
+            {formatPrice(price)}
+          </div>
+          {changeP !== undefined && (
+            <div className={clsx(
+              'text-xs font-medium font-mono flex items-center gap-0.5 mt-1',
+              changeP >= 0 ? 'text-green-600' : 'text-red-600'
+            )}>
+              {changeP >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {formatPriceChange(changeP)}
+            </div>
+          )}
         </div>
-        <div className="p-3">{children}</div>
+        <div className="flex-1 min-h-0 rounded bg-gray-50/60 border border-gray-100 p-1">
+          <MiniChart symbol={asset.symbol} height={80} days={30} showPrice={false} showChange={false} />
+        </div>
+        <div className="mt-1.5 space-y-0.5 text-[11px]">
+          {quote?.volume != null && (
+            <div className="flex justify-between"><span className="text-gray-400">Vol</span><span className="font-mono text-gray-600">{(quote.volume / 1e6).toFixed(1)}M</span></div>
+          )}
+          {quote?.high != null && (
+            <div className="flex justify-between"><span className="text-gray-400">High</span><span className="font-mono text-green-600">{formatPrice(quote.high)}</span></div>
+          )}
+          {quote?.low != null && (
+            <div className="flex justify-between"><span className="text-gray-400">Low</span><span className="font-mono text-red-600">{formatPrice(quote.low)}</span></div>
+          )}
+        </div>
       </div>
     )
 
+    // --- RIGHT ZONE: Price targets + meta ---
+    const rightZone = (
+      <div className="flex flex-col h-full overflow-hidden">
+        <PriceTargetsSummary
+          assetId={asset.id}
+          currentPrice={price}
+          className="!border-gray-100 !shadow-none !rounded-md"
+        />
+        <div className="mt-auto pt-1.5 space-y-1 text-[11px]">
+          {coverage.length > 0 && (
+            <div className="text-gray-500 flex items-center gap-1">
+              <Users className="w-3 h-3 flex-shrink-0" />
+              {coverage.length} analyst{coverage.length !== 1 ? 's' : ''}
+            </div>
+          )}
+          {asset.updated_at && (
+            <div className="text-gray-400 flex items-center gap-1">
+              <Clock className="w-3 h-3 flex-shrink-0" />
+              Updated {formatRelativeTime(asset.updated_at)}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+
+    // --- CENTER ZONE ---
+    let centerZone: React.ReactNode
+
     switch (columnId) {
+      // ── Price / Change: enlarged chart with key stats alongside ──
       case 'price':
-        return (
-          <div className="flex gap-4 h-full">
-            {/* Price Chart Widget */}
-            <WidgetCard title="Price Chart" className="flex-1">
+      case 'change':
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex-shrink-0">30-Day Price Chart</h5>
+            <div className="flex-1 min-h-0 rounded bg-gray-50/40 border border-gray-100 p-1">
               <MiniChart symbol={asset.symbol} height={120} days={30} showPrice={false} showChange={false} />
-            </WidgetCard>
-            {/* Price Details Widget */}
-            <WidgetCard title="Price Details" className="w-48">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Current</span>
-                  <span className="font-mono font-semibold text-sm">{formatPrice(quote?.price || asset.current_price)}</span>
-                </div>
-                {quote?.changePercent !== undefined && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Change</span>
-                    <span className={clsx('font-mono font-medium text-sm', quote.changePercent >= 0 ? 'text-green-600' : 'text-red-600')}>
-                      {formatPriceChange(quote.changePercent)}
-                    </span>
-                  </div>
-                )}
-                {quote?.high && quote?.low && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">High</span>
-                      <span className="font-mono text-sm text-green-600">{formatPrice(quote.high)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Low</span>
-                      <span className="font-mono text-sm text-red-600">{formatPrice(quote.low)}</span>
-                    </div>
-                  </>
-                )}
-                {quote?.volume && (
-                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                    <span className="text-xs text-gray-500">Volume</span>
-                    <span className="font-mono text-sm">{(quote.volume / 1000000).toFixed(2)}M</span>
-                  </div>
-                )}
-              </div>
-            </WidgetCard>
+            </div>
+            {/* Inline stats row below chart */}
+            <div className="mt-1.5 flex gap-4 text-[11px] text-gray-500 flex-shrink-0">
+              {asset.market_cap && <span>Mkt Cap <span className="font-mono text-gray-700">{formatPrice(asset.market_cap)}</span></span>}
+              {quote?.volume != null && <span>Vol <span className="font-mono text-gray-700">{(quote.volume / 1e6).toFixed(1)}M</span></span>}
+              {asset.pe_ratio && <span>P/E <span className="font-mono text-gray-700">{Number(asset.pe_ratio).toFixed(1)}</span></span>}
+            </div>
           </div>
         )
+        break
 
+      // ── Ticker / Company / Sector: profile + research preview ──
       case 'ticker':
       case 'companyName':
-        return (
-          <div className="flex gap-4 h-full">
-            {/* Company Info Widget */}
-            <WidgetCard title="Company Profile" className="flex-1">
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg font-bold text-gray-900">{asset.symbol}</span>
-                    <span className="text-sm text-gray-500">•</span>
-                    <span className="text-sm font-medium text-gray-700">{asset.company_name}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    {asset.sector && <span className="px-2 py-0.5 bg-gray-100 rounded">{asset.sector}</span>}
-                    {asset.industry && <span className="px-2 py-0.5 bg-gray-100 rounded">{asset.industry}</span>}
-                  </div>
+      case 'sector':
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex items-baseline gap-2 mb-1 flex-shrink-0">
+              <span className="text-base font-bold text-gray-900 leading-none">{asset.symbol}</span>
+              <span className="text-sm text-gray-600 truncate">{asset.company_name}</span>
+            </div>
+            <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
+              {asset.sector && <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px] font-medium">{asset.sector}</span>}
+              {asset.industry && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[11px]">{asset.industry}</span>}
+              {asset.market_cap && <span className="text-[11px] text-gray-400 ml-1">Mkt Cap {formatPrice(asset.market_cap)}</span>}
+            </div>
+            {asset.description && (
+              <p className="text-xs text-gray-600 leading-relaxed line-clamp-2 mb-2 flex-shrink-0">{asset.description}</p>
+            )}
+            {/* Research preview cards */}
+            <div className="grid grid-cols-2 gap-1.5 flex-shrink-0">
+              {asset.thesis && (
+                <div className="col-span-2 bg-gray-50 border border-gray-100 rounded p-1.5">
+                  <h6 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Thesis</h6>
+                  <p className="text-[11px] text-gray-700 line-clamp-2">{asset.thesis}</p>
                 </div>
-                {asset.description ? (
-                  <p className="text-sm text-gray-600 leading-relaxed line-clamp-4">{asset.description}</p>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No company description available</p>
-                )}
-              </div>
-            </WidgetCard>
-            {/* Quick Stats Widget */}
-            <WidgetCard title="Key Stats" className="w-48">
-              <div className="space-y-2">
-                {asset.market_cap && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Market Cap</span>
-                    <span className="font-mono text-sm">{formatPrice(asset.market_cap)}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Stage</span>
-                  <span className="text-sm">{asset.process_stage || '—'}</span>
+              )}
+              {asset.bull_case && (
+                <div className="bg-green-50/50 border border-green-100 rounded p-1.5">
+                  <h6 className="text-[10px] font-semibold text-green-700 uppercase tracking-wide mb-0.5">Bull</h6>
+                  <p className="text-[11px] text-green-900 line-clamp-1">{asset.bull_case}</p>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Priority</span>
-                  <span className="text-sm">{getUserPriority(asset.id) || 'None'}</span>
+              )}
+              {asset.bear_case && (
+                <div className="bg-red-50/50 border border-red-100 rounded p-1.5">
+                  <h6 className="text-[10px] font-semibold text-red-700 uppercase tracking-wide mb-0.5">Bear</h6>
+                  <p className="text-[11px] text-red-900 line-clamp-1">{asset.bear_case}</p>
                 </div>
-                {coverage.length > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Coverage</span>
-                    <span className="text-sm">{coverage.length} analyst{coverage.length !== 1 ? 's' : ''}</span>
-                  </div>
-                )}
-              </div>
-            </WidgetCard>
+              )}
+            </div>
           </div>
         )
+        break
 
+      // ── Research fields: 3×2 grid, triggered field highlighted ──
       case 'thesis':
       case 'bull_case':
       case 'bear_case':
       case 'base_case':
       case 'where_different':
       case 'risks_to_thesis':
-        const fieldMap: Record<string, { label: string; field: keyof typeof asset }> = {
-          thesis: { label: 'Investment Thesis', field: 'thesis' },
-          bull_case: { label: 'Bull Case', field: 'bull_case' },
-          bear_case: { label: 'Bear Case', field: 'bear_case' },
-          base_case: { label: 'Base Case', field: 'base_case' },
-          where_different: { label: 'Differentiated View', field: 'where_different' },
-          risks_to_thesis: { label: 'Key Risks', field: 'risks_to_thesis' }
-        }
-        const fieldInfo = fieldMap[columnId]
-        const fieldValue = asset[fieldInfo.field]
-        return (
-          <div className="flex gap-4 h-full">
-            <WidgetCard title={fieldInfo.label} className="flex-1">
-              <div className="h-full flex flex-col">
-                {fieldValue ? (
-                  <p className="text-sm text-gray-700 leading-relaxed flex-1 overflow-auto">{fieldValue}</p>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No {fieldInfo.label.toLowerCase()} documented yet</p>
-                )}
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <button
-                    onClick={() => handleAssetClick(asset)}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+        centerZone = (
+          <div className="h-full overflow-hidden">
+            <div className="grid grid-cols-3 grid-rows-2 gap-1.5 h-full">
+              {RESEARCH_FIELDS.map(({ key, label }) => {
+                const val = asset[key]
+                const isTriggered = key === columnId
+                return (
+                  <div
+                    key={key}
+                    className={clsx(
+                      'rounded p-2 flex flex-col overflow-hidden',
+                      isTriggered
+                        ? 'bg-blue-50 border border-blue-200 ring-1 ring-blue-300/50'
+                        : 'bg-gray-50/80 border border-gray-100'
+                    )}
                   >
-                    Edit on Asset Page
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            </WidgetCard>
-            {/* Mini Chart */}
-            <WidgetCard title="Price" className="w-56">
-              <MiniChart symbol={asset.symbol} height={80} days={14} />
-            </WidgetCard>
+                    <h6 className={clsx(
+                      'text-[10px] font-semibold uppercase tracking-wide mb-0.5 flex-shrink-0',
+                      isTriggered ? 'text-blue-600' : 'text-gray-400'
+                    )}>
+                      {label}
+                    </h6>
+                    {val ? (
+                      <p className={clsx(
+                        'text-[11px] leading-snug flex-1 overflow-hidden',
+                        isTriggered ? 'text-blue-900 line-clamp-6' : 'text-gray-600 line-clamp-2'
+                      )}>
+                        {val}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-gray-300 italic">—</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )
+        break
 
+      // ── Coverage: analyst cards + thesis context ──
       case 'coverage':
-        return (
-          <div className="flex gap-4 h-full">
-            <WidgetCard title="Analyst Coverage" className="flex-1">
-              {coverage.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No coverage assigned</p>
-              ) : (
-                <div className="space-y-2">
-                  {coverage.map((analyst, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-900">{analyst.analyst}</span>
-                      {analyst.isLead && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded">Lead</span>
-                      )}
-                      {analyst.team && <span className="text-xs text-gray-400">• {analyst.team}</span>}
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Analyst Coverage</h5>
+            {coverage.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No coverage assigned</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {coverage.map((analyst, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-100 rounded">
+                    <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[9px] font-semibold flex-shrink-0">
+                      {getInitials(analyst.analyst)}
                     </div>
-                  ))}
-                </div>
-              )}
-            </WidgetCard>
+                    <span className="text-[11px] font-medium text-gray-900">{analyst.analyst}</span>
+                    {analyst.isLead && <span className="px-1 py-px text-[9px] font-medium bg-blue-100 text-blue-700 rounded">Lead</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Thesis preview for context */}
+            {asset.thesis && (
+              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
+                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
+                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
+              </div>
+            )}
           </div>
         )
+        break
 
-      case 'workflows':
-        return (
-          <div className="flex gap-4 h-full">
-            <WidgetCard title="Active Workflows" className="flex-1">
-              {workflows.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No active workflows</p>
-              ) : (
-                <div className="space-y-2">
-                  {workflows.map((wf, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: wf.color }} />
-                      <span className="text-sm font-medium text-gray-900">{wf.name}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </WidgetCard>
-          </div>
-        )
-
-      case 'priority':
+      // ── Priority: picker buttons ──
+      case 'priority': {
         const currentPriority = getUserPriority(asset.id)
-        return (
-          <div className="flex gap-4 h-full">
-            <WidgetCard title="Set Priority" className="w-64">
-              <div className="space-y-1.5">
-                {PRIORITY_OPTIONS.map(priority => {
-                  const config = PRIORITY_CONFIG[priority]
-                  const IconComponent = config.icon
-                  const isSelected = currentPriority === priority || (!currentPriority && priority === 'none')
-
-                  return (
-                    <button
-                      key={priority}
-                      onClick={() => {
-                        setUserPriorityMutation.mutate({ assetId: asset.id, priority })
-                        setExpandedMetricColumn(null)
-                        toggleRowExpansion(asset.id)
-                      }}
-                      className={clsx(
-                        'w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-white flex items-center gap-2',
-                        config.bg,
-                        isSelected ? 'ring-2 ring-offset-2 ring-blue-400' : 'opacity-70 hover:opacity-100'
-                      )}
-                    >
-                      <IconComponent className="w-4 h-4" />
-                      <span>{config.label}</span>
-                      {isSelected && <Check className="w-4 h-4 ml-auto" />}
-                    </button>
-                  )
-                })}
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Set Priority</h5>
+            <div className="flex flex-wrap gap-1.5">
+              {PRIORITY_OPTIONS.map(priority => {
+                const config = PRIORITY_CONFIG[priority]
+                const IconComponent = config.icon
+                const isSelected = currentPriority === priority || (!currentPriority && priority === 'none')
+                return (
+                  <button
+                    key={priority}
+                    onClick={() => {
+                      setUserPriorityMutation.mutate({ assetId: asset.id, priority })
+                      setExpandedMetricColumn(null)
+                      toggleRowExpansion(asset.id)
+                    }}
+                    className={clsx(
+                      'px-3 py-2 rounded text-xs font-medium transition-all text-white flex items-center gap-1.5',
+                      config.bg,
+                      isSelected ? 'ring-2 ring-offset-1 ring-blue-400' : 'opacity-70 hover:opacity-100'
+                    )}
+                  >
+                    <IconComponent className="w-3.5 h-3.5" />
+                    <span>{config.label}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                )
+              })}
+            </div>
+            {/* Context: thesis or note below */}
+            {asset.thesis && (
+              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
+                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
+                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
               </div>
-            </WidgetCard>
+            )}
           </div>
         )
+        break
+      }
 
+      // ── Notes: styled note block + research context ──
       case 'notes':
-        return (
-          <div className="flex gap-4 h-full">
-            <WidgetCard title="Quick Note" className="flex-1">
-              <div className="h-full flex flex-col">
-                {asset.quick_note ? (
-                  <p className="text-sm text-gray-700 leading-relaxed flex-1 italic">"{asset.quick_note}"</p>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No quick note</p>
-                )}
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex-shrink-0">Quick Note</h5>
+            {asset.quick_note ? (
+              <div className="bg-amber-50/50 border border-amber-100 rounded p-2 flex-shrink-0">
+                <p className="text-xs text-gray-700 leading-relaxed italic line-clamp-4">"{asset.quick_note}"</p>
               </div>
-            </WidgetCard>
+            ) : (
+              <p className="text-xs text-gray-400 italic mb-2">No quick note</p>
+            )}
+            {asset.thesis && (
+              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
+                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
+                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
+              </div>
+            )}
           </div>
         )
+        break
 
-      default:
-        return (
-          <div className="flex gap-4 h-full">
-            <WidgetCard title="Details" className="flex-1">
-              <p className="text-sm text-gray-400 italic">No additional details for this column</p>
-            </WidgetCard>
+      // ── List Note: styled note block + research context ──
+      case 'listNote':
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex-shrink-0">List Note</h5>
+            {asset._listNotes ? (
+              <div className="bg-gray-50 border border-gray-100 rounded p-2 flex-shrink-0">
+                <p className="text-xs text-gray-700 leading-relaxed line-clamp-4">{asset._listNotes}</p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic mb-2">No list note</p>
+            )}
+            {asset.thesis && (
+              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
+                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
+                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
+              </div>
+            )}
           </div>
         )
+        break
+
+      // ── Workflows: cards + stage info ──
+      case 'workflows':
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Active Workflows</h5>
+            {workflows.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No active workflows</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {workflows.map((wf, idx) => (
+                  <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-50 border border-gray-100 rounded">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: wf.color }} />
+                    <span className="text-xs font-medium text-gray-900">{wf.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Stage + coverage context */}
+            <div className="border-t border-gray-100 pt-1.5 mt-auto flex gap-4 text-[11px] text-gray-500 flex-shrink-0">
+              {asset.process_stage && <span>Stage: <span className="text-gray-700 font-medium">{PROCESS_STAGES[asset.process_stage]?.label || asset.process_stage}</span></span>}
+              {coverage.length > 0 && <span>{coverage.length} analyst{coverage.length !== 1 ? 's' : ''}</span>}
+            </div>
+          </div>
+        )
+        break
+
+      // ── Updated: timeline + context ──
+      case 'updated':
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Timeline</h5>
+            <div className="space-y-2 flex-shrink-0">
+              {asset.updated_at && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="text-gray-700">Last updated {formatRelativeTime(asset.updated_at)}</span>
+                </div>
+              )}
+              {asset.created_at && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="text-gray-500">Created {formatRelativeTime(asset.created_at)}</span>
+                </div>
+              )}
+              {asset.process_stage && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Target className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="text-gray-700">Stage: {PROCESS_STAGES[asset.process_stage]?.label || asset.process_stage}</span>
+                </div>
+              )}
+            </div>
+            {asset.thesis && (
+              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
+                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
+                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
+              </div>
+            )}
+          </div>
+        )
+        break
+
+      // ── Default (chevron): research overview ──
+      default:
+        centerZone = (
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Thesis */}
+            {asset.thesis && (
+              <div className="mb-1.5 flex-shrink-0">
+                <h6 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Thesis</h6>
+                <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{asset.thesis}</p>
+              </div>
+            )}
+            {/* Bull / Bear */}
+            <div className="grid grid-cols-2 gap-1.5 mb-1.5 flex-shrink-0">
+              <div className="bg-green-50/50 border border-green-100 rounded p-1.5">
+                <h6 className="text-[10px] font-semibold text-green-700 uppercase tracking-wide mb-0.5">Bull Case</h6>
+                <p className="text-[11px] text-green-900 line-clamp-2">{asset.bull_case || <span className="text-gray-400 italic">—</span>}</p>
+              </div>
+              <div className="bg-red-50/50 border border-red-100 rounded p-1.5">
+                <h6 className="text-[10px] font-semibold text-red-700 uppercase tracking-wide mb-0.5">Bear Case</h6>
+                <p className="text-[11px] text-red-900 line-clamp-2">{asset.bear_case || <span className="text-gray-400 italic">—</span>}</p>
+              </div>
+            </div>
+            {/* Base / Where Different / Risks in tight row */}
+            <div className="grid grid-cols-3 gap-1.5 flex-shrink-0">
+              {asset.base_case && (
+                <div className="bg-gray-50 border border-gray-100 rounded p-1.5">
+                  <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Base</h6>
+                  <p className="text-[11px] text-gray-600 line-clamp-1">{asset.base_case}</p>
+                </div>
+              )}
+              {asset.where_different && (
+                <div className="bg-gray-50 border border-gray-100 rounded p-1.5">
+                  <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Diff. View</h6>
+                  <p className="text-[11px] text-gray-600 line-clamp-1">{asset.where_different}</p>
+                </div>
+              )}
+              {asset.risks_to_thesis && (
+                <div className="bg-gray-50 border border-gray-100 rounded p-1.5">
+                  <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Risks</h6>
+                  <p className="text-[11px] text-gray-600 line-clamp-1">{asset.risks_to_thesis}</p>
+                </div>
+              )}
+            </div>
+            {!asset.thesis && !asset.bull_case && !asset.bear_case && (
+              <p className="text-xs text-gray-400 italic">No research details available</p>
+            )}
+          </div>
+        )
+        break
     }
-  }, [getUserPriority, setUserPriorityMutation, handleAssetClick, toggleRowExpansion])
+
+    // --- ASSEMBLE 3-ZONE LAYOUT ---
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Left zone */}
+          <div className="w-44 flex-shrink-0 overflow-hidden pr-3">
+            {leftZone}
+          </div>
+          {/* Divider */}
+          <div className="w-px bg-gray-200 flex-shrink-0" />
+          {/* Center zone */}
+          <div className="flex-1 min-w-0 overflow-hidden px-4">
+            {centerZone}
+          </div>
+          {/* Divider */}
+          <div className="w-px bg-gray-200 flex-shrink-0" />
+          {/* Right zone */}
+          <div className="w-48 flex-shrink-0 overflow-hidden pl-3">
+            {rightZone}
+          </div>
+        </div>
+        {/* Action buttons */}
+        <div className="mt-1.5 pt-1.5 border-t border-gray-200 flex items-center gap-3 flex-shrink-0">
+          <button
+            onClick={() => handleAssetClick(asset)}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+          >
+            Open Asset
+            <ChevronRight className="w-3 h-3" />
+          </button>
+          {onCreateTradeIdea && (
+            <button
+              onClick={() => onCreateTradeIdea(asset.id)}
+              className="text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+            >
+              <Tag className="w-3 h-3" />
+              Create Trade Idea
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }, [getUserPriority, setUserPriorityMutation, handleAssetClick, toggleRowExpansion, onCreateTradeIdea])
+
+  // Quick action buttons rendered at the bottom of expanded rows
+  const renderExpandedActions = useCallback((asset: any) => (
+    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
+      <button
+        onClick={() => handleAssetClick(asset)}
+        className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+      >
+        Open Asset
+        <ChevronRight className="w-3 h-3" />
+      </button>
+      {onCreateTradeIdea && (
+        <button
+          onClick={() => onCreateTradeIdea(asset.id)}
+          className="text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+        >
+          <Tag className="w-3 h-3" />
+          Create Trade Idea
+        </button>
+      )}
+    </div>
+  ), [handleAssetClick, onCreateTradeIdea])
 
   // Column resizing handlers
   const handleResizeStart = useCallback((e: React.MouseEvent, columnId: string, currentWidth: number) => {
@@ -1933,6 +2465,29 @@ export function AssetTableView({
 
   // Kanban columns
   const kanbanColumns = useMemo(() => {
+    // Custom board view — build columns from board lanes
+    if (activeKanbanBoardId && kanbanBoardLanes) {
+      const laneItemMap = new Map((kanbanBoardLaneItems || []).map(i => [i.asset_list_item_id, i.lane_id]))
+      return [
+        {
+          key: 'unassigned',
+          label: 'Unassigned',
+          color: 'bg-gray-100 text-gray-600',
+          assets: filteredAssets.filter(a => !laneItemMap.has(a._rowId))
+        },
+        ...kanbanBoardLanes
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map(lane => ({
+            key: lane.id,
+            label: lane.name,
+            color: 'bg-opacity-20 text-gray-800',
+            bgColor: lane.color,
+            assets: filteredAssets.filter(a => laneItemMap.get(a._rowId) === lane.id)
+          }))
+      ]
+    }
+
+    // Preset views
     switch (kanbanOrganization) {
       case 'priority':
         return PRIORITY_OPTIONS.map(priority => {
@@ -1950,50 +2505,10 @@ export function AssetTableView({
           key: 'unassigned', label: 'No Stage', color: 'bg-gray-100 text-gray-600',
           assets: filteredAssets.filter(a => !a.process_stage)
         }])
-      case 'workflow':
-        const workflowGroups = new Map<string, { id: string; name: string; color: string; assets: any[] }>()
-        filteredAssets.forEach(asset => {
-          const workflows = assetWorkflowMap.get(asset.id) || []
-          if (workflows.length === 0) {
-            const noWf = workflowGroups.get('none') || { id: 'none', name: 'No Workflow', color: '#9CA3AF', assets: [] }
-            noWf.assets.push(asset)
-            workflowGroups.set('none', noWf)
-          } else {
-            workflows.forEach(wf => {
-              const group = workflowGroups.get(wf.id) || { ...wf, assets: [] }
-              group.assets.push(asset)
-              workflowGroups.set(wf.id, group)
-            })
-          }
-        })
-        return Array.from(workflowGroups.values()).map(wf => ({
-          key: wf.id, label: wf.name, color: 'bg-opacity-20 text-gray-800', bgColor: wf.color, assets: wf.assets
-        }))
       default:
         return []
     }
-  }, [kanbanOrganization, filteredAssets, assetWorkflowMap])
-
-  // Tree data
-  const treeData = useMemo(() => {
-    if (viewMode !== 'tree') return null
-    const root: { name: string; children: Map<string, any>; assets: any[] } = { name: 'All Assets', children: new Map(), assets: [] }
-
-    filteredAssets.forEach(asset => {
-      let groupKey: string
-      switch (treeOrganization) {
-        case 'sector': groupKey = asset.sector || 'Uncategorized'; break
-        case 'priority': groupKey = getUserPriority(asset.id) || 'none'; break
-        case 'theme': groupKey = asset.theme || 'Unassigned'; break
-        default: groupKey = asset.sector || 'Other'
-      }
-
-      if (!root.children.has(groupKey)) root.children.set(groupKey, { name: groupKey, children: new Map(), assets: [] })
-      root.children.get(groupKey)!.assets.push(asset)
-    })
-
-    return root
-  }, [viewMode, treeOrganization, filteredAssets])
+  }, [kanbanOrganization, filteredAssets, activeKanbanBoardId, kanbanBoardLanes, kanbanBoardLaneItems])
 
   // ============================================================================
   // Render
@@ -2003,11 +2518,11 @@ export function AssetTableView({
     <div className={clsx(
       fillHeight ? 'h-full flex flex-col' : 'space-y-4'
     )}>
-      {/* Compact Toolbar */}
+      {/* Toolbar */}
       {!hideToolbar && (
       <div className={clsx('flex items-center gap-3 pb-3', fillHeight && 'flex-shrink-0')}>
-        {/* Search - compact */}
-        <div className="relative w-64">
+        {/* Left: Search */}
+        <div className="relative w-56">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             ref={searchInputRef}
@@ -2024,25 +2539,103 @@ export function AssetTableView({
           )}
         </div>
 
-        {/* Density toggle - next to search */}
-        {viewMode === 'table' && <DensityToggle />}
+        {/* Add Group — inline in toolbar for listGroup mode */}
+        {viewMode === 'table' && groupBy === 'listGroup' && onCreateGroup && (
+          showInlineNewGroup ? (
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={() => setShowInlineColorPicker(!showInlineColorPicker)}
+                  className="w-4 h-4 rounded-full border border-gray-300 hover:border-gray-400 transition-colors"
+                  style={{ backgroundColor: inlineNewGroupColor }}
+                  title="Pick color"
+                />
+                {showInlineColorPicker && (
+                  <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 z-50 flex gap-1 flex-wrap w-[120px]">
+                    {['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280'].map(color => (
+                      <button
+                        key={color}
+                        onClick={() => { setInlineNewGroupColor(color); setShowInlineColorPicker(false) }}
+                        className={clsx('w-4 h-4 rounded-full transition-transform hover:scale-110', inlineNewGroupColor === color && 'ring-2 ring-offset-1 ring-gray-400')}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <input
+                ref={inlineNewGroupInputRef}
+                type="text"
+                value={inlineNewGroupName}
+                onChange={(e) => setInlineNewGroupName(e.target.value)}
+                placeholder="Group name..."
+                className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter' && inlineNewGroupName.trim()) {
+                    e.preventDefault()
+                    onCreateGroup({ name: inlineNewGroupName.trim(), color: inlineNewGroupColor })
+                    setInlineNewGroupName('')
+                    setShowInlineNewGroup(false)
+                    setShowInlineColorPicker(false)
+                  }
+                  if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    setInlineNewGroupName('')
+                    setShowInlineNewGroup(false)
+                    setShowInlineColorPicker(false)
+                  }
+                }}
+              />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (inlineNewGroupName.trim()) {
+                    onCreateGroup({ name: inlineNewGroupName.trim(), color: inlineNewGroupColor })
+                    setInlineNewGroupName('')
+                    setShowInlineNewGroup(false)
+                    setShowInlineColorPicker(false)
+                  }
+                }}
+                disabled={!inlineNewGroupName.trim()}
+                className="p-0.5 rounded text-green-600 hover:bg-green-50 disabled:text-gray-300 transition-colors"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setInlineNewGroupName(''); setShowInlineNewGroup(false); setShowInlineColorPicker(false) }}
+                className="p-0.5 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowInlineNewGroup(true)
+                setInlineNewGroupName('')
+                setInlineNewGroupColor('#6366f1')
+                setTimeout(() => inlineNewGroupInputRef.current?.focus(), 50)
+              }}
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              Add Group
+            </button>
+          )
+        )}
 
-        {/* Spacer */}
+        {/* Center spacer */}
         <div className="flex-1" />
 
         {/* Right side controls */}
         <div className="flex items-center gap-1">
-          {/* Select mode */}
-          <button
-            onClick={() => selectionMode ? clearSelection() : setSelectionMode(true)}
-            className={clsx(
-              'p-1.5 rounded-md transition-colors',
-              selectionMode ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-            )}
-            title={selectionMode ? 'Cancel selection' : 'Select assets'}
-          >
-            <CheckSquare className="w-4 h-4" />
-          </button>
+          {/* Density toggle (table mode only) */}
+          {viewMode === 'table' && <DensityToggle />}
+
+          {/* Divider */}
+          {viewMode === 'table' && <div className="h-4 w-px bg-gray-200 mx-1" />}
 
           {/* Group by */}
           {viewMode === 'table' && (
@@ -2050,16 +2643,29 @@ export function AssetTableView({
               <button
                 onClick={() => setShowGroupByMenu(!showGroupByMenu)}
                 className={clsx(
-                  'p-1.5 rounded-md transition-colors',
+                  'flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors text-xs font-medium',
                   groupBy !== 'none' ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
                 )}
                 title="Group by"
               >
                 <Layers className="w-4 h-4" />
+                {groupBy !== 'none' && (
+                  <span>
+                    {[
+                      ...GROUP_BY_OPTIONS,
+                      ...(listGroupData ? [{ value: 'listGroup' as GroupByOption, label: 'By Custom', icon: FolderTree }] : []),
+                      ...(listId ? [{ value: 'contributor' as GroupByOption, label: 'By Contributor', icon: Users }] : []),
+                    ].find(o => o.value === groupBy)?.label || ''}
+                  </span>
+                )}
               </button>
               {showGroupByMenu && (
-                <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
-                  {GROUP_BY_OPTIONS.map(option => (
+                <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
+                  {[
+                    ...GROUP_BY_OPTIONS,
+                    ...(listGroupData ? [{ value: 'listGroup' as GroupByOption, label: 'By Custom', icon: FolderTree }] : []),
+                    ...(listId ? [{ value: 'contributor' as GroupByOption, label: 'By Contributor', icon: Users }] : []),
+                  ].map(option => (
                     <button key={option.value}
                       onClick={() => { setGroupBy(option.value); setShowGroupByMenu(false); setCollapsedGroups(new Set()) }}
                       className={clsx('w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 hover:bg-gray-50',
@@ -2075,51 +2681,55 @@ export function AssetTableView({
             </div>
           )}
 
+          {/* Manual order toggle (when drag-reorder is available) */}
+          {viewMode === 'table' && onReorderItem && groupBy === 'none' && (
+            sortBy === null ? (
+              <button
+                onClick={() => setSortBy('updated_at')}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-blue-600 bg-blue-50 transition-colors"
+                title="Exit manual order (restore sort)"
+              >
+                <GripVertical className="w-3.5 h-3.5" />
+                <span>Manual</span>
+                <X className="w-3 h-3 ml-0.5" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setSortBy(null)}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                title="Clear sort to enable drag reorder"
+              >
+                <GripVertical className="w-3.5 h-3.5" />
+                <span>Manual</span>
+              </button>
+            )
+          )}
+
           {/* Column settings */}
           {viewMode === 'table' && (
-            <div className="relative" ref={columnSettingsRef}>
-              <button
-                onClick={() => setShowColumnSettings(!showColumnSettings)}
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  showColumnSettings ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                )}
-                title="Column settings"
-              >
-                <Settings2 className="w-4 h-4" />
-              </button>
-              {showColumnSettings && (
-                <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-                    <span className="text-xs font-medium text-gray-700">Columns</span>
-                    <button onClick={resetColumns} className="text-xs text-blue-600 hover:text-blue-700">Reset</button>
-                  </div>
-                  <div className="p-1.5 max-h-64 overflow-y-auto">
-                    {columns.filter(col => col.id !== 'select').map((col) => (
-                      <div key={col.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 rounded"
-                        draggable onDragStart={() => setDraggedColumn(col.id)} onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => draggedColumn && reorderColumns(draggedColumn, col.id)}
-                      >
-                        <GripVertical className="w-3 h-3 text-gray-300 cursor-grab" />
-                        <button onClick={() => toggleColumnVisibility(col.id)} className="text-gray-400 hover:text-gray-600">
-                          {col.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                        </button>
-                        <span className={clsx('text-xs flex-1', col.visible ? 'text-gray-700' : 'text-gray-400')}>{col.label}</span>
-                        {/* Hide pin toggle for columns that can't be unpinned */}
-                        {(col.canUnpin !== false || !col.pinned) ? (
-                          <button onClick={() => toggleColumnPin(col.id)} className={clsx('text-gray-400 hover:text-gray-600', col.pinned && 'text-blue-600')}>
-                            <Pin className="w-3 h-3" />
-                          </button>
-                        ) : (
-                          <Pin className="w-3 h-3 text-blue-600 opacity-50" title="This column cannot be unpinned" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+            <button
+              onClick={() => { setDraftColumns(columns.map(c => ({ ...c }))); setShowColumnSettings(true) }}
+              className={clsx(
+                'p-1.5 rounded-md transition-colors',
+                'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
               )}
-            </div>
+              title="Column settings"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
           )}
+
+          {/* Select mode */}
+          <button
+            onClick={() => selectionMode ? clearSelection() : setSelectionMode(true)}
+            className={clsx(
+              'p-1.5 rounded-md transition-colors',
+              selectionMode ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+            )}
+            title={selectionMode ? 'Cancel selection' : 'Select assets'}
+          >
+            <CheckSquare className="w-4 h-4" />
+          </button>
 
           {/* Divider */}
           <div className="h-4 w-px bg-gray-200 mx-1" />
@@ -2132,9 +2742,6 @@ export function AssetTableView({
               </button>
               <button onClick={() => setViewMode('kanban')} className={clsx('p-1 rounded', viewMode === 'kanban' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500')} title="Kanban view">
                 <Columns3 className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setViewMode('tree')} className={clsx('p-1 rounded', viewMode === 'tree' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500')} title="Tree view">
-                <FolderTree className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -2156,22 +2763,73 @@ export function AssetTableView({
       )}
 
       {/* Selection Actions - compact */}
-      {!hideToolbar && selectionMode && selectedAssetIds.size > 0 && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-md mb-2">
-          <span className="text-xs font-medium text-blue-700">{selectedAssetIds.size} selected</span>
-          {onBulkAction && (
-            <button
-              onClick={() => onBulkAction(Array.from(selectedAssetIds))}
-              className="text-xs text-blue-700 hover:text-blue-900 font-medium"
-            >
-              {bulkActionLabel}
+      {!hideToolbar && selectionMode && selectedAssetIds.size > 0 && (() => {
+        const selectedArr = Array.from(selectedAssetIds)
+        // For row-specific removal checks, resolve selected asset IDs to their rows
+        const removableCount = canRemoveRow
+          ? assets.filter(a => selectedAssetIds.has(a.id) && canRemoveRow(a._rowId || a.id)).length
+          : selectedArr.length
+        const hasExclusions = canRemoveRow && removableCount < selectedArr.length
+
+        return (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-md mb-2">
+            <span className="text-xs font-medium text-blue-700">
+              {selectedArr.length} selected
+              {hasExclusions && (
+                <span className="text-blue-500 font-normal">{` \u00B7 ${removableCount} removable`}</span>
+              )}
+            </span>
+            {onBulkAction && removableCount > 0 && (
+              <button
+                onClick={() => onBulkAction(selectedArr)}
+                className="text-xs text-blue-700 hover:text-blue-900 font-medium"
+              >
+                {bulkActionLabel}
+              </button>
+            )}
+            {/* Create Trade Idea (bulk) */}
+            {onCreateTradeIdea && (
+              <button
+                onClick={() => onCreateTradeIdea(selectedArr[0])}
+                className="text-xs text-blue-700 hover:text-blue-900 font-medium flex items-center gap-1"
+              >
+                <Tag className="w-3.5 h-3.5" />
+                Trade Idea{selectedArr.length > 1 ? ` (${selectedArr.length})` : ''}
+              </button>
+            )}
+            {/* Move to Group (bulk) */}
+            {listGroupData && onMoveItemToGroup && (
+              <div className="relative group/bulkmove">
+                <button className="text-xs text-blue-700 hover:text-blue-900 font-medium flex items-center gap-1">
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  Move to Group
+                </button>
+                <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 hidden group-hover/bulkmove:block z-50">
+                  <button
+                    onClick={() => { selectedArr.forEach(id => onMoveItemToGroup(id, null)); clearSelection() }}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 text-gray-600"
+                  >
+                    No Group
+                  </button>
+                  {listGroupData.map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => { selectedArr.forEach(id => onMoveItemToGroup(id, g.id)); clearSelection() }}
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      {g.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: g.color }} />}
+                      <span className="truncate">{g.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button onClick={clearSelection} className="text-xs text-blue-600 hover:text-blue-800 ml-auto">
+              Clear
             </button>
-          )}
-          <button onClick={clearSelection} className="text-xs text-blue-600 hover:text-blue-800 ml-auto">
-            Clear
-          </button>
-        </div>
-      )}
+          </div>
+        )
+      })()}
 
       {/* Content */}
       {isLoading ? (
@@ -2189,8 +2847,12 @@ export function AssetTableView({
             <Card padding="none" className={clsx('overflow-hidden pro-table', fillHeight && 'flex-1 min-h-0 flex flex-col', `density-${density}`)}>
               <div ref={tableContainerRef} className={clsx('pro-table-container overflow-auto', fillHeight && 'flex-1')}>
                 {/* Header */}
-                <div className="pro-table-header" style={{ minWidth: totalTableWidth + (hiddenColumns.length > 0 ? 40 : 0) }}>
+                <div className="pro-table-header" style={{ minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0) + (hiddenColumns.length > 0 ? 40 : 0) }}>
                   <div className="flex items-center">
+                    {/* Drag handle spacer in header */}
+                    {canDragRows && (
+                      <div className="flex-shrink-0" style={{ width: dragHandleWidth }} />
+                    )}
                     {visibleColumns.map((col, colIndex) => {
                       if (col.id === 'select' && !selectionMode) return null
                       const isPinned = col.pinned || col.id === 'select' // Select column is always "pinned" to left
@@ -2265,7 +2927,7 @@ export function AssetTableView({
                           style={{
                             width: col.width,
                             minWidth: col.minWidth,
-                            cursor: col.id !== 'select' ? 'grab' : undefined,
+                            cursor: col.sortable ? 'pointer' : undefined,
                             background: isPinned ? 'linear-gradient(to bottom, #ffffff, #f8fafc)' : undefined
                           }}
                         >
@@ -2341,31 +3003,6 @@ export function AssetTableView({
                       )
                     })}
 
-                    {/* Add Column Button */}
-                    <div className="flex-shrink-0 px-2 py-2.5">
-                      <button
-                        ref={addColumnRef}
-                        data-add-column-btn
-                        onClick={() => {
-                          if (addColumnDropdown) {
-                            setAddColumnDropdown(null)
-                            setAddColumnSearch('')
-                          } else {
-                            const rect = addColumnRef.current?.getBoundingClientRect()
-                            if (rect) {
-                              setAddColumnDropdown({
-                                x: Math.min(rect.right - 224, window.innerWidth - 234), // 224 = dropdown width, 10px margin
-                                y: rect.bottom + 4
-                              })
-                            }
-                          }
-                        }}
-                        className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
-                        title="Add column"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
                   </div>
                 </div>
 
@@ -2766,7 +3403,7 @@ export function AssetTableView({
 
                     return (
                       <div
-                        key={asset.id}
+                        key={asset._rowId || asset.id}
                         ref={hasWrapTextColumn && !isExpanded ? rowVirtualizer.measureElement : undefined}
                         data-index={virtualRow.index}
                         className={clsx(
@@ -2777,22 +3414,38 @@ export function AssetTableView({
                           flagColor && 'flagged',
                           flagColor && `flag-${flagColor}`,
                           hasWrapTextColumn && !isExpanded && 'wrap-enabled',
-                          isExpanded && 'expanded flex flex-col'
+                          isExpanded && 'expanded flex flex-col',
+                          dragRowIndex === virtualRow.index && 'opacity-50'
                         )}
                         data-row-index={virtualRow.index}
+                        draggable={canDragRows}
+                        onDragStart={canDragRows ? (e) => handleRowDragStart(e, virtualRow.index) : undefined}
+                        onDragOver={canDragRows ? (e) => handleRowDragOver(e, virtualRow.index) : undefined}
+                        onDrop={canDragRows ? handleRowDrop : undefined}
+                        onDragEnd={canDragRows ? handleRowDragEnd : undefined}
                         style={{
                           height: isExpanded ? expandedRowHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
                           minHeight: hasWrapTextColumn && !isExpanded ? densityRowHeight : undefined,
                           transform: `translateY(${virtualRow.start + insertOffset}px)`
                         }}>
+                        {/* Drop indicator line */}
+                        {canDragRows && dropTargetIndex === virtualRow.index && dragRowIndex !== null && dragRowIndex !== virtualRow.index && (
+                          <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-10" style={{ transform: 'translateY(-1px)' }} />
+                        )}
                         <div
                           className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
-                          style={{ minWidth: totalTableWidth, minHeight: densityRowHeight }}
+                          style={{ minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0), minHeight: densityRowHeight }}
                           onDoubleClick={() => toggleRowExpansion(asset.id)}
                           onContextMenu={(e) => {
                             e.preventDefault()
-                            setRowContextMenu({ assetId: asset.id, x: e.clientX, y: e.clientY })
+                            setRowContextMenu({ assetId: asset.id, rowId: asset._rowId || asset.id, x: e.clientX, y: e.clientY })
                           }}>
+                          {/* Drag handle */}
+                          {canDragRows && (
+                            <div className="flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 flex-shrink-0" style={{ width: dragHandleWidth, minHeight: densityRowHeight }}>
+                              <GripVertical className="w-3.5 h-3.5" />
+                            </div>
+                          )}
                           {visibleColumns.map((col, colIndex) => {
                             if (col.id === 'select' && !selectionMode) return null
                             const isPinned = col.pinned || col.id === 'select' // Select column is always "pinned" to left
@@ -2826,7 +3479,7 @@ export function AssetTableView({
                                     ? (isSelected
                                         ? '#dbeafe'  // blue-100 for selected
                                         : isEvenRow
-                                          ? '#f1f5f9'  // slate-100 for even rows
+                                          ? '#f8fafc'  // slate-50 for even rows (matches --table-row-even)
                                           : '#ffffff') // white for odd rows
                                     : undefined
                                 }}
@@ -2850,7 +3503,7 @@ export function AssetTableView({
                                         </button>
                                       )}
                                       <div className="flex items-center gap-1.5">
-                                        <span className={clsx('pro-symbol', (density === 'ultra' || density === 'micro') ? 'text-xs' : 'text-sm')}>{asset.symbol}</span>
+                                        <span className="pro-symbol">{asset.symbol}</span>
                                         {/* Hide price target icon in micro mode */}
                                         {density !== 'micro' && asset.price_targets?.length > 0 && (
                                           <Target className="h-3 w-3 text-amber-500" title={`${asset.price_targets.length} price target(s)`} />
@@ -2860,7 +3513,7 @@ export function AssetTableView({
                                   </div>
                                 )}
                                 {col.id === 'companyName' && (
-                                  <span className={clsx('pro-company-name flex-1 min-w-0 truncate', (density === 'ultra' || density === 'micro') ? 'text-xs' : 'text-sm')}>
+                                  <span className="pro-company-name flex-1 min-w-0 truncate">
                                     {asset.company_name || '—'}
                                   </span>
                                 )}
@@ -2873,13 +3526,9 @@ export function AssetTableView({
 
                                   if (density === 'comfortable') {
                                     return (
-                                      <div className="flex items-center gap-2" title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
-                                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600 flex-shrink-0">
-                                          {getInitials(lead.analyst)}
-                                        </div>
+                                      <div className="flex items-center gap-1.5" title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
                                         <div className="min-w-0 flex-1">
                                           <span className="pro-analyst block truncate">{lead.analyst}</span>
-                                          {lead.team && <span className="pro-analyst-team block truncate">{lead.team}</span>}
                                         </div>
                                         {coverage.length > 1 && <span className="pro-analyst-count">+{coverage.length - 1}</span>}
                                       </div>
@@ -2888,13 +3537,12 @@ export function AssetTableView({
 
                                   return (
                                     <div className={clsx('flex items-center', isMicro ? 'gap-0.5' : 'gap-1.5')} title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
-                                      <span className={clsx('pro-analyst truncate', isMicro ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')}>{lead.analyst}</span>
+                                      <span className="pro-analyst truncate">{lead.analyst}</span>
                                       {coverage.length > 1 && <span className={clsx('pro-analyst-count', isMicro && 'text-[8px] px-0.5 py-0')}>+{coverage.length - 1}</span>}
                                     </div>
                                   )
                                 })()}
                                 {col.id === 'workflows' && (() => {
-                                  const isMicroOrUltra = density === 'ultra' || density === 'micro'
                                   const isMicro = density === 'micro'
 
                                   if (workflows.length === 0) {
@@ -2905,7 +3553,7 @@ export function AssetTableView({
                                           const rect = e.currentTarget.getBoundingClientRect()
                                           setWorkflowPopover({ assetId: asset.id, x: rect.left, y: rect.bottom + 4 })
                                         }}
-                                        className={clsx('text-gray-400 hover:text-blue-600 transition-colors', isMicro ? 'text-[9px]' : isMicroOrUltra ? 'text-[10px]' : 'text-xs')}
+                                        className="text-gray-400 hover:text-blue-600 transition-colors"
                                       >
                                         {isMicro ? '—' : 'Add workflow'}
                                       </button>
@@ -2919,7 +3567,7 @@ export function AssetTableView({
                                         const rect = e.currentTarget.getBoundingClientRect()
                                         setWorkflowPopover({ assetId: asset.id, x: rect.left, y: rect.bottom + 4 })
                                       }}
-                                      className={clsx('pro-workflow-badge', isMicro && 'text-[9px] px-1 py-0', isMicroOrUltra && !isMicro && 'text-[10px]')}
+                                      className={clsx('pro-workflow-badge', isMicro && 'px-1 py-0')}
                                     >
                                       <span className={clsx('pro-workflow-dot', isMicro && 'w-1.5 h-1.5')} style={{ backgroundColor: workflows[0]?.color || '#6366f1' }} />
                                       <span>{workflows.length}{isMicro ? '' : ` workflow${workflows.length !== 1 ? 's' : ''}`}</span>
@@ -2929,7 +3577,7 @@ export function AssetTableView({
                                 {col.id === 'price' && (() => {
                                   if (!displayPrice) return <span className="pro-empty-cell">—</span>
                                   return (
-                                    <span className={clsx('pro-price', (density === 'ultra' || density === 'micro') && 'text-xs')}>
+                                    <span className="pro-price">
                                       {formatPrice(displayPrice)}
                                     </span>
                                   )
@@ -2938,7 +3586,7 @@ export function AssetTableView({
                                   if (!showLivePrices || changePercent === undefined) return <span className="pro-empty-cell">—</span>
                                   const changeClass = getPriceChangeClass(changePercent)
                                   return (
-                                    <span className={clsx('pro-price-change', changeClass, (density === 'ultra' || density === 'micro') && 'text-[10px] px-1 py-0')}>
+                                    <span className={clsx('pro-price-change', changeClass)}>
                                       {formatPriceChange(changePercent)}
                                     </span>
                                   )
@@ -2957,14 +3605,14 @@ export function AssetTableView({
                                   const content = config ? (
                                     <span className={clsx(
                                       'inline-flex items-center justify-center rounded font-medium text-white',
-                                      isMicro ? 'px-1.5 py-0 text-[10px]' : isMicroOrUltra ? 'gap-1 px-1.5 py-0 text-[10px]' : 'gap-1 px-2 py-0.5 text-xs',
+                                      isMicro ? 'px-1.5 py-0' : isMicroOrUltra ? 'gap-1 px-1.5 py-0' : 'gap-1 px-2 py-0.5',
                                       config.bg
                                     )}>
                                       {!isMicro && IconComponent && <IconComponent className={isMicroOrUltra ? 'w-2.5 h-2.5' : 'w-3 h-3'} />}
                                       <span>{config.label}</span>
                                     </span>
                                   ) : (
-                                    <span className={clsx('text-gray-400', isMicro ? 'text-[10px]' : isMicroOrUltra ? 'text-[10px]' : 'text-xs')}>
+                                    <span className="text-gray-400">
                                       {isMicro ? '—' : (isEditable ? 'Set priority' : '—')}
                                     </span>
                                   )
@@ -2992,37 +3640,37 @@ export function AssetTableView({
                                   )
                                 })()}
                                 {col.id === 'sector' && (
-                                  <span className={clsx('text-gray-600 truncate', (density === 'ultra' || density === 'micro') ? 'text-xs' : 'text-sm')}>
+                                  <span className="text-gray-600 truncate">
                                     {asset.sector || '—'}
                                   </span>
                                 )}
                                 {col.id === 'thesis' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate', density === 'micro' ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')} title={asset.thesis || 'No thesis'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.thesis || 'No thesis'}>
                                     {asset.thesis || <span className="text-gray-400 italic">No thesis</span>}
                                   </span>
                                 )}
                                 {col.id === 'bull_case' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate', density === 'micro' ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')} title={asset.bull_case || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bull_case || 'Not specified'}>
                                     {asset.bull_case || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'bear_case' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate', density === 'micro' ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')} title={asset.bear_case || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bear_case || 'Not specified'}>
                                     {asset.bear_case || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'base_case' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate', density === 'micro' ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')} title={asset.base_case || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.base_case || 'Not specified'}>
                                     {asset.base_case || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'where_different' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate', density === 'micro' ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')} title={asset.where_different || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.where_different || 'Not specified'}>
                                     {asset.where_different || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'risks_to_thesis' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate', density === 'micro' ? 'text-[9px]' : (density === 'ultra') ? 'text-[10px]' : 'text-sm')} title={asset.risks_to_thesis || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.risks_to_thesis || 'Not specified'}>
                                     {asset.risks_to_thesis || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
@@ -3058,7 +3706,6 @@ export function AssetTableView({
                                     )
                                   }
 
-                                  const isMicroOrUltra = density === 'ultra' || density === 'micro'
                                   const isMicro = density === 'micro'
 
                                   return (
@@ -3071,9 +3718,63 @@ export function AssetTableView({
                                       title={quickNote || 'Click to add quick note'}
                                     >
                                       {quickNote ? (
-                                        <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate', isMicro ? 'text-[9px]' : isMicroOrUltra ? 'text-[10px]' : 'text-sm')}>{quickNote}</span>
+                                        <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{quickNote}</span>
                                       ) : (
-                                        <span className={clsx('text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity', isMicro ? 'text-[9px]' : isMicroOrUltra ? 'text-[10px]' : 'text-sm')}>
+                                        <span className="text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity">
+                                          {isMicro ? '+' : 'Add note...'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+                                {col.id === 'listNote' && onUpdateListNote && (() => {
+                                  const listNote = (asset as any)._listNotes || ''
+                                  const rowId = (asset as any)._rowId || asset.id
+                                  const isEditing = editingListNoteRowId === rowId
+
+                                  if (isEditing) {
+                                    return (
+                                      <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                        <textarea
+                                          autoFocus
+                                          value={editingListNoteValue}
+                                          onChange={(e) => setEditingListNoteValue(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                              e.preventDefault()
+                                              saveListNote(rowId)
+                                            } else if (e.key === 'Escape') {
+                                              e.preventDefault()
+                                              cancelListNoteEdit()
+                                            }
+                                          }}
+                                          onBlur={() => saveListNote(rowId)}
+                                          placeholder="Add list note..."
+                                          rows={2}
+                                          className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                        />
+                                        <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
+                                          Enter to save · Esc to cancel
+                                        </div>
+                                      </div>
+                                    )
+                                  }
+
+                                  const isMicro = density === 'micro'
+
+                                  return (
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        startEditingListNote(rowId, listNote)
+                                      }}
+                                      className={clsx('group/listnote w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                      title={listNote || 'Click to add list note'}
+                                    >
+                                      {listNote ? (
+                                        <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{listNote}</span>
+                                      ) : (
+                                        <span className="text-gray-400 italic opacity-0 group-hover/listnote:opacity-100 transition-opacity">
                                           {isMicro ? '+' : 'Add note...'}
                                         </span>
                                       )}
@@ -3090,8 +3791,7 @@ export function AssetTableView({
                                       'pro-timestamp flex items-center',
                                       isMicro ? 'gap-0.5' : 'gap-1.5',
                                       freshness === 'recent' && 'recent',
-                                      freshness === 'stale' && 'stale',
-                                      isMicro ? 'text-[9px]' : (density === 'ultra') && 'text-[10px]'
+                                      freshness === 'stale' && 'stale'
                                     )}>
                                       <Clock className={isMicro ? 'h-2 w-2 flex-shrink-0' : 'h-3 w-3 flex-shrink-0'} />
                                       <span className="truncate tabular-nums">
@@ -3125,70 +3825,27 @@ export function AssetTableView({
                           })}
                         </div>
                         {isExpanded && (
-                          <div className="pro-expanded-row px-6 py-4" style={{ height: expandedRowHeight - densityRowHeight }}>
-                            {/* Show metric-specific details if triggered by Enter on a specific column */}
-                            {expandedMetricColumn?.assetId === asset.id ? (
-                              <div className="h-full flex flex-col">
-                                <div className="flex items-center justify-between mb-3">
-                                  <h4 className="pro-expanded-section-title mb-0">
-                                    {visibleColumns.find(c => c.id === expandedMetricColumn.columnId)?.label || 'Details'}
-                                  </h4>
-                                  <button
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => { toggleRowExpansion(asset.id); setExpandedMetricColumn(null) }}
-                                    className="p-1 hover:bg-gray-100 rounded transition-colors"
-                                  >
-                                    <X className="w-4 h-4 text-gray-400" />
-                                  </button>
-                                </div>
-                                <div className="flex-1 overflow-auto">
-                                  {renderMetricDetail(asset, expandedMetricColumn.columnId, quote, coverage, workflows)}
-                                </div>
-                                <div className="mt-4 pt-3 border-t border-gray-100 flex gap-2">
-                                  <Button variant="secondary" size="sm" onClick={() => handleAssetClick(asset)}>
-                                    View Full Details
-                                  </Button>
-                                </div>
+                          <div className="pro-expanded-row px-5 py-3 overflow-hidden" style={{ height: expandedRowHeight - densityRowHeight }}>
+                            <div className="h-full flex flex-col overflow-hidden">
+                              <div className="flex items-center justify-end mb-0 -mt-1 -mr-2">
+                                <button
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => { toggleRowExpansion(asset.id); setExpandedMetricColumn(null) }}
+                                  className="p-0.5 hover:bg-gray-200/60 rounded transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5 text-gray-400" />
+                                </button>
                               </div>
-                            ) : (
-                              /* Default expanded view (when expanded via chevron) */
-                              <>
-                                <div className="grid grid-cols-3 gap-8">
-                                  <div>
-                                    <h4 className="pro-expanded-section-title">Asset Info</h4>
-                                    <div className="space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-500">Sector</span>
-                                        <span className="text-sm font-medium text-gray-900">{asset.sector || '—'}</span>
-                                      </div>
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-500">Stage</span>
-                                        <span className="text-sm font-medium text-gray-900">{asset.process_stage || '—'}</span>
-                                      </div>
-                                      {asset.market_cap && (
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-xs text-gray-500">Market Cap</span>
-                                          <span className="text-sm font-mono font-medium text-gray-900">{formatPrice(asset.market_cap)}</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <h4 className="pro-expanded-section-title">Thesis</h4>
-                                    <p className="text-sm text-gray-600 leading-relaxed">{asset.thesis || 'No thesis available'}</p>
-                                  </div>
-                                  <div>
-                                    <h4 className="pro-expanded-section-title">Notes</h4>
-                                    <p className="text-sm text-gray-600 leading-relaxed italic">{asset.quick_note || 'No notes'}</p>
-                                  </div>
-                                </div>
-                                <div className="mt-4 pt-3 border-t border-gray-100 flex gap-2">
-                                  <Button variant="secondary" size="sm" onClick={() => handleAssetClick(asset)}>
-                                    View Full Details
-                                  </Button>
-                                </div>
-                              </>
-                            )}
+                              <div className="flex-1 min-h-0 overflow-hidden">
+                                {renderMetricDetail(
+                                  asset,
+                                  expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
+                                  quote,
+                                  coverage,
+                                  workflows
+                                )}
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3336,155 +3993,677 @@ export function AssetTableView({
 
           {/* GROUPED TABLE VIEW */}
           {viewMode === 'table' && groupBy !== 'none' && groupedAssets && (
-            <Card padding="none" className={clsx('overflow-hidden', fillHeight && 'flex-1 min-h-0 flex flex-col')}>
-              <div className={clsx(fillHeight ? 'overflow-auto flex-1' : '')}>
-                {groupedAssets.map(group => (
-                  <div key={group.key} className="border-b border-gray-100 last:border-b-0">
-                    {/* Group Header */}
-                    <button
-                      onClick={() => {
-                        setCollapsedGroups(prev => {
-                          const next = new Set(prev)
-                          if (next.has(group.key)) next.delete(group.key)
-                          else next.add(group.key)
-                          return next
-                        })
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors sticky top-0 z-10"
-                    >
-                      {collapsedGroups.has(group.key) ? (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      )}
-                      {group.color && (
-                        <span className={clsx('px-1.5 py-0.5 text-xs font-medium rounded', group.color)}>
-                          {group.label}
-                        </span>
-                      )}
-                      {!group.color && (
-                        <span className="text-sm font-medium text-gray-700">{group.label}</span>
-                      )}
-                      <span className="text-xs text-gray-500">({group.assets.length})</span>
-                    </button>
+            <Card padding="none" className={clsx('overflow-hidden pro-table', fillHeight && 'flex-1 min-h-0 flex flex-col', `density-${density}`)}>
+              <div className={clsx('pro-table-container overflow-auto', fillHeight && 'flex-1')}>
+                {/* Column Header — same as flat table */}
+                <div className="pro-table-header" style={{ minWidth: totalTableWidth + (canDragGroupedRows ? dragHandleWidth : 0) + (hiddenColumns.length > 0 ? 40 : 0) }}>
+                  <div className="flex items-center">
+                    {/* Drag handle spacer */}
+                    {canDragGroupedRows && (
+                      <div className="flex-shrink-0" style={{ width: dragHandleWidth }} />
+                    )}
+                    {visibleColumns.map((col, colIndex) => {
+                      if (col.id === 'select' && !selectionMode) return null
+                      const isPinned = col.pinned || col.id === 'select'
+                      const leftOffset = isPinned
+                        ? visibleColumns.slice(0, colIndex).filter(c => (c.pinned || c.id === 'select') && (c.id !== 'select' || selectionMode)).reduce((sum, c) => sum + c.width, 0)
+                        : 0
+                      const sortField = col.id === 'ticker' ? 'symbol' : col.id === 'companyName' ? 'company_name' : col.id === 'price' ? 'current_price' : col.id === 'updated' ? 'updated_at' : col.id
+                      const isSorted = sortBy === sortField
+                      const isDragOver = dragOverColumn === col.id && draggedColumn !== col.id
+                      const lastPinnedCol = [...visibleColumns].reverse().find(c =>
+                        (c.pinned || c.id === 'select') && (c.id !== 'select' || selectionMode)
+                      )
+                      const isLastPinned = isPinned && col.id === lastPinnedCol?.id
 
-                    {/* Group Content */}
+                      return (
+                        <div
+                          key={col.id}
+                          draggable={col.id !== 'select'}
+                          onDragStart={(e) => {
+                            if (col.id !== 'select') {
+                              setDraggedColumn(col.id)
+                              e.dataTransfer.effectAllowed = 'move'
+                              const dragEl = e.currentTarget.cloneNode(true) as HTMLElement
+                              dragEl.style.opacity = '0.8'
+                              dragEl.style.background = '#e0e7ff'
+                              dragEl.style.borderRadius = '4px'
+                              dragEl.style.padding = '8px 12px'
+                              document.body.appendChild(dragEl)
+                              e.dataTransfer.setDragImage(dragEl, 0, 0)
+                              setTimeout(() => document.body.removeChild(dragEl), 0)
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            e.preventDefault()
+                            if (draggedColumn && col.id !== 'select' && col.id !== draggedColumn) {
+                              setDragOverColumn(col.id)
+                            }
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                          }}
+                          onDragLeave={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+                              if (dragOverColumn === col.id) {
+                                setDragOverColumn(null)
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            if (draggedColumn && draggedColumn !== col.id && col.id !== 'select') {
+                              reorderColumns(draggedColumn, col.id)
+                            }
+                            setDragOverColumn(null)
+                          }}
+                          onDragEnd={() => {
+                            setDraggedColumn(null)
+                            setDragOverColumn(null)
+                          }}
+                          className={clsx(
+                            'pro-table-header-cell relative px-3 py-2.5 group transition-all duration-75',
+                            isLastPinned && 'border-r-2 border-slate-200',
+                            isSorted && 'sorted',
+                            draggedColumn === col.id && 'opacity-40 scale-[0.98]'
+                          )}
+                          style={{
+                            width: col.width,
+                            minWidth: col.minWidth,
+                            cursor: col.sortable ? 'pointer' : undefined,
+                            background: isPinned ? 'linear-gradient(to bottom, #ffffff, #f8fafc)' : undefined
+                          }}
+                        >
+                          {isDragOver && (
+                            <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-blue-500 z-20" />
+                          )}
+                          {col.id === 'select' ? (
+                            <button
+                              onClick={() => isAllSelected ? clearSelection() : selectAllFiltered()}
+                              className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                              title={isAllSelected ? 'Deselect all' : 'Select all'}
+                            >
+                              {isAllSelected ? (
+                                <CheckSquare className="h-4 w-4 text-blue-600" />
+                              ) : isSomeSelected ? (
+                                <div className="relative">
+                                  <Square className="h-4 w-4 text-gray-400" />
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-2 h-0.5 bg-blue-600 rounded" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <Square className="h-4 w-4 text-gray-400" />
+                              )}
+                            </button>
+                          ) : (
+                            <div
+                              className="flex items-center w-full gap-1 min-w-0"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation()
+                                if (col.sortable) handleSort(sortField)
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault()
+                                setColumnContextMenu({ columnId: col.id, x: e.clientX, y: e.clientY })
+                              }}
+                            >
+                              <span className="flex items-center gap-1 flex-1 min-w-0 select-none">
+                                <span className={clsx('truncate', col.pinned && 'text-blue-600 font-medium')}>{col.label}</span>
+                              </span>
+                              {col.sortable && sortBy === sortField && (
+                                <span className="flex-shrink-0">
+                                  {sortOrder === 'asc' ? <ChevronUp className="h-3 w-3 text-blue-600" /> : <ChevronDown className="h-3 w-3 text-blue-600" />}
+                                </span>
+                              )}
+                              {['priority', 'sector', 'coverage', 'workflows'].includes(col.id) && (
+                                ((col.id === 'priority' && selectedPriorities.length > 0) ||
+                                 (col.id === 'sector' && selectedSectors.length > 0) ||
+                                 (col.id === 'coverage' && selectedStages.length > 0)) && (
+                                  <span className="flex-shrink-0 text-blue-600">
+                                    <Filter className="w-3 h-3" />
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          )}
+                          {col.id !== 'select' && (
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group-hover:bg-gray-300 transition-colors"
+                              onMouseDown={(e) => handleResizeStart(e, col.id, col.width)}
+                            />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Grouped Rows */}
+                <div style={{ minWidth: totalTableWidth + (canDragGroupedRows ? dragHandleWidth : 0) }}>
+                {groupedAssets.map(group => {
+                  const isDropTarget = canDragGroupedRows && dropTargetGroupId === group.key && dragGroupSourceKey !== group.key
+                  return (
+                  <div
+                    key={group.key}
+                    className={clsx(
+                      'transition-colors duration-150',
+                      isDropTarget && 'bg-blue-50/40'
+                    )}
+                    onDragOver={canDragGroupedRows ? (e) => handleGroupedDragOver(e, group.key) : undefined}
+                    onDragLeave={canDragGroupedRows ? handleGroupedDragLeave : undefined}
+                    onDrop={canDragGroupedRows ? (e) => handleGroupedDrop(e, group.key) : undefined}
+                  >
+                    {/* Group Header */}
+                    <div
+                      className={clsx(
+                        'w-full flex items-center gap-2 px-3 py-1.5 bg-gray-50/80 hover:bg-gray-100/80 transition-all duration-150 sticky top-0 z-[5] border-b border-gray-200/60',
+                        isDropTarget && 'bg-blue-50 border-l-[3px] border-l-blue-400 pl-[9px]'
+                      )}
+                    >
+                      <button
+                        onClick={() => {
+                          if (editingGroupId === group.key) return
+                          setCollapsedGroups(prev => {
+                            const next = new Set(prev)
+                            if (next.has(group.key)) next.delete(group.key)
+                            else next.add(group.key)
+                            return next
+                          })
+                        }}
+                        className="flex items-center gap-2 flex-1 min-w-0"
+                      >
+                        {collapsedGroups.has(group.key) ? (
+                          <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        )}
+                        {group.color && group.color.startsWith('#') && (
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                        )}
+                        {groupBy === 'contributor' && group.key !== '__unknown__' && (
+                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+                            {group.label.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        {groupBy === 'listGroup' && group.key !== '__ungrouped__' && editingGroupId === group.key ? (
+                          <input
+                            autoFocus
+                            className="text-sm font-medium text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px]"
+                            value={editingGroupName}
+                            onChange={(e) => setEditingGroupName(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onBlur={() => {
+                              if (editingGroupName.trim() && editingGroupName.trim() !== group.label) {
+                                onRenameGroup?.(group.key, editingGroupName.trim())
+                              }
+                              setEditingGroupId(null)
+                            }}
+                            onKeyDown={(e) => {
+                              e.stopPropagation()
+                              if (e.key === 'Enter') {
+                                if (editingGroupName.trim() && editingGroupName.trim() !== group.label) {
+                                  onRenameGroup?.(group.key, editingGroupName.trim())
+                                }
+                                setEditingGroupId(null)
+                              } else if (e.key === 'Escape') {
+                                setEditingGroupId(null)
+                              }
+                            }}
+                          />
+                        ) : (
+                          <>
+                            {group.color && !group.color.startsWith('#') ? (
+                              <span className={clsx('px-1.5 py-0.5 text-xs font-medium rounded', group.color)}>
+                                {group.label}
+                              </span>
+                            ) : (
+                              <span className="text-sm font-medium text-gray-700">{group.label}</span>
+                            )}
+                          </>
+                        )}
+                        <span className="text-xs text-gray-500 flex-shrink-0">({group.assets.length})</span>
+                      </button>
+
+                      {groupBy === 'listGroup' && group.key !== '__ungrouped__' && onRenameGroup && (
+                        <div className="relative flex-shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const rect = (e.target as HTMLElement).getBoundingClientRect()
+                              setGroupKebabMenu(groupKebabMenu?.groupId === group.key ? null : { groupId: group.key, x: rect.right - 140, y: rect.bottom + 4 })
+                            }}
+                            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Group Content — full column cells like flat table */}
                     {!collapsedGroups.has(group.key) && (
-                      <div className="divide-y divide-gray-50">
-                        {group.assets.map(asset => {
+                      <div>
+                        {group.assets.map((asset, rowIdx) => {
                           const isExpanded = expandedRows.has(asset.id)
                           const isSelected = selectedAssetIds.has(asset.id)
                           const quote = showLivePrices ? getQuote(asset.symbol) : null
+                          const livePrice = showLivePrices && quote?.price
+                          const displayPrice = livePrice || asset.current_price
+                          const changePercent = quote?.changePercent
                           const coverage = assetCoverageMap.get(asset.id) || []
                           const workflows = assetWorkflowMap.get(asset.id) || []
+                          const flagColor = getFlagColor(asset.id)
+                          const flagStyles = getFlagStyles(flagColor)
+                          const isEvenRow = rowIdx % 2 === 1
 
                           return (
-                            <div key={asset.id} className="group">
+                            <div
+                              key={asset._rowId || asset.id}
+                              className={clsx(
+                                'pro-table-row group/row',
+                                isEvenRow && 'row-even',
+                                isSelected && 'selected',
+                                flagColor && 'flagged',
+                                flagColor && `flag-${flagColor}`,
+                                isExpanded && 'expanded flex flex-col',
+                                canDragGroupedRows && dragGroupAssetId === asset.id && 'opacity-30'
+                              )}
+                              draggable={canDragGroupedRows}
+                              onDragStart={canDragGroupedRows ? (e) => handleGroupedRowDragStart(e, asset.id, asset.symbol, group.key) : undefined}
+                              onDragEnd={canDragGroupedRows ? handleGroupedRowDragEnd : undefined}
+                            >
                               <div
-                                onClick={() => handleAssetClick(asset)}
-                                className={clsx(
-                                  'flex items-center px-3 cursor-pointer transition-colors',
-                                  isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
-                                )}
-                                style={{ height: densityRowHeight }}
+                                className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
+                                style={{ minHeight: densityRowHeight }}
+                                onDoubleClick={() => toggleRowExpansion(asset.id)}
+                                onContextMenu={(e) => {
+                                  e.preventDefault()
+                                  setRowContextMenu({ assetId: asset.id, rowId: asset._rowId || asset.id, x: e.clientX, y: e.clientY })
+                                }}
                               >
-                                {/* Selection checkbox */}
-                                {selectionMode && (
-                                  <div className="w-8 flex-shrink-0">
-                                    <button
-                                      onClick={(e) => toggleAssetSelection(asset.id, e)}
-                                      className="p-0.5 rounded hover:bg-gray-200 transition-colors"
-                                    >
-                                      {isSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 text-gray-400" />}
-                                    </button>
+                                {/* Drag handle — reveals on hover */}
+                                {canDragGroupedRows && (
+                                  <div className="flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 opacity-0 group-hover/row:opacity-100 transition-opacity duration-100 flex-shrink-0" style={{ width: dragHandleWidth, minHeight: densityRowHeight }}>
+                                    <GripVertical className="w-3.5 h-3.5" />
                                   </div>
                                 )}
+                                {visibleColumns.map((col, colIndex) => {
+                                  if (col.id === 'select' && !selectionMode) return null
+                                  const isPinned = col.pinned || col.id === 'select'
+                                  const leftOffset = isPinned
+                                    ? visibleColumns.slice(0, colIndex).filter(c => (c.pinned || c.id === 'select') && (c.id !== 'select' || selectionMode)).reduce((sum, c) => sum + c.width, 0)
+                                    : 0
+                                  const lastPinnedCol = [...visibleColumns].reverse().find(c =>
+                                    (c.pinned || c.id === 'select') && (c.id !== 'select' || selectionMode)
+                                  )
+                                  const isLastPinned = isPinned && col.id === lastPinnedCol?.id
 
-                                {/* Expand toggle */}
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleExpandRow(asset.id) }}
-                                  className="p-1 mr-2 rounded hover:bg-gray-200 transition-colors"
-                                >
-                                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
-                                </button>
-
-                                {/* Asset info */}
-                                <div className="flex-1 min-w-0 flex items-center gap-3">
-                                  <div className="min-w-0">
-                                    <div className="font-medium text-gray-900 text-sm truncate">{asset.symbol}</div>
-                                    {density !== 'ultra' && (
-                                      <div className="text-xs text-gray-500 truncate">{asset.company_name}</div>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Price */}
-                                <div className="w-24 text-right text-sm tabular-nums">
-                                  {quote ? (
-                                    <>
-                                      <div className="font-medium">${quote.price?.toFixed(2)}</div>
-                                      {density !== 'ultra' && quote.changePercent !== undefined && (
-                                        <div className={clsx('text-xs', quote.changePercent >= 0 ? 'text-green-600' : 'text-red-600')}>
-                                          {quote.changePercent >= 0 ? '+' : ''}{quote.changePercent.toFixed(2)}%
+                                  return (
+                                    <div
+                                      key={col.id}
+                                      onClick={(e) => { e.stopPropagation(); handleAssetClick(asset) }}
+                                      className={clsx(
+                                        'pro-table-cell cursor-default',
+                                        isExpanded ? 'h-auto' : 'h-full',
+                                        col.wrapText && !isExpanded && 'items-start',
+                                        densityConfig.padding,
+                                        densityConfig.fontSize,
+                                        isLastPinned && 'border-r-2 border-slate-200'
+                                      )}
+                                      style={{
+                                        width: col.width,
+                                        minWidth: col.minWidth,
+                                        backgroundColor: isPinned
+                                          ? (isSelected
+                                              ? '#dbeafe'
+                                              : isEvenRow
+                                                ? '#f8fafc'
+                                                : '#ffffff')
+                                          : undefined
+                                      }}
+                                    >
+                                      {col.id === 'select' && (
+                                        <button onClick={(e) => toggleAssetSelection(asset.id, e)} className="p-0.5 rounded hover:bg-gray-200">
+                                          {isSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 text-gray-400" />}
+                                        </button>
+                                      )}
+                                      {col.id === 'ticker' && (
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                            {density !== 'micro' && (
+                                              <button
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={(e) => { e.stopPropagation(); toggleRowExpansion(asset.id) }}
+                                                className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                              >
+                                                <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
+                                              </button>
+                                            )}
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="pro-symbol">{asset.symbol}</span>
+                                              {density !== 'micro' && asset.price_targets?.length > 0 && (
+                                                <Target className="h-3 w-3 text-amber-500" title={`${asset.price_targets.length} price target(s)`} />
+                                              )}
+                                            </div>
+                                          </div>
                                         </div>
                                       )}
-                                    </>
-                                  ) : asset.current_price ? (
-                                    <div className="font-medium">${asset.current_price.toFixed(2)}</div>
-                                  ) : (
-                                    <div className="text-gray-400">—</div>
-                                  )}
-                                </div>
-
-                                {/* Priority */}
-                                {groupBy !== 'priority' && (() => {
-                                  const userPriority = getUserPriority(asset.id)
-                                  const config = userPriority && userPriority !== 'none' ? PRIORITY_CONFIG[userPriority] : null
-                                  const IconComponent = config?.icon
-                                  return (
-                                    <div className="w-20 flex justify-center">
-                                      {config ? (
-                                        <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white', config.bg)}>
-                                          {IconComponent && <IconComponent className="w-3 h-3" />}
-                                          <span>{config.label}</span>
+                                      {col.id === 'companyName' && (
+                                        <span className="pro-company-name flex-1 min-w-0 truncate">
+                                          {asset.company_name || '\u2014'}
                                         </span>
-                                      ) : (
-                                        <span className="text-xs text-gray-400">—</span>
+                                      )}
+                                      {col.id === 'coverage' && (() => {
+                                        if (coverage.length === 0) return <span className="pro-empty-cell">\u2014</span>
+                                        const lead = coverage.find(c => c.isLead) || coverage[0]
+                                        const isMicro = density === 'micro'
+                                        if (density === 'comfortable') {
+                                          return (
+                                            <div className="flex items-center gap-1.5" title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
+                                              <div className="min-w-0 flex-1">
+                                                <span className="pro-analyst block truncate">{lead.analyst}</span>
+                                                {lead.team && <span className="pro-analyst-team block truncate">{lead.team}</span>}
+                                              </div>
+                                              {coverage.length > 1 && <span className="pro-analyst-count">+{coverage.length - 1}</span>}
+                                            </div>
+                                          )
+                                        }
+                                        return (
+                                          <div className={clsx('flex items-center', isMicro ? 'gap-0.5' : 'gap-1.5')} title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
+                                            <span className="pro-analyst truncate">{lead.analyst}</span>
+                                            {coverage.length > 1 && <span className={clsx('pro-analyst-count', isMicro && 'text-[8px] px-0.5 py-0')}>+{coverage.length - 1}</span>}
+                                          </div>
+                                        )
+                                      })()}
+                                      {col.id === 'workflows' && (() => {
+                                        const isMicro = density === 'micro'
+                                        if (workflows.length === 0) {
+                                          return (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setWorkflowPopover({ assetId: asset.id, x: e.clientX, y: e.clientY })
+                                              }}
+                                              className={clsx('pro-empty-cell hover:text-blue-500 transition-colors', isMicro && 'text-[9px]')}
+                                            >
+                                              {isMicro ? '\u2014' : 'Add workflow'}
+                                            </button>
+                                          )
+                                        }
+                                        return (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setWorkflowPopover({ assetId: asset.id, x: e.clientX, y: e.clientY })
+                                            }}
+                                            className={clsx('flex items-center gap-1 text-left', isMicro && 'gap-0.5')}
+                                          >
+                                            <span className={clsx('pro-workflow-name truncate', isMicro && 'text-[9px]')}>{workflows[0].name}</span>
+                                            {workflows.length > 1 && <span className={clsx('pro-analyst-count', isMicro && 'text-[8px] px-0.5 py-0')}>+{workflows.length - 1}</span>}
+                                          </button>
+                                        )
+                                      })()}
+                                      {col.id === 'price' && (() => {
+                                        if (!displayPrice) return <span className="pro-empty-cell">\u2014</span>
+                                        return (
+                                          <span className="pro-price">
+                                            {formatPrice(displayPrice)}
+                                          </span>
+                                        )
+                                      })()}
+                                      {col.id === 'change' && (() => {
+                                        if (!showLivePrices || changePercent === undefined) return <span className="pro-empty-cell">\u2014</span>
+                                        const changeClass = getPriceChangeClass(changePercent)
+                                        return (
+                                          <span className={clsx('pro-price-change', changeClass)}>
+                                            {formatPriceChange(changePercent)}
+                                          </span>
+                                        )
+                                      })()}
+                                      {(col.id === 'priority' || col.id.startsWith('priority_') || col.prioritySource) && (() => {
+                                        const priority = getPriorityForColumn(col, asset.id)
+                                        const config = priority && priority !== 'none' ? PRIORITY_CONFIG[priority] : null
+                                        const IconComponent = config?.icon
+                                        const isMicroOrUltra = density === 'ultra' || density === 'micro'
+                                        const isMicro = density === 'micro'
+                                        const isEditable = col.prioritySource === 'my' || (col.id === 'priority' && !col.prioritySource)
+
+                                        const content = config ? (
+                                          <span className={clsx(
+                                            'inline-flex items-center justify-center rounded font-medium text-white',
+                                            isMicro ? 'px-1.5 py-0' : isMicroOrUltra ? 'gap-1 px-1.5 py-0' : 'gap-1 px-2 py-0.5',
+                                            config.bg
+                                          )}>
+                                            {!isMicro && IconComponent && <IconComponent className={isMicroOrUltra ? 'w-2.5 h-2.5' : 'w-3 h-3'} />}
+                                            <span>{config.label}</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">
+                                            {isMicro ? '\u2014' : (isEditable ? 'Set priority' : '\u2014')}
+                                          </span>
+                                        )
+
+                                        if (isEditable) {
+                                          return (
+                                            <button
+                                              className="w-full h-full flex items-center justify-start cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1 transition-colors"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                const rect = e.currentTarget.getBoundingClientRect()
+                                                setEditingCell({ assetId: asset.id, field: 'priority', x: rect.left, y: rect.bottom + 4 })
+                                              }}
+                                            >
+                                              {content}
+                                            </button>
+                                          )
+                                        }
+
+                                        return (
+                                          <div className="w-full h-full flex items-center justify-start px-1 -mx-1">
+                                            {content}
+                                          </div>
+                                        )
+                                      })()}
+                                      {col.id === 'sector' && (
+                                        <span className={clsx('truncate', density === 'micro' ? 'text-[9px]' : 'text-xs text-gray-600')}>
+                                          {asset.sector || '\u2014'}
+                                        </span>
+                                      )}
+                                      {col.id === 'thesis' && (
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.thesis || 'No thesis'}>
+                                          {asset.thesis || <span className="text-gray-400 italic">No thesis</span>}
+                                        </span>
+                                      )}
+                                      {col.id === 'bull_case' && (
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bull_case || 'Not specified'}>
+                                          {asset.bull_case || <span className="text-gray-400 italic">{'\u2014'}</span>}
+                                        </span>
+                                      )}
+                                      {col.id === 'bear_case' && (
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bear_case || 'Not specified'}>
+                                          {asset.bear_case || <span className="text-gray-400 italic">{'\u2014'}</span>}
+                                        </span>
+                                      )}
+                                      {col.id === 'base_case' && (
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.base_case || 'Not specified'}>
+                                          {asset.base_case || <span className="text-gray-400 italic">{'\u2014'}</span>}
+                                        </span>
+                                      )}
+                                      {col.id === 'where_different' && (
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.where_different || 'Not specified'}>
+                                          {asset.where_different || <span className="text-gray-400 italic">{'\u2014'}</span>}
+                                        </span>
+                                      )}
+                                      {col.id === 'risks_to_thesis' && (
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.risks_to_thesis || 'Not specified'}>
+                                          {asset.risks_to_thesis || <span className="text-gray-400 italic">{'\u2014'}</span>}
+                                        </span>
+                                      )}
+                                      {col.id === 'notes' && (() => {
+                                        const quickNote = asset.quick_note || ''
+                                        const isEditing = editingNoteId === asset.id
+                                        const isMicro = density === 'micro'
+
+                                        if (isEditing) {
+                                          return (
+                                            <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                              <textarea
+                                                autoFocus
+                                                value={editingNoteValue}
+                                                onChange={(e) => setEditingNoteValue(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault()
+                                                    saveNote(asset.id)
+                                                  } else if (e.key === 'Escape') {
+                                                    e.preventDefault()
+                                                    cancelNoteEdit()
+                                                  }
+                                                }}
+                                                onBlur={() => saveNote(asset.id)}
+                                                placeholder="Add a quick note..."
+                                                rows={2}
+                                                className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                              />
+                                              <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
+                                                Enter to save · Esc to cancel
+                                              </div>
+                                            </div>
+                                          )
+                                        }
+
+                                        return (
+                                          <div
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              startEditingNote(asset.id, quickNote)
+                                            }}
+                                            className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                            title={quickNote || 'Click to add quick note'}
+                                          >
+                                            {quickNote ? (
+                                              <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{quickNote}</span>
+                                            ) : (
+                                              <span className="text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity">
+                                                {isMicro ? '+' : 'Add note...'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )
+                                      })()}
+                                      {col.id === 'listNote' && onUpdateListNote && (() => {
+                                        const listNote = (asset as any)._listNotes || ''
+                                        const rowId = (asset as any)._rowId || asset.id
+                                        const isEditing = editingListNoteRowId === rowId
+                                        const isMicro = density === 'micro'
+
+                                        if (isEditing) {
+                                          return (
+                                            <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                              <textarea
+                                                autoFocus
+                                                value={editingListNoteValue}
+                                                onChange={(e) => setEditingListNoteValue(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault()
+                                                    saveListNote(rowId)
+                                                  } else if (e.key === 'Escape') {
+                                                    e.preventDefault()
+                                                    cancelListNoteEdit()
+                                                  }
+                                                }}
+                                                onBlur={() => saveListNote(rowId)}
+                                                placeholder="Add a list note..."
+                                                rows={2}
+                                                className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                              />
+                                              <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
+                                                Enter to save · Esc to cancel
+                                              </div>
+                                            </div>
+                                          )
+                                        }
+
+                                        return (
+                                          <div
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              startEditingListNote(rowId, listNote)
+                                            }}
+                                            className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                            title={listNote || 'Click to add list note'}
+                                          >
+                                            {listNote ? (
+                                              <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{listNote}</span>
+                                            ) : (
+                                              <span className="text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity">
+                                                {isMicro ? '+' : 'Add note...'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )
+                                      })()}
+                                      {col.id === 'updated' && (() => {
+                                        if (!asset.updated_at) return <span className="pro-empty-cell">{'\u2014'}</span>
+                                        const freshness = getTimestampFreshness(asset.updated_at)
+                                        const isMicro = density === 'micro'
+                                        return (
+                                          <div className={clsx(
+                                            'pro-timestamp flex items-center',
+                                            isMicro ? 'gap-0.5' : 'gap-1.5',
+                                            freshness === 'recent' && 'recent',
+                                            freshness === 'stale' && 'stale'
+                                          )}>
+                                            <Clock className={isMicro ? 'h-2 w-2 flex-shrink-0' : 'h-3 w-3 flex-shrink-0'} />
+                                            <span className="truncate tabular-nums">
+                                              {formatRelativeTime(asset.updated_at)}
+                                            </span>
+                                          </div>
+                                        )
+                                      })()}
+                                      {col.isCustomAI && (
+                                        <AIColumnCell
+                                          asset={asset}
+                                          column={col}
+                                          density={density}
+                                        />
+                                      )}
+                                      {col.id === 'actions' && renderRowActions && (
+                                        <div className="flex items-center justify-end">
+                                          {renderRowActions(asset)}
+                                        </div>
                                       )}
                                     </div>
                                   )
-                                })()}
-
-                                {/* Actions */}
-                                {renderRowActions && (
-                                  <div className="w-12 flex justify-end">
-                                    {renderRowActions(asset)}
-                                  </div>
-                                )}
+                                })}
                               </div>
-
                               {/* Expanded content */}
                               {isExpanded && (
-                                <div className="px-3 py-3 bg-gray-50/50 border-t border-gray-100">
-                                  <div className="grid grid-cols-3 gap-4 text-sm">
-                                    {asset.thesis && (
-                                      <div>
-                                        <div className="text-xs font-medium text-gray-500 mb-1">Thesis</div>
-                                        <div className="text-gray-700">{asset.thesis}</div>
-                                      </div>
-                                    )}
-                                    {asset.where_different && (
-                                      <div>
-                                        <div className="text-xs font-medium text-gray-500 mb-1">Where Different</div>
-                                        <div className="text-gray-700">{asset.where_different}</div>
-                                      </div>
-                                    )}
-                                    {coverage.length > 0 && (
-                                      <div>
-                                        <div className="text-xs font-medium text-gray-500 mb-1">Coverage</div>
-                                        <div className="text-gray-700">{coverage.map(c => c.analyst).join(', ')}</div>
-                                      </div>
-                                    )}
+                                <div className="pro-expanded-row px-5 py-3 overflow-hidden" style={{ height: expandedRowHeight - densityRowHeight }}>
+                                  <div className="h-full flex flex-col overflow-hidden">
+                                    <div className="flex items-center justify-end mb-0 -mt-1 -mr-2">
+                                      <button
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => { toggleRowExpansion(asset.id); setExpandedMetricColumn(null) }}
+                                        className="p-0.5 hover:bg-gray-200/60 rounded transition-colors"
+                                      >
+                                        <X className="w-3.5 h-3.5 text-gray-400" />
+                                      </button>
+                                    </div>
+                                    <div className="flex-1 min-h-0 overflow-hidden">
+                                      {renderMetricDetail(
+                                        asset,
+                                        expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
+                                        quote,
+                                        coverage,
+                                        workflows
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -3494,8 +4673,25 @@ export function AssetTableView({
                       </div>
                     )}
                   </div>
-                ))}
+                  )
+                })}
+                </div>
+
               </div>
+
+              {/* Inline Add Row — outside scroll container so it stays at bottom */}
+              {listId && (
+                <InlineAddRow
+                  listId={listId}
+                  existingAssetIds={existingAssetIds}
+                  columns={visibleColumns}
+                  density={density}
+                  densityConfig={densityConfig}
+                  totalTableWidth={totalTableWidth}
+                  queryClient={queryClient}
+                  user={user}
+                />
+              )}
             </Card>
           )}
 
@@ -3507,32 +4703,98 @@ export function AssetTableView({
             const hiddenColumnsInfo = kanbanColumns.filter(c => hiddenKanbanColumns.has(c.key))
 
             return (
-              <div className="space-y-4">
-                {/* Kanban Organization Selector */}
+              <div className="space-y-3">
+                {/* Kanban Controls */}
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-gray-700">Organize by:</span>
+                    <span className="text-sm font-medium text-gray-500">Organize by:</span>
                     <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
                       {KANBAN_ORGANIZATION_OPTIONS.map(option => (
                         <button key={option.value}
-                          onClick={() => { setKanbanOrganization(option.value); setKanbanColumnSearch({}); setHiddenKanbanColumns(new Set()); setFullscreenKanbanColumn(null) }}
+                          onClick={() => { onSelectKanbanBoard?.(null); setKanbanOrganization(option.value); setKanbanColumnSearch({}); setHiddenKanbanColumns(new Set()); setFullscreenKanbanColumn(null); setBoardKebabMenu(null) }}
                           className={clsx('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                            kanbanOrganization === option.value ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                            !activeKanbanBoardId && kanbanOrganization === option.value ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                           )}>
                           <option.icon className="w-3.5 h-3.5" />{option.label}
                         </button>
                       ))}
+                      {/* Saved custom boards */}
+                      {kanbanBoards?.map(board => (
+                        <div key={board.id} className="relative">
+                          {editingBoardId === board.id ? (
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editingBoardName}
+                              onChange={(e) => setEditingBoardName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && editingBoardName.trim()) { onRenameKanbanBoard?.(board.id, editingBoardName.trim()); setEditingBoardId(null) }
+                                if (e.key === 'Escape') setEditingBoardId(null)
+                              }}
+                              onBlur={() => { if (editingBoardName.trim()) onRenameKanbanBoard?.(board.id, editingBoardName.trim()); setEditingBoardId(null) }}
+                              className="px-2 py-1 text-xs font-medium bg-white border border-blue-300 rounded-md w-24 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => { onSelectKanbanBoard?.(board.id); setKanbanColumnSearch({}); setHiddenKanbanColumns(new Set()); setFullscreenKanbanColumn(null); setBoardKebabMenu(null) }}
+                              onContextMenu={(e) => { e.preventDefault(); setBoardKebabMenu(boardKebabMenu === board.id ? null : board.id) }}
+                              className={clsx('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                                activeKanbanBoardId === board.id ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                              )}>
+                              <Columns3 className="w-3.5 h-3.5" />{board.name}
+                            </button>
+                          )}
+                          {boardKebabMenu === board.id && (
+                            <div className="absolute left-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                              <button onClick={() => { setEditingBoardId(board.id); setEditingBoardName(board.name); setBoardKebabMenu(null) }}
+                                className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                                <FileEdit className="w-3.5 h-3.5 text-gray-400" /> Rename
+                              </button>
+                              <button onClick={() => { onDeleteKanbanBoard?.(board.id); setBoardKebabMenu(null); if (activeKanbanBoardId === board.id) onSelectKanbanBoard?.(null) }}
+                                className="w-full px-3 py-1.5 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2">
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {/* Inline new board input */}
+                      {showNewBoardInput ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            ref={newBoardInputRef}
+                            type="text"
+                            value={newBoardName}
+                            onChange={(e) => setNewBoardName(e.target.value)}
+                            placeholder="Board name..."
+                            className="px-2 py-1 text-xs border border-gray-300 rounded-md w-28 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter' && newBoardName.trim() && onCreateKanbanBoard) {
+                                const board = await onCreateKanbanBoard(newBoardName.trim())
+                                if (board) onSelectKanbanBoard?.(board.id)
+                                setNewBoardName(''); setShowNewBoardInput(false)
+                                setKanbanColumnSearch({}); setHiddenKanbanColumns(new Set()); setFullscreenKanbanColumn(null)
+                              }
+                              if (e.key === 'Escape') { setShowNewBoardInput(false); setNewBoardName('') }
+                            }}
+                          />
+                          <button onClick={() => { setShowNewBoardInput(false); setNewBoardName('') }} className="p-1 text-gray-400 hover:text-gray-600"><X className="w-3 h-3" /></button>
+                        </div>
+                      ) : onCreateKanbanBoard && (
+                        <button
+                          onClick={() => { setShowNewBoardInput(true); setTimeout(() => newBoardInputRef.current?.focus(), 50) }}
+                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 rounded-md transition-colors"
+                          title="Create a new board"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
+                    <span className="text-xs text-gray-400 ml-2">{filteredAssets.length} assets</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    {fullscreenKanbanColumn && (
-                      <button onClick={() => setFullscreenKanbanColumn(null)} className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md">
-                        <Minimize2 className="w-3.5 h-3.5" />Exit Fullscreen
-                      </button>
-                    )}
-                    <div className="text-sm text-gray-500">{filteredAssets.length} assets in {visibleKanbanColumns.length} columns</div>
                     {hiddenColumnsInfo.length > 0 && !fullscreenKanbanColumn && (
-                      <div className="flex items-center gap-1.5 border-l border-gray-200 pl-3">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-xs text-gray-400">Hidden:</span>
                         {hiddenColumnsInfo.map(col => (
                           <button key={col.key} onClick={() => { const newHidden = new Set(hiddenKanbanColumns); newHidden.delete(col.key); setHiddenKanbanColumns(newHidden) }}
@@ -3546,52 +4808,96 @@ export function AssetTableView({
                 </div>
 
                 {/* Kanban Board */}
-                <div className="grid gap-4" style={{ gridTemplateColumns: fullscreenKanbanColumn ? '1fr' : `repeat(${Math.min(visibleKanbanColumns.length, 8)}, minmax(200px, 1fr))` }}>
+                <div className="flex gap-3 overflow-x-auto pb-2">
                   {visibleKanbanColumns.map(column => {
-                    const searchTerm = kanbanColumnSearch[column.key] || ''
-                    const filteredColumnAssets = searchTerm
-                      ? column.assets.filter((a: any) => a.symbol?.toLowerCase().includes(searchTerm.toLowerCase()) || a.company_name?.toLowerCase().includes(searchTerm.toLowerCase()))
+                    const columnSearchQuery = kanbanColumnSearch[column.key] || ''
+                    const filteredColumnAssets = columnSearchQuery
+                      ? column.assets.filter((a: any) => a.symbol?.toLowerCase().includes(columnSearchQuery.toLowerCase()) || a.company_name?.toLowerCase().includes(columnSearchQuery.toLowerCase()))
                       : column.assets
                     const isFullscreen = fullscreenKanbanColumn === column.key
+                    const isCustomLane = !!activeKanbanBoardId && column.key !== 'unassigned'
+                    const isEditingThisLane = editingLaneId === column.key
 
                     return (
-                      <div key={column.key} className={clsx('flex flex-col bg-gray-50 rounded-lg border border-gray-200', isFullscreen ? 'min-h-[600px]' : 'min-h-[400px]')}
-                        onDragOver={handleKanbanDragOver} onDrop={() => kanbanOrganization === 'priority' && handleKanbanDrop(column.key)}>
+                      <div key={column.key} className={clsx('flex flex-col rounded-lg border border-gray-200 overflow-hidden', isFullscreen ? 'min-h-[600px] flex-1' : 'min-h-[400px]', !isFullscreen && visibleKanbanColumns.length >= 3 ? 'flex-1 min-w-[200px]' : !isFullscreen ? 'w-72 flex-shrink-0' : '')}
+                        onDragOver={handleKanbanDragOver} onDrop={() => canDragKanban && handleKanbanDrop(column.key)}>
                         {/* Column Header */}
-                        <div className={clsx('px-3 py-2 border-b border-gray-200 rounded-t-lg', column.color)} style={(column as any).bgColor ? { backgroundColor: `${(column as any).bgColor}20` } : undefined}>
+                        <div className={clsx('px-3 py-2 border-b border-gray-200', column.color)} style={(column as any).bgColor ? { backgroundColor: (column as any).bgColor + '33' } : undefined}>
                           <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-sm truncate flex-shrink-0">{column.label}</h3>
-                            <span className="text-xs opacity-75 bg-white/50 px-1.5 py-0.5 rounded flex-shrink-0">{filteredColumnAssets.length}</span>
-                            <div className="relative flex-1 min-w-0">
-                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                              <input type="text" placeholder="Search..." value={searchTerm}
-                                onChange={(e) => setKanbanColumnSearch(prev => ({ ...prev, [column.key]: e.target.value }))}
-                                className="w-full pl-7 pr-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                            </div>
+                            {isEditingThisLane ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingLaneName}
+                                onChange={(e) => setEditingLaneName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && editingLaneName.trim()) { onRenameKanbanLane?.(column.key, editingLaneName.trim()); setEditingLaneId(null) }
+                                  if (e.key === 'Escape') setEditingLaneId(null)
+                                }}
+                                onBlur={() => { if (editingLaneName.trim()) onRenameKanbanLane?.(column.key, editingLaneName.trim()); setEditingLaneId(null) }}
+                                className="font-semibold text-sm bg-white/80 border border-gray-300 rounded px-1.5 py-0.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              />
+                            ) : (
+                              <h3 className="font-semibold text-sm truncate flex-1">{column.label}</h3>
+                            )}
+                            <span className="text-xs bg-white/60 px-1.5 py-0.5 rounded flex-shrink-0">{filteredColumnAssets.length}</span>
                             <div className="flex items-center gap-0.5 flex-shrink-0">
                               {isFullscreen ? (
-                                <button onClick={() => setFullscreenKanbanColumn(null)} className="p-1 rounded hover:bg-white/50 text-gray-500"><Minimize2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setFullscreenKanbanColumn(null)} className="p-1 rounded hover:bg-white/40 text-gray-600"><Minimize2 className="w-3.5 h-3.5" /></button>
                               ) : (
-                                <><button onClick={() => setFullscreenKanbanColumn(column.key)} className="p-1 rounded hover:bg-white/50 text-gray-500"><Maximize2 className="w-3.5 h-3.5" /></button>
-                                <button onClick={() => { const newHidden = new Set(hiddenKanbanColumns); newHidden.add(column.key); setHiddenKanbanColumns(newHidden) }} className="p-1 rounded hover:bg-white/50 text-gray-500"><EyeOff className="w-3.5 h-3.5" /></button></>
+                                <>
+                                  <button onClick={() => setFullscreenKanbanColumn(column.key)} className="p-1 rounded hover:bg-white/40 text-gray-600"><Maximize2 className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => { const newHidden = new Set(hiddenKanbanColumns); newHidden.add(column.key); setHiddenKanbanColumns(newHidden) }} className="p-1 rounded hover:bg-white/40 text-gray-600"><EyeOff className="w-3.5 h-3.5" /></button>
+                                </>
+                              )}
+                              {/* Lane kebab menu for custom lanes */}
+                              {isCustomLane && (
+                                <div className="relative">
+                                  <button onClick={() => setLaneKebabMenu(laneKebabMenu === column.key ? null : column.key)} className="p-1 rounded hover:bg-white/40 text-gray-600"><MoreHorizontal className="w-3.5 h-3.5" /></button>
+                                  {laneKebabMenu === column.key && (
+                                    <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                                      <button onClick={() => { setEditingLaneId(column.key); setEditingLaneName(column.label); setLaneKebabMenu(null) }}
+                                        className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                                        <FileEdit className="w-3.5 h-3.5 text-gray-400" /> Rename
+                                      </button>
+                                      {onDeleteKanbanLane && (
+                                        <button onClick={() => { onDeleteKanbanLane(column.key); setLaneKebabMenu(null) }}
+                                          className="w-full px-3 py-1.5 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2">
+                                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
+                          </div>
+                          {/* Per-lane search */}
+                          <div className="mt-1.5 relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Filter..."
+                              value={columnSearchQuery}
+                              onChange={(e) => setKanbanColumnSearch(prev => ({ ...prev, [column.key]: e.target.value }))}
+                              className="w-full pl-6 pr-2 py-1 text-xs border border-gray-200 rounded bg-white/80 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
                           </div>
                         </div>
 
                         {/* Column Content */}
-                        <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[500px]">
+                        <div className="flex-1 p-2 space-y-1.5 overflow-y-auto max-h-[500px] bg-gray-50">
                           {filteredColumnAssets.map((asset: any) => {
                             const isSelected = selectedAssetIds.has(asset.id)
                             return (
-                              <div key={asset.id} draggable={kanbanOrganization === 'priority'} onDragStart={() => kanbanOrganization === 'priority' && handleKanbanDragStart(asset.id)}
+                              <div key={asset.id} draggable={canDragKanban} onDragStart={() => canDragKanban && handleKanbanDragStart(asset.id)}
                                 onClick={() => selectionMode ? toggleAssetSelection(asset.id) : handleAssetClick(asset)}
-                                className={clsx('bg-white rounded-lg border p-3 hover:shadow-md transition-shadow',
-                                  kanbanOrganization === 'priority' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+                                className={clsx('bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow',
+                                  canDragKanban ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
                                   draggedAsset === asset.id && 'opacity-50',
                                   isSelected ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
                                 )}>
-                                <div className="flex items-start justify-between mb-2">
+                                <div className="flex items-start justify-between mb-1">
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
                                       {selectionMode && (isSelected ? <CheckSquare className="h-4 w-4 text-blue-600 flex-shrink-0" /> : <Square className="h-4 w-4 text-gray-400 flex-shrink-0" />)}
@@ -3599,15 +4905,14 @@ export function AssetTableView({
                                     </div>
                                     <p className="text-xs text-gray-600 truncate">{asset.company_name}</p>
                                   </div>
-                                  {kanbanOrganization === 'priority' && <GripHorizontal className="w-4 h-4 text-gray-300 flex-shrink-0" />}
+                                  {canDragKanban && <GripHorizontal className="w-4 h-4 text-gray-300 flex-shrink-0" />}
                                 </div>
-                                {asset.sector && <p className="text-xs text-gray-500 mb-2">{asset.sector}</p>}
                                 <div className="flex items-center justify-between gap-2">
                                   {(() => { const quote = getQuote(asset.symbol); const displayPrice = (showLivePrices && quote?.price) || asset.current_price; return displayPrice ? <span className="text-xs font-medium text-gray-900">${Number(displayPrice).toFixed(2)}</span> : <span /> })()}
-                                  {kanbanOrganization === 'priority' && asset.process_stage && PROCESS_STAGES[asset.process_stage] && (
+                                  {!activeKanbanBoardId && kanbanOrganization === 'priority' && asset.process_stage && PROCESS_STAGES[asset.process_stage] && (
                                     <span className={clsx('px-1.5 py-0.5 text-[10px] font-medium rounded-full', PROCESS_STAGES[asset.process_stage].color)}>{PROCESS_STAGES[asset.process_stage].label}</span>
                                   )}
-                                  {kanbanOrganization !== 'priority' && (() => {
+                                  {(activeKanbanBoardId || kanbanOrganization !== 'priority') && (() => {
                                     const userPriority = getUserPriority(asset.id)
                                     const config = userPriority && userPriority !== 'none' ? PRIORITY_CONFIG[userPriority] : null
                                     const IconComponent = config?.icon
@@ -3619,89 +4924,97 @@ export function AssetTableView({
                                     ) : null
                                   })()}
                                 </div>
+                                {asset.sector && (
+                                  <div className="mt-1.5">
+                                    <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{asset.sector}</span>
+                                  </div>
+                                )}
                               </div>
                             )
                           })}
                           {filteredColumnAssets.length === 0 && (
-                            <div className="text-center py-8 text-gray-400"><p className="text-xs">{searchTerm ? `No matches for "${searchTerm}"` : kanbanOrganization === 'priority' ? 'Drop assets here' : 'No assets'}</p></div>
+                            <div className="text-center py-8">
+                              <p className="text-xs text-gray-400">{canDragKanban ? 'Drop assets here' : 'No assets'}</p>
+                            </div>
                           )}
                         </div>
                       </div>
                     )
                   })}
+
+                  {/* Add Lane button (custom board mode only) */}
+                  {activeKanbanBoardId && onCreateKanbanLane && !fullscreenKanbanColumn && (
+                    <div className="flex-shrink-0" style={{ width: 200, minWidth: 200 }}>
+                      {showNewLaneInput ? (
+                        <div className="rounded-lg border-2 border-dashed border-gray-300 p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                const palette = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280']
+                                const idx = palette.indexOf(newLaneColor)
+                                setNewLaneColor(palette[(idx + 1) % palette.length])
+                              }}
+                              className="w-5 h-5 rounded-full flex-shrink-0 border-2 border-white shadow-sm"
+                              style={{ backgroundColor: newLaneColor }}
+                              title="Click to change color"
+                            />
+                            <input
+                              ref={newLaneInputRef}
+                              type="text"
+                              value={newLaneName}
+                              onChange={(e) => setNewLaneName(e.target.value)}
+                              placeholder="Lane name..."
+                              className="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newLaneName.trim()) {
+                                  onCreateKanbanLane(newLaneName.trim(), newLaneColor)
+                                  setNewLaneName('')
+                                  setNewLaneColor('#6366f1')
+                                  setShowNewLaneInput(false)
+                                }
+                                if (e.key === 'Escape') { setShowNewLaneInput(false); setNewLaneName('') }
+                              }}
+                            />
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                if (newLaneName.trim()) {
+                                  onCreateKanbanLane(newLaneName.trim(), newLaneColor)
+                                  setNewLaneName('')
+                                  setNewLaneColor('#6366f1')
+                                  setShowNewLaneInput(false)
+                                }
+                              }}
+                              disabled={!newLaneName.trim()}
+                              className="flex-1 px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={() => { setShowNewLaneInput(false); setNewLaneName('') }}
+                              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setShowNewLaneInput(true); setTimeout(() => newLaneInputRef.current?.focus(), 50) }}
+                          className="w-full h-full min-h-[120px] rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <Plus className="w-5 h-5" />
+                          <span className="text-xs font-medium">Add Lane</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )
           })()}
 
-          {/* TREE VIEW */}
-          {viewMode === 'tree' && treeData && (
-            <Card padding="none">
-              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-                <div className="flex items-center gap-2"><FolderTree className="w-4 h-4 text-gray-500" /><span className="text-sm font-medium text-gray-700">Organize by:</span></div>
-                <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-0.5">
-                  {(['sector', 'priority', 'theme'] as TreeOrganization[]).map(option => (
-                    <button key={option} onClick={() => setTreeOrganization(option)}
-                      className={clsx('px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize', treeOrganization === option ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100')}>
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="p-4">
-                {Array.from(treeData.children.entries()).map(([groupName, groupNode]) => {
-                  const groupKey = `group-${groupName}`
-                  const isGroupExpanded = expandedTreeNodes.has(groupKey)
-                  const groupAssetCount = groupNode.assets.length
-
-                  return (
-                    <div key={groupName} className="mb-2">
-                      <button onClick={() => toggleTreeNode(groupKey)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <ChevronRight className={clsx('w-4 h-4 text-gray-400 transition-transform', isGroupExpanded && 'rotate-90')} />
-                        <span className="font-medium text-gray-900">{groupName}</span>
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{groupAssetCount}</span>
-                      </button>
-                      {isGroupExpanded && (
-                        <div className="ml-6 border-l border-gray-200 pl-2">
-                          {groupNode.assets.map((asset: any) => {
-                            const isSelected = selectedAssetIds.has(asset.id)
-                            return (
-                              <div key={asset.id} onClick={() => selectionMode ? toggleAssetSelection(asset.id) : handleAssetClick(asset)}
-                                className={clsx('flex items-center justify-between px-3 py-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors', isSelected && 'bg-blue-50')}>
-                                <div className="flex items-center gap-2">
-                                  {selectionMode && (isSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 text-gray-400" />)}
-                                  <div className="w-2 h-2 rounded-full bg-gray-300" />
-                                  <span className="font-medium text-gray-900">{asset.symbol}</span>
-                                  <span className="text-sm text-gray-600">{asset.company_name}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {(() => { const quote = getQuote(asset.symbol); const displayPrice = (showLivePrices && quote?.price) || asset.current_price; return displayPrice ? <span className="text-sm font-medium text-gray-900">${Number(displayPrice).toFixed(2)}</span> : null })()}
-                                  {(() => {
-                                    const userPriority = getUserPriority(asset.id)
-                                    const config = userPriority && userPriority !== 'none' ? PRIORITY_CONFIG[userPriority] : null
-                                    const IconComponent = config?.icon
-                                    return config ? (
-                                      <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white', config.bg)}>
-                                        {IconComponent && <IconComponent className="w-3 h-3" />}
-                                        <span>{config.label}</span>
-                                      </span>
-                                    ) : null
-                                  })()}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {treeData.children.size === 0 && (
-                  <div className="text-center py-8 text-gray-500"><FolderTree className="w-12 h-12 mx-auto mb-3 text-gray-300" /><p>No assets to display in tree view</p></div>
-                )}
-              </div>
-            </Card>
-          )}
         </>
       ) : (
         fillHeight ? (
@@ -3750,19 +5063,87 @@ export function AssetTableView({
             <ChevronRight className="w-4 h-4 text-gray-500" />
             {expandedRows.has(rowContextMenu.assetId) ? 'Collapse' : 'Expand'} Row
           </button>
+
+          {/* Move to Group submenu */}
+          {listGroupData && onMoveItemToGroup && (
+            <>
+              <div className="h-px bg-gray-100 my-1" />
+              <div className="relative group/move">
+                <div className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 cursor-default">
+                  <FolderOpen className="w-4 h-4 text-gray-500" />
+                  Move to Group
+                  <ChevronRight className="w-3 h-3 text-gray-400 ml-auto" />
+                </div>
+                <div className="absolute left-full top-0 ml-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 hidden group-hover/move:block z-[101]">
+                  <button
+                    onClick={() => { onMoveItemToGroup(rowContextMenu.assetId, null); setRowContextMenu(null) }}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 text-gray-600"
+                  >
+                    No Group
+                  </button>
+                  {listGroupData.map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => { onMoveItemToGroup(rowContextMenu.assetId, g.id); setRowContextMenu(null) }}
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      {g.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: g.color }} />}
+                      <span className="truncate">{g.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Create Trade Idea */}
+          {onCreateTradeIdea && (
+            <>
+              <div className="h-px bg-gray-100 my-1" />
+              <button
+                onClick={() => {
+                  onCreateTradeIdea(rowContextMenu.assetId)
+                  setRowContextMenu(null)
+                }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Tag className="w-4 h-4 text-gray-500" />
+                Create Trade Idea
+              </button>
+            </>
+          )}
+
           <div className="h-px bg-gray-100 my-1" />
-          {onRemoveFromList ? (
-            <button
-              onClick={() => {
-                onRemoveFromList(rowContextMenu.assetId)
-                setRowContextMenu(null)
-              }}
-              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-            >
-              <X className="w-4 h-4" />
-              Remove from List
-            </button>
-          ) : (
+          {onRemoveFromList ? (() => {
+            const isRemovable = !canRemoveRow || canRemoveRow(rowContextMenu.rowId)
+            return isRemovable ? (
+              <button
+                onClick={() => {
+                  onRemoveFromList(rowContextMenu.rowId)
+                  setRowContextMenu(null)
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                Remove from List
+              </button>
+            ) : (() => {
+              const asset = assets.find(a => a.id === rowContextMenu.assetId)
+              const addedByUser = asset?._addedByUser
+              const addedByName = addedByUser?.first_name
+                ? `${addedByUser.first_name}${addedByUser.last_name ? ' ' + addedByUser.last_name : ''}`
+                : addedByUser?.email?.split('@')[0] || 'another user'
+              return (
+                <div
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 flex items-center gap-2 cursor-not-allowed"
+                  title={`Added by ${addedByName}`}
+                >
+                  <X className="w-4 h-4" />
+                  Remove from List
+                </div>
+              )
+            })()
+          })() : (
             <button
               onClick={() => {
                 if (confirm('Are you sure you want to delete this asset?')) {
@@ -3773,6 +5154,42 @@ export function AssetTableView({
             >
               <Trash2 className="w-4 h-4" />
               Delete Asset
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Group Kebab Menu */}
+      {groupKebabMenu && (
+        <div
+          className="group-kebab-menu fixed z-[100] w-36 bg-white rounded-lg shadow-xl border border-gray-200 py-1 animate-in fade-in duration-100"
+          style={{ left: groupKebabMenu.x, top: groupKebabMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              const group = listGroupData?.find(g => g.id === groupKebabMenu.groupId)
+              if (group) {
+                setEditingGroupId(groupKebabMenu.groupId)
+                setEditingGroupName(group.name)
+              }
+              setGroupKebabMenu(null)
+            }}
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+          >
+            <FileEdit className="w-3.5 h-3.5 text-gray-500" />
+            Rename
+          </button>
+          {onDeleteGroup && (
+            <button
+              onClick={() => {
+                onDeleteGroup(groupKebabMenu.groupId)
+                setGroupKebabMenu(null)
+              }}
+              className="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Group
             </button>
           )}
         </div>
@@ -4117,6 +5534,182 @@ export function AssetTableView({
         </div>,
         document.body
       )}
+
+      {/* Column Management Modal */}
+      {showColumnSettings && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowColumnSettings(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-[680px] max-h-[520px] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-gray-500" />
+                <h3 className="text-sm font-semibold text-gray-900">Manage Columns</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDraftColumns([...DEFAULT_COLUMNS, ...extraColumns].map(c => ({ ...c })))}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                >
+                  Reset to Default
+                </button>
+                <button onClick={() => setShowColumnSettings(false)} className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body — two-panel layout */}
+            <div className="flex flex-1 min-h-0 divide-x divide-gray-200">
+              {/* Left: Available columns */}
+              <div className="w-1/2 flex flex-col">
+                <div className="px-4 py-2.5 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Available</p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  {(() => {
+                    const available = draftColumns.filter(c => !c.visible && c.id !== 'select')
+                    const categories = Object.entries(COLUMN_CATEGORIES) as [string, { label: string }][]
+                    const grouped = categories.map(([cat, info]) => ({
+                      category: cat,
+                      label: info.label,
+                      cols: available.filter(c => c.category === cat)
+                    })).filter(g => g.cols.length > 0)
+
+                    if (available.length === 0) {
+                      return (
+                        <div className="flex items-center justify-center h-full text-xs text-gray-400 py-8">
+                          All columns are visible
+                        </div>
+                      )
+                    }
+
+                    return grouped.map(group => (
+                      <div key={group.category} className="mb-2">
+                        <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                          {group.label}
+                        </div>
+                        {group.cols.map(col => (
+                          <button
+                            key={col.id}
+                            onClick={() => {
+                              setDraftColumns(prev => {
+                                const withoutCol = prev.filter(c => c.id !== col.id)
+                                return [...withoutCol, { ...col, visible: true }]
+                              })
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-blue-50 text-left transition-colors group/avail"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-gray-300 group-hover/avail:text-blue-500 transition-colors" />
+                            <span className="text-xs text-gray-600 group-hover/avail:text-gray-900 flex-1">{col.label}</span>
+                            <ChevronRight className="w-3 h-3 text-gray-300 group-hover/avail:text-blue-500 transition-colors" />
+                          </button>
+                        ))}
+                      </div>
+                    ))
+                  })()}
+                </div>
+              </div>
+
+              {/* Right: Selected columns (drag to reorder) */}
+              <div className="w-1/2 flex flex-col">
+                <div className="px-4 py-2.5 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Selected
+                    <span className="ml-1.5 text-gray-400 font-normal normal-case">
+                      ({draftColumns.filter(c => c.visible && c.id !== 'select').length})
+                    </span>
+                  </p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  {draftColumns.filter(c => c.visible && c.id !== 'select').map((col) => (
+                    <div
+                      key={col.id}
+                      className={clsx(
+                        'flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors',
+                        draggedColumn === col.id ? 'opacity-30 bg-gray-100' : 'hover:bg-gray-50'
+                      )}
+                      draggable
+                      onDragStart={() => setDraggedColumn(col.id)}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                      onDrop={() => {
+                        if (draggedColumn) {
+                          setDraftColumns(prev => {
+                            const arr = [...prev]
+                            const from = arr.findIndex(c => c.id === draggedColumn)
+                            const to = arr.findIndex(c => c.id === col.id)
+                            if (from === -1 || to === -1) return prev
+                            const [moved] = arr.splice(from, 1)
+                            arr.splice(to, 0, moved)
+                            return arr
+                          })
+                          setDraggedColumn(null)
+                        }
+                      }}
+                      onDragEnd={() => setDraggedColumn(null)}
+                    >
+                      <GripVertical className="w-3 h-3 text-gray-300 cursor-grab flex-shrink-0" />
+                      <span className="text-xs text-gray-700 flex-1 truncate">{col.label}</span>
+                      {(col.canUnpin !== false || !col.pinned) ? (
+                        <button
+                          onClick={() => {
+                            setDraftColumns(prev => prev.map(c => {
+                              if (c.id !== col.id) return c
+                              if (c.pinned && c.canUnpin === false) return c
+                              return { ...c, pinned: !c.pinned }
+                            }))
+                          }}
+                          className={clsx(
+                            'p-0.5 rounded transition-colors flex-shrink-0',
+                            col.pinned ? 'text-blue-600 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'
+                          )}
+                          title={col.pinned ? 'Unpin column' : 'Pin column'}
+                        >
+                          <Pin className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <Pin className="w-3 h-3 text-blue-600 opacity-50 flex-shrink-0" title="This column cannot be unpinned" />
+                      )}
+                      <button
+                        onClick={() => {
+                          setDraftColumns(prev => prev.map(c => c.id === col.id ? { ...c, visible: false } : c))
+                        }}
+                        className="p-0.5 rounded text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                        title="Remove column"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+              <button
+                onClick={() => setShowColumnSettings(false)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setColumns(draftColumns)
+                  setShowColumnSettings(false)
+                }}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -4180,15 +5773,14 @@ function InlineInsertRow({
         .limit(8)
 
       if (!error && data) {
-        const existingSet = new Set(existingAssetIds)
-        setSearchResults(data.filter(a => !existingSet.has(a.id)))
+        setSearchResults(data)
       }
     } catch (e) {
       console.error('Search error:', e)
     } finally {
       setIsSearching(false)
     }
-  }, [existingAssetIds])
+  }, [])
 
   // Debounced search
   useEffect(() => {
@@ -4391,6 +5983,7 @@ function InlineAddRow({
   onExitUp
 }: InlineAddRowProps) {
   const [inputValue, setInputValue] = useState('')
+  const [isFocused, setIsFocused] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -4415,9 +6008,7 @@ function InlineAddRow({
         .limit(8)
 
       if (!error && data) {
-        // Filter out already existing assets
-        const existingSet = new Set(existingAssetIds)
-        setSearchResults(data.filter(a => !existingSet.has(a.id)))
+        setSearchResults(data)
       }
     } catch (e) {
       console.error('Search error:', e)
@@ -4488,8 +6079,6 @@ function InlineAddRow({
     setFeedback(null)
 
     try {
-      const existingSet = new Set(existingAssetIds)
-
       // Lookup all tickers in batch
       const { data: assets, error } = await supabase
         .from('assets')
@@ -4500,20 +6089,16 @@ function InlineAddRow({
 
       const assetMap = new Map(assets?.map(a => [a.symbol, a]) || [])
 
-      // Separate valid, duplicate, and invalid
+      // Separate valid and not-found
       const toAdd: { id: string; symbol: string }[] = []
-      const duplicates: string[] = []
       const notFound: string[] = []
 
       for (const ticker of tickers) {
         const asset = assetMap.get(ticker)
         if (!asset) {
           notFound.push(ticker)
-        } else if (existingSet.has(asset.id)) {
-          duplicates.push(ticker)
         } else {
           toAdd.push({ id: asset.id, symbol: asset.symbol })
-          existingSet.add(asset.id) // Prevent duplicates within the paste
         }
       }
 
@@ -4538,7 +6123,6 @@ function InlineAddRow({
       // Show feedback
       const parts: string[] = []
       if (toAdd.length > 0) parts.push(`Added ${toAdd.length}`)
-      if (duplicates.length > 0) parts.push(`${duplicates.length} already in list`)
       if (notFound.length > 0) parts.push(`${notFound.length} not found`)
 
       setFeedback({
@@ -4590,11 +6174,40 @@ function InlineAddRow({
         }
       }
     } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
       setInputValue('')
       setSearchResults([])
       inputRef.current?.blur()
     }
   }
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (searchResults.length === 0) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (
+        rowRef.current && !rowRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
+        setSearchResults([])
+        setInputValue('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [searchResults.length])
+
+  // Close dropdown on blur (click away from input)
+  const handleBlur = useCallback(() => {
+    // Small delay so click on dropdown item can fire first
+    setTimeout(() => {
+      if (!dropdownRef.current?.contains(document.activeElement)) {
+        setSearchResults([])
+      }
+    }, 150)
+  }, [])
 
   // Reset selected index when results change
   useEffect(() => {
@@ -4610,7 +6223,7 @@ function InlineAddRow({
     if (searchResults.length > 0 && rowRef.current) {
       const rect = rowRef.current.getBoundingClientRect()
       setDropdownPosition({
-        top: rect.bottom + 4,
+        top: rect.top, // Anchor to top of input row (dropdown renders upward)
         left: rect.left + 32 // Offset for the select column
       })
     } else {
@@ -4620,94 +6233,76 @@ function InlineAddRow({
 
   return (
     <>
-      {/* The input row styled like a table row */}
+      {/* Add ticker bar — clean single row */}
       <div
         ref={rowRef}
-        className="pro-table-row flex items-center border-t border-gray-200 bg-gray-50/50 hover:bg-gray-50"
+        className={clsx(
+          'flex items-center gap-2 px-3 border-t cursor-text transition-colors',
+          isFocused
+            ? 'border-blue-200 bg-blue-50/30'
+            : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'
+        )}
         style={{ minWidth: totalTableWidth, height: densityRowHeight }}
+        onClick={() => inputRef.current?.focus()}
       >
-        {columns.map((col) => (
-          <div
-            key={col.id}
-            className={clsx(
-              'h-full flex items-center',
-              densityConfig.padding,
-              densityConfig.fontSize
-            )}
-            style={{ width: col.width, minWidth: col.minWidth }}
-          >
-            {col.id === 'select' && (
-              <Plus className="h-4 w-4 text-gray-400" />
-            )}
-            {col.id === 'ticker' && (
-              <div className="flex-1 flex items-center gap-2">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => {
-                    setInputValue(e.target.value)
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  placeholder="Type or paste tickers..."
-                  className={clsx(
-                    'flex-1 bg-transparent border-none outline-none text-gray-700 placeholder:text-gray-400',
-                    (density === 'ultra' || density === 'micro') ? 'text-xs' : 'text-sm'
-                  )}
-                />
-                {isSearching && (
-                  <Loader2 className="h-3.5 w-3.5 text-gray-400 animate-spin" />
-                )}
-                {feedback && (
-                  <span className={clsx(
-                    'text-xs font-medium',
-                    feedback.type === 'success' ? 'text-green-600' : 'text-red-600'
-                  )}>
-                    {feedback.message}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+        <Plus className={clsx('h-3.5 w-3.5 flex-shrink-0 transition-colors', isFocused ? 'text-blue-400' : 'text-gray-300')} />
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => { setIsFocused(false); handleBlur() }}
+          placeholder={isFocused ? 'Search by ticker or name...' : 'Add ticker...'}
+          className="flex-1 bg-transparent border-none outline-none text-xs text-gray-700 placeholder:text-gray-400"
+        />
+        {isSearching && (
+          <Loader2 className="h-3 w-3 text-blue-400 animate-spin flex-shrink-0" />
+        )}
+        {feedback && (
+          <span className={clsx(
+            'text-[11px] font-medium flex-shrink-0 transition-opacity',
+            feedback.type === 'success' ? 'text-green-600' : 'text-red-500'
+          )}>
+            {feedback.message}
+          </span>
+        )}
       </div>
 
-      {/* Search results dropdown - using portal to escape overflow:hidden */}
+      {/* Search results dropdown - rendered above the input row via portal */}
       {searchResults.length > 0 && dropdownPosition && createPortal(
         <div
           ref={dropdownRef}
           className="fixed z-[9999] w-80 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
-          style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
+          style={{ bottom: window.innerHeight - dropdownPosition.top + 4, left: dropdownPosition.left }}
         >
+          <div className="px-3 py-1.5 text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
+            ↑↓ navigate · Enter add · Esc clear
+          </div>
           {searchResults.map((asset, idx) => (
             <button
               key={asset.id}
               onClick={() => addAsset(asset.id, asset.symbol)}
               onMouseEnter={() => setSelectedIndex(idx)}
               className={clsx(
-                'w-full px-3 py-2 text-left flex items-center justify-between hover:bg-gray-50 transition-colors',
+                'w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 transition-colors',
                 idx === selectedIndex && 'bg-blue-50'
               )}
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900">{asset.symbol}</span>
-                  <span className="text-xs text-gray-500 truncate">{asset.company_name}</span>
-                </div>
-                {asset.sector && (
-                  <span className="text-xs text-gray-400">{asset.sector}</span>
-                )}
-              </div>
-              <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <span className="font-semibold text-gray-900 flex-shrink-0">{asset.symbol}</span>
+              <span className="text-xs text-gray-500 truncate flex-1 min-w-0">{asset.company_name}</span>
+              {asset.sector && (
+                <span className="text-[10px] text-gray-400 flex-shrink-0">{asset.sector}</span>
+              )}
+              <Plus className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
             </button>
           ))}
-          <div className="px-3 py-1.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
-            ↑↓ navigate · Enter add · Esc clear
-          </div>
         </div>,
         document.body
       )}
+
     </>
   )
 }

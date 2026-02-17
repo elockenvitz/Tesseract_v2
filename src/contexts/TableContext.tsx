@@ -91,12 +91,12 @@ export const DENSITY_CONFIG = {
   compact: {
     rowHeight: 44,
     padding: 'px-3 py-2',
-    fontSize: 'text-sm',
+    fontSize: 'text-[13px]',
     gap: 'gap-2',
     showSecondaryInfo: true,
     showAvatars: false,
     iconSize: 'w-4 h-4',
-    widthScale: 0.9
+    widthScale: 0.95
   },
   ultra: {
     rowHeight: 32,
@@ -106,7 +106,7 @@ export const DENSITY_CONFIG = {
     showSecondaryInfo: false,
     showAvatars: false,
     iconSize: 'w-3.5 h-3.5',
-    widthScale: 0.75
+    widthScale: 0.85
   },
   micro: {
     rowHeight: 22,

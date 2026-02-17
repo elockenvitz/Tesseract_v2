@@ -97,6 +97,7 @@ function dedupKey(item: DecisionItem): string {
     signalType,
     item.category,
     item.context.assetId ?? '',
+    item.context.portfolioId ?? '',
     item.context.proposalId ?? '',
     item.context.tradeIdeaId ?? '',
     item.context.projectId ?? '',

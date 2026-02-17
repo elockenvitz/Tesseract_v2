@@ -564,7 +564,7 @@ export function DashboardPage() {
       case 'charting':
         return <ChartingPage onItemSelect={handleSearchResult} initialSymbol={activeTab.data?.symbol} />
       case 'audit':
-        return <AuditExplorerPage />
+        return <AuditExplorerPage onNavigate={handleSearchResult} />
       case 'user':
         return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
       case 'templates':

@@ -53,6 +53,7 @@ export interface EngineArgs {
     recurrentWorkflows?: any[]
     prompts?: any[]
     catalysts?: any[]
+    roleByPortfolioId?: Record<string, string>
   }
   now?: Date
 }
@@ -73,6 +74,7 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
     now,
     userId: args.userId,
     role: args.role,
+    roleByPortfolioId: args.data.roleByPortfolioId,
   }))
 
   // A2: Execution not confirmed

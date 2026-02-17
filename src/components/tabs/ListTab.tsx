@@ -3,11 +3,15 @@
  *
  * Uses the same AssetTableView component as AssetsListPage for consistency.
  * Adds list-specific header (name, description, share, add asset) above the table.
+ * Wires useListPermissions, useListSuggestions, useListGroups, useListReorder.
  */
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Star, Share2, Plus, X, Search, Loader2, Trash2, Check, Users, ChevronDown, ChevronRight, LayoutGrid, List, Layers, User } from 'lucide-react'
+import {
+  Star, Share2, Plus, X, Search, Loader2, Trash2, Check, Users,
+  Bell, CheckCircle2, XCircle
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -15,8 +19,14 @@ import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
 import { AssetTableView } from '../table/AssetTableView'
+import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
+import { useListPermissions } from '../../hooks/lists/useListPermissions'
+import { useListSuggestions } from '../../hooks/lists/useListSuggestions'
+import { useListGroups } from '../../hooks/lists/useListGroups'
+import { useListReorder } from '../../hooks/lists/useListReorder'
+import { useListKanbanBoards, useKanbanBoard } from '../../hooks/lists/useListKanban'
 import { clsx } from 'clsx'
-import { createPortal } from 'react-dom'
+import { formatDistanceToNow } from 'date-fns'
 
 interface ListTabProps {
   list: any
@@ -29,6 +39,8 @@ interface ListItem {
   added_at: string
   added_by: string | null
   notes: string | null
+  sort_order: number | null
+  group_id: string | null
   assets: {
     id: string
     symbol: string
@@ -51,33 +63,29 @@ interface ListItem {
   }
 }
 
-type CollaborativeViewMode = 'all' | 'grouped' | 'expanded' | 'tabs'
 
 export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
-  // State
+  // ── State ────────────────────────────────────────────────────────────
   const [showShareDialog, setShowShareDialog] = useState(false)
+  const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState<{
-    isOpen: boolean
-    itemId: string | null
-    assetSymbol: string
+    isOpen: boolean; itemId: string | null; assetSymbol: string
   }>({ isOpen: false, itemId: null, assetSymbol: '' })
   const [showBulkRemoveConfirm, setShowBulkRemoveConfirm] = useState<{
-    isOpen: boolean
-    assetIds: string[]
-  }>({ isOpen: false, assetIds: [] })
+    isOpen: boolean; itemIds: string[]; totalSelected: number
+  }>({ isOpen: false, itemIds: [], totalSelected: 0 })
 
-  // Collaborative list view state
-  const [viewMode, setViewMode] = useState<CollaborativeViewMode>('all')
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
-  const [activeTab, setActiveTab] = useState<string>('all')
+  // Trade Idea modal state
+  const [showTradeIdeaModal, setShowTradeIdeaModal] = useState(false)
+  const [tradeIdeaAssetId, setTradeIdeaAssetId] = useState<string | undefined>(undefined)
 
-  // Check if this is a collaborative list
   const isCollaborative = list.list_type === 'collaborative'
 
-  // Fetch list items with asset details and added_by user info
+  // ── Data queries ─────────────────────────────────────────────────────
+
   const { data: listItems = [], isLoading } = useQuery({
     queryKey: ['asset-list-items', list.id],
     queryFn: async () => {
@@ -91,77 +99,23 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         .eq('list_id', list.id)
         .order('sort_order', { ascending: true, nullsFirst: false })
         .order('added_at', { ascending: false })
-
       if (error) throw error
       return data as ListItem[]
     }
   })
 
-  // Backfill sort_order for items that don't have one (runs once per list)
-  const backfillRanRef = useRef<string | null>(null)
-  useEffect(() => {
-    const backfillSortOrder = async () => {
-      if (!listItems || listItems.length === 0) return
-      // Only run once per list
-      if (backfillRanRef.current === list.id) return
-
-      // Find items without sort_order
-      const needsUpdate = listItems.filter(item => item.sort_order === null || item.sort_order === undefined)
-      if (needsUpdate.length === 0) {
-        backfillRanRef.current = list.id
-        return
-      }
-
-      backfillRanRef.current = list.id
-
-      // Sort by added_at (oldest first) to determine order
-      const sorted = [...needsUpdate].sort((a, b) =>
-        new Date(a.added_at).getTime() - new Date(b.added_at).getTime()
-      )
-
-      // Find the max existing sort_order, or start at 0
-      const maxSortOrder = listItems
-        .filter(item => item.sort_order !== null && item.sort_order !== undefined)
-        .reduce((max, item) => Math.max(max, item.sort_order || 0), 0)
-
-      // Update each item with a sort_order
-      const updates = sorted.map((item, idx) => ({
-        id: item.id,
-        sort_order: maxSortOrder + (idx + 1) * 10
-      }))
-
-      console.log('Backfilling sort_order for', updates.length, 'items')
-
-      // Batch update
-      for (const update of updates) {
-        await supabase
-          .from('asset_list_items')
-          .update({ sort_order: update.sort_order })
-          .eq('id', update.id)
-      }
-
-      // Refetch to get updated data
-      queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
-    }
-
-    backfillSortOrder()
-  }, [listItems, list.id, queryClient])
-
-  // Fetch collaborators
-  const { data: collaborators } = useQuery({
+  const { data: collaborators = [] } = useQuery({
     queryKey: ['asset-list-collaborators', list.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('asset_list_collaborations')
         .select(`*, user:users!asset_list_collaborations_user_id_fkey(email, first_name, last_name)`)
         .eq('list_id', list.id)
-
       if (error) throw error
       return data || []
     }
   })
 
-  // Fetch favorite status
   const { data: isFavorited } = useQuery({
     queryKey: ['list-favorite', list.id, user?.id],
     queryFn: async () => {
@@ -177,110 +131,119 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     enabled: !!user?.id
   })
 
-  // Extract assets from list items with added_by info
+  // ── Hooks ────────────────────────────────────────────────────────────
+
+  const permissions = useListPermissions({ list, collaborators })
+
+  const {
+    incomingCount: suggestionsIncomingCount,
+    incomingSuggestions,
+    outgoingSuggestions,
+    acceptSuggestion,
+    rejectSuggestion,
+    cancelSuggestion,
+    isAccepting,
+    isRejecting,
+    isCanceling
+  } = useListSuggestions({ listId: list.id, enabled: true })
+
+  const {
+    groups,
+    createGroup,
+    updateGroup,
+    deleteGroup,
+    moveItemToGroup,
+    isCreating: isCreatingGroup
+  } = useListGroups({ listId: list.id, enabled: true })
+
+  const {
+    handleReorder,
+    ensureSortOrder
+  } = useListReorder({ listId: list.id, items: listItems })
+
+  // Custom kanban boards
+  const [activeKanbanBoardId, setActiveKanbanBoardId] = useState<string | null>(null)
+  const {
+    boards: kanbanBoards,
+    createBoard: createKanbanBoard,
+    deleteBoard: deleteKanbanBoard,
+    renameBoard: renameKanbanBoard
+  } = useListKanbanBoards(list.id)
+
+  const {
+    lanes: kanbanBoardLanes,
+    laneItems: kanbanBoardLaneItems,
+    createLane: createKanbanLane,
+    deleteLane: deleteKanbanLane,
+    renameLane: renameKanbanLane,
+    assignToLane: assignToKanbanLane,
+    removeFromLane: removeFromKanbanLane
+  } = useKanbanBoard(activeKanbanBoardId)
+
+  // Map asset ID → list item ID for kanban lane assignments
+  const handleAssignToKanbanLane = useCallback((laneId: string, assetId: string) => {
+    const listItemId = listItems.find(i => i.asset_id === assetId)?.id
+    if (listItemId) assignToKanbanLane(laneId, listItemId)
+  }, [listItems, assignToKanbanLane])
+
+  const handleRemoveFromKanbanLane = useCallback((assetId: string) => {
+    const listItemId = listItems.find(i => i.asset_id === assetId)?.id
+    if (listItemId) removeFromKanbanLane(listItemId)
+  }, [listItems, removeFromKanbanLane])
+
+  // Backfill sort_order on mount via hook
+  const backfillDoneRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (listItems.length > 0 && backfillDoneRef.current !== list.id) {
+      backfillDoneRef.current = list.id
+      ensureSortOrder()
+    }
+  }, [listItems.length, list.id, ensureSortOrder])
+
+  // ── Derived data ─────────────────────────────────────────────────────
+
   const assets = useMemo(() => {
     return listItems
       .filter(item => item.assets)
       .map(item => ({
         ...item.assets!,
-        _listItemId: item.id,
+        _rowId: item.id,
         _sortOrder: item.sort_order,
         _addedAt: item.added_at,
         _addedBy: item.added_by,
         _addedByUser: item.added_by_user,
-        _listNotes: item.notes
+        _listNotes: item.notes,
+        _listGroupId: item.group_id
       }))
   }, [listItems])
 
-  // Get display name for a user
-  const getUserDisplayName = (userInfo: { email: string; first_name?: string; last_name?: string } | null | undefined, userId?: string | null) => {
-    if (!userInfo) return userId === user?.id ? 'You' : 'Unknown'
-    if (userInfo.first_name && userInfo.last_name) {
-      return userId === user?.id ? 'You' : `${userInfo.first_name} ${userInfo.last_name}`
-    }
-    return userId === user?.id ? 'You' : userInfo.email?.split('@')[0] || 'Unknown'
-  }
 
-  // Group assets by user for collaborative lists
-  const assetsByUser = useMemo(() => {
-    if (!isCollaborative) return null
 
-    const groups: Record<string, { user: any; userId: string; assets: any[] }> = {}
-
-    // Always put current user first
-    if (user?.id) {
-      groups[user.id] = {
-        user: { id: user.id, email: user.email, first_name: user.user_metadata?.first_name, last_name: user.user_metadata?.last_name },
-        userId: user.id,
-        assets: []
-      }
-    }
-
-    assets.forEach(asset => {
-      const userId = asset._addedBy || 'unknown'
-      if (!groups[userId]) {
-        groups[userId] = {
-          user: asset._addedByUser,
-          userId,
-          assets: []
-        }
-      }
-      groups[userId].assets.push(asset)
-    })
-
-    // Convert to array and sort (current user first, then alphabetically)
-    return Object.values(groups)
-      .filter(g => g.assets.length > 0 || g.userId === user?.id)
-      .sort((a, b) => {
-        if (a.userId === user?.id) return -1
-        if (b.userId === user?.id) return 1
-        const nameA = getUserDisplayName(a.user, a.userId)
-        const nameB = getUserDisplayName(b.user, b.userId)
-        return nameA.localeCompare(nameB)
-      })
-  }, [assets, isCollaborative, user?.id])
-
-  // Get all unique users for tabs view
-  const uniqueUsers = useMemo(() => {
-    if (!assetsByUser) return []
-    return assetsByUser.map(g => ({
-      id: g.userId,
-      name: getUserDisplayName(g.user, g.userId),
-      count: g.assets.length
-    }))
-  }, [assetsByUser])
-
-  // Filter assets for tabs view
-  const filteredAssetsForTab = useMemo(() => {
-    if (activeTab === 'all' || !isCollaborative) return assets
-    return assets.filter(a => a._addedBy === activeTab)
-  }, [assets, activeTab, isCollaborative])
-
-  // Toggle section collapse
-  const toggleSection = (userId: string) => {
-    setCollapsedSections(prev => {
-      const next = new Set(prev)
-      if (next.has(userId)) {
-        next.delete(userId)
-      } else {
-        next.add(userId)
-      }
-      return next
-    })
-  }
-
-  // Create a map of asset ID to list item ID for removal
-  const assetToListItemMap = useMemo(() => {
-    const map = new Map<string, string>()
-    listItems.forEach(item => {
-      if (item.assets) {
-        map.set(item.assets.id, item.id)
-      }
-    })
+  // Map row IDs (list_item.id) → full list item for row-specific lookups
+  const rowIdToItemMap = useMemo(() => {
+    const map = new Map<string, ListItem>()
+    listItems.forEach(item => map.set(item.id, item))
     return map
   }, [listItems])
 
-  // Mutations
+  const existingAssetIds = useMemo(() =>
+    listItems.map(item => item.asset_id),
+    [listItems]
+  )
+
+  // List group data for AssetTableView
+  const listGroupData = useMemo(() => {
+    if (!groups || groups.length === 0) return undefined
+    return groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      sort_order: g.sort_order ?? 0
+    }))
+  }, [groups])
+
+  // ── Mutations ────────────────────────────────────────────────────────
+
   const toggleFavoriteMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated')
@@ -308,80 +271,112 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     }
   })
 
-  // Bulk remove mutation
   const bulkRemoveMutation = useMutation({
-    mutationFn: async (assetIds: string[]) => {
-      // Get list item IDs for the selected assets
-      const listItemIds = assetIds.map(assetId => assetToListItemMap.get(assetId)).filter(Boolean) as string[]
-      if (listItemIds.length === 0) throw new Error('No items to remove')
-
-      const { error } = await supabase
-        .from('asset_list_items')
-        .delete()
-        .in('id', listItemIds)
+    mutationFn: async (itemIds: string[]) => {
+      if (itemIds.length === 0) throw new Error('No items to remove')
+      const { error } = await supabase.from('asset_list_items').delete().in('id', itemIds)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
       queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
-      setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })
+      setShowBulkRemoveConfirm({ isOpen: false, itemIds: [], totalSelected: 0 })
     }
   })
 
-  // Handle bulk action from AssetTableView
-  const handleBulkAction = (assetIds: string[]) => {
-    setShowBulkRemoveConfirm({ isOpen: true, assetIds })
-  }
-
-  // Handle remove from list via right-click context menu
-  const handleRemoveFromList = useCallback((assetId: string) => {
-    const listItemId = assetToListItemMap.get(assetId)
-    const asset = assets.find(a => a.id === assetId)
-    if (listItemId && asset) {
-      setShowRemoveConfirm({ isOpen: true, itemId: listItemId, assetSymbol: asset.symbol })
-    }
-  }, [assetToListItemMap, assets])
-
-  // Get existing asset IDs for filtering
-  const existingAssetIds = useMemo(() =>
-    listItems.map(item => item.asset_id),
-    [listItems]
-  )
-
-  // Empty state for list - compact
-  const emptyState = (
-    <div className="text-center">
-      <Search className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-      <p className="text-sm text-gray-500 mb-3">No assets in this list</p>
-      <InlineAssetAdder listId={list.id} existingAssetIds={[]} />
-    </div>
-  )
-
-  // Collaborative view dropdown state
-  const [showViewDropdown, setShowViewDropdown] = useState(false)
-  const viewDropdownRef = useRef<HTMLDivElement>(null)
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (viewDropdownRef.current && !viewDropdownRef.current.contains(e.target as Node)) {
-        setShowViewDropdown(false)
+  const updateListNoteMutation = useMutation({
+    mutationFn: async ({ itemId, note }: { itemId: string; note: string }) => {
+      const { error } = await supabase
+        .from('asset_list_items')
+        .update({ notes: note || null })
+        .eq('id', itemId)
+      if (error) throw error
+    },
+    onMutate: async ({ itemId, note }) => {
+      // Optimistic update
+      await queryClient.cancelQueries({ queryKey: ['asset-list-items', list.id] })
+      const prev = queryClient.getQueryData<ListItem[]>(['asset-list-items', list.id])
+      if (prev) {
+        queryClient.setQueryData<ListItem[]>(['asset-list-items', list.id],
+          prev.map(item => item.id === itemId ? { ...item, notes: note || null } : item)
+        )
       }
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['asset-list-items', list.id], ctx.prev)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-list-items', list.id] })
     }
-    if (showViewDropdown) document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showViewDropdown])
+  })
 
-  const viewModeLabels: Record<CollaborativeViewMode, string> = {
-    all: 'All Items',
-    grouped: 'By Contributor',
-    expanded: 'Expanded',
-    tabs: 'Filter by User'
-  }
+  const handleUpdateListNote = useCallback((rowId: string, note: string) => {
+    updateListNoteMutation.mutate({ itemId: rowId, note })
+  }, [updateListNoteMutation])
+
+  // ── Handlers ─────────────────────────────────────────────────────────
+
+  // Move asset to a group (uses _rowId → list_item.id)
+  const handleMoveToGroup = useCallback((assetId: string, groupId: string | null) => {
+    const asset = assets.find(a => a.id === assetId)
+    if (!asset) return
+    moveItemToGroup({ itemId: asset._rowId, groupId })
+  }, [assets, moveItemToGroup])
+
+  // Rename a group
+  const handleRenameGroup = useCallback((groupId: string, name: string) => {
+    updateGroup({ groupId, updates: { name } })
+  }, [updateGroup])
+
+  // Delete a group
+  const handleDeleteGroup = useCallback((groupId: string) => {
+    deleteGroup(groupId)
+  }, [deleteGroup])
+
+  const handleBulkAction = useCallback((assetIds: string[]) => {
+    // Resolve selected asset IDs to rows, then filter by per-row removal permission
+    const selectedSet = new Set(assetIds)
+    const removableItemIds = assets
+      .filter(a => selectedSet.has(a.id) && permissions.canRemoveItem({ added_by: a._addedBy }))
+      .map(a => a._rowId)
+    if (removableItemIds.length === 0) return
+    setShowBulkRemoveConfirm({ isOpen: true, itemIds: removableItemIds, totalSelected: assetIds.length })
+  }, [assets, permissions])
+
+  const handleRemoveFromList = useCallback((rowId: string) => {
+    const item = rowIdToItemMap.get(rowId)
+    if (!item) return
+    if (!permissions.canRemoveItem({ added_by: item.added_by })) return
+    if (item.assets) {
+      setShowRemoveConfirm({ isOpen: true, itemId: item.id, assetSymbol: item.assets.symbol })
+    }
+  }, [rowIdToItemMap, permissions])
+
+  const handleReorderItem = useCallback((fromIndex: number, toIndex: number) => {
+    handleReorder(fromIndex, toIndex)
+  }, [handleReorder])
+
+  // Create Trade Idea handler — opens modal with optional pre-selected asset
+  const handleCreateTradeIdea = useCallback((assetId?: string) => {
+    setTradeIdeaAssetId(assetId)
+    setShowTradeIdeaModal(true)
+  }, [])
+
+  const canAdd = permissions.canAddAnyItem || permissions.canAddToOwnSection
+
+  // Per-row removal permission check — uses rowId (list_item.id), not assetId
+  const canRemoveRow = useCallback((rowId: string): boolean => {
+    const item = rowIdToItemMap.get(rowId)
+    return item ? permissions.canRemoveItem({ added_by: item.added_by }) : false
+  }, [rowIdToItemMap, permissions])
+
+
+  // ── Render ───────────────────────────────────────────────────────────
 
   return (
     <div className="h-full flex flex-col">
-      {/* Compact Header Bar */}
+      {/* Header */}
       <div className="flex items-center justify-between py-2 flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div
@@ -406,162 +401,151 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               Collaborative
             </Badge>
           )}
-          {!isCollaborative && collaborators && collaborators.length > 0 && (
+          {!isCollaborative && collaborators.length > 0 && (
             <Badge variant="secondary" size="sm" className="flex-shrink-0">
               <Share2 className="h-3 w-3 mr-1" />
               {collaborators.length}
             </Badge>
           )}
-
-          {/* Collaborative View Dropdown */}
-          {isCollaborative && assets.length > 0 && (
-            <div className="relative ml-2 flex-shrink-0" ref={viewDropdownRef}>
-              <button
-                onClick={() => setShowViewDropdown(!showViewDropdown)}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-              >
-                <Users className="h-3.5 w-3.5" />
-                <span>{viewModeLabels[viewMode]}</span>
-                <ChevronDown className={clsx('h-3 w-3 transition-transform', showViewDropdown && 'rotate-180')} />
-              </button>
-              {showViewDropdown && (
-                <div className="absolute left-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-                  <button
-                    onClick={() => { setViewMode('all'); setShowViewDropdown(false) }}
-                    className={clsx('w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50', viewMode === 'all' && 'bg-blue-50 text-blue-700')}
-                  >
-                    <List className="h-3.5 w-3.5" />
-                    All Items
-                  </button>
-                  <button
-                    onClick={() => { setViewMode('tabs'); setShowViewDropdown(false) }}
-                    className={clsx('w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50', viewMode === 'tabs' && 'bg-blue-50 text-blue-700')}
-                  >
-                    <User className="h-3.5 w-3.5" />
-                    Filter by User
-                  </button>
-                  <button
-                    onClick={() => { setViewMode('grouped'); setShowViewDropdown(false) }}
-                    className={clsx('w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50', viewMode === 'grouped' && 'bg-blue-50 text-blue-700')}
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    By Contributor
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Tabs View - User Pills - inline */}
-          {isCollaborative && viewMode === 'tabs' && uniqueUsers.length > 0 && (
-            <div className="flex items-center gap-1 mr-2">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={clsx(
-                  'px-2 py-1 text-xs font-medium rounded-md transition-colors',
-                  activeTab === 'all'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                All
-              </button>
-              {uniqueUsers.map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => setActiveTab(u.id)}
-                  className={clsx(
-                    'px-2 py-1 text-xs font-medium rounded-md transition-colors',
-                    activeTab === u.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  )}
-                >
-                  {u.name}
-                </button>
-              ))}
-            </div>
+          {/* Suggestions badge */}
+          {suggestionsIncomingCount > 0 && (
+            <button
+              onClick={() => setShowSuggestionsPanel(!showSuggestionsPanel)}
+              className="relative flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors"
+              title={`${suggestionsIncomingCount} pending suggestion${suggestionsIncomingCount !== 1 ? 's' : ''}`}
+            >
+              <Bell className="h-3.5 w-3.5" />
+              {suggestionsIncomingCount}
+            </button>
           )}
 
-          {list.created_by === user?.id && (
+          {/* Share */}
+          {permissions.canManageCollaborators && (
             <Button variant="outline" size="sm" onClick={() => setShowShareDialog(true)}>
               <Share2 className="h-3.5 w-3.5" />
-              {collaborators && collaborators.length > 0 && <span className="ml-1">{collaborators.length}</span>}
+              {collaborators.length > 0 && <span className="ml-1">{collaborators.length}</span>}
             </Button>
           )}
-          <InlineAssetAdder listId={list.id} existingAssetIds={existingAssetIds} />
-        </div>
-      </div>
 
-      {/* Table Content - fills remaining space */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex-1 min-h-0">
-          {/* Standard View / Tabs View Content */}
-          {(!isCollaborative || viewMode === 'all' || viewMode === 'tabs') ? (
-            <AssetTableView
-              assets={viewMode === 'tabs' ? filteredAssetsForTab : assets}
-              isLoading={isLoading}
-              onAssetSelect={onAssetSelect}
-              storageKey={`listTableColumns_${list.id}`}
-              onBulkAction={handleBulkAction}
-              bulkActionLabel="Remove from List"
-              bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
-              onRemoveFromList={handleRemoveFromList}
-              listId={list.id}
-              existingAssetIds={existingAssetIds}
-              fillHeight
-            />
-          ) : null}
-
-          {/* Grouped View (Collapsible Sections) */}
-          {isCollaborative && viewMode === 'grouped' && assetsByUser && (
-            <div className="h-full overflow-y-auto space-y-2">
-              {assetsByUser.map(group => (
-                <div key={group.userId} className="border border-gray-100 rounded-lg overflow-hidden">
-                  <button
-                    onClick={() => toggleSection(group.userId)}
-                    className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      {collapsedSections.has(group.userId) ? (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      )}
-                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                        <span className="text-white text-xs font-medium">
-                          {getUserDisplayName(group.user, group.userId).charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <span className="text-sm font-medium text-gray-900">
-                        {getUserDisplayName(group.user, group.userId)}
-                      </span>
-                      <span className="text-xs text-gray-500">{group.assets.length}</span>
-                    </div>
-                  </button>
-                  {!collapsedSections.has(group.userId) && (
-                    <AssetTableView
-                      assets={group.assets}
-                      isLoading={false}
-                      onAssetSelect={onAssetSelect}
-                      storageKey={`listTableColumns_${list.id}`}
-                      onBulkAction={handleBulkAction}
-                      bulkActionLabel="Remove from List"
-                      bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
-                      onRemoveFromList={handleRemoveFromList}
-                      hideToolbar
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
+          {/* Add asset */}
+          {canAdd && (
+            <InlineAssetAdder listId={list.id} existingAssetIds={existingAssetIds} />
           )}
         </div>
       </div>
 
-      {/* Remove Confirmation (single) */}
+      {/* Suggestions panel (inline below header) */}
+      {showSuggestionsPanel && (incomingSuggestions.length > 0 || outgoingSuggestions.length > 0) && (
+        <div className="border border-amber-200 bg-amber-50/50 rounded-lg mb-2 flex-shrink-0">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-amber-200/60">
+            <span className="text-xs font-semibold text-amber-800 uppercase tracking-wider">Pending Suggestions</span>
+            <button onClick={() => setShowSuggestionsPanel(false)} className="p-0.5 hover:bg-amber-200/50 rounded">
+              <X className="h-3.5 w-3.5 text-amber-600" />
+            </button>
+          </div>
+          <div className="max-h-48 overflow-y-auto divide-y divide-amber-100">
+            {incomingSuggestions.map(s => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-800">
+                    {s.suggestion_type === 'add' ? 'Add' : 'Remove'}{' '}
+                    <span className="font-semibold">{s.asset?.symbol || 'Unknown'}</span>
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    from {s.suggester?.first_name || s.suggester?.email || 'Someone'}
+                    {s.notes && ` — "${s.notes}"`}
+                    {' · '}{s.created_at ? formatDistanceToNow(new Date(s.created_at), { addSuffix: true }) : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                  <button
+                    onClick={() => acceptSuggestion({ suggestionId: s.id })}
+                    disabled={isAccepting}
+                    className="p-1 rounded hover:bg-green-100 text-green-600 transition-colors"
+                    title="Accept"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => rejectSuggestion({ suggestionId: s.id })}
+                    disabled={isRejecting}
+                    className="p-1 rounded hover:bg-red-100 text-red-500 transition-colors"
+                    title="Reject"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {outgoingSuggestions.map(s => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2 opacity-70">
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-600">
+                    You suggested to {s.suggestion_type}{' '}
+                    <span className="font-medium">{s.asset?.symbol || 'Unknown'}</span>
+                  </p>
+                  <p className="text-[10px] text-gray-400">
+                    {s.created_at ? formatDistanceToNow(new Date(s.created_at), { addSuffix: true }) : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => cancelSuggestion(s.id)}
+                  disabled={isCanceling}
+                  className="px-2 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Table Content */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0">
+          <AssetTableView
+            assets={assets}
+            isLoading={isLoading}
+            onAssetSelect={onAssetSelect}
+            storageKey={`listTableColumns_${list.id}`}
+            onBulkAction={(permissions.canRemoveAnyItem || permissions.canRemoveFromOwnSection) ? handleBulkAction : undefined}
+            bulkActionLabel="Remove from List"
+            bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
+            onRemoveFromList={handleRemoveFromList}
+            canRemoveRow={isCollaborative ? canRemoveRow : undefined}
+            onUpdateListNote={handleUpdateListNote}
+            listId={list.id}
+            existingAssetIds={existingAssetIds}
+            fillHeight
+            listGroupData={listGroupData}
+            onReorderItem={permissions.canWrite ? handleReorderItem : undefined}
+            onMoveItemToGroup={handleMoveToGroup}
+            onRenameGroup={handleRenameGroup}
+            onDeleteGroup={handleDeleteGroup}
+            onCreateGroup={createGroup}
+            onCreateTradeIdea={handleCreateTradeIdea}
+            kanbanBoards={kanbanBoards}
+            activeKanbanBoardId={activeKanbanBoardId}
+            onSelectKanbanBoard={setActiveKanbanBoardId}
+            onCreateKanbanBoard={createKanbanBoard}
+            onDeleteKanbanBoard={deleteKanbanBoard}
+            onRenameKanbanBoard={renameKanbanBoard}
+            kanbanBoardLanes={kanbanBoardLanes}
+            kanbanBoardLaneItems={kanbanBoardLaneItems}
+            onCreateKanbanLane={createKanbanLane}
+            onDeleteKanbanLane={deleteKanbanLane}
+            onRenameKanbanLane={renameKanbanLane}
+            onAssignToKanbanLane={handleAssignToKanbanLane}
+            onRemoveFromKanbanLane={handleRemoveFromKanbanLane}
+          />
+        </div>
+      </div>
+
+      {/* Confirmation Dialogs */}
       <ConfirmDialog
         isOpen={showRemoveConfirm.isOpen}
         onClose={() => setShowRemoveConfirm({ isOpen: false, itemId: null, assetSymbol: '' })}
@@ -573,15 +557,17 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         variant="warning"
         isLoading={removeFromListMutation.isPending}
       />
-
-      {/* Bulk Remove Confirmation */}
       <ConfirmDialog
         isOpen={showBulkRemoveConfirm.isOpen}
-        onClose={() => setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })}
-        onConfirm={() => bulkRemoveMutation.mutate(showBulkRemoveConfirm.assetIds)}
+        onClose={() => setShowBulkRemoveConfirm({ isOpen: false, itemIds: [], totalSelected: 0 })}
+        onConfirm={() => bulkRemoveMutation.mutate(showBulkRemoveConfirm.itemIds)}
         title="Remove Selected Assets"
-        message={`Remove ${showBulkRemoveConfirm.assetIds.length} selected asset${showBulkRemoveConfirm.assetIds.length === 1 ? '' : 's'} from "${list.name}"?`}
-        confirmText={`Remove ${showBulkRemoveConfirm.assetIds.length} Asset${showBulkRemoveConfirm.assetIds.length === 1 ? '' : 's'}`}
+        message={
+          showBulkRemoveConfirm.totalSelected > showBulkRemoveConfirm.itemIds.length
+            ? `Remove ${showBulkRemoveConfirm.itemIds.length} of ${showBulkRemoveConfirm.totalSelected} selected asset${showBulkRemoveConfirm.totalSelected === 1 ? '' : 's'} from "${list.name}"? ${showBulkRemoveConfirm.totalSelected - showBulkRemoveConfirm.itemIds.length} item${showBulkRemoveConfirm.totalSelected - showBulkRemoveConfirm.itemIds.length === 1 ? '' : 's'} added by others will not be removed.`
+            : `Remove ${showBulkRemoveConfirm.itemIds.length} selected asset${showBulkRemoveConfirm.itemIds.length === 1 ? '' : 's'} from "${list.name}"?`
+        }
+        confirmText={`Remove ${showBulkRemoveConfirm.itemIds.length} Asset${showBulkRemoveConfirm.itemIds.length === 1 ? '' : 's'}`}
         cancelText="Cancel"
         variant="warning"
         isLoading={bulkRemoveMutation.isPending}
@@ -596,11 +582,19 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         />
       )}
 
+      {/* Trade Idea Modal */}
+      <AddTradeIdeaModal
+        isOpen={showTradeIdeaModal}
+        onClose={() => { setShowTradeIdeaModal(false); setTradeIdeaAssetId(undefined) }}
+        onSuccess={() => { setShowTradeIdeaModal(false); setTradeIdeaAssetId(undefined) }}
+        preselectedAssetId={tradeIdeaAssetId}
+      />
     </div>
   )
 }
 
-// Inline Asset Adder - replaces modal flow
+// ── InlineAssetAdder ───────────────────────────────────────────────────
+
 function InlineAssetAdder({
   listId,
   existingAssetIds
@@ -616,14 +610,12 @@ function InlineAssetAdder({
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
-  // Debounce search
   const [debouncedQuery, setDebouncedQuery] = useState('')
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(searchQuery), 200)
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Close on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -631,61 +623,46 @@ function InlineAssetAdder({
         setSearchQuery('')
       }
     }
-    if (isExpanded) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
+    if (isExpanded) document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isExpanded])
 
-  // Focus input when expanded
   useEffect(() => {
-    if (isExpanded && inputRef.current) {
-      inputRef.current.focus()
-    }
+    if (isExpanded && inputRef.current) inputRef.current.focus()
   }, [isExpanded])
 
-  // Search for assets
   const { data: searchResults, isFetching: isSearching } = useQuery({
     queryKey: ['inline-asset-search', debouncedQuery, listId],
     queryFn: async () => {
       if (!debouncedQuery.trim() || debouncedQuery.length < 1) return []
-
       const { data, error } = await supabase
         .from('assets')
         .select('id, symbol, company_name, sector')
         .or(`symbol.ilike.%${debouncedQuery}%,company_name.ilike.%${debouncedQuery}%`)
         .limit(8)
-
       if (error) throw error
       return data || []
     },
     enabled: debouncedQuery.length >= 1
   })
 
-  // Filter out already-added assets
   const filteredResults = useMemo(() => {
     if (!searchResults) return []
     const existingSet = new Set(existingAssetIds)
     return searchResults.filter(a => !existingSet.has(a.id))
   }, [searchResults, existingAssetIds])
 
-  // Add mutation
   const addMutation = useMutation({
     mutationFn: async (assetId: string) => {
       const { error } = await supabase
         .from('asset_list_items')
-        .insert({
-          list_id: listId,
-          asset_id: assetId,
-          added_by: user?.id
-        })
+        .insert({ list_id: listId, asset_id: assetId, added_by: user?.id })
       if (error) throw error
       return assetId
     },
     onSuccess: (assetId) => {
       queryClient.invalidateQueries({ queryKey: ['asset-list-items', listId] })
       queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
-      // Show "Added" feedback
       setRecentlyAdded(prev => new Set(prev).add(assetId))
       setTimeout(() => {
         setRecentlyAdded(prev => {
@@ -704,11 +681,7 @@ function InlineAssetAdder({
 
   if (!isExpanded) {
     return (
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={() => setIsExpanded(true)}
-      >
+      <Button variant="primary" size="sm" onClick={() => setIsExpanded(true)}>
         <Plus className="h-4 w-4 mr-1.5" />
         Add Asset
       </Button>
@@ -739,17 +712,13 @@ function InlineAssetAdder({
           )}
         </div>
         <button
-          onClick={() => {
-            setIsExpanded(false)
-            setSearchQuery('')
-          }}
+          onClick={() => { setIsExpanded(false); setSearchQuery('') }}
           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Dropdown results */}
       {searchQuery.length >= 1 && (
         <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
           {isSearching && debouncedQuery !== searchQuery ? (
@@ -761,7 +730,6 @@ function InlineAssetAdder({
               {filteredResults.map((asset) => {
                 const isAdding = addMutation.isPending && addMutation.variables === asset.id
                 const justAdded = recentlyAdded.has(asset.id)
-
                 return (
                   <button
                     key={asset.id}
@@ -769,9 +737,7 @@ function InlineAssetAdder({
                     disabled={isAdding || justAdded}
                     className={clsx(
                       'w-full px-3 py-2 text-left flex items-center justify-between transition-colors',
-                      justAdded
-                        ? 'bg-green-50'
-                        : 'hover:bg-gray-50'
+                      justAdded ? 'bg-green-50' : 'hover:bg-gray-50'
                     )}
                   >
                     <div className="min-w-0 flex-1">
@@ -801,127 +767,6 @@ function InlineAssetAdder({
           ) : null}
         </div>
       )}
-    </div>
-  )
-}
-
-// Add Asset Dialog Component (legacy - kept for reference)
-function AddAssetDialog({ listId, listName, onClose }: { listId: string; listName: string; onClose: () => void }) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
-  const [notes, setNotes] = useState('')
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
-
-  const { data: searchResults = [], isLoading } = useQuery({
-    queryKey: ['asset-search-for-list', searchQuery, listId],
-    queryFn: async () => {
-      if (!searchQuery.trim()) return []
-      const { data: existingItems } = await supabase.from('asset_list_items').select('asset_id').eq('list_id', listId)
-      const existingIds = existingItems?.map(i => i.asset_id) || []
-
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name, sector')
-        .or(`symbol.ilike.%${searchQuery}%,company_name.ilike.%${searchQuery}%`)
-        .limit(10)
-
-      if (error) throw error
-      return (data || []).filter(a => !existingIds.includes(a.id))
-    },
-    enabled: searchQuery.length >= 2
-  })
-
-  const addMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedAssetId) throw new Error('No asset selected')
-      const { error } = await supabase.from('asset_list_items').insert({
-        list_id: listId,
-        asset_id: selectedAssetId,
-        added_by: user?.id,
-        notes: notes || null
-      })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['asset-list-items', listId] })
-      queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
-      onClose()
-    }
-  })
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900">Add Asset to {listName}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="px-5 py-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Asset</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by symbol or name..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                autoFocus
-              />
-            </div>
-          </div>
-
-          {searchQuery.length >= 2 && (
-            <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
-              {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                </div>
-              ) : searchResults.length > 0 ? (
-                <div className="divide-y divide-gray-100">
-                  {searchResults.map((asset) => (
-                    <button
-                      key={asset.id}
-                      onClick={() => setSelectedAssetId(asset.id)}
-                      className={clsx('w-full px-4 py-2 text-left hover:bg-gray-50', selectedAssetId === asset.id && 'bg-blue-50')}
-                    >
-                      <p className="font-medium text-gray-900">{asset.symbol}</p>
-                      <p className="text-sm text-gray-500">{asset.company_name}</p>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-center text-gray-500 py-4">No assets found</p>
-              )}
-            </div>
-          )}
-
-          {selectedAssetId && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes (optional)</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add a note..."
-                rows={2}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={() => addMutation.mutate()} disabled={!selectedAssetId || addMutation.isPending}>
-            {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1" />Add</>}
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }

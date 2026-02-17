@@ -198,9 +198,11 @@ export interface Database {
           color: string | null
           is_default: boolean | null
           list_type: 'mutual' | 'collaborative'
+          portfolio_id: string | null
           created_at: string | null
           updated_at: string | null
           created_by: string | null
+          updated_by: string | null
         }
         Insert: {
           id?: string
@@ -209,9 +211,11 @@ export interface Database {
           color?: string | null
           is_default?: boolean | null
           list_type?: 'mutual' | 'collaborative'
+          portfolio_id?: string | null
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
+          updated_by?: string | null
         }
         Update: {
           id?: string
@@ -220,9 +224,54 @@ export interface Database {
           color?: string | null
           is_default?: boolean | null
           list_type?: 'mutual' | 'collaborative'
+          portfolio_id?: string | null
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
+          updated_by?: string | null
+        }
+      }
+      asset_list_activity: {
+        Row: {
+          id: string
+          list_id: string
+          actor_id: string | null
+          activity_type: 'item_added' | 'item_removed' | 'metadata_updated' | 'collaborator_added' | 'collaborator_removed'
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          list_id: string
+          actor_id?: string | null
+          activity_type: 'item_added' | 'item_removed' | 'metadata_updated' | 'collaborator_added' | 'collaborator_removed'
+          metadata?: Record<string, unknown>
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          list_id?: string
+          actor_id?: string | null
+          activity_type?: 'item_added' | 'item_removed' | 'metadata_updated' | 'collaborator_added' | 'collaborator_removed'
+          metadata?: Record<string, unknown>
+          created_at?: string
+        }
+      }
+      asset_list_user_state: {
+        Row: {
+          list_id: string
+          user_id: string
+          last_opened_at: string
+        }
+        Insert: {
+          list_id: string
+          user_id: string
+          last_opened_at?: string
+        }
+        Update: {
+          list_id?: string
+          user_id?: string
+          last_opened_at?: string
         }
       }
       asset_list_suggestions: {
@@ -274,6 +323,8 @@ export interface Database {
           added_at: string | null
           added_by: string | null
           notes: string | null
+          sort_order: number | null
+          group_id: string | null
         }
         Insert: {
           id?: string
@@ -282,6 +333,8 @@ export interface Database {
           added_at?: string | null
           added_by?: string | null
           notes?: string | null
+          sort_order?: number | null
+          group_id?: string | null
         }
         Update: {
           id?: string
@@ -290,6 +343,60 @@ export interface Database {
           added_at?: string | null
           added_by?: string | null
           notes?: string | null
+          sort_order?: number | null
+          group_id?: string | null
+        }
+      }
+      asset_list_groups: {
+        Row: {
+          id: string
+          list_id: string
+          name: string
+          color: string | null
+          sort_order: number | null
+          is_collapsed: boolean | null
+          created_at: string | null
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          list_id: string
+          name: string
+          color?: string | null
+          sort_order?: number | null
+          is_collapsed?: boolean | null
+          created_at?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          list_id?: string
+          name?: string
+          color?: string | null
+          sort_order?: number | null
+          is_collapsed?: boolean | null
+          created_at?: string | null
+          created_by?: string | null
+        }
+      }
+      asset_list_favorites: {
+        Row: {
+          id: string
+          list_id: string
+          user_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          list_id: string
+          user_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          list_id?: string
+          user_id?: string
+          created_at?: string | null
         }
       }
       asset_list_collaborations: {

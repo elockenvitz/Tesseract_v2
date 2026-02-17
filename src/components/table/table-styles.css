@@ -12,7 +12,7 @@
   --table-border-light: #f1f5f9;
   --table-header-bg: #f8fafc;
   --table-row-odd: #ffffff;
-  --table-row-even: #f1f5f9;
+  --table-row-even: #f8fafc;
   --table-row-hover: #e8ecf0;
   --table-row-selected: #dbeafe;
   --table-row-selected-hover: #bfdbfe;
@@ -41,9 +41,9 @@
 
 .pro-table-header {
   @apply sticky top-0 z-20;
-  background: linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%);
+  background: rgba(248, 250, 252, 0.95);
+  backdrop-filter: blur(4px);
   border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .pro-table-header-cell {
@@ -86,15 +86,16 @@
 }
 
 .pro-table-row:hover {
-  background: rgba(0, 0, 0, 0.02) !important;
+  background: rgba(59, 130, 246, 0.04) !important;
 }
 
 .pro-table-row.row-even:hover {
-  background: rgba(0, 0, 0, 0.03) !important;
+  background: rgba(59, 130, 246, 0.05) !important;
 }
 
 .pro-table-row.selected {
   background: rgba(59, 130, 246, 0.06) !important;
+  border-left: 2px solid #3b82f6;
 }
 
 .pro-table-row.selected:hover {
@@ -230,7 +231,7 @@
 }
 
 .pro-price-change {
-  @apply font-mono text-xs font-medium tabular-nums;
+  @apply font-mono font-medium tabular-nums;
   @apply inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded;
 }
 
@@ -299,11 +300,11 @@
    ============================================================================ */
 
 .pro-analyst {
-  @apply text-sm text-gray-900;
+  @apply text-gray-900;
 }
 
 .pro-analyst-team {
-  @apply text-xs text-gray-500;
+  @apply text-gray-500;
 }
 
 .pro-analyst-count {
@@ -333,7 +334,7 @@
    ============================================================================ */
 
 .pro-timestamp {
-  @apply text-xs text-gray-500 font-medium tabular-nums;
+  @apply text-gray-500 font-medium tabular-nums;
 }
 
 .pro-timestamp.recent {
@@ -374,8 +375,9 @@
    ============================================================================ */
 
 .pro-expanded-row {
-  @apply bg-gradient-to-b from-slate-50 to-white;
+  @apply bg-gradient-to-b from-slate-50/80 to-white;
   @apply border-t border-gray-200;
+  overflow: hidden;
 }
 
 .pro-expanded-section-title {
@@ -391,25 +393,9 @@
   @apply h-16;
 }
 
-.pro-table.density-comfortable .pro-symbol {
-  @apply text-sm;
-}
-
-.pro-table.density-comfortable .pro-price {
-  @apply text-sm;
-}
-
 /* Compact */
 .pro-table.density-compact .pro-table-row {
   @apply h-11;
-}
-
-.pro-table.density-compact .pro-symbol {
-  @apply text-sm;
-}
-
-.pro-table.density-compact .pro-price {
-  @apply text-sm;
 }
 
 /* Ultra */
@@ -417,16 +403,8 @@
   @apply h-8;
 }
 
-.pro-table.density-ultra .pro-symbol {
-  @apply text-xs;
-}
-
-.pro-table.density-ultra .pro-price {
-  @apply text-xs;
-}
-
 .pro-table.density-ultra .pro-price-change {
-  @apply text-[10px] px-1 py-0;
+  @apply px-1 py-0;
 }
 
 /* Micro - Bloomberg-style maximum density trader view */

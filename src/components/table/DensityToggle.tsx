@@ -1,19 +1,19 @@
 /**
- * DensityToggle - Simple zoom-style control for table row density
+ * DensityToggle - Segmented control for table row density
  *
- * Four zoom levels:
- * - Zoomed in: Comfortable, spacious rows (64px)
- * - Default: Compact, balanced (44px)
- * - Zoomed out: Ultra-compact, maximum density (32px)
- * - Micro: Extreme density for maximum assets (24px)
+ * Three visible options: Comfortable | Compact | Ultra
+ * "micro" is a hidden power-user mode (mapped to Ultra in the UI).
  */
 
 import React, { useState, useContext } from 'react'
-import { ZoomIn, ZoomOut } from 'lucide-react'
 import { DensityMode, TableContext } from '../../contexts/TableContext'
 import { clsx } from 'clsx'
 
-const DENSITY_ORDER: DensityMode[] = ['micro', 'ultra', 'compact', 'comfortable']
+const VISIBLE_MODES: { value: DensityMode; label: string }[] = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+  { value: 'ultra', label: 'Ultra' },
+]
 
 interface DensityToggleProps {
   className?: string
@@ -54,53 +54,25 @@ function useDensityState() {
 export function DensityToggle({ className = '' }: DensityToggleProps) {
   const { density, setDensity } = useDensityState()
 
-  const currentIndex = DENSITY_ORDER.indexOf(density)
-  const canZoomOut = currentIndex > 0
-  const canZoomIn = currentIndex < DENSITY_ORDER.length - 1
-
-  const zoomIn = () => {
-    if (canZoomIn) {
-      setDensity(DENSITY_ORDER[currentIndex + 1])
-    }
-  }
-
-  const zoomOut = () => {
-    if (canZoomOut) {
-      setDensity(DENSITY_ORDER[currentIndex - 1])
-    }
-  }
+  // Map micro → ultra for display purposes
+  const activeValue: DensityMode = density === 'micro' ? 'ultra' : density
 
   return (
     <div className={clsx('flex items-center bg-gray-100 rounded-md p-0.5', className)}>
-      <button
-        onClick={zoomOut}
-        disabled={!canZoomOut}
-        className={clsx(
-          'p-1 rounded transition-colors',
-          canZoomOut
-            ? 'text-gray-600 hover:bg-white hover:shadow-sm'
-            : 'text-gray-300 cursor-not-allowed'
-        )}
-        title="Zoom out (smaller rows)"
-      >
-        <ZoomOut className="w-3.5 h-3.5" />
-      </button>
-
-      <div className="w-px h-3 bg-gray-300 mx-0.5" />
-
-      <button
-        onClick={zoomIn}
-        disabled={!canZoomIn}
-        className={clsx(
-          'p-1 rounded transition-colors',
-          canZoomIn
-            ? 'text-gray-600 hover:bg-white hover:shadow-sm'
-            : 'text-gray-300 cursor-not-allowed'
-        )}
-        title="Zoom in (larger rows)"
-      >
-        <ZoomIn className="w-3.5 h-3.5" />
-      </button>
+      {VISIBLE_MODES.map(mode => (
+        <button
+          key={mode.value}
+          onClick={() => setDensity(mode.value)}
+          className={clsx(
+            'px-2.5 py-1 text-[11px] font-medium rounded transition-all',
+            activeValue === mode.value
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          )}
+        >
+          {mode.label}
+        </button>
+      ))}
     </div>
   )
 }
