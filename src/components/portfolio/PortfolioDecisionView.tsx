@@ -4,7 +4,7 @@
  * Filtered view of the global decision engine output for a single portfolio.
  * Mirrors AssetDecisionView structure with portfolio-specific adjustments.
  *
- * Collapsed by default. Per-portfolio localStorage persistence.
+ * Collapsed by default. No persistence — each instance starts collapsed.
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
@@ -24,19 +24,6 @@ import type {
 } from '../../engine/decisionEngine'
 import { useAuth } from '../../hooks/useAuth'
 import { getDismissedIds, dismiss } from '../../engine/decisionEngine/dismissals'
-
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-
-const LS_COLLAPSED_PREFIX = 'portfolioDecision.collapsed.'
-
-function lsGet(key: string): string | null {
-  try { return localStorage.getItem(key) } catch { return null }
-}
-function lsSet(key: string, value: string) {
-  try { localStorage.setItem(key, value) } catch { /* noop */ }
-}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -129,27 +116,15 @@ export function PortfolioDecisionView({ portfolioId }: PortfolioDecisionViewProp
   const intelCount = visibleIntel.length
   const totalCount = actionCount + intelCount
 
-  // Collapse state (per-portfolio, defaults to collapsed)
-  const collapseKey = `${LS_COLLAPSED_PREFIX}${portfolioId}`
-  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(() => {
-    const stored = lsGet(collapseKey)
-    return stored !== null ? stored === 'true' : null
-  })
+  // Collapse state — always starts collapsed, independent per mount
+  const [isCollapsed, setIsCollapsed] = useState(true)
 
-  useEffect(() => {
-    const stored = lsGet(collapseKey)
-    setUserCollapsed(stored !== null ? stored === 'true' : null)
-  }, [collapseKey])
-
-  const isCollapsed = userCollapsed ?? true
+  // Reset to collapsed when portfolio changes
+  useEffect(() => { setIsCollapsed(true) }, [portfolioId])
 
   const toggleCollapsed = useCallback(() => {
-    setUserCollapsed(prev => {
-      const next = !(prev ?? true)
-      lsSet(collapseKey, String(next))
-      return next
-    })
-  }, [collapseKey])
+    setIsCollapsed(prev => !prev)
+  }, [])
 
   // Show more / less
   const [showAllAction, setShowAllAction] = useState(false)

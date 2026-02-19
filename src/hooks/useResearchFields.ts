@@ -86,6 +86,13 @@ export type FieldType =
   | 'slider'
   | 'spreadsheet'
   | 'scenario'
+  | 'single_select'
+  | 'multi_select'
+  | 'boolean'
+  | 'percentage'
+  | 'currency'
+  | 'table'
+  | 'composite'
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   rich_text: 'Rich Text',
@@ -103,7 +110,14 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   scorecard: 'Scorecard',
   slider: 'Slider / Gauge',
   spreadsheet: 'Spreadsheet',
-  scenario: 'Scenario Analysis'
+  scenario: 'Scenario Analysis',
+  single_select: 'Single Select',
+  multi_select: 'Multi Select',
+  boolean: 'Boolean',
+  percentage: 'Percentage',
+  currency: 'Currency',
+  table: 'Data Table',
+  composite: 'Custom Container'
 }
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
@@ -122,7 +136,14 @@ export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   scorecard: 'ClipboardCheck',
   slider: 'SlidersHorizontal',
   spreadsheet: 'Grid3X3',
-  scenario: 'GitBranch'
+  scenario: 'GitBranch',
+  single_select: 'List',
+  multi_select: 'ListChecks',
+  boolean: 'ToggleLeft',
+  percentage: 'Percent',
+  currency: 'DollarSign',
+  table: 'Table2',
+  composite: 'LayoutGrid'
 }
 
 // ============================================================================

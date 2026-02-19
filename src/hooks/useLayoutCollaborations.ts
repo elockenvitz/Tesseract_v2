@@ -109,6 +109,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', variables.layout_id] })
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
 
@@ -128,6 +129,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', layoutId] })
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
 
@@ -144,6 +146,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', layoutId] })
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
 
@@ -189,6 +192,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', variables.layout_id] })
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
 
@@ -208,6 +212,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     onSuccess: (_, layout_id) => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', layout_id] })
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
 

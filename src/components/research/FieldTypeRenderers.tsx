@@ -18,7 +18,8 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
-  GripVertical
+  GripVertical,
+  DollarSign
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
@@ -68,7 +69,7 @@ interface MetricValue {
 // HOOK: useFieldContribution
 // ============================================================================
 
-function useFieldContribution(fieldId: string, assetId: string) {
+export function useFieldContribution(fieldId: string, assetId: string) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
@@ -142,10 +143,61 @@ function useFieldContribution(fieldId: string, assetId: string) {
 }
 
 // ============================================================================
+// CONTROLLED-MODE PROPS (for embedding inside composite containers)
+// ============================================================================
+
+interface ControlledFieldProps {
+  /** Pre-fetched value slice from composite parent — skips internal query */
+  externalValue?: Record<string, unknown>
+  /** Save callback from composite parent — skips internal mutation */
+  onExternalSave?: (metadata: Record<string, unknown>) => Promise<void>
+}
+
+/**
+ * Hook adapter: returns contribution-like data from either the internal
+ * useFieldContribution hook or from external props (composite container).
+ */
+function useFieldData(
+  fieldId: string,
+  assetId: string,
+  external?: { value?: Record<string, unknown>; save?: (m: Record<string, unknown>) => Promise<void> },
+) {
+  const isControlled = external?.value !== undefined
+  const internal = useFieldContribution(
+    isControlled ? '__skip__' : fieldId,
+    isControlled ? '__skip__' : assetId,
+  )
+
+  if (isControlled) {
+    return {
+      contribution: {
+        metadata: external.value ?? {},
+        content: (external.value?.content as string) ?? null,
+      } as any,
+      isLoading: false,
+      isSaving: false,
+      saveContribution: {
+        mutateAsync: async (payload: { content?: string; metadata?: Record<string, unknown> }) => {
+          if (external.save) {
+            // Merge content into metadata for consistency
+            const merged = { ...(external.value ?? {}), ...payload.metadata }
+            if (payload.content !== undefined) merged.content = payload.content
+            await external.save(merged)
+          }
+        },
+        isPending: false,
+      } as any,
+    }
+  }
+
+  return internal
+}
+
+// ============================================================================
 // CHECKLIST FIELD
 // ============================================================================
 
-interface ChecklistFieldProps {
+interface ChecklistFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: {
@@ -155,9 +207,9 @@ interface ChecklistFieldProps {
   readOnly?: boolean
 }
 
-export function ChecklistField({ fieldId, assetId, config, readOnly = false }: ChecklistFieldProps) {
+export function ChecklistField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: ChecklistFieldProps) {
   const { user } = useAuth()
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const [newItemText, setNewItemText] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -345,7 +397,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false }: C
 // METRIC FIELD
 // ============================================================================
 
-interface MetricFieldProps {
+interface MetricFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: {
@@ -356,8 +408,8 @@ interface MetricFieldProps {
   readOnly?: boolean
 }
 
-export function MetricField({ fieldId, assetId, config, readOnly = false }: MetricFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function MetricField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: MetricFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const [isEditing, setIsEditing] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -483,7 +535,7 @@ export function MetricField({ fieldId, assetId, config, readOnly = false }: Metr
 // TIMELINE FIELD
 // ============================================================================
 
-interface TimelineFieldProps {
+interface TimelineFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: {
@@ -492,9 +544,9 @@ interface TimelineFieldProps {
   readOnly?: boolean
 }
 
-export function TimelineField({ fieldId, assetId, config, readOnly = false }: TimelineFieldProps) {
+export function TimelineField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: TimelineFieldProps) {
   const { user } = useAuth()
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [newEvent, setNewEvent] = useState<Partial<TimelineEvent>>({
@@ -731,7 +783,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false }: Ti
 // NUMERIC FIELD
 // ============================================================================
 
-interface NumericFieldProps {
+interface NumericFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: {
@@ -743,8 +795,8 @@ interface NumericFieldProps {
   readOnly?: boolean
 }
 
-export function NumericField({ fieldId, assetId, config, readOnly = false }: NumericFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function NumericField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: NumericFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const [isEditing, setIsEditing] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -827,7 +879,7 @@ export function NumericField({ fieldId, assetId, config, readOnly = false }: Num
 // DATE FIELD
 // ============================================================================
 
-interface DateFieldProps {
+interface DateFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: {
@@ -836,8 +888,8 @@ interface DateFieldProps {
   readOnly?: boolean
 }
 
-export function DateField({ fieldId, assetId, config, readOnly = false }: DateFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function DateField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: DateFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const [isEditing, setIsEditing] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -943,15 +995,15 @@ interface SliderMetadata {
   updatedAt: string
 }
 
-interface SliderFieldProps {
+interface SliderFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: SliderConfig
   readOnly?: boolean
 }
 
-export function SliderField({ fieldId, assetId, config, readOnly = false }: SliderFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function SliderField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: SliderFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const min = config?.min ?? 0
   const max = config?.max ?? 100
@@ -1238,15 +1290,15 @@ interface ScorecardMetadata {
   weightedTotal?: number
 }
 
-interface ScorecardFieldProps {
+interface ScorecardFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: ScorecardConfig
   readOnly?: boolean
 }
 
-export function ScorecardField({ fieldId, assetId, config, readOnly = false }: ScorecardFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function ScorecardField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: ScorecardFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const maxScore = config?.maxScore ?? 5
   const showWeightedTotal = config?.showWeightedTotal ?? true
@@ -1568,7 +1620,7 @@ interface ScenarioMetadataType {
   updatedAt: string
 }
 
-interface ScenarioFieldProps {
+interface ScenarioFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: ScenarioConfig
@@ -1625,8 +1677,8 @@ export const METRIC_PRESETS = {
   'custom': []
 }
 
-export function ScenarioField({ fieldId, assetId, config, readOnly = false }: ScenarioFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function ScenarioField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: ScenarioFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const metadata = contribution?.metadata as ScenarioMetadataType | undefined
   const showProbabilityWeighted = config?.showProbabilityWeighted ?? true
@@ -2269,7 +2321,7 @@ interface SpreadsheetMetadataType {
   updatedAt: string
 }
 
-interface SpreadsheetFieldProps {
+interface SpreadsheetFieldProps extends ControlledFieldProps {
   fieldId: string
   assetId: string
   config?: SpreadsheetConfig
@@ -2385,8 +2437,8 @@ function evaluateFormula(
   return 0
 }
 
-export function SpreadsheetField({ fieldId, assetId, config, readOnly = false }: SpreadsheetFieldProps) {
-  const { contribution, isLoading, saveContribution, isSaving } = useFieldContribution(fieldId, assetId)
+export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: SpreadsheetFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
 
   const metadata = contribution?.metadata as SpreadsheetMetadataType | undefined
   const maxRows = config?.maxRows ?? 20
@@ -2739,5 +2791,738 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false }:
         Tip: Use formulas like =SUM(A1:A5), =AVG(B1:B3), or =A1+B1*2
       </p>
     </div>
+  )
+}
+
+// ============================================================================
+// SINGLE SELECT FIELD
+// ============================================================================
+
+interface SingleSelectFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: {
+    options?: string[]
+  }
+  readOnly?: boolean
+}
+
+export function SingleSelectField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: SingleSelectFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+
+  const options = config?.options ?? []
+  const selected = (contribution?.metadata?.selected as string) ?? ''
+
+  const handleSelect = async (value: string) => {
+    if (readOnly) return
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, selected: value }
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {options.map(opt => (
+        <button
+          key={opt}
+          onClick={() => handleSelect(opt)}
+          disabled={readOnly || isSaving}
+          className={clsx(
+            'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm text-left transition-colors',
+            selected === opt
+              ? 'bg-primary-50 border border-primary-300 text-primary-800'
+              : 'bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100',
+            readOnly && 'cursor-default'
+          )}
+        >
+          <div className={clsx(
+            'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+            selected === opt ? 'border-primary-500' : 'border-gray-300'
+          )}>
+            {selected === opt && <div className="w-2 h-2 rounded-full bg-primary-500" />}
+          </div>
+          {opt}
+        </button>
+      ))}
+      {options.length === 0 && (
+        <p className="text-sm text-gray-400 italic">No options configured</p>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// MULTI SELECT FIELD
+// ============================================================================
+
+interface MultiSelectFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: {
+    options?: string[]
+    max_selections?: number
+  }
+  readOnly?: boolean
+}
+
+export function MultiSelectField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: MultiSelectFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+
+  const options = config?.options ?? []
+  const maxSelections = config?.max_selections
+  const selected: string[] = (contribution?.metadata?.selected as string[]) ?? []
+
+  const handleToggle = async (value: string) => {
+    if (readOnly) return
+    let next: string[]
+    if (selected.includes(value)) {
+      next = selected.filter(s => s !== value)
+    } else {
+      if (maxSelections && selected.length >= maxSelections) return
+      next = [...selected, value]
+    }
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, selected: next }
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {options.map(opt => {
+          const isSelected = selected.includes(opt)
+          const atLimit = !isSelected && !!maxSelections && selected.length >= maxSelections
+          return (
+            <button
+              key={opt}
+              onClick={() => handleToggle(opt)}
+              disabled={readOnly || isSaving || atLimit}
+              className={clsx(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors border',
+                isSelected
+                  ? 'bg-primary-100 border-primary-300 text-primary-800'
+                  : atLimit
+                  ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100',
+                readOnly && 'cursor-default'
+              )}
+            >
+              {isSelected && <Check className="w-3 h-3" />}
+              {opt}
+            </button>
+          )
+        })}
+      </div>
+      {maxSelections && (
+        <p className="text-xs text-gray-400">
+          {selected.length}/{maxSelections} selected
+        </p>
+      )}
+      {options.length === 0 && (
+        <p className="text-sm text-gray-400 italic">No options configured</p>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// BOOLEAN FIELD
+// ============================================================================
+
+interface BooleanFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: {
+    true_label?: string
+    false_label?: string
+  }
+  readOnly?: boolean
+}
+
+export function BooleanField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: BooleanFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+
+  const trueLabel = config?.true_label || 'Yes'
+  const falseLabel = config?.false_label || 'No'
+  const value = (contribution?.metadata?.value as boolean) ?? false
+
+  const handleToggle = async () => {
+    if (readOnly) return
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, value: !value }
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={handleToggle}
+        disabled={readOnly || isSaving}
+        className={clsx(
+          'relative w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2',
+          value ? 'bg-primary-500' : 'bg-gray-300',
+          readOnly && 'cursor-default'
+        )}
+      >
+        <span className={clsx(
+          'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform',
+          value && 'translate-x-5'
+        )} />
+      </button>
+      <span className="text-sm font-medium text-gray-700">
+        {value ? trueLabel : falseLabel}
+      </span>
+    </div>
+  )
+}
+
+// ============================================================================
+// PERCENTAGE FIELD
+// ============================================================================
+
+interface PercentageFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: {
+    min?: number
+    max?: number
+    decimals?: number
+  }
+  readOnly?: boolean
+}
+
+export function PercentageField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: PercentageFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [inputValue, setInputValue] = useState('')
+
+  const min = config?.min ?? 0
+  const max = config?.max ?? 100
+  const decimals = config?.decimals ?? 1
+  const value = (contribution?.metadata?.value as number) ?? 0
+
+  const handleSave = async () => {
+    let num = parseFloat(inputValue)
+    if (isNaN(num)) return
+    num = Math.max(min, Math.min(max, num))
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, value: num }
+    })
+    setIsEditing(false)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setIsEditing(false) }}
+          min={min}
+          max={max}
+          step={Math.pow(10, -decimals)}
+          className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium"
+          autoFocus
+        />
+        <span className="text-gray-500 text-lg">%</span>
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+        </button>
+        <button
+          onClick={() => setIsEditing(false)}
+          className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    )
+  }
+
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0
+
+  return (
+    <div className="p-4 bg-gray-50 rounded-lg">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-2xl font-bold text-gray-900">{value.toFixed(decimals)}%</div>
+          <div className="w-40 h-2 bg-gray-200 rounded-full mt-2">
+            <div className="h-full bg-primary-500 rounded-full transition-all" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+          </div>
+        </div>
+        {!readOnly && (
+          <button
+            onClick={() => { setInputValue(value.toString()); setIsEditing(true) }}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// CURRENCY FIELD
+// ============================================================================
+
+interface CurrencyFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: {
+    currency_code?: string
+    decimals?: number
+  }
+  readOnly?: boolean
+}
+
+export function CurrencyField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: CurrencyFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [inputValue, setInputValue] = useState('')
+
+  const currencyCode = config?.currency_code || (contribution?.metadata?.currency as string) || 'USD'
+  const decimals = config?.decimals ?? 2
+  const value = (contribution?.metadata?.value as number) ?? 0
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currencyCode,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    }).format(val)
+  }
+
+  const handleSave = async () => {
+    const num = parseFloat(inputValue)
+    if (isNaN(num)) return
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, value: num, currency: currencyCode }
+    })
+    setIsEditing(false)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-gray-500 text-lg">
+          <DollarSign className="w-5 h-5" />
+        </span>
+        <input
+          type="number"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setIsEditing(false) }}
+          step={Math.pow(10, -decimals)}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium"
+          autoFocus
+        />
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+        </button>
+        <button
+          onClick={() => setIsEditing(false)}
+          className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 bg-gray-50 rounded-lg">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-2xl font-bold text-gray-900">{formatCurrency(value)}</div>
+          <div className="text-xs text-gray-400 mt-0.5">{currencyCode}</div>
+        </div>
+        {!readOnly && (
+          <button
+            onClick={() => { setInputValue(value.toString()); setIsEditing(true) }}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// TABLE FIELD
+// ============================================================================
+
+interface TableFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: {
+    columns?: { key: string; label: string; type: 'text' | 'number' }[]
+  }
+  readOnly?: boolean
+}
+
+export function TableField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: TableFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+
+  const columns = config?.columns ?? []
+  const rows: Record<string, string | number>[] = (contribution?.metadata?.rows as Record<string, string | number>[]) ?? []
+
+  const saveRows = useCallback(async (newRows: Record<string, string | number>[]) => {
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, rows: newRows }
+    })
+  }, [contribution?.metadata, saveContribution])
+
+  const addRow = async () => {
+    const empty: Record<string, string | number> = {}
+    columns.forEach(col => { empty[col.key] = col.type === 'number' ? 0 : '' })
+    await saveRows([...rows, empty])
+  }
+
+  const updateCell = async (rowIdx: number, colKey: string, value: string | number) => {
+    const next = rows.map((row, i) =>
+      i === rowIdx ? { ...row, [colKey]: value } : row
+    )
+    await saveRows(next)
+  }
+
+  const deleteRow = async (rowIdx: number) => {
+    await saveRows(rows.filter((_, i) => i !== rowIdx))
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  if (columns.length === 0) {
+    return <p className="text-sm text-gray-400 italic">No columns configured</p>
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              {columns.map(col => (
+                <th
+                  key={col.key}
+                  className={clsx(
+                    'px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider',
+                    col.type === 'number' ? 'text-right' : 'text-left'
+                  )}
+                >
+                  {col.label}
+                </th>
+              ))}
+              {!readOnly && <th className="w-8" />}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} className="border-b border-gray-100 last:border-b-0 group">
+                {columns.map(col => (
+                  <td key={col.key} className="px-3 py-1.5">
+                    {readOnly ? (
+                      <span className={clsx('text-sm', col.type === 'number' && 'text-right block')}>
+                        {row[col.key] ?? ''}
+                      </span>
+                    ) : (
+                      <input
+                        type={col.type === 'number' ? 'number' : 'text'}
+                        value={row[col.key] ?? ''}
+                        onChange={(e) => {
+                          const val = col.type === 'number' ? (e.target.value === '' ? 0 : parseFloat(e.target.value)) : e.target.value
+                          updateCell(ri, col.key, val)
+                        }}
+                        className={clsx(
+                          'w-full px-2 py-1 text-sm border border-transparent hover:border-gray-300 focus:border-primary-400 focus:ring-1 focus:ring-primary-400 rounded transition-colors bg-transparent',
+                          col.type === 'number' && 'text-right'
+                        )}
+                      />
+                    )}
+                  </td>
+                ))}
+                {!readOnly && (
+                  <td className="px-1 py-1.5">
+                    <button
+                      onClick={() => deleteRow(ri)}
+                      className="p-1 text-gray-300 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={columns.length + (readOnly ? 0 : 1)} className="text-center py-4 text-sm text-gray-400">
+                  No data yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {!readOnly && (
+        <button
+          onClick={addRow}
+          disabled={isSaving}
+          className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add row
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// CHART FIELD
+// ============================================================================
+
+interface ChartFieldProps extends ControlledFieldProps {
+  fieldId: string
+  assetId: string
+  config?: { chart_type?: 'line' | 'bar' | 'area'; metric?: string; color?: string }
+  readOnly?: boolean
+}
+
+export function ChartField({ fieldId, assetId, config, readOnly = false, externalValue, onExternalSave }: ChartFieldProps) {
+  const { contribution, isLoading, saveContribution, isSaving } = useFieldData(fieldId, assetId, { value: externalValue, save: onExternalSave })
+  const [newLabel, setNewLabel] = useState('')
+  const [newValue, setNewValue] = useState('')
+
+  const chartType = config?.chart_type ?? 'line'
+  const metric = config?.metric ?? 'Value'
+  const color = config?.color ?? '#6366f1'
+
+  const dataPoints: { label: string; value: number }[] =
+    (contribution?.metadata?.data_points as { label: string; value: number }[]) ?? []
+
+  const savePoints = useCallback(async (points: { label: string; value: number }[]) => {
+    await saveContribution.mutateAsync({
+      metadata: { ...contribution?.metadata, data_points: points }
+    })
+  }, [contribution?.metadata, saveContribution])
+
+  const addPoint = async () => {
+    const val = parseFloat(newValue)
+    if (!newLabel.trim() || isNaN(val)) return
+    await savePoints([...dataPoints, { label: newLabel.trim(), value: val }])
+    setNewLabel('')
+    setNewValue('')
+  }
+
+  const removePoint = async (idx: number) => {
+    await savePoints(dataPoints.filter((_, i) => i !== idx))
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Chart */}
+      {dataPoints.length > 0 ? (
+        <div className="h-40 w-full">
+          <ChartRenderer dataPoints={dataPoints} chartType={chartType} color={color} metric={metric} />
+        </div>
+      ) : (
+        <div className="h-32 flex items-center justify-center border border-dashed border-gray-200 rounded-lg">
+          <p className="text-sm text-gray-400 italic">Add data points to see chart</p>
+        </div>
+      )}
+
+      {/* Data points table + add row */}
+      {!readOnly && (
+        <div className="space-y-1.5">
+          {dataPoints.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-1.5 text-xs font-medium text-gray-500 text-left">Label</th>
+                    <th className="px-3 py-1.5 text-xs font-medium text-gray-500 text-right">{metric}</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {dataPoints.map((pt, i) => (
+                    <tr key={i} className="border-b border-gray-100 last:border-b-0 group">
+                      <td className="px-3 py-1 text-sm text-gray-700">{pt.label}</td>
+                      <td className="px-3 py-1 text-sm text-gray-700 text-right">{pt.value}</td>
+                      <td className="px-1">
+                        <button
+                          onClick={() => removePoint(i)}
+                          className="p-1 text-gray-300 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder="Label"
+              className="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              onKeyDown={(e) => e.key === 'Enter' && addPoint()}
+            />
+            <input
+              type="number"
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder={metric}
+              className="w-24 px-2 py-1 text-sm border border-gray-200 rounded text-right focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              onKeyDown={(e) => e.key === 'Enter' && addPoint()}
+            />
+            <button
+              onClick={addPoint}
+              disabled={isSaving || !newLabel.trim() || !newValue}
+              className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-40 flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Recharts renderer for ChartField — renders line, bar, or area chart */
+function ChartRenderer({ dataPoints, chartType, color, metric }: {
+  dataPoints: { label: string; value: number }[]
+  chartType: 'line' | 'bar' | 'area'
+  color: string
+  metric: string
+}) {
+  const {
+    ResponsiveContainer,
+    LineChart,
+    BarChart,
+    AreaChart,
+    Line,
+    Bar,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+  } = require('recharts')
+
+  const commonProps = {
+    data: dataPoints,
+    margin: { top: 4, right: 8, bottom: 0, left: 0 },
+  }
+
+  const axisProps = {
+    xAxis: { dataKey: 'label', tick: { fontSize: 10 }, tickLine: false, axisLine: false },
+    yAxis: { tick: { fontSize: 10 }, tickLine: false, axisLine: false, width: 40 },
+    grid: { strokeDasharray: '3 3', stroke: '#e5e7eb' },
+    tooltip: { contentStyle: { fontSize: 12, borderRadius: 8 }, labelStyle: { fontWeight: 600 } },
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      {chartType === 'bar' ? (
+        <BarChart {...commonProps}>
+          <CartesianGrid {...axisProps.grid} />
+          <XAxis {...axisProps.xAxis} />
+          <YAxis {...axisProps.yAxis} />
+          <Tooltip {...axisProps.tooltip} />
+          <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} name={metric} />
+        </BarChart>
+      ) : chartType === 'area' ? (
+        <AreaChart {...commonProps}>
+          <CartesianGrid {...axisProps.grid} />
+          <XAxis {...axisProps.xAxis} />
+          <YAxis {...axisProps.yAxis} />
+          <Tooltip {...axisProps.tooltip} />
+          <Area dataKey="value" stroke={color} fill={color} fillOpacity={0.15} name={metric} />
+        </AreaChart>
+      ) : (
+        <LineChart {...commonProps}>
+          <CartesianGrid {...axisProps.grid} />
+          <XAxis {...axisProps.xAxis} />
+          <YAxis {...axisProps.yAxis} />
+          <Tooltip {...axisProps.tooltip} />
+          <Line dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} name={metric} />
+        </LineChart>
+      )}
+    </ResponsiveContainer>
   )
 }

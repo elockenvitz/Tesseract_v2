@@ -276,6 +276,28 @@ export function DashboardPage() {
   })
 
   const handleTabChange = (tabId: string) => {
+    // If tab doesn't exist yet (e.g. synthetic parent from grouped tabs), create it directly
+    const exists = tabs.some(tab => tab.id === tabId)
+    if (!exists) {
+      const parentTypes: Record<string, { type: Tab['type']; title: string }> = {
+        'assets-list': { type: 'assets-list', title: 'Assets' },
+        'portfolios-list': { type: 'portfolios-list', title: 'Portfolios' },
+        'themes-list': { type: 'themes-list', title: 'Themes' },
+        'notes-list': { type: 'notes-list', title: 'Notes' },
+        'lists': { type: 'lists', title: 'Lists' },
+        'projects-list': { type: 'projects-list', title: 'Projects' },
+        'tdf-list': { type: 'tdf-list', title: 'TDFs' },
+      }
+      const info = parentTypes[tabId]
+      if (info) {
+        setTabs(prev => [
+          ...prev.map(t => ({ ...t, isActive: false })),
+          { id: tabId, title: info.title, type: info.type, isActive: true }
+        ])
+        setActiveTabId(tabId)
+        return
+      }
+    }
     setTabs(tabs.map(tab => ({ ...tab, isActive: tab.id === tabId })))
     setActiveTabId(tabId)
   }

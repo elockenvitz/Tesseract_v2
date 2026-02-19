@@ -9,7 +9,7 @@
  * No local evaluator logic. No additional suppression beyond engine.
  * Items are exactly what runGlobalDecisionEngine produces for this asset.
  *
- * Collapsed by default. Per-asset localStorage persistence.
+ * Collapsed by default. No persistence — each instance starts collapsed.
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
@@ -29,20 +29,6 @@ import type {
 } from '../../engine/decisionEngine'
 import { useAuth } from '../../hooks/useAuth'
 import { getDismissedIds, dismiss } from '../../engine/decisionEngine/dismissals'
-
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-
-const LS_COLLAPSED_PREFIX = 'assetDecision.collapsed.'
-
-function lsGet(key: string): string | null {
-  try { return localStorage.getItem(key) } catch { return null }
-}
-function lsSet(key: string, value: string) {
-  try { localStorage.setItem(key, value) } catch { /* noop */ }
-}
-
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -135,27 +121,15 @@ export function AssetDecisionView({ assetId }: AssetDecisionViewProps) {
   const intelCount = visibleIntel.length
   const totalCount = actionCount + intelCount
 
-  // Collapse state (per-asset, defaults to collapsed)
-  const collapseKey = `${LS_COLLAPSED_PREFIX}${assetId}`
-  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(() => {
-    const stored = lsGet(collapseKey)
-    return stored !== null ? stored === 'true' : null
-  })
+  // Collapse state — always starts collapsed, independent per mount
+  const [isCollapsed, setIsCollapsed] = useState(true)
 
-  useEffect(() => {
-    const stored = lsGet(collapseKey)
-    setUserCollapsed(stored !== null ? stored === 'true' : null)
-  }, [collapseKey])
-
-  const isCollapsed = userCollapsed ?? true
+  // Reset to collapsed when asset changes
+  useEffect(() => { setIsCollapsed(true) }, [assetId])
 
   const toggleCollapsed = useCallback(() => {
-    setUserCollapsed(prev => {
-      const next = !(prev ?? true)
-      lsSet(collapseKey, String(next))
-      return next
-    })
-  }, [collapseKey])
+    setIsCollapsed(prev => !prev)
+  }, [])
 
   // Show more / less
   const [showAllAction, setShowAllAction] = useState(false)

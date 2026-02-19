@@ -25,19 +25,6 @@ import { useActionLoopCards } from '../../hooks/useActionLoopCards'
 import type { ActionCard, CardType } from '../../lib/assetActionLoopEvaluator'
 
 // ---------------------------------------------------------------------------
-// localStorage helpers (per-view collapse)
-// ---------------------------------------------------------------------------
-
-const LS_COLLAPSED_PREFIX = 'actionLoop.collapsed.'
-
-function lsGet(key: string): string | null {
-  try { return localStorage.getItem(key) } catch { return null }
-}
-function lsSet(key: string, value: string) {
-  try { localStorage.setItem(key, value) } catch { /* noop */ }
-}
-
-// ---------------------------------------------------------------------------
 // Severity styles
 // ---------------------------------------------------------------------------
 
@@ -83,27 +70,15 @@ export function ActionLoopModule({
     isDismissing,
   } = useActionLoopCards({ assetId, viewFilter, currentPrice })
 
-  // ---- Collapse state (per-view, defaults to collapsed) ----
-  const collapseKey = `${LS_COLLAPSED_PREFIX}${assetId}.${viewFilter}`
-  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(() => {
-    const stored = lsGet(collapseKey)
-    return stored !== null ? stored === 'true' : null
-  })
+  // ---- Collapse state — always starts collapsed, independent per mount ----
+  const [isCollapsed, setIsCollapsed] = useState(true)
 
-  useEffect(() => {
-    const stored = lsGet(collapseKey)
-    setUserCollapsed(stored !== null ? stored === 'true' : null)
-  }, [collapseKey])
-
-  const isCollapsed = userCollapsed ?? true
+  // Reset to collapsed when asset or view changes
+  useEffect(() => { setIsCollapsed(true) }, [assetId, viewFilter])
 
   const toggleCollapsed = useCallback(() => {
-    setUserCollapsed(prev => {
-      const next = !(prev ?? true)
-      lsSet(collapseKey, String(next))
-      return next
-    })
-  }, [collapseKey])
+    setIsCollapsed(prev => !prev)
+  }, [])
 
   // ---- CTA handlers ----
   const handleCardAction = useCallback((action: string) => {

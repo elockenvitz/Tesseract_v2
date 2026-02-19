@@ -68,6 +68,8 @@ import {
   SlidersHorizontal,
   Grid3X3,
   GitBranch,
+  Undo2,
+  ExternalLink,
 } from 'lucide-react'
 import { SCENARIO_PRESETS, METRIC_PRESETS } from './FieldTypeRenderers'
 import {
@@ -79,8 +81,8 @@ import {
   type FieldOverride
 } from '../../hooks/useUserAssetPagePreferences'
 import { useResearchFields } from '../../hooks/useResearchFields'
+import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS } from '../../lib/research/layout-resolver'
 import { useAuth } from '../../hooks/useAuth'
-import { supabase } from '../../lib/supabase'
 
 // Draft state types for local changes before saving
 interface DraftFieldOverride {
@@ -102,6 +104,166 @@ interface DraftNewSection {
   temp_id: string
   name: string
 }
+
+// ============================================================================
+// DIFF COMPUTATION TYPES & UTILITY
+// ============================================================================
+
+type LayoutChangeType = 'field_visibility' | 'field_moved' | 'field_reordered' | 'field_added' | 'field_removed'
+  | 'section_renamed' | 'section_hidden' | 'section_reordered' | 'section_added'
+
+interface LayoutChange {
+  type: LayoutChangeType
+  entityId: string
+  label: string
+  /** Human-readable description of what changed */
+  description: string
+  /** For field changes — the section context */
+  sectionName?: string
+  /** Template value (for display in diff) */
+  templateValue?: string
+  /** Current/draft value (for display in diff) */
+  currentValue?: string
+}
+
+/**
+ * Compute a structured diff between the template baseline and the current draft state.
+ * Pure function — no side effects, no DB calls.
+ */
+function computeLayoutDiff(
+  draftFieldOverrides: Map<string, DraftFieldOverride>,
+  draftSectionOverrides: Map<string, DraftSectionOverride>,
+  draftNewSections: DraftNewSection[],
+  templateFieldIds: Set<string>,
+  fieldsWithPreferences: FieldWithPreference[],
+  allSections: Array<{ id: string; name: string; display_order: number }> | undefined,
+): LayoutChange[] {
+  const changes: LayoutChange[] = []
+
+  // Build lookup maps
+  const fieldMap = new Map<string, FieldWithPreference>()
+  fieldsWithPreferences.forEach(f => fieldMap.set(f.field_id, f))
+  const sectionMap = new Map<string, { id: string; name: string; display_order: number }>()
+  allSections?.forEach(s => sectionMap.set(s.id, s))
+
+  // --- Section changes ---
+  draftSectionOverrides.forEach((override, sectionId) => {
+    const original = sectionMap.get(sectionId)
+
+    if (override.is_added) {
+      const newSec = draftNewSections.find(ns => ns.temp_id === sectionId)
+      changes.push({
+        type: 'section_added',
+        entityId: sectionId,
+        label: newSec?.name || 'New Section',
+        description: `Added section "${newSec?.name || 'New Section'}"`,
+      })
+      return
+    }
+
+    if (override.name_override && original) {
+      changes.push({
+        type: 'section_renamed',
+        entityId: sectionId,
+        label: original.name,
+        description: `Renamed "${original.name}" → "${override.name_override}"`,
+        templateValue: original.name,
+        currentValue: override.name_override,
+      })
+    }
+
+    if (override.is_hidden === true && original) {
+      changes.push({
+        type: 'section_hidden',
+        entityId: sectionId,
+        label: override.name_override || original?.name || sectionId,
+        description: `Hidden section "${override.name_override || original?.name}"`,
+        templateValue: 'Visible',
+        currentValue: 'Hidden',
+      })
+    }
+
+    if (override.display_order !== undefined && original && override.display_order !== original.display_order) {
+      changes.push({
+        type: 'section_reordered',
+        entityId: sectionId,
+        label: override.name_override || original?.name || sectionId,
+        description: `Reordered section "${override.name_override || original?.name}"`,
+        templateValue: `Position ${original.display_order + 1}`,
+        currentValue: `Position ${override.display_order + 1}`,
+      })
+    }
+  })
+
+  // --- Field changes ---
+  draftFieldOverrides.forEach((override, fieldId) => {
+    const field = fieldMap.get(fieldId)
+    if (!field) return
+    const fieldName = field.field_name
+
+    const isInTemplate = templateFieldIds.has(fieldId)
+
+    if (!isInTemplate && override.is_visible) {
+      // Field added via override
+      const targetSection = sectionMap.get(override.section_id || '')
+      const newSec = draftNewSections.find(ns => ns.temp_id === override.section_id)
+      const sectionName = targetSection?.name || newSec?.name || field.section_name
+      changes.push({
+        type: 'field_added',
+        entityId: fieldId,
+        label: fieldName,
+        description: `Added "${fieldName}" to ${sectionName}`,
+        sectionName,
+      })
+      return
+    }
+
+    if (isInTemplate && !override.is_visible) {
+      changes.push({
+        type: 'field_visibility',
+        entityId: fieldId,
+        label: fieldName,
+        description: `Hidden "${fieldName}"`,
+        sectionName: field.section_name,
+        templateValue: 'Visible',
+        currentValue: 'Hidden',
+      })
+      return
+    }
+
+    // Field moved to different section
+    if (override.section_id && override.section_id !== field.section_id) {
+      const newSection = sectionMap.get(override.section_id)
+      const newSec = draftNewSections.find(ns => ns.temp_id === override.section_id)
+      const newSectionName = newSection?.name || newSec?.name || 'Unknown'
+      changes.push({
+        type: 'field_moved',
+        entityId: fieldId,
+        label: fieldName,
+        description: `Moved "${fieldName}" from ${field.section_name} → ${newSectionName}`,
+        sectionName: field.section_name,
+        templateValue: field.section_name,
+        currentValue: newSectionName,
+      })
+    }
+
+    // Field reordered within section
+    if (override.display_order !== undefined && override.display_order !== field.display_order) {
+      // Only add if not already captured by a move
+      if (!override.section_id || override.section_id === field.section_id) {
+        changes.push({
+          type: 'field_reordered',
+          entityId: fieldId,
+          label: fieldName,
+          description: `Reordered "${fieldName}" in ${field.section_name}`,
+          sectionName: field.section_name,
+        })
+      }
+    }
+  })
+
+  return changes
+}
 import { Button } from '../ui/Button'
 
 interface AssetPageFieldCustomizerProps {
@@ -113,6 +275,8 @@ interface AssetPageFieldCustomizerProps {
   viewFilter?: 'aggregated' | string
   /** Current user's ID */
   currentUserId?: string
+  /** Callback to navigate to the Templates tab (closes this modal and opens Templates) */
+  onOpenTemplates?: () => void
 }
 
 export function AssetPageFieldCustomizer({
@@ -121,7 +285,8 @@ export function AssetPageFieldCustomizer({
   assetId,
   assetName,
   viewFilter = 'aggregated',
-  currentUserId
+  currentUserId,
+  onOpenTemplates
 }: AssetPageFieldCustomizerProps) {
   // Can only change layout when viewing own view (not aggregated or other users' views)
   const isViewingOwnView = viewFilter === currentUserId
@@ -137,6 +302,7 @@ export function AssetPageFieldCustomizer({
     assetSectionOverrides,
     hasAssetCustomization,
     isLoading,
+    saveCustomization,
     toggleAssetFieldVisibility,
     addFieldToSection,
     removeFieldFromSection,
@@ -294,6 +460,11 @@ export function AssetPageFieldCustomizer({
   // Discard confirmation dialog
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
 
+  // Inline review band state (replaces docked diff panel)
+  const [reviewBandOpen, setReviewBandOpen] = useState(false)
+  // Template "More" overflow menu
+  const [templateMoreMenu, setTemplateMoreMenu] = useState(false)
+
   // Drag and drop state
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [activeDragType, setActiveDragType] = useState<'section' | 'field' | 'library-field' | null>(null)
@@ -448,7 +619,7 @@ export function AssetPageFieldCustomizer({
   const templateFieldIds = useMemo(() => {
     if (isDraftUsingDefault) {
       // Default template = universal fields
-      return new Set(fieldsWithPreferences.filter(f => f.is_universal).map(f => f.field_id))
+      return new Set(fieldsWithPreferences.filter(f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug)).map(f => f.field_id))
     }
     if (draftActiveLayout?.field_config && draftActiveLayout.field_config.length > 0) {
       return new Set(draftActiveLayout.field_config.map(fc => fc.field_id))
@@ -490,28 +661,24 @@ export function AssetPageFieldCustomizer({
     fieldsWithPreferences.forEach(f => fieldBySlugMap.set(f.field_slug, f))
 
     // Helper to find a field by ID, with fallback to slug matching for preset IDs
+    // Uses the centralized fieldConfigMatchesField for consistent matching.
     const findField = (fieldId: string): FieldWithPreference | undefined => {
       // First try direct ID match
       const directMatch = fieldMap.get(fieldId)
       if (directMatch) return directMatch
 
-      // If it's a preset ID with timestamp (e.g., "preset-some_slug-123456789")
-      // try to match by extracting the slug
-      if (fieldId.startsWith('preset-')) {
-        // Extract slug: "preset-competitive_landscape-1768168549905" -> "competitive_landscape"
-        const parts = fieldId.split('-')
-        if (parts.length >= 3) {
-          // Remove 'preset' prefix and timestamp suffix, join the middle parts
-          const slug = parts.slice(1, -1).join('-')
-          const slugMatch = fieldBySlugMap.get(slug)
-          if (slugMatch) return slugMatch
-
-          // Also try matching preset ID without timestamp
-          const presetIdWithoutTimestamp = `preset-${slug}`
-          const presetMatch = fieldMap.get(presetIdWithoutTimestamp)
-          if (presetMatch) return presetMatch
+      // Use centralized matching to find by slug (handles preset-slug-timestamp)
+      for (const [, field] of fieldMap) {
+        if (fieldConfigMatchesField({ field_id: fieldId }, { id: field.field_id, slug: field.field_slug })) {
+          return field
         }
       }
+
+      // Fallback: try slug map directly
+      const slug = fieldId.startsWith('preset-')
+        ? fieldId.split('-').slice(1, /^\d+$/.test(fieldId.split('-').at(-1) || '') ? -1 : undefined).join('-')
+        : null
+      if (slug) return fieldBySlugMap.get(slug)
 
       return undefined
     }
@@ -568,7 +735,7 @@ export function AssetPageFieldCustomizer({
         return draftOverride.is_visible
       }
       if (isDraftUsingDefault) {
-        return field.is_universal === true
+        return SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
       }
       if (layoutConfig) {
         return layoutConfig.is_visible
@@ -646,7 +813,7 @@ export function AssetPageFieldCustomizer({
         section.fields.forEach(field => {
           // For default template, only include universal fields (unless overridden)
           const draftOverride = draftFieldOverrides.get(field.field_id)
-          const isInTemplate = field.is_universal === true
+          const isInTemplate = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
           const isAddedViaOverride = draftOverride?.is_visible === true && !isInTemplate
 
           if (!isInTemplate && !isAddedViaOverride) return
@@ -759,7 +926,7 @@ export function AssetPageFieldCustomizer({
         // Calculate template default visibility based on DRAFT selection
         let templateDefaultVisibility: boolean
         if (isDraftUsingDefault) {
-          templateDefaultVisibility = f.is_universal === true
+          templateDefaultVisibility = SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug)
         } else if (draftActiveLayout?.field_config) {
           const layoutConfig = draftActiveLayout.field_config.find(fc => fc.field_id === f.field_id)
           templateDefaultVisibility = layoutConfig?.is_visible ?? false
@@ -777,10 +944,60 @@ export function AssetPageFieldCustomizer({
       .sort((a, b) => a.section_name.localeCompare(b.section_name) || a.field_name.localeCompare(b.field_name))
   }, [fieldsWithPreferences, addFieldSearch, draftFieldOverrides, isDraftUsingDefault, draftActiveLayout])
 
+  // Scoped "Available fields" — only template-relevant fields not currently visible
+  const availableFields = useMemo(() => {
+    return allLibraryFields.filter(f => !f.is_visible)
+  }, [allLibraryFields])
+
   // Count visible and total fields - use displayedFieldsBySection to respect template filtering
   const allDisplayedFields = displayedFieldsBySection.flatMap(s => s.fields)
   const visibleCount = allDisplayedFields.filter(f => f.is_visible).length
   const totalCount = allDisplayedFields.length
+
+  // Compute layout diff for the status bar and diff panel
+  const layoutChanges = useMemo(() =>
+    computeLayoutDiff(
+      draftFieldOverrides,
+      draftSectionOverrides,
+      draftNewSections,
+      templateFieldIds,
+      fieldsWithPreferences,
+      allSections,
+    ),
+    [draftFieldOverrides, draftSectionOverrides, draftNewSections, templateFieldIds, fieldsWithPreferences, allSections]
+  )
+
+  const fieldChangeCount = layoutChanges.filter(c => c.type.startsWith('field_')).length
+  const sectionChangeCount = layoutChanges.filter(c => c.type.startsWith('section_')).length
+  const totalChangeCount = layoutChanges.length
+
+  // Sets/maps for field-level override indicators
+  const overriddenFieldIds = useMemo(() => {
+    const ids = new Set<string>()
+    draftFieldOverrides.forEach((_, fieldId) => ids.add(fieldId))
+    return ids
+  }, [draftFieldOverrides])
+
+  const fieldTemplateSectionMap = useMemo(() => {
+    const map = new Map<string, string>()
+    fieldsWithPreferences.forEach(f => map.set(f.field_id, f.section_name))
+    return map
+  }, [fieldsWithPreferences])
+
+  const fieldTemplateVisibilityMap = useMemo(() => {
+    const map = new Map<string, boolean>()
+    fieldsWithPreferences.forEach(f => {
+      if (isDraftUsingDefault) {
+        map.set(f.field_id, SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+      } else if (draftActiveLayout?.field_config) {
+        const fc = draftActiveLayout.field_config.find(c => c.field_id === f.field_id)
+        map.set(f.field_id, fc?.is_visible ?? false)
+      } else {
+        map.set(f.field_id, f.is_visible)
+      }
+    })
+    return map
+  }, [fieldsWithPreferences, isDraftUsingDefault, draftActiveLayout])
 
   // Find similar existing fields based on name input (must be before early return)
   const similarFields = useMemo(() => {
@@ -1264,8 +1481,88 @@ export function AssetPageFieldCustomizer({
     setHasUnsavedChanges(true)
   }
 
+  // Revert a specific section property
+  const handleRevertSectionName = (sectionId: string) => {
+    setDraftSectionOverrides(prev => {
+      const newMap = new Map(prev)
+      const existing = newMap.get(sectionId)
+      if (!existing) return prev
+      const { name_override, ...rest } = existing
+      // If only name_override was set, remove the override entirely
+      const hasOther = rest.is_hidden !== undefined || rest.display_order !== undefined
+      if (hasOther) {
+        newMap.set(sectionId, rest)
+      } else {
+        newMap.delete(sectionId)
+      }
+      return newMap
+    })
+    setHasUnsavedChanges(true)
+  }
+
+  // Revert a single field override
+  const handleRevertField = (fieldId: string) => {
+    setDraftFieldOverrides(prev => {
+      const newMap = new Map(prev)
+      newMap.delete(fieldId)
+      return newMap
+    })
+    setHasUnsavedChanges(true)
+  }
+
+  // Revert a single layout change
+  const handleRevertChange = (change: LayoutChange) => {
+    switch (change.type) {
+      case 'section_renamed':
+        handleRevertSectionName(change.entityId)
+        break
+      case 'section_hidden':
+        setDraftSectionOverrides(prev => {
+          const newMap = new Map(prev)
+          const existing = newMap.get(change.entityId)
+          if (!existing) return prev
+          const { is_hidden, ...rest } = existing
+          const hasOther = rest.name_override !== undefined || rest.display_order !== undefined
+          if (hasOther) {
+            newMap.set(change.entityId, rest)
+          } else {
+            newMap.delete(change.entityId)
+          }
+          return newMap
+        })
+        setHasUnsavedChanges(true)
+        break
+      case 'section_reordered':
+        setDraftSectionOverrides(prev => {
+          const newMap = new Map(prev)
+          const existing = newMap.get(change.entityId)
+          if (!existing) return prev
+          const { display_order, ...rest } = existing
+          const hasOther = rest.name_override !== undefined || rest.is_hidden !== undefined
+          if (hasOther) {
+            newMap.set(change.entityId, rest)
+          } else {
+            newMap.delete(change.entityId)
+          }
+          return newMap
+        })
+        setHasUnsavedChanges(true)
+        break
+      case 'section_added':
+        handleDeleteSection(change.entityId)
+        break
+      case 'field_visibility':
+      case 'field_moved':
+      case 'field_reordered':
+      case 'field_added':
+      case 'field_removed':
+        handleRevertField(change.entityId)
+        break
+    }
+  }
+
   // ============================================
-  // SAVE FUNCTION - Commits all draft changes
+  // SAVE FUNCTION - Atomic RPC call
   // ============================================
   const handleSaveChanges = async () => {
     if (!assetId || !hasUnsavedChanges) {
@@ -1276,62 +1573,28 @@ export function AssetPageFieldCustomizer({
 
     setIsSaving(true)
     try {
-      // 1. Handle layout change if needed
-      if (draftLayoutId !== undefined) {
-        await selectLayoutForAsset.mutateAsync({
-          assetId,
-          layoutId: draftLayoutId
-        })
-      }
-
-      // 1b. Check if user clicked Reset (all draft overrides are empty)
-      // If so, clear all overrides from database and exit
+      // Check if user clicked Reset (all draft overrides are empty and no layout change)
       const hasNoOverrides = draftFieldOverrides.size === 0 &&
                              draftSectionOverrides.size === 0 &&
                              draftNewSections.length === 0
+      const clearAll = hasNoOverrides && draftLayoutId === undefined
 
-      if (hasNoOverrides) {
-        // User clicked Reset - clear all overrides from database
-        await clearAssetOverrides.mutateAsync(assetId)
-        setSectionMenuOpen(null)
-        onClose()
-        return
-      }
-
-      // 2. Create any new sections first
-      const sectionIdMap = new Map<string, string>() // temp_id -> real_id
-      for (const newSection of draftNewSections) {
-        const result = await createSection.mutateAsync({
-          name: newSection.name,
-          addAsOverride: true
-        })
-        if (result?.id) {
-          sectionIdMap.set(newSection.temp_id, result.id)
-        }
-      }
-
-      // 3. Build field overrides, replacing temp section IDs with real ones
-      const fieldOverridesToSave: FieldOverride[] = []
+      // Build field overrides (excluding _removeFromDatabase entries)
+      const fieldOverrides: FieldOverride[] = []
       draftFieldOverrides.forEach((override, fieldId) => {
-        const sectionId = override.section_id
-          ? (sectionIdMap.get(override.section_id) || override.section_id)
-          : undefined
-
-        fieldOverridesToSave.push({
+        if ((override as DraftFieldOverride & { _removeFromDatabase?: boolean })._removeFromDatabase) return
+        fieldOverrides.push({
           field_id: fieldId,
           is_visible: override.is_visible,
-          section_id: sectionId,
+          section_id: override.section_id,
           display_order: override.display_order
         })
       })
 
-      // 4. Build section overrides, replacing temp IDs with real ones
-      const sectionOverridesToSave: SectionOverride[] = []
+      // Build section overrides (include temp- IDs — RPC handles mapping)
+      const sectionOverrides: SectionOverride[] = []
       draftSectionOverrides.forEach((override, sectionId) => {
-        // Skip temp sections (they were already created above)
-        if (sectionId.startsWith('temp-')) return
-
-        sectionOverridesToSave.push({
+        sectionOverrides.push({
           section_id: sectionId,
           name_override: override.name_override,
           is_hidden: override.is_hidden,
@@ -1340,103 +1603,20 @@ export function AssetPageFieldCustomizer({
         })
       })
 
-      // 5. Save field overrides - directly update database with only actual overrides
-      // This preserves display_order values and only saves fields that have real changes
-      if (draftFieldOverrides.size > 0 && user?.id) {
-        // Build the list of overrides to save (excluding fields marked for removal)
-        const overridesToSave: FieldOverride[] = []
-        const fieldsToRemoveFromDb: string[] = []
+      // Build new sections array
+      const newSections = draftNewSections.map(s => ({
+        temp_id: s.temp_id,
+        name: s.name
+      }))
 
-        draftFieldOverrides.forEach((override, fieldId) => {
-          // Check if this field should be completely removed from database
-          if ((override as DraftFieldOverride & { _removeFromDatabase?: boolean })._removeFromDatabase) {
-            fieldsToRemoveFromDb.push(fieldId)
-            return
-          }
-
-          // Map temp section IDs to real IDs
-          const sectionId = override.section_id
-            ? (sectionIdMap.get(override.section_id) || override.section_id)
-            : undefined
-
-          overridesToSave.push({
-            field_id: fieldId,
-            is_visible: override.is_visible,
-            section_id: sectionId,
-            display_order: override.display_order
-          })
-        })
-
-        // Fetch current field_overrides from database
-        const { data: currentSelection } = await supabase
-          .from('user_asset_layout_selections')
-          .select('id, field_overrides')
-          .eq('user_id', user.id)
-          .eq('asset_id', assetId)
-          .maybeSingle()
-
-        // Merge overrides: update existing, add new, remove marked for deletion
-        let mergedOverrides: FieldOverride[] = []
-
-        if (currentSelection?.field_overrides) {
-          // Start with existing overrides, excluding those being updated or removed
-          const existingOverrides = currentSelection.field_overrides as FieldOverride[]
-          const updatedFieldIds = new Set(overridesToSave.map(o => o.field_id))
-          const removedFieldIds = new Set(fieldsToRemoveFromDb)
-
-          mergedOverrides = existingOverrides.filter(o =>
-            !updatedFieldIds.has(o.field_id) && !removedFieldIds.has(o.field_id)
-          )
-        }
-
-        // Add the new/updated overrides
-        mergedOverrides.push(...overridesToSave)
-
-        // Save to database
-        if (currentSelection) {
-          await supabase
-            .from('user_asset_layout_selections')
-            .update({ field_overrides: mergedOverrides })
-            .eq('id', currentSelection.id)
-        } else if (mergedOverrides.length > 0) {
-          // Create new selection record if needed
-          await supabase
-            .from('user_asset_layout_selections')
-            .insert({
-              user_id: user.id,
-              asset_id: assetId,
-              layout_id: draftLayoutId,
-              field_overrides: mergedOverrides,
-              section_overrides: []
-            })
-        }
-
-        // Invalidate query cache so modal loads fresh data on reopen
-        await queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user.id, assetId] })
-      }
-
-      // Save section overrides by reordering sections
-      const orderedSectionIds = Array.from(draftSectionOverrides.entries())
-        .filter(([id]) => !id.startsWith('temp-'))
-        .sort((a, b) => (a[1].display_order ?? 0) - (b[1].display_order ?? 0))
-        .map(([id]) => id)
-
-      if (orderedSectionIds.length > 0) {
-        await reorderSections.mutateAsync({ orderedSectionIds })
-      }
-
-
-      // Handle section name and visibility overrides
-      for (const override of sectionOverridesToSave) {
-        if (override.name_override !== undefined || override.is_hidden !== undefined) {
-          await updateSectionOverride.mutateAsync({
-            assetId,
-            sectionId: override.section_id,
-            nameOverride: override.name_override,
-            isHidden: override.is_hidden
-          })
-        }
-      }
+      // Single atomic RPC call
+      await saveCustomization.mutateAsync({
+        layoutId: draftLayoutId,
+        fieldOverrides,
+        sectionOverrides,
+        newSections,
+        clearAll
+      })
 
       setSectionMenuOpen(null)
       onClose()
@@ -1467,14 +1647,17 @@ export function AssetPageFieldCustomizer({
   const handleCopyTemplate = async () => {
     if (!newTemplateName.trim()) return
 
-    // Create a new template with current field config
-    const fieldConfig = fieldsWithPreferences.map(f => ({
-      field_id: f.field_id,
-      section_id: f.section_id,
-      is_visible: f.is_visible,
-      display_order: f.display_order,
-      is_collapsed: f.is_collapsed
-    }))
+    // Build field config from DRAFT state (not server state) so the saved
+    // template reflects what the user is currently seeing in the customizer.
+    const fieldConfig = displayedFieldsBySection.flatMap((section, sIdx) =>
+      section.fields.map((f, fIdx) => ({
+        field_id: f.field_id,
+        section_id: f.section_id || section.section_id,
+        is_visible: f.is_visible,
+        display_order: sIdx * 1000 + fIdx,
+        is_collapsed: f.is_collapsed ?? false
+      }))
+    )
 
     await saveLayout.mutateAsync({
       name: newTemplateName.trim(),
@@ -1655,34 +1838,36 @@ export function AssetPageFieldCustomizer({
                 </span>
               )}
             </div>
-            {assetName && (
-              <p className="text-sm text-gray-500 mt-0.5">{assetName}</p>
-            )}
+            <p className="text-xs text-gray-400 mt-0.5">
+              {assetName ? <span className="text-gray-500">{assetName}</span> : null}
+              {assetName ? ' · ' : ''}Changes here apply to this asset only.
+            </p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Override indicator in header - shows DRAFT state (real-time) */}
-            {(draftFieldOverrides.size > 0 || draftSectionOverrides.size > 0 || draftNewSections.length > 0) && (
+            {/* Override status bar */}
+            {totalChangeCount > 0 ? (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-200">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-xs text-amber-700 font-medium">
-                  Overrides:{' '}
-                  {draftFieldOverrides.size > 0 && (
-                    <span>{draftFieldOverrides.size} field{draftFieldOverrides.size !== 1 ? 's' : ''}</span>
-                  )}
-                  {draftFieldOverrides.size > 0 && (draftSectionOverrides.size > 0 || draftNewSections.length > 0) && ', '}
-                  {(draftSectionOverrides.size > 0 || draftNewSections.length > 0) && (
-                    <span>{draftSectionOverrides.size + draftNewSections.length} section{(draftSectionOverrides.size + draftNewSections.length) !== 1 ? 's' : ''}</span>
-                  )}
-                </span>
+                <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="text-xs text-amber-800 font-semibold leading-tight">Overrides Active</span>
+                  <span className="text-[10px] text-amber-600 leading-tight">
+                    {fieldChangeCount > 0 && <span>{fieldChangeCount} field{fieldChangeCount !== 1 ? 's' : ''}</span>}
+                    {fieldChangeCount > 0 && sectionChangeCount > 0 && ' · '}
+                    {sectionChangeCount > 0 && <span>{sectionChangeCount} section{sectionChangeCount !== 1 ? 's' : ''}</span>}
+                  </span>
+                </div>
+                <div className="h-4 w-px bg-amber-200 mx-1" />
                 <button
                   onClick={handleClearOverrides}
                   disabled={isUpdating}
-                  className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 font-medium hover:bg-amber-100 rounded px-1.5 py-0.5 transition-colors"
+                  className="flex items-center gap-1 text-[11px] text-amber-700 hover:text-amber-900 font-medium hover:bg-amber-100 rounded px-1.5 py-0.5 transition-colors"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  Reset
+                  Reset all
                 </button>
               </div>
+            ) : (
+              <span className="text-xs text-gray-400 italic">Using template layout</span>
             )}
             <button
               onClick={handleCancel}
@@ -1705,27 +1890,58 @@ export function AssetPageFieldCustomizer({
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium text-gray-700">Template</h3>
-                  {canChangeLayout ? (
-                    <div className="flex items-center gap-2">
-                      {isUsingDefault && (
-                        <button
-                          onClick={() => setShowCopyDialog(true)}
-                          className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-700 font-medium"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy
-                        </button>
-                      )}
+                  <div className="flex items-center gap-2">
+                    {canChangeLayout && (
                       <button
                         onClick={() => setShowTemplateSelector(!showTemplateSelector)}
-                        className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                        className="text-xs text-primary-600 hover:text-primary-700 font-medium"
                       >
                         {showTemplateSelector ? 'Cancel' : 'Change'}
                       </button>
+                    )}
+                    {/* More menu — power-user template actions */}
+                    <div className="relative" data-section-menu>
+                      <button
+                        onClick={() => setTemplateMoreMenu(prev => !prev)}
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                        title="More options"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                      {templateMoreMenu && (
+                        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg border border-gray-200 shadow-lg z-50 py-1">
+                          {onOpenTemplates && (
+                            <button
+                              onClick={() => {
+                                setTemplateMoreMenu(false)
+                                onClose()
+                                onOpenTemplates()
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Edit template in Templates
+                            </button>
+                          )}
+                          {canChangeLayout && isUsingDefault && (
+                            <button
+                              onClick={() => {
+                                setTemplateMoreMenu(false)
+                                setShowCopyDialog(true)
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              <Copy className="w-4 h-4" />
+                              Copy template…
+                            </button>
+                          )}
+                          {!onOpenTemplates && !(canChangeLayout && isUsingDefault) && (
+                            <div className="px-3 py-2 text-xs text-gray-400">No actions available</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <span className="text-xs text-gray-400">Switch to your view to change</span>
-                  )}
+                  </div>
                 </div>
 
                 {/* Template Card */}
@@ -1748,11 +1964,11 @@ export function AssetPageFieldCustomizer({
                   </div>
                 </div>
 
-                {/* Copy Dialog */}
+                {/* Copy Dialog — hidden behind More menu */}
                 {canChangeLayout && showCopyDialog && (
                   <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-sm text-gray-700 mb-2">
-                      Create a copy of the Default template that you can customize:
+                      This will create a new template. You can edit it in Templates.
                     </p>
                     <div className="flex gap-2">
                       <input
@@ -1925,11 +2141,16 @@ export function AssetPageFieldCustomizer({
                                   handleToggleSectionVisibility={handleToggleSectionVisibility}
                                   handleDeleteSection={handleDeleteSection}
                                   handleResetSection={handleResetSection}
+                                  handleRevertSectionName={handleRevertSectionName}
                                   handleRemoveFieldFromSection={handleRemoveFieldFromSection}
                                   handleToggleVisibility={handleToggleVisibility}
+                                  handleRevertField={handleRevertField}
                                   isSaving={isSaving}
                                   isDraggingLibraryField={activeDragType === 'library-field'}
                                   dragOverPositionId={dragOverPositionId}
+                                  overriddenFieldIds={overriddenFieldIds}
+                                  fieldTemplateSectionMap={fieldTemplateSectionMap}
+                                  fieldTemplateVisibilityMap={fieldTemplateVisibilityMap}
                                 />
                               </DroppableSection>
                             ))}
@@ -2021,28 +2242,18 @@ export function AssetPageFieldCustomizer({
                   </div>
                 </div>
 
-                {/* Right Column: Field Library */}
-                <div className="w-[340px] flex flex-col shrink-0">
+                {/* Right Column: Available Fields (scoped to template) */}
+                <div className="w-[300px] flex flex-col shrink-0">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-medium text-gray-700">Field Library</h3>
-                    <div className="flex items-center gap-2">
-                      {activeDragType === 'library-field' ? (
-                        <span className="text-xs text-primary-600 font-medium animate-pulse">
-                          Drop on a section ←
-                        </span>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => setShowCreateField(true)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded transition-colors"
-                          >
-                            <Plus className="w-3 h-3" />
-                            Create
-                          </button>
-                          <span className="text-xs text-gray-500">{fieldsWithPreferences.length} fields</span>
-                        </>
-                      )}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-700">Available Fields</h3>
+                      <p className="text-[10px] text-gray-400">From template · drag to add</p>
                     </div>
+                    {activeDragType === 'library-field' && (
+                      <span className="text-xs text-primary-600 font-medium animate-pulse">
+                        Drop on a section ←
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-gray-50">
                     {/* Search */}
@@ -2053,103 +2264,53 @@ export function AssetPageFieldCustomizer({
                           type="text"
                           value={addFieldSearch}
                           onChange={(e) => setAddFieldSearch(e.target.value)}
-                          placeholder="Search fields..."
+                          placeholder="Search available fields..."
                           className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                       </div>
                     </div>
-                    {/* Field List */}
+                    {/* Field List — flat, no category grouping */}
                     <div className="flex-1 overflow-y-auto">
-                      {allLibraryFields.length === 0 ? (
-                        <div className="flex items-center justify-center h-full text-gray-500">
-                          <p className="text-sm">No matching fields</p>
+                      {availableFields.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 px-4 py-6">
+                          <Check className="w-6 h-6 mb-1.5 text-green-400" />
+                          <p className="text-xs font-medium text-gray-500">All fields are in layout</p>
+                          <p className="text-[10px] text-gray-400 text-center mt-1">
+                            {addFieldSearch.trim() ? 'No hidden fields match your search.' : 'Hide a field from the layout to see it here.'}
+                          </p>
                         </div>
                       ) : (
-                        (() => {
-                          const fieldTypeDisplayNames: Record<string, string> = {
-                            'rich_text': 'Rich Text',
-                            'checklist': 'Checklists',
-                            'metric': 'Metrics',
-                            'numeric': 'Numeric Values',
-                            'timeline': 'Timelines',
-                            'date': 'Dates',
-                            'text': 'Text',
-                            'rating': 'Ratings',
-                            'select': 'Selections',
-                            'multi_select': 'Multi-Select',
-                            'url': 'Links',
-                            'file': 'Files',
-                            'boolean': 'Yes/No Fields',
-                            'currency': 'Currency',
-                            'price_targets': 'Price Targets',
-                            'documents': 'Documents',
-                            'scorecard': 'Scorecards',
-                            'slider': 'Sliders & Gauges',
-                            'spreadsheet': 'Spreadsheets',
-                            'scenario': 'Scenario Analysis'
-                          }
-                          const categories = new Map<string, typeof allLibraryFields>()
-                          allLibraryFields.forEach(f => {
-                            const category = f.field_type || 'other'
-                            const existing = categories.get(category) || []
-                            existing.push(f)
-                            categories.set(category, existing)
-                          })
-                          const sortedCategories = Array.from(categories.entries()).sort(([a], [b]) => {
-                            const nameA = fieldTypeDisplayNames[a] || a
-                            const nameB = fieldTypeDisplayNames[b] || b
-                            return nameA.localeCompare(nameB)
-                          })
-                          return sortedCategories.map(([category, fields]) => {
-                            const isExpanded = expandedCategories.has(category) || addFieldSearch.trim() !== ''
-                            const addedCount = fields.filter(f => f.is_visible).length
-                            return (
-                              <div key={category}>
-                                <button
-                                  onClick={() => {
-                                    if (addFieldSearch.trim()) return // Don't collapse when searching
-                                    setExpandedCategories(prev => {
-                                      const next = new Set(prev)
-                                      if (next.has(category)) {
-                                        next.delete(category)
-                                      } else {
-                                        next.add(category)
-                                      }
-                                      return next
-                                    })
-                                  }}
-                                  className="w-full px-3 py-2 bg-gray-100 text-xs font-medium text-gray-600 uppercase tracking-wider sticky top-0 border-b border-gray-200 flex items-center gap-2 hover:bg-gray-200 transition-colors"
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="w-3 h-3 text-gray-400" />
-                                  ) : (
-                                    <ChevronRight className="w-3 h-3 text-gray-400" />
-                                  )}
-                                  <span className="flex-1 text-left">
-                                    {fieldTypeDisplayNames[category] || category.replace(/_/g, ' ')}
-                                  </span>
-                                  <span className="text-gray-400 font-normal normal-case">
-                                    {addedCount > 0 && <span className="text-green-600 mr-1">{addedCount} added</span>}
-                                    ({fields.length})
-                                  </span>
-                                </button>
-                                {isExpanded && fields.map(field => (
-                                  <DraggableLibraryField
-                                    key={field.field_id}
-                                    field={field}
-                                    isAlreadyVisible={field.is_visible}
-                                    onRemove={() => handleRemoveFieldFromSection(field.field_id)}
-                                    canDelete={field.is_custom && field.created_by === user?.id}
-                                    onDelete={() => setFieldToDelete({ id: field.field_id, name: field.field_name })}
-                                    isDeleting={isDeletingField && fieldToDelete?.id === field.field_id}
-                                  />
-                                ))}
-                              </div>
-                            )
-                          })
-                        })()
+                        availableFields.map(field => (
+                          <DraggableLibraryField
+                            key={field.field_id}
+                            field={field}
+                            isAlreadyVisible={false}
+                            onRemove={() => handleRemoveFieldFromSection(field.field_id)}
+                            isOverridden={overriddenFieldIds.has(field.field_id)}
+                            isHiddenOverride={
+                              overriddenFieldIds.has(field.field_id) &&
+                              (fieldTemplateVisibilityMap.get(field.field_id) ?? false)
+                            }
+                            isAddedOverride={false}
+                          />
+                        ))
                       )}
                     </div>
+                    {/* Link to full library */}
+                    {onOpenTemplates && (
+                      <div className="p-2 border-t border-gray-200 bg-white">
+                        <button
+                          onClick={() => {
+                            onClose()
+                            onOpenTemplates()
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        >
+                          Browse full library in Templates
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2177,27 +2338,123 @@ export function AssetPageFieldCustomizer({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-          <div className="flex items-center gap-3">
+        {/* Footer area — review band + action bar */}
+        <div className="border-t border-gray-200 bg-gray-50 rounded-b-xl">
+          {/* Inline collapsible review band */}
+          {totalChangeCount > 0 && (
+            <div className="border-b border-gray-200">
+              <button
+                onClick={() => setReviewBandOpen(prev => !prev)}
+                className="w-full flex items-center gap-2 px-5 py-2 hover:bg-gray-100 transition-colors"
+              >
+                {reviewBandOpen ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                )}
+                <span className="text-xs font-semibold text-gray-700">
+                  Review changes ({totalChangeCount})
+                </span>
+              </button>
+
+              {reviewBandOpen && (
+                <div className="px-5 pb-3 max-h-[200px] overflow-y-auto">
+                  {/* Section changes */}
+                  {sectionChangeCount > 0 && (
+                    <div className="mb-2">
+                      <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                        Section changes
+                      </h4>
+                      <div className="space-y-0.5">
+                        {layoutChanges.filter(c => c.type.startsWith('section_')).map(change => (
+                          <div
+                            key={`${change.type}-${change.entityId}`}
+                            className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white transition-colors"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                            <span className="text-xs text-gray-700 flex-1 min-w-0 truncate">{change.description}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRevertChange(change) }}
+                              className="text-[10px] text-amber-600 hover:text-amber-800 font-medium opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            >
+                              Revert
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Field changes */}
+                  {fieldChangeCount > 0 && (
+                    <div className="mb-2">
+                      <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                        Field changes
+                      </h4>
+                      <div className="space-y-0.5">
+                        {layoutChanges.filter(c => c.type.startsWith('field_')).map(change => (
+                          <div
+                            key={`${change.type}-${change.entityId}`}
+                            className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white transition-colors"
+                          >
+                            <div className={clsx(
+                              "w-1.5 h-1.5 rounded-full shrink-0",
+                              change.type === 'field_added' ? 'bg-blue-400'
+                                : change.type === 'field_visibility' ? 'bg-red-400'
+                                : 'bg-amber-400'
+                            )} />
+                            <span className="text-xs text-gray-700 flex-1 min-w-0 truncate">{change.description}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRevertChange(change) }}
+                              className="text-[10px] text-amber-600 hover:text-amber-800 font-medium opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            >
+                              Revert
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Reset all at bottom of band */}
+                  <div className="pt-1.5 border-t border-gray-200 mt-1">
+                    <button
+                      onClick={handleClearOverrides}
+                      className="flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-medium"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Reset all overrides
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action bar */}
+          <div className="flex items-center gap-3 px-5 py-3">
+            {hasUnsavedChanges && (
+              <div className="flex items-center gap-1.5 mr-auto">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+              </div>
+            )}
             <Button
               variant="secondary"
               onClick={handleCancel}
-              className="flex-1"
               disabled={isSaving}
             >
               Cancel
             </Button>
             <Button
               onClick={handleSaveChanges}
-              className="flex-1"
-              disabled={isSaving}
+              disabled={isSaving || !hasUnsavedChanges}
             >
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   Saving...
                 </>
+              ) : totalChangeCount > 0 ? (
+                'Save Overrides'
               ) : hasUnsavedChanges ? (
                 'Save Changes'
               ) : (
@@ -2205,11 +2462,6 @@ export function AssetPageFieldCustomizer({
               )}
             </Button>
           </div>
-          {hasUnsavedChanges && (
-            <p className="text-xs text-amber-600 text-center mt-2">
-              You have unsaved changes
-            </p>
-          )}
         </div>
       </div>
 
@@ -2761,11 +3013,19 @@ interface SectionItemProps {
   handleToggleSectionVisibility: (id: string, hidden: boolean) => void
   handleDeleteSection: (id: string) => void
   handleResetSection: (id: string) => void
+  handleRevertSectionName?: (id: string) => void
   handleRemoveFieldFromSection: (fieldId: string) => void
   handleToggleVisibility: (fieldId: string) => void
+  handleRevertField?: (fieldId: string) => void
   isSaving: boolean
   isDraggingLibraryField?: boolean
   dragOverPositionId?: string | null
+  /** Set of field IDs that have draft overrides */
+  overriddenFieldIds?: Set<string>
+  /** Map of field_id -> template section name for tooltip */
+  fieldTemplateSectionMap?: Map<string, string>
+  /** Map of field_id -> template visibility */
+  fieldTemplateVisibilityMap?: Map<string, boolean>
 }
 
 // Sortable section component
@@ -2786,11 +3046,16 @@ function SortableSection({
   handleToggleSectionVisibility,
   handleDeleteSection,
   handleResetSection,
+  handleRevertSectionName,
   handleRemoveFieldFromSection,
   handleToggleVisibility,
+  handleRevertField,
   isSaving,
   isDraggingLibraryField = false,
-  dragOverPositionId = null
+  dragOverPositionId = null,
+  overriddenFieldIds,
+  fieldTemplateSectionMap,
+  fieldTemplateVisibilityMap,
 }: SectionItemProps) {
   const {
     attributes,
@@ -2887,11 +3152,29 @@ function SortableSection({
               {section.section_name}
               {section.section_is_added && (
                 <span className="px-1.5 py-0.5 text-[9px] bg-blue-100 text-blue-700 rounded font-medium shrink-0">
-                  Override
+                  Added
+                </span>
+              )}
+              {!section.section_is_added && section.section_has_override && section.section_name !== section.section_original_name && (
+                <span
+                  className="px-1.5 py-0.5 text-[9px] bg-amber-100 text-amber-700 rounded font-medium shrink-0"
+                  title={`Template name: ${section.section_original_name}`}
+                >
+                  Renamed
                 </span>
               )}
             </span>
           </button>
+        )}
+        {/* Modified indicator */}
+        {!section.section_is_added && section.section_has_override && (
+          <span
+            className="flex items-center gap-1 shrink-0"
+            title="This section differs from the template"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span className="text-[10px] text-amber-600 font-medium">Modified</span>
+          </span>
         )}
         <span className="text-xs text-gray-500 shrink-0">
           {visibleInSection}/{totalInSection}
@@ -2974,10 +3257,23 @@ function SortableSection({
                   )
                 }
               })()}
-              {/* Reset to Default only for template sections with overrides (not added sections) */}
+              {/* Per-section revert controls */}
               {section.section_has_override && !section.section_is_added && (
                 <>
                   <div className="border-t border-gray-100 my-1" />
+                  {section.section_name !== section.section_original_name && handleRevertSectionName && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleRevertSectionName(section.section_id)
+                        setSectionMenuOpen(null)
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-amber-600 hover:bg-amber-50"
+                    >
+                      <Undo2 className="w-4 h-4" />
+                      Revert section name
+                    </button>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -2986,7 +3282,7 @@ function SortableSection({
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-amber-600 hover:bg-amber-50"
                   >
                     <RotateCcw className="w-4 h-4" />
-                    Reset to Default
+                    Revert all changes in section
                   </button>
                 </>
               )}
@@ -3032,9 +3328,13 @@ function SortableSection({
                       field={field}
                       onToggleVisibility={handleToggleVisibility}
                       onRemove={handleRemoveFieldFromSection}
+                      onRevertField={handleRevertField}
                       isSaving={isSaving}
                       isFromTemplate={(field as any).isFromTemplate}
                       isAddedViaOverride={(field as any).isAddedViaOverride}
+                      isOverridden={overriddenFieldIds?.has(field.field_id)}
+                      templateSectionName={fieldTemplateSectionMap?.get(field.field_id)}
+                      templateVisible={fieldTemplateVisibilityMap?.get(field.field_id)}
                     />
                     {/* Drop zone after each field */}
                     {isDraggingLibraryField && (
@@ -3096,16 +3396,24 @@ function SortableFieldRow({
   field,
   onToggleVisibility,
   onRemove,
+  onRevertField,
   isSaving,
   isFromTemplate = true,
-  isAddedViaOverride = false
+  isAddedViaOverride = false,
+  isOverridden = false,
+  templateSectionName,
+  templateVisible,
 }: {
   field: FieldWithPreference
   onToggleVisibility: (fieldId: string) => void
   onRemove?: (fieldId: string) => void
+  onRevertField?: (fieldId: string) => void
   isSaving: boolean
   isFromTemplate?: boolean
   isAddedViaOverride?: boolean
+  isOverridden?: boolean
+  templateSectionName?: string
+  templateVisible?: boolean
 }) {
   const {
     attributes,
@@ -3149,6 +3457,18 @@ function SortableFieldRow({
 
   const fieldTypeName = fieldTypeDisplayNames[field.field_type] || field.field_type
 
+  // Build diff tooltip for overridden fields
+  const diffTooltipParts: string[] = []
+  if (isOverridden && !isAddedViaOverride) {
+    if (templateVisible !== undefined && templateVisible !== field.is_visible) {
+      diffTooltipParts.push(`Template: ${templateVisible ? 'Visible' : 'Hidden'} · Current: ${field.is_visible ? 'Visible' : 'Hidden'}`)
+    }
+    if (templateSectionName && templateSectionName !== field.section_name) {
+      diffTooltipParts.push(`Template section: ${templateSectionName} · Current: ${field.section_name}`)
+    }
+  }
+  const diffTooltip = diffTooltipParts.length > 0 ? diffTooltipParts.join('\n') : undefined
+
   return (
     <div
       ref={setNodeRef}
@@ -3156,6 +3476,7 @@ function SortableFieldRow({
       className={clsx(
         "group flex items-center gap-2 px-3 py-2 hover:bg-gray-50 bg-white",
         isAddedViaOverride && "bg-blue-50/50",
+        isOverridden && !isAddedViaOverride && "bg-amber-50/30",
         isDragging && "shadow-lg"
       )}
     >
@@ -3189,7 +3510,7 @@ function SortableFieldRow({
       </button>
 
       {/* Field info */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0" title={diffTooltip}>
         <div className="flex items-center gap-2">
           <span className={clsx(
             "text-sm truncate",
@@ -3202,13 +3523,30 @@ function SortableFieldRow({
           </span>
           {isAddedViaOverride && (
             <span className="px-1.5 py-0.5 text-[9px] bg-blue-100 text-blue-700 rounded font-medium shrink-0">
-              Override
+              Added
+            </span>
+          )}
+          {isOverridden && !isAddedViaOverride && (
+            <span className="flex items-center gap-0.5 shrink-0" title={diffTooltip}>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
             </span>
           )}
         </div>
       </div>
 
-      {/* Remove button - only for override fields */}
+      {/* Revert button - for overridden fields (shown on hover) */}
+      {isOverridden && onRevertField && (
+        <button
+          onClick={() => onRevertField(field.field_id)}
+          disabled={isSaving}
+          className="p-1 rounded text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-amber-50 hover:text-amber-700 transition-all disabled:opacity-50"
+          title="Revert to template default"
+        >
+          <Undo2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+
+      {/* Remove button - only for override-added fields */}
       {isAddedViaOverride && onRemove && (
         <button
           onClick={() => onRemove(field.field_id)}
@@ -3230,7 +3568,10 @@ function DraggableLibraryField({
   onRemove,
   canDelete,
   onDelete,
-  isDeleting
+  isDeleting,
+  isOverridden,
+  isHiddenOverride,
+  isAddedOverride,
 }: {
   field: FieldWithPreference
   isAlreadyVisible: boolean
@@ -3238,6 +3579,12 @@ function DraggableLibraryField({
   canDelete?: boolean
   onDelete?: () => void
   isDeleting?: boolean
+  /** Field has a draft override */
+  isOverridden?: boolean
+  /** Field is hidden via override (was visible in template) */
+  isHiddenOverride?: boolean
+  /** Field was added via override (not in template) */
+  isAddedOverride?: boolean
 }) {
   const {
     attributes,
@@ -3286,8 +3633,13 @@ function DraggableLibraryField({
                 </span>
               )}
               <span className="px-1 py-0.5 text-[9px] bg-green-100 text-green-600 rounded font-medium shrink-0">
-                Added
+                In layout
               </span>
+              {isAddedOverride && (
+                <span className="px-1 py-0.5 text-[9px] bg-amber-100 text-amber-600 rounded font-medium shrink-0">
+                  Added
+                </span>
+              )}
             </div>
             <p className="text-[10px] text-gray-400 truncate">
               {field.section_name}
@@ -3322,6 +3674,11 @@ function DraggableLibraryField({
               {field.is_custom && (
                 <span className="px-1 py-0.5 text-[9px] bg-blue-100 text-blue-600 rounded font-medium shrink-0">
                   Custom
+                </span>
+              )}
+              {isHiddenOverride && (
+                <span className="px-1 py-0.5 text-[9px] bg-red-100 text-red-600 rounded font-medium shrink-0">
+                  Hidden
                 </span>
               )}
             </div>

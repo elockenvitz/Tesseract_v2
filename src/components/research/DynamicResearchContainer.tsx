@@ -16,7 +16,14 @@ import {
   Clock,
   Gauge,
   Download,
-  Bookmark
+  Bookmark,
+  List,
+  ListChecks,
+  ToggleLeft,
+  Percent,
+  DollarSign,
+  Table2,
+  LayoutGrid
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -35,8 +42,16 @@ import {
   SliderField,
   ScorecardField,
   ScenarioField,
-  SpreadsheetField
+  SpreadsheetField,
+  SingleSelectField,
+  MultiSelectField,
+  BooleanField,
+  PercentageField,
+  CurrencyField,
+  TableField,
+  ChartField
 } from './FieldTypeRenderers'
+import { CompositeFieldRenderer } from './CompositeFieldRenderer'
 import {
   useUserResearchLayout,
   type AccessibleField,
@@ -197,7 +212,14 @@ function getFieldTypeIcon(type: FieldType) {
     scorecard: <CheckSquare className="w-4 h-4" />,
     slider: <Gauge className="w-4 h-4" />,
     spreadsheet: <FileText className="w-4 h-4" />,
-    scenario: <FileText className="w-4 h-4" />
+    scenario: <FileText className="w-4 h-4" />,
+    single_select: <List className="w-4 h-4" />,
+    multi_select: <ListChecks className="w-4 h-4" />,
+    boolean: <ToggleLeft className="w-4 h-4" />,
+    percentage: <Percent className="w-4 h-4" />,
+    currency: <DollarSign className="w-4 h-4" />,
+    table: <Table2 className="w-4 h-4" />,
+    composite: <LayoutGrid className="w-4 h-4" />
   }
   return icons[type] || <FileText className="w-4 h-4" />
 }
@@ -444,6 +466,90 @@ function CustomFieldRenderer({
     )
   }
 
+  // Single select field
+  if (field.field_type === 'single_select') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <SingleSelectField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Multi select field
+  if (field.field_type === 'multi_select') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <MultiSelectField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Boolean field
+  if (field.field_type === 'boolean') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <BooleanField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Percentage field
+  if (field.field_type === 'percentage') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <PercentageField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Currency field
+  if (field.field_type === 'currency') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <CurrencyField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Table field
+  if (field.field_type === 'table') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <TableField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
   // Spreadsheet field
   if (field.field_type === 'spreadsheet') {
     return (
@@ -453,6 +559,33 @@ function CustomFieldRenderer({
           fieldId={field.id}
           assetId={assetId}
           config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Chart field
+  if (field.field_type === 'chart') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <ChartField
+          fieldId={field.id}
+          assetId={assetId}
+          config={config as any}
+        />
+      </div>
+    )
+  }
+
+  // Composite container field
+  if (field.field_type === 'composite') {
+    return (
+      <div className={fieldWrapperClass}>
+        <FieldHeader />
+        <CompositeFieldRenderer
+          field={field}
+          assetId={assetId}
         />
       </div>
     )

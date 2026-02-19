@@ -76,6 +76,17 @@ Object.entries(TYPE_FAMILY).forEach(([family, types]) => {
 // Parent types (the list views)
 const PARENT_TYPES = new Set(['assets-list', 'portfolios-list', 'themes-list', 'notes-list', 'lists', 'projects-list', 'tdf-list'])
 
+// Family key -> parent type & title for auto-injecting parent tabs
+const FAMILY_PARENT_INFO: Record<string, { type: Tab['type']; title: string }> = {
+  'assets': { type: 'assets-list', title: 'Assets' },
+  'portfolios': { type: 'portfolios-list', title: 'Portfolios' },
+  'themes': { type: 'themes-list', title: 'Themes' },
+  'notes': { type: 'notes-list', title: 'Notes' },
+  'lists': { type: 'lists', title: 'Lists' },
+  'projects': { type: 'projects-list', title: 'Projects' },
+  'tdfs': { type: 'tdf-list', title: 'TDFs' },
+}
+
 // Get display name for tab type family
 const getTypeDisplayName = (type: string): string => {
   const family = TYPE_TO_FAMILY[type]
@@ -97,6 +108,28 @@ const restrictToHorizontalAxis: Modifier = ({ transform }) => {
     ...transform,
     y: 0,
   }
+}
+
+/** Shows title tooltip only when text is truncated */
+function TruncatedLabel({ text, className }: { text: string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [isTruncated, setIsTruncated] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setIsTruncated(el.scrollWidth > el.clientWidth)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [text])
+
+  return (
+    <span ref={ref} className={className} title={isTruncated ? text : undefined}>
+      {text}
+    </span>
+  )
 }
 
 interface GroupedTabProps {
@@ -236,10 +269,11 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, g
           ? 'border-b-primary-500 bg-primary-50 text-primary-700'
           : 'border-b-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900'
       )}
+      onClick={() => onTabChange(displayTab.id)}
     >
       {/* Icon with count badge overlay */}
       <button
-        onClick={tabs.length > 1 ? handleToggleDropdown : undefined}
+        onClick={(e) => { if (tabs.length > 1) { e.stopPropagation(); handleToggleDropdown(e) } }}
         onPointerDown={(e) => e.stopPropagation()}
         className={clsx(
           'relative text-gray-500 flex-shrink-0',
@@ -255,14 +289,8 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, g
         )}
       </button>
 
-      {/* Tab name - clickable to switch */}
-      <span
-        className="text-sm font-medium truncate min-w-0 flex-1 cursor-pointer"
-        title={displayTab.title}
-        onClick={() => onTabChange(displayTab.id)}
-      >
-        {displayTab.title}
-      </span>
+      {/* Tab name */}
+      <TruncatedLabel text={displayTab.title} className="text-sm font-medium truncate min-w-0 flex-1" />
 
       {/* Close button - overlays text on hover */}
       <button
@@ -331,7 +359,8 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, g
                       tab.id === displayTab.id && 'bg-blue-50',
                       isParent && 'bg-gray-50/50'
                     )}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       onTabChange(tab.id)
                       setIsDropdownOpen(false)
                     }}
@@ -416,9 +445,7 @@ function SortableTab({ tab, isActive, onTabChange, onTabClose, getTabIcon }: Sor
       onClick={() => onTabChange(tab.id)}
     >
       <span className="text-gray-500 flex-shrink-0">{getTabIcon(tab.type)}</span>
-      <span className="text-sm font-medium truncate min-w-0 flex-1" title={tab.isBlank ? 'New Tab' : tab.title}>
-        {tab.isBlank ? 'New Tab' : tab.title}
-      </span>
+      <TruncatedLabel text={tab.isBlank ? 'New Tab' : tab.title} className="text-sm font-medium truncate min-w-0 flex-1" />
       {(tab.type !== 'dashboard' || tab.isBlank) && (
         <button
           onClick={(e) => {
@@ -501,8 +528,16 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
             // Only one tab in this family, show as single
             finalResult.push({ type: 'single', tab: familyTabs[0], key: familyTabs[0].id })
           } else if (familyTabs.length > 1) {
-            // Multiple tabs in family - sort with parent first, then by recency (reverse order in array = more recent)
-            const sortedTabs = [...familyTabs].sort((a, b) => {
+            // Auto-inject parent tab if none exists
+            const hasParent = familyTabs.some(t => PARENT_TYPES.has(t.type))
+            const parentInfo = FAMILY_PARENT_INFO[family]
+            const allTabs = hasParent || !parentInfo ? familyTabs : [
+              { id: parentInfo.type, title: parentInfo.title, type: parentInfo.type, isActive: false } as Tab,
+              ...familyTabs
+            ]
+
+            // Multiple tabs in family - sort with parent first, then by recency
+            const sortedTabs = [...allTabs].sort((a, b) => {
               const aIsParent = PARENT_TYPES.has(a.type)
               const bIsParent = PARENT_TYPES.has(b.type)
 
@@ -516,11 +551,11 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
 
             // Determine which tab to show (active or selected or first non-parent)
             const selectedId = selectedTabPerFamily[family]
-            const activeInGroup = familyTabs.find(t => t.isActive)
-            const selectedTab = familyTabs.find(t => t.id === selectedId)
+            const activeInGroup = allTabs.find(t => t.isActive)
+            const selectedTab = allTabs.find(t => t.id === selectedId)
             // Prefer non-parent tabs for display, but fall back to parent
             const displayTab = activeInGroup || selectedTab ||
-              familyTabs.find(t => !PARENT_TYPES.has(t.type)) || familyTabs[0]
+              allTabs.find(t => !PARENT_TYPES.has(t.type)) || allTabs[0]
 
             finalResult.push({
               type: 'group',

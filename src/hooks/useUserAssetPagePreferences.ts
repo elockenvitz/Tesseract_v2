@@ -6,21 +6,20 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import {
+  resolveLayout,
+  logResolutionDiagnostics,
+  warnDataIntegrityIssues,
+  fieldConfigMatchesField,
+  SYSTEM_DEFAULT_FIELD_SLUGS,
+  type ResolveLayoutInput,
+  type LayoutResolutionResult
+} from '../lib/research/layout-resolver'
 
 // Types
-export interface FieldPreference {
-  id: string
-  user_id: string
-  field_id: string
-  is_visible: boolean
-  display_order: number | null
-  is_collapsed: boolean
-  created_at: string
-  updated_at: string
-}
-
 export interface SavedLayout {
   id: string
   user_id: string
@@ -124,18 +123,24 @@ export function useUserAssetPagePreferences(assetId?: string) {
         throw error
       }
 
-      // console.log('Asset layout selection fetched:', {
-      //   assetId,
-      //   layout_id: data?.layout_id,
-      //   layout_name: data?.layout?.name,
-      //   has_layout: !!data?.layout
-      // })
+      // Defensive: if layout_id is set but the join returned no layout,
+      // the referenced template was deleted (FK cascade set it to NULL in DB,
+      // but our cached row might still have it). Treat as no template.
+      if (data && data.layout_id && !data.layout) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(
+            `[LayoutResolver] Asset ${assetId} references layout ${data.layout_id} which no longer exists. Falling back to default.`
+          )
+        }
+        data.layout_id = null
+      }
 
       return data as {
         layout_id: string | null
         layout: SavedLayout | null
         field_overrides: FieldOverride[] | null
         section_overrides: SectionOverride[] | null
+        version: number
       } | null
     },
     enabled: !!user?.id && !!assetId,
@@ -143,22 +148,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
     refetchOnMount: 'always'
   })
 
-  // Fetch user's field preferences (fallback for legacy support)
-  const { data: preferences, isLoading: preferencesLoading } = useQuery({
-    queryKey: ['user-asset-page-preferences', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return []
-
-      const { data, error } = await supabase
-        .from('user_asset_page_preferences')
-        .select('*')
-        .eq('user_id', user.id)
-
-      if (error) throw error
-      return (data || []) as FieldPreference[]
-    },
-    enabled: !!user?.id
-  })
+  // NOTE: Legacy table `user_asset_page_preferences` has 0 rows and is no longer queried.
+  // The table still exists in the database for Phase C drop.
+  if (process.env.NODE_ENV === 'development') {
+    // One-time dev warning on first render (closure captures this)
+  }
 
   // Fetch all sections (including empty ones)
   const { data: allSections, isLoading: sectionsLoading } = useQuery({
@@ -311,127 +305,92 @@ export function useUserAssetPagePreferences(assetId?: string) {
     refetchOnMount: 'always'
   })
 
-  // Determine which layout to use:
-  // 1. Asset-specific layout selection (if assetId provided and selection exists)
-  // 2. User's default layout
-  // 3. System default (all fields visible)
-  const activeLayout = assetLayoutSelection?.layout || defaultLayout
+  // ========================================================================
+  // CENTRALIZED LAYOUT RESOLUTION (via layout-resolver.ts)
+  // ========================================================================
+  // Precedence:
+  //   1. Asset-level field/section overrides
+  //   2. Asset-level template selection
+  //   3. User's default template
+  //   4. System default (is_universal fields)
 
-  // Get asset-specific field overrides (if any)
-  const assetFieldOverrides = assetLayoutSelection?.field_overrides || []
+  // Build the resolver input from query data
+  const resolverInput: ResolveLayoutInput | null =
+    availableFields && allSections
+      ? {
+          availableFields: (availableFields || []).map(field => ({
+            id: field.id,
+            name: field.name,
+            slug: field.slug,
+            description: (field as any).description || null,
+            field_type: field.field_type,
+            section_id: field.section_id,
+            is_universal: field.is_universal,
+            is_system: (field as any).is_system ?? false,
+            display_order: (field as any).display_order ?? 0,
+            created_by: (field as any).created_by || null,
+            created_at: (field as any).created_at || null,
+            research_sections: field.research_sections as any,
+            creator: (field as any).creator || null,
+            is_preset: (field as any).is_preset
+          })),
+          allSections: (allSections || []).map(s => ({
+            id: s.id,
+            name: s.name,
+            slug: s.slug,
+            display_order: s.display_order,
+            is_system: s.is_system
+          })),
+          userDefaultLayout: defaultLayout
+            ? { id: defaultLayout.id, name: defaultLayout.name, field_config: defaultLayout.field_config, is_default: defaultLayout.is_default }
+            : null,
+          assetSelection: assetLayoutSelection
+            ? {
+                layout_id: assetLayoutSelection.layout_id,
+                layout: assetLayoutSelection.layout
+                  ? { id: assetLayoutSelection.layout.id, name: assetLayoutSelection.layout.name, field_config: assetLayoutSelection.layout.field_config, is_default: assetLayoutSelection.layout.is_default }
+                  : null,
+                field_overrides: assetLayoutSelection.field_overrides || null,
+                section_overrides: assetLayoutSelection.section_overrides || null
+              }
+            : null
+        }
+      : null
 
-  // Get asset-specific section overrides (if any)
-  const assetSectionOverrides: SectionOverride[] = assetLayoutSelection?.section_overrides || []
+  // Run the pure resolver
+  const resolution: LayoutResolutionResult | null = resolverInput ? resolveLayout(resolverInput) : null
 
-  // Check if this asset has any customizations (layout or overrides)
-  const hasAssetCustomization = !!(assetLayoutSelection?.layout_id || assetFieldOverrides.length > 0 || assetSectionOverrides.length > 0)
-
-  // Combine fields with preferences from active layout
-  const fieldsWithPreferences: FieldWithPreference[] = (availableFields || []).map(field => {
-    const defaultSection = field.research_sections as { id: string; name: string; slug: string; display_order: number }
-
-    // Check asset-specific overrides first (highest priority)
-    const assetOverride = assetFieldOverrides.find(o => o.field_id === field.id)
-
-    // Check layout's field_config (template section assignment)
-    // Need to handle preset field IDs which may have timestamps like "preset-slug-1234567890"
-    const layoutConfig = activeLayout?.field_config?.find(fc => {
-      // Direct ID match
-      if (fc.field_id === field.id) return true
-      // Match preset fields by slug (handles timestamp variations)
-      if (fc.field_id.startsWith('preset-') && field.slug) {
-        const parts = fc.field_id.split('-')
-        if (parts.length >= 2) {
-          // Extract slug: "preset-some_slug-123456789" -> "some_slug"
-          // or "preset-some_slug" -> "some_slug"
-          const lastPart = parts[parts.length - 1]
-          const isTimestamp = /^\d+$/.test(lastPart)
-          const slug = isTimestamp ? parts.slice(1, -1).join('-') : parts.slice(1).join('-')
-          if (slug === field.slug) return true
+  // Dev diagnostics — expose on window for programmatic inspection + compact console.debug
+  const prevResolutionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!resolution) return
+    const key = `${resolution.templateSource}:${resolution.activeTemplate?.id}:${resolution.hasAssetCustomization}:${resolution.resolvedFields.filter(f => f.is_visible).length}`
+    if (key !== prevResolutionRef.current) {
+      prevResolutionRef.current = key
+      logResolutionDiagnostics(resolution, { assetId, userId: user?.id })
+      // G4: Expose resolution on window for dev tools / React DevTools inspection
+      if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+        ;(window as any).__LAYOUT_DEBUG__ = {
+          assetId,
+          resolution,
+          version: assetLayoutSelection?.version ?? null,
+          timestamp: new Date().toISOString()
         }
       }
-      return false
-    })
-
-    // Determine section: asset override > template section > default section
-    const overrideSectionId = assetOverride?.section_id || layoutConfig?.section_id
-    let section = defaultSection
-    if (overrideSectionId && allSections) {
-      const overrideSection = allSections.find(s => s.id === overrideSectionId)
-      if (overrideSection) {
-        section = overrideSection as typeof defaultSection
-      }
     }
+  }, [resolution, assetId, user?.id, assetLayoutSelection?.version])
 
-    // Fallback to individual preferences (legacy support)
-    const pref = preferences?.find(p => p.field_id === field.id)
+  // Extract results from resolution
+  const activeLayout = resolution?.activeTemplate
+    ? { ...resolution.activeTemplate, user_id: '', description: null, created_at: '', updated_at: '' } as SavedLayout
+    : defaultLayout
 
-    // A field is "custom" if it was created by a user (has created_by set)
-    // Standard fields have created_by = null
-    const isCustomField = !!(field as any).created_by
-    const creator = (field as any).creator as { id: string; first_name: string; last_name: string } | null
+  const assetFieldOverrides = resolution?.assetFieldOverrides || []
+  const assetSectionOverrides: SectionOverride[] = resolution?.assetSectionOverrides || []
+  const hasAssetCustomization = resolution?.hasAssetCustomization || false
 
-    // Check if we're using a custom template with field_config
-    const isUsingCustomTemplate = activeLayout && activeLayout.field_config && activeLayout.field_config.length > 0
-
-    // For Default template: only universal fields are visible by default
-    // Universal fields are the core fields that define the Default template
-    const defaultVisible = field.is_universal === true
-
-    // Priority: asset override > layout config > template default > individual pref > default
-    // When using a custom template, fields NOT in the template's config should be hidden
-    let isVisible: boolean
-    if (assetOverride?.is_visible !== undefined) {
-      // Asset-specific override takes highest priority
-      isVisible = assetOverride.is_visible
-    } else if (layoutConfig) {
-      // Field is in the template config - use its visibility setting
-      isVisible = layoutConfig.is_visible
-    } else if (isUsingCustomTemplate) {
-      // Using custom template but field is NOT in its config - field should be hidden
-      isVisible = false
-    } else {
-      // Not using custom template (Default) - fall through to pref or defaultVisible
-      isVisible = pref?.is_visible ?? defaultVisible
-    }
-    const displayOrder = assetOverride?.display_order ?? layoutConfig?.display_order ?? pref?.display_order ?? null
-    const isCollapsed = layoutConfig?.is_collapsed ?? pref?.is_collapsed ?? false
-
-    return {
-      field_id: field.id,
-      field_name: field.name,
-      field_slug: field.slug,
-      field_description: (field as any).description || null,
-      field_type: field.field_type,
-      section_id: section.id,
-      section_name: section.name,
-      section_slug: section.slug,
-      default_section_id: defaultSection.id, // Track original section
-      is_visible: isVisible,
-      display_order: displayOrder,
-      default_display_order: (field as any).display_order ?? 0,
-      is_collapsed: isCollapsed,
-      is_universal: field.is_universal,
-      is_system: (field as any).is_system ?? false,
-      is_custom: isCustomField,
-      has_custom_preference: !!assetOverride || !!layoutConfig || !!pref,
-      has_section_override: !!overrideSectionId,
-      created_by: (field as any).created_by || null,
-      creator_name: creator ? `${creator.first_name} ${creator.last_name}`.trim() : null,
-      created_at: (field as any).created_at || null
-    }
-  })
-
-  // Debug: Log visibility summary (disabled for performance)
-  // const visibleFields = fieldsWithPreferences.filter(f => f.is_visible)
-  // const hiddenFields = fieldsWithPreferences.filter(f => !f.is_visible)
-  // console.log('👁️ Field Visibility Summary:', {
-  //   totalFields: fieldsWithPreferences.length,
-  //   visibleCount: visibleFields.length,
-  //   hiddenCount: hiddenFields.length,
-  //   visibleFields: visibleFields.map(f => ({ name: f.field_name, section: f.section_slug })),
-  //   hiddenFields: hiddenFields.map(f => ({ name: f.field_name, section: f.section_slug }))
-  // })
+  // Map resolved fields to FieldWithPreference (preserving existing interface)
+  const fieldsWithPreferences: FieldWithPreference[] = resolution?.resolvedFields || []
 
   // Group fields by section, including section display order for sorting
   const fieldsBySectionMap = fieldsWithPreferences.reduce((acc, field) => {
@@ -516,23 +475,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
     assetFieldOverrides.filter(o => o.is_visible).map(o => o.field_id)
   )
 
-  // Helper to check if a field is in the template (handles preset field ID matching)
+  // Helper to check if a field is in the template (uses centralized matching)
   const isFieldInTemplate = (fieldId: string, fieldSlug: string): boolean => {
-    return templateFieldConfig.some(fc => {
-      // Direct ID match
-      if (fc.field_id === fieldId) return true
-      // Match preset fields by slug (handles timestamp variations)
-      if (fc.field_id.startsWith('preset-') && fieldSlug) {
-        const parts = fc.field_id.split('-')
-        if (parts.length >= 2) {
-          const lastPart = parts[parts.length - 1]
-          const isTimestamp = /^\d+$/.test(lastPart)
-          const slug = isTimestamp ? parts.slice(1, -1).join('-') : parts.slice(1).join('-')
-          if (slug === fieldSlug) return true
-        }
-      }
-      return false
-    })
+    return templateFieldConfig.some(fc =>
+      fieldConfigMatchesField(fc, { id: fieldId, slug: fieldSlug })
+    )
   }
 
   const displayedFieldsBySection = fieldsBySection
@@ -577,70 +524,6 @@ export function useUserAssetPagePreferences(assetId?: string) {
       return hasTemplateFields || hasOverrideFields || section.section_is_added
     })
 
-  // Update field preference
-  const updatePreference = useMutation({
-    mutationFn: async ({
-      fieldId,
-      isVisible,
-      displayOrder,
-      isCollapsed
-    }: {
-      fieldId: string
-      isVisible?: boolean
-      displayOrder?: number | null
-      isCollapsed?: boolean
-    }) => {
-      if (!user?.id) throw new Error('Not authenticated')
-
-      // Check if preference exists
-      const existingPref = preferences?.find(p => p.field_id === fieldId)
-
-      if (existingPref) {
-        // Update existing
-        const updates: Partial<FieldPreference> = {}
-        if (isVisible !== undefined) updates.is_visible = isVisible
-        if (displayOrder !== undefined) updates.display_order = displayOrder
-        if (isCollapsed !== undefined) updates.is_collapsed = isCollapsed
-
-        const { error } = await supabase
-          .from('user_asset_page_preferences')
-          .update(updates)
-          .eq('id', existingPref.id)
-
-        if (error) throw error
-      } else {
-        // Insert new
-        const { error } = await supabase
-          .from('user_asset_page_preferences')
-          .insert({
-            user_id: user.id,
-            field_id: fieldId,
-            is_visible: isVisible ?? true,
-            display_order: displayOrder ?? null,
-            is_collapsed: isCollapsed ?? false
-          })
-
-        if (error) throw error
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-preferences', user?.id] })
-    }
-  })
-
-  // Toggle field visibility (global preference - affects all assets)
-  const toggleFieldVisibility = useMutation({
-    mutationFn: async (fieldId: string) => {
-      const field = fieldsWithPreferences.find(f => f.field_id === fieldId)
-      if (!field) throw new Error('Field not found')
-
-      await updatePreference.mutateAsync({
-        fieldId,
-        isVisible: !field.is_visible
-      })
-    }
-  })
-
   // Toggle field visibility for a specific asset (creates asset-specific override)
   const toggleAssetFieldVisibility = useMutation({
     mutationFn: async ({ assetId: targetAssetId, fieldId }: { assetId: string; fieldId: string }) => {
@@ -660,7 +543,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       } else if (isUsingCustomTemplate) {
         templateDefaultVisibility = false // Not in custom template = hidden
       } else {
-        templateDefaultVisibility = field.is_universal === true // Default template = universal visible
+        templateDefaultVisibility = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
       }
 
       // Check if the new visibility matches the template default
@@ -866,62 +749,6 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
-    }
-  })
-
-  // Toggle field collapsed state
-  const toggleFieldCollapsed = useMutation({
-    mutationFn: async (fieldId: string) => {
-      const field = fieldsWithPreferences.find(f => f.field_id === fieldId)
-      if (!field) throw new Error('Field not found')
-
-      await updatePreference.mutateAsync({
-        fieldId,
-        isCollapsed: !field.is_collapsed
-      })
-    }
-  })
-
-  // Bulk update field order
-  const updateFieldOrder = useMutation({
-    mutationFn: async (orderedFieldIds: string[]) => {
-      if (!user?.id) throw new Error('Not authenticated')
-
-      // Update each field with its new order
-      const updates = orderedFieldIds.map((fieldId, index) => ({
-        user_id: user.id,
-        field_id: fieldId,
-        display_order: index,
-        is_visible: fieldsWithPreferences.find(f => f.field_id === fieldId)?.is_visible ?? true,
-        is_collapsed: fieldsWithPreferences.find(f => f.field_id === fieldId)?.is_collapsed ?? false
-      }))
-
-      // Upsert all preferences
-      const { error } = await supabase
-        .from('user_asset_page_preferences')
-        .upsert(updates, { onConflict: 'user_id,field_id' })
-
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-preferences', user?.id] })
-    }
-  })
-
-  // Reset all preferences to default
-  const resetToDefaults = useMutation({
-    mutationFn: async () => {
-      if (!user?.id) throw new Error('Not authenticated')
-
-      const { error } = await supabase
-        .from('user_asset_page_preferences')
-        .delete()
-        .eq('user_id', user.id)
-
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-preferences', user?.id] })
     }
   })
 
@@ -1550,6 +1377,53 @@ export function useUserAssetPagePreferences(assetId?: string) {
     }
   })
 
+  // Atomic save via RPC — single transaction, auth.uid() enforced server-side
+  const saveCustomization = useMutation({
+    mutationFn: async (params: {
+      layoutId?: string | null
+      fieldOverrides: FieldOverride[]
+      sectionOverrides: SectionOverride[]
+      newSections: Array<{ temp_id: string; name: string }>
+      clearAll?: boolean
+    }) => {
+      if (!user?.id || !assetId) throw new Error('Not authenticated or no asset')
+
+      // Pass current version for optimistic concurrency control
+      const currentVersion = assetLayoutSelection?.version ?? null
+
+      const { data, error } = await supabase.rpc('save_asset_layout_customization', {
+        p_asset_id: assetId,
+        p_layout_id: params.layoutId ?? null,
+        p_field_overrides: params.fieldOverrides,
+        p_section_overrides: params.sectionOverrides,
+        p_new_sections: params.newSections,
+        p_clear_all: params.clearAll ?? false,
+        p_expected_version: currentVersion
+      })
+
+      if (error) {
+        // Surface concurrency conflicts with a clear message
+        if (error.message?.includes('CONFLICT:')) {
+          throw new Error('This layout was modified in another tab or session. Please refresh and try again.')
+        }
+        throw error
+      }
+      return data as {
+        status: string
+        selection_id: string | null
+        created_sections: Array<{ temp_id: string; real_id: string; name: string; slug: string }>
+        version: number | null
+      }
+    },
+    onSuccess: () => {
+      // Invalidate all relevant queries to ensure fresh data
+      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['all-research-sections', user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['available-research-fields', user?.id] })
+    }
+  })
+
   // Helper to check if a field is visible (for use by other features)
   const isFieldVisible = (fieldId: string): boolean => {
     const field = fieldsWithPreferences.find(f => f.field_id === fieldId)
@@ -1574,7 +1448,6 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
   return {
     // Data
-    preferences,
     availableFields,
     allSections,
     fieldsWithPreferences,
@@ -1588,17 +1461,13 @@ export function useUserAssetPagePreferences(assetId?: string) {
     hasAssetCustomization,
 
     // Loading states
-    isLoading: preferencesLoading || fieldsLoading || sectionsLoading || layoutLoading || (assetId ? assetLayoutLoading : false),
+    isLoading: fieldsLoading || sectionsLoading || layoutLoading || (assetId ? assetLayoutLoading : false),
 
     // Mutations
-    updatePreference,
-    toggleFieldVisibility,
+    saveCustomization,
     toggleAssetFieldVisibility,
     addFieldToSection,
     removeFieldFromSection,
-    toggleFieldCollapsed,
-    updateFieldOrder,
-    resetToDefaults,
     selectLayoutForAsset,
     clearAssetOverrides,
     updateSectionOverride,
@@ -1614,8 +1483,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
     getVisibleFieldSlugs,
 
     // Mutation states
-    isUpdating: updatePreference.isPending || toggleFieldVisibility.isPending || toggleAssetFieldVisibility.isPending || toggleFieldCollapsed.isPending || updateSectionOverride.isPending,
-    isResetting: resetToDefaults.isPending
+    isUpdating: toggleAssetFieldVisibility.isPending || updateSectionOverride.isPending
   }
 }
 
@@ -1628,6 +1496,44 @@ export interface LayoutWithSharing extends SavedLayout {
     email?: string
   }
   my_permission?: 'view' | 'edit' | 'admin' | 'owner'
+}
+
+/**
+ * Fire-and-forget audit event for layout template CRUD.
+ * Never throws — audit logging should not break main flow.
+ */
+async function logLayoutAuditEvent(
+  userId: string,
+  entityId: string,
+  actionType: string,
+  templateName: string
+) {
+  try {
+    const { data: orgMembership } = await supabase
+      .from('organization_memberships')
+      .select('organization_id')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .single()
+
+    if (!orgMembership) return
+
+    await supabase.from('audit_events').insert({
+      actor_id: userId,
+      actor_type: 'user',
+      entity_type: 'layout_template',
+      entity_id: entityId,
+      entity_display_name: templateName,
+      action_type: actionType,
+      action_category: 'research_layout',
+      metadata: { ui_source: 'template_manager' },
+      org_id: orgMembership.organization_id,
+      search_text: `${actionType} layout template ${templateName}`,
+      checksum: `${userId}-${entityId}-${Date.now()}`
+    })
+  } catch {
+    // Audit logging should never break the main flow
+  }
 }
 
 /**
@@ -1870,9 +1776,16 @@ export function useUserAssetPageLayouts() {
         queryClient.setQueryData(['user-asset-page-layouts', user?.id], context.previousLayouts)
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _err, vars) => {
       // Refetch to sync with server
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
+      // Also invalidate default layout query so preferences hook picks up changes
+      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
+
+      // Fire-and-forget audit event for template creation
+      if (_data && !_err && user?.id) {
+        logLayoutAuditEvent(user.id, _data.id, 'create', vars.name)
+      }
     }
   })
 
@@ -1943,8 +1856,15 @@ export function useUserAssetPageLayouts() {
         queryClient.setQueryData(['user-asset-page-layouts', user?.id], context.previousLayouts)
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _err, vars) => {
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
+
+      // Fire-and-forget audit event for template update
+      if (!_err && user?.id) {
+        const layout = layouts?.find(l => l.id === vars.layoutId)
+        logLayoutAuditEvent(user.id, vars.layoutId, 'update_fields', layout?.name || vars.name || 'Unknown')
+      }
     }
   })
 
@@ -1960,63 +1880,43 @@ export function useUserAssetPageLayouts() {
     },
     onMutate: async (layoutId) => {
       await queryClient.cancelQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
-      const previousLayouts = queryClient.getQueryData(['user-asset-page-layouts', user?.id])
+      const previousLayouts = queryClient.getQueryData(['user-asset-page-layouts', user?.id]) as LayoutWithSharing[] | undefined
+      const deletedName = previousLayouts?.find(l => l.id === layoutId)?.name
 
       queryClient.setQueryData(['user-asset-page-layouts', user?.id], (old: LayoutWithSharing[] = []) => {
         return old.filter(layout => layout.id !== layoutId)
       })
 
-      return { previousLayouts }
+      return { previousLayouts, deletedName }
     },
     onError: (_err, _vars, context) => {
       if (context?.previousLayouts) {
         queryClient.setQueryData(['user-asset-page-layouts', user?.id], context.previousLayouts)
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _err, layoutId, context) => {
       queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
-    }
-  })
+      // Deleted template may have been the default — refetch
+      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
 
-  // Apply layout (sets preferences from saved layout)
-  const applyLayout = useMutation({
-    mutationFn: async (layoutId: string) => {
-      if (!user?.id) throw new Error('Not authenticated')
-
-      const layout = layouts?.find(l => l.id === layoutId)
-      if (!layout) throw new Error('Layout not found')
-
-      // Delete existing preferences
-      await supabase
-        .from('user_asset_page_preferences')
-        .delete()
-        .eq('user_id', user.id)
-
-      // Insert preferences from layout
-      if (layout.field_config.length > 0) {
-        const prefs = layout.field_config.map(config => ({
-          user_id: user.id,
-          field_id: config.field_id,
-          is_visible: config.is_visible,
-          display_order: config.display_order,
-          is_collapsed: config.is_collapsed
-        }))
-
-        const { error } = await supabase
-          .from('user_asset_page_preferences')
-          .insert(prefs)
-
-        if (error) throw error
+      // Fire-and-forget audit event for template deletion
+      if (!_err && user?.id) {
+        logLayoutAuditEvent(user.id, layoutId, 'delete', context?.deletedName || 'Unknown')
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-preferences', user?.id] })
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
     }
   })
 
   // Get default layout
   const defaultLayout = layouts?.find(l => l.is_default)
+
+  // Dev diagnostics: warn about data integrity issues
+  useEffect(() => {
+    if (!layouts || layouts.length === 0) return
+    warnDataIntegrityIssues(
+      layouts.map(l => ({ id: l.id, name: l.name, field_config: l.field_config, is_default: l.is_default })),
+      { userId: user?.id }
+    )
+  }, [layouts, user?.id])
 
   return {
     layouts,
@@ -2025,8 +1925,226 @@ export function useUserAssetPageLayouts() {
     saveLayout,
     updateLayout,
     deleteLayout,
-    applyLayout,
-    isSaving: saveLayout.isPending,
-    isApplying: applyLayout.isPending
+    isSaving: saveLayout.isPending
   }
+}
+
+// ============================================================================
+// LAYOUT USAGE METRICS
+// ============================================================================
+
+import type {
+  LayoutUsageMetric,
+  LayoutCollaborationSummary,
+} from '../lib/research/layout-card-model'
+
+/**
+ * Fetches per-layout usage counts from user_asset_layout_selections.
+ *
+ * Returns:
+ *  - perLayout: LayoutUsageMetric[] (assets_using + assets_with_overrides per layout_id)
+ *  - globalOverrideCount: total assets with any overrides (field or section)
+ */
+export function useLayoutUsageMetrics() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['layout-usage-metrics', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return { perLayout: [] as LayoutUsageMetric[], globalOverrideCount: 0 }
+
+      // Fetch all layout selections for this user
+      const { data, error } = await supabase
+        .from('user_asset_layout_selections')
+        .select('layout_id, field_overrides, section_overrides')
+        .eq('user_id', user.id)
+
+      if (error) throw error
+      const rows = data || []
+
+      // Aggregate per layout
+      const layoutMap = new Map<string, { assets_using: number; assets_with_overrides: number }>()
+      let globalOverrideCount = 0
+
+      for (const row of rows) {
+        const lid = row.layout_id || '__none__'
+        const entry = layoutMap.get(lid) || { assets_using: 0, assets_with_overrides: 0 }
+        entry.assets_using++
+
+        const hasOverrides =
+          (Array.isArray(row.field_overrides) && row.field_overrides.length > 0) ||
+          (Array.isArray(row.section_overrides) && row.section_overrides.length > 0)
+
+        if (hasOverrides) {
+          entry.assets_with_overrides++
+          globalOverrideCount++
+        }
+
+        layoutMap.set(lid, entry)
+      }
+
+      const perLayout: LayoutUsageMetric[] = Array.from(layoutMap.entries())
+        .filter(([key]) => key !== '__none__')
+        .map(([layout_id, counts]) => ({
+          layout_id,
+          ...counts,
+        }))
+
+      return { perLayout, globalOverrideCount }
+    },
+    enabled: !!user?.id,
+    staleTime: 30_000, // Cache for 30s — usage counts don't need to be real-time
+  })
+}
+
+/**
+ * Fetches collaboration summary per owned layout for scope derivation.
+ *
+ * Returns an array of LayoutCollaborationSummary — one per layout that has collaborations.
+ * Layouts with no collaborations won't appear (scope defaults to 'personal').
+ */
+export function useLayoutCollabSummaries() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['layout-collab-summaries', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [] as LayoutCollaborationSummary[]
+
+      // Step 1: Get owned layout IDs
+      const { data: layouts } = await supabase
+        .from('user_asset_page_layouts')
+        .select('id')
+        .eq('user_id', user.id)
+
+      if (!layouts || layouts.length === 0) return [] as LayoutCollaborationSummary[]
+
+      // Step 2: Get all collaborations for those layouts
+      const layoutIds = layouts.map(l => l.id)
+      const { data: collabs, error } = await supabase
+        .from('layout_collaborations')
+        .select('layout_id, user_id, team_id, org_node_id')
+        .in('layout_id', layoutIds)
+
+      if (error) throw error
+
+      return aggregateCollabSummaries(collabs || [])
+    },
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  })
+}
+
+function aggregateCollabSummaries(
+  rows: Array<{ layout_id: string; user_id: string | null; team_id: string | null; org_node_id: string | null }>
+): LayoutCollaborationSummary[] {
+  const map = new Map<string, LayoutCollaborationSummary>()
+
+  for (const row of rows) {
+    const entry = map.get(row.layout_id) || {
+      layout_id: row.layout_id,
+      has_org_wide_share: false,
+      has_team_share: false,
+      has_user_share: false,
+    }
+
+    // Org-wide: all target fields are null
+    if (!row.user_id && !row.team_id && !row.org_node_id) {
+      entry.has_org_wide_share = true
+    } else if (row.team_id || row.org_node_id) {
+      entry.has_team_share = true
+    } else if (row.user_id) {
+      entry.has_user_share = true
+    }
+
+    map.set(row.layout_id, entry)
+  }
+
+  return Array.from(map.values())
+}
+
+// ============================================================================
+// AFFECTED ASSETS — for summary tile drilldown drawers
+// ============================================================================
+
+export interface AffectedAsset {
+  asset_id: string
+  symbol: string
+  company_name: string
+  layout_id: string | null
+  layout_name: string | null
+  has_overrides: boolean
+  updated_at: string | null
+}
+
+/**
+ * Fetches the list of assets that have layout selections (custom layout or overrides).
+ * Used by the summary tile drilldown drawers to show exactly which assets are affected.
+ *
+ * kind = 'custom_layouts' → assets where layout_id is set (non-default)
+ * kind = 'overrides'      → assets with field or section overrides
+ * kind = 'by_layout'      → assets assigned to a specific layout (requires layoutId)
+ *
+ * Lazy-loaded: only runs when `enabled` is true (drawer is open).
+ */
+export function useAffectedAssets(
+  kind: 'custom_layouts' | 'overrides' | 'by_layout',
+  enabled: boolean,
+  layoutId?: string | null,
+) {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['affected-assets', kind, layoutId ?? null, user?.id],
+    queryFn: async (): Promise<AffectedAsset[]> => {
+      if (!user?.id) return []
+
+      let query = supabase
+        .from('user_asset_layout_selections')
+        .select(`
+          asset_id,
+          layout_id,
+          field_overrides,
+          section_overrides,
+          updated_at,
+          asset:assets!user_asset_layout_selections_asset_id_fkey(id, symbol, company_name),
+          layout:user_asset_page_layouts!user_asset_layout_selections_layout_id_fkey(id, name)
+        `)
+        .eq('user_id', user.id)
+
+      // For by_layout, filter at the DB level for efficiency
+      if (kind === 'by_layout' && layoutId) {
+        query = query.eq('layout_id', layoutId)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+      if (!data) return []
+
+      return data
+        .map(row => {
+          const asset = row.asset as any
+          const layout = row.layout as any
+          if (!asset) return null
+
+          const hasOverrides =
+            (Array.isArray(row.field_overrides) && row.field_overrides.length > 0) ||
+            (Array.isArray(row.section_overrides) && row.section_overrides.length > 0)
+
+          return {
+            asset_id: asset.id,
+            symbol: asset.symbol || '???',
+            company_name: asset.company_name || '',
+            layout_id: row.layout_id,
+            layout_name: layout?.name || null,
+            has_overrides: hasOverrides,
+            updated_at: row.updated_at,
+          } as AffectedAsset
+        })
+        .filter((a): a is AffectedAsset => a !== null)
+    },
+    enabled: enabled && !!user?.id,
+    staleTime: 30_000,
+  })
 }

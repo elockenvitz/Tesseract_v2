@@ -23,18 +23,20 @@ export type EntityType =
   | 'comment'
   | 'attachment'
   | 'audit_explorer'
+  | 'layout_template'
 
 // ============================================================
 // Action Types
 // ============================================================
 
 export type ActionCategory =
-  | 'lifecycle'      // create, delete, restore, archive
-  | 'state_change'   // workflow transitions
-  | 'field_edit'     // individual field updates
-  | 'relationship'   // attach, detach, link, unlink
-  | 'access'         // view, export, share
-  | 'system'         // auto_archive, scheduled jobs
+  | 'lifecycle'          // create, delete, restore, archive
+  | 'state_change'       // workflow transitions
+  | 'field_edit'         // individual field updates
+  | 'relationship'       // attach, detach, link, unlink
+  | 'access'             // view, export, share
+  | 'system'             // auto_archive, scheduled jobs
+  | 'research_layout'    // layout template CRUD and customization
 
 export type ActionType =
   // Lifecycle
