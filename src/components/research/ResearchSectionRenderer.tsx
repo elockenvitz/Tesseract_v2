@@ -5,7 +5,7 @@
  * Handles special sections (thesis, forecasts, supporting_docs) and generic sections.
  */
 
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { ThesisContainer, ContributionSection } from '../contributions'
@@ -17,7 +17,8 @@ import {
   NumericField,
   DateField
 } from './FieldTypeRenderers'
-import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
+import { KeyReferencesSection, ModelVersionHistory } from '../contributions'
+import { useAssetModels } from '../../hooks/useAssetModels'
 import type { FieldWithPreference } from '../../hooks/useUserAssetPagePreferences'
 
 interface SectionData {
@@ -53,6 +54,49 @@ interface ResearchSectionRendererProps {
   isLayoutLoading?: boolean
 }
 
+// Inline Key References wrapper for ResearchSectionRenderer
+function ResearchKeyReferencesInline({
+  assetId,
+  isCollapsed,
+  onToggle,
+  notes,
+  onCreateNote
+}: {
+  assetId: string
+  isCollapsed: boolean
+  onToggle: () => void
+  notes?: any[]
+  onCreateNote?: () => void
+}) {
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+  const { models } = useAssetModels(assetId)
+  const selectedModel = selectedModelId ? models.find(m => m.id === selectedModelId) : null
+
+  return (
+    <>
+      <KeyReferencesSection
+        assetId={assetId}
+        isExpanded={!isCollapsed}
+        onToggleExpanded={onToggle}
+        onViewModelHistory={(modelId) => { setSelectedModelId(modelId); setShowVersionHistory(true) }}
+        onCreateNote={onCreateNote}
+        notes={notes}
+      />
+      {selectedModel && (
+        <ModelVersionHistory
+          isOpen={showVersionHistory}
+          onClose={() => { setShowVersionHistory(false); setSelectedModelId(null) }}
+          modelId={selectedModel.id}
+          assetId={assetId}
+          modelName={selectedModel.name}
+          currentVersion={selectedModel.version}
+        />
+      )}
+    </>
+  )
+}
+
 export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
   section,
   assetId,
@@ -81,7 +125,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
   const hasVisibleFields = section.fields.some(f => f.is_visible)
 
   // For non-special sections, don't render if no visible fields
-  const specialSections = ['thesis', 'forecasts', 'supporting_docs']
+  const specialSections = ['thesis', 'forecasts']
   if (!specialSections.includes(section.section_slug) && !hasVisibleFields) {
     return null
   }
@@ -93,7 +137,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
   const renderHeader = () => (
     <button
       onClick={onToggleCollapsed}
-      className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+      className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
     >
       <span className="font-medium text-gray-900">{section.section_name}</span>
       {isCollapsed ? (
@@ -105,7 +149,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
   )
 
   // Consistent field wrapper styling to match ContributionSection
-  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-4 space-y-3"
+  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-3 space-y-2"
 
   // Render field based on type
   const renderField = (field: FieldWithPreference) => {
@@ -208,32 +252,6 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       )
     }
 
-    // Documents field - render document library inline
-    if (fieldType === 'documents') {
-      return (
-        <div key={field.field_id} className={fieldWrapperClass}>
-          <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
-            {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
-            )}
-          </div>
-          <DocumentLibrarySection
-            assetId={assetId}
-            notes={notes}
-            researchViewFilter={viewFilter}
-            isExpanded={true}
-            onToggleExpanded={() => {}}
-            onNoteClick={onNoteClick}
-            onCreateNote={onCreateNote}
-            onViewAllNotes={onViewAllNotes}
-            onViewAllFiles={onViewAllFiles}
-            isEmbedded={true}
-          />
-        </div>
-      )
-    }
-
     // Rating field - render analyst ratings section
     if (fieldType === 'rating') {
       return (
@@ -317,9 +335,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       <Card padding="none">
         {renderHeader()}
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-6 py-6">
+          <div className="border-t border-gray-100 px-5 py-1.5">
             {isLayoutLoading ? (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {[1, 2, 3, 4].map(i => (
                   <div key={i} className="animate-pulse">
                     <div className="h-4 bg-gray-200 rounded w-1/4 mb-3" />
@@ -328,7 +346,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
                 ))}
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <ThesisContainer
                   assetId={assetId}
                   viewFilter={viewFilter}
@@ -354,7 +372,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       <Card padding="none">
         {renderHeader()}
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
             {section.fields
               .filter(f => f.is_visible)
               .map(renderField)}
@@ -364,21 +382,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     )
   }
 
-  // Special section: Supporting Documents
+  // Key References has its own dedicated view tab — skip in layout
   if (section.section_slug === 'supporting_docs') {
-    return (
-      <DocumentLibrarySection
-        assetId={assetId}
-        notes={notes}
-        researchViewFilter={viewFilter}
-        isExpanded={!isCollapsed}
-        onToggleExpanded={onToggleCollapsed}
-        onNoteClick={onNoteClick}
-        onCreateNote={onCreateNote}
-        onViewAllNotes={onViewAllNotes}
-        onViewAllFiles={onViewAllFiles}
-      />
-    )
+    return null
   }
 
   // Generic section: render all visible fields
@@ -386,7 +392,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     <Card padding="none">
       {renderHeader()}
       {!isCollapsed && (
-        <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+        <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
           {section.fields
             .filter(f => f.is_visible)
             .map(renderField)}

@@ -77,11 +77,11 @@ export type FieldType =
   | 'checklist'
   | 'excel_table'
   | 'chart'
-  | 'documents'
   | 'price_target'
   | 'estimates'
   | 'timeline'
   | 'metric'
+  | 'key_references'
   | 'scorecard'
   | 'slider'
   | 'spreadsheet'
@@ -102,11 +102,11 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   checklist: 'Checklist',
   excel_table: 'Excel Table',
   chart: 'Chart',
-  documents: 'Documents',
   price_target: 'Price Target',
   estimates: 'Estimates',
   timeline: 'Timeline',
   metric: 'Metric',
+  key_references: 'Key References',
   scorecard: 'Scorecard',
   slider: 'Slider / Gauge',
   spreadsheet: 'Spreadsheet',
@@ -128,7 +128,7 @@ export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   checklist: 'CheckSquare',
   excel_table: 'Table',
   chart: 'BarChart2',
-  documents: 'FileStack',
+  key_references: 'Bookmark',
   price_target: 'Target',
   estimates: 'TrendingUp',
   timeline: 'Clock',

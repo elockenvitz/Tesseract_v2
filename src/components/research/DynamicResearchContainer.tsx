@@ -28,9 +28,9 @@ import {
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { InvestmentCaseBuilder } from './InvestmentCaseBuilder'
-import { ThesisContainer, KeyReferencesSection, AddReferenceModal, ModelVersionHistory } from '../contributions'
+import { ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection } from '../outcomes'
-import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
+// DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { ContributionSection } from '../contributions/ContributionSection'
 import { useAssetModels } from '../../hooks/useAssetModels'
 import {
@@ -121,14 +121,19 @@ interface KeyReferencesSectionWrapperProps {
   assetId: string
   isCollapsed: boolean
   onToggle: () => void
+  onCreateNote?: () => void
+  onNoteClick?: (noteId: string) => void
+  notes?: any[]
 }
 
 function KeyReferencesSectionWrapper({
   assetId,
   isCollapsed,
-  onToggle
+  onToggle,
+  onCreateNote,
+  onNoteClick,
+  notes
 }: KeyReferencesSectionWrapperProps) {
-  const [showAddModal, setShowAddModal] = useState(false)
   const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
 
@@ -143,18 +148,13 @@ function KeyReferencesSectionWrapper({
         assetId={assetId}
         isExpanded={!isCollapsed}
         onToggleExpanded={onToggle}
-        onOpenAddModal={() => setShowAddModal(true)}
         onViewModelHistory={(modelId) => {
           setSelectedModelId(modelId)
           setShowVersionHistory(true)
         }}
-      />
-
-      {/* Add Reference Modal */}
-      <AddReferenceModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        assetId={assetId}
+        onCreateNote={onCreateNote}
+        onNoteClick={onNoteClick}
+        notes={notes}
       />
 
       {/* Model Version History Modal */}
@@ -203,7 +203,7 @@ function getFieldTypeIcon(type: FieldType) {
     checklist: <CheckSquare className="w-4 h-4" />,
     excel_table: <FileText className="w-4 h-4" />,
     chart: <FileText className="w-4 h-4" />,
-    documents: <FileText className="w-4 h-4" />,
+    // documents field type removed — consolidated into key_references
     price_target: <FileText className="w-4 h-4" />,
     estimates: <FileText className="w-4 h-4" />,
     timeline: <Clock className="w-4 h-4" />,
@@ -240,7 +240,7 @@ function CustomFieldRenderer({
   const config = field.config as Record<string, unknown>
 
   // Consistent field wrapper styling to match ContributionSection
-  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-4 space-y-3"
+  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-3 space-y-2"
 
   // Field header with badges and inline description - updated styling to match ContributionSection
   const FieldHeader = () => (
@@ -348,25 +348,6 @@ function CustomFieldRenderer({
     )
   }
 
-  // Documents field - render document library inline
-  if (field.field_type === 'documents') {
-    return (
-      <div className={fieldWrapperClass}>
-        <FieldHeader />
-        <DocumentLibrarySection
-          assetId={assetId}
-          notes={notes}
-          researchViewFilter={viewFilter || 'aggregated'}
-          isExpanded={true}
-          onToggleExpanded={() => {}}
-          onNoteClick={onNoteClick ? (noteId) => onNoteClick({ id: noteId }) : undefined}
-          onCreateNote={onCreateNote}
-          isEmbedded={true}
-        />
-      </div>
-    )
-  }
-
   // Rating field - render analyst ratings section
   if (field.field_type === 'rating') {
     return (
@@ -410,18 +391,9 @@ function CustomFieldRenderer({
     )
   }
 
-  // Key references field - per-user curated document references
+  // Key references — has its own dedicated view tab, skip in layout
   if (field.field_type === 'key_references') {
-    return (
-      <div className={fieldWrapperClass}>
-        <FieldHeader />
-        <KeyReferencesSectionWrapper
-          assetId={assetId}
-          isCollapsed={false}
-          onToggle={() => {}}
-        />
-      </div>
-    )
+    return null
   }
 
   // Slider / Gauge field
@@ -653,7 +625,7 @@ function SectionRenderer({
       <Card padding="none">
         <button
           onClick={onToggle}
-          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+          className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
         >
           <span className="font-medium text-gray-900">{section.name}</span>
           {contextualFieldCount > 0 && (
@@ -668,7 +640,7 @@ function SectionRenderer({
           )}
         </button>
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-6 py-6 space-y-6">
+          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
             {/* Core thesis component - always render */}
             <ThesisContainer
               assetId={assetId}
@@ -680,7 +652,7 @@ function SectionRenderer({
 
             {/* Custom fields in thesis section */}
             {customFields.length > 0 && (
-              <div className="pt-4 border-t border-gray-100 space-y-4">
+              <div className="pt-3 border-t border-gray-100 space-y-3">
                 <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Additional Analysis
                 </h4>
@@ -713,7 +685,7 @@ function SectionRenderer({
       <Card padding="none">
         <button
           onClick={onToggle}
-          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+          className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
         >
           <span className="font-medium text-gray-900">{section.name}</span>
           {contextualFieldCount > 0 && (
@@ -728,7 +700,7 @@ function SectionRenderer({
           )}
         </button>
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
             {fields.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">
                 No fields configured for this section
@@ -756,42 +728,9 @@ function SectionRenderer({
     )
   }
 
-  // Supporting docs section - use DocumentLibrarySection
-  if (section.slug === 'supporting_docs') {
-    return (
-      <DocumentLibrarySection
-        assetId={assetId}
-        notes={notes}
-        researchViewFilter={viewFilter}
-        isExpanded={!isCollapsed}
-        onToggleExpanded={onToggle}
-        onNoteClick={onNoteClick}
-        onCreateNote={onCreateNote}
-        onViewAllNotes={() => onNavigate?.({
-          id: 'notes-list',
-          title: 'Notes',
-          type: 'notes-list',
-          data: { initialAssetFilter: assetId }
-        })}
-        onViewAllFiles={() => onNavigate?.({
-          id: 'files',
-          title: 'Files',
-          type: 'files',
-          data: { initialAssetFilter: assetId }
-        })}
-      />
-    )
-  }
-
-  // Key references section - per-user curated document references
-  if (section.slug === 'key_references') {
-    return (
-      <KeyReferencesSectionWrapper
-        assetId={assetId}
-        isCollapsed={isCollapsed}
-        onToggle={onToggle}
-      />
-    )
+  // Key References has its own dedicated view tab — skip in layout
+  if (section.slug === 'supporting_docs' || section.slug === 'key_references') {
+    return null
   }
 
   // Generic section renderer for other sections (catalysts, custom sections)
@@ -799,7 +738,7 @@ function SectionRenderer({
     <Card padding="none">
       <button
         onClick={onToggle}
-        className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+        className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
       >
         <span className="font-medium text-gray-900">{section.name}</span>
         {contextualFieldCount > 0 && (
@@ -814,7 +753,7 @@ function SectionRenderer({
         )}
       </button>
       {!isCollapsed && (
-        <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+        <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
           {fields.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">
               No fields configured for this section
@@ -913,7 +852,7 @@ export function DynamicResearchContainer({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Investment Case Builder Modal */}
       {showCaseBuilder && symbol && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

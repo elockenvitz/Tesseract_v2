@@ -949,7 +949,7 @@ export function ContributionSection({
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-2.5 border-b border-gray-100 min-h-[48px]">
+      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100">
         <div className="flex items-center space-x-3">
           {Icon && (
             <div className={clsx('p-1.5 rounded-lg', theme.iconBg)}>
@@ -1085,7 +1085,7 @@ export function ContributionSection({
       </div>
 
       {/* Content */}
-      <div className="px-5 py-3">
+      <div className="px-4 py-1.5">
         {isLoading && (
           <div className="flex items-center justify-center py-3">
             <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
@@ -1183,13 +1183,8 @@ export function ContributionSection({
             {activeTab !== 'aggregated' && (
               <>
                 {isEditing && activeTab === user?.id ? (
-                  <div className="space-y-4">
-                    {/* Conclusion Section */}
+                  <div className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Conclusion
-                        <span className="ml-1 font-normal text-gray-400">(visible to others)</span>
-                      </label>
                       <UniversalSmartInput
                         ref={smartInputRef}
                         value={editContent}
@@ -1362,7 +1357,7 @@ export function ContributionSection({
                     {/* Show draft content when viewing draft, otherwise show published */}
                     {viewingDraft && hasDraft && selectedContribution?.created_by === user?.id ? (
                       <div className="space-y-3">
-                        <div className="bg-amber-50/50 -mx-5 px-5 py-3 border-l-2 border-amber-400">
+                        <div className="bg-amber-50/50 -mx-4 px-4 py-2 border-l-2 border-amber-400">
                           <div className="text-xs text-amber-600 mb-2">
                             Draft saved {myContribution?.draft_updated_at
                               ? formatDistanceToNow(new Date(myContribution.draft_updated_at), { addSuffix: true })

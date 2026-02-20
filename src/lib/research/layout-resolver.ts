@@ -26,7 +26,8 @@
  * Thesis & Risks:       business_model, thesis, where_different, risks_to_thesis
  * Forecasts & Estimates: rating, price_targets, estimates
  * Catalysts & Events:    key_catalysts
- * Supporting Documents:  documents
+ *
+ * Note: Key References has its own dedicated view tab — not part of the layout.
  */
 export const SYSTEM_DEFAULT_FIELD_SLUGS = new Set([
   'business_model',
@@ -37,7 +38,6 @@ export const SYSTEM_DEFAULT_FIELD_SLUGS = new Set([
   'price_targets',
   'estimates',
   'key_catalysts',
-  'documents',
 ])
 
 // ============================================================================

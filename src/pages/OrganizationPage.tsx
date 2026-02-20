@@ -52,7 +52,9 @@ import {
   Calendar,
   FileText,
   Lock,
-  Unlock
+  Unlock,
+  Upload,
+  Image
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -893,6 +895,17 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   const [showCoverageSettingsConfirm, setShowCoverageSettingsConfirm] = useState(false)
   const [isCoverageSettingsLocked, setIsCoverageSettingsLocked] = useState(true)
 
+  // Branding & Compliance settings state
+  const [editingBranding, setEditingBranding] = useState<{
+    firm_name: string
+    tagline: string
+    default_disclaimer: string
+  } | null>(null)
+  const [isBrandingLocked, setIsBrandingLocked] = useState(true)
+  const [brandingLogoFile, setBrandingLogoFile] = useState<File | null>(null)
+  const [brandingLogoPreview, setBrandingLogoPreview] = useState<string | null>(null)
+  const brandingLogoInputRef = useRef<HTMLInputElement>(null)
+
   // Helper to convert old string[] format to new object format
   const normalizeHierarchyLevels = (levels: any): Array<{ name: string; exclusive: boolean }> => {
     if (!levels || !Array.isArray(levels)) {
@@ -921,6 +934,26 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       })
     }
   }, [coverageSettings])
+
+  // Initialize branding state from organization settings
+  useEffect(() => {
+    if (organization && !editingBranding) {
+      const branding = organization.settings?.branding || {}
+      setEditingBranding({
+        firm_name: branding.firm_name || '',
+        tagline: branding.tagline || '',
+        default_disclaimer: branding.default_disclaimer || '',
+      })
+      // Set logo preview from existing logo_url (bucket is private, use signed URL)
+      if (organization.logo_url) {
+        supabase.storage.from('template-branding')
+          .createSignedUrl(organization.logo_url, 3600)
+          .then(({ data }) => {
+            if (data?.signedUrl) setBrandingLogoPreview(data.signedUrl)
+          })
+      }
+    }
+  }, [organization])
 
   // Get members for a specific node
   const getNodeMembers = (nodeId: string) => {
@@ -1685,6 +1718,70 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['coverage-settings'] })
+    }
+  })
+
+  // Save branding settings mutation
+  const saveBrandingMutation = useMutation({
+    mutationFn: async (branding: {
+      firm_name: string
+      tagline: string
+      default_disclaimer: string
+      logoFile?: File | null
+      removeLogo?: boolean
+    }) => {
+      if (!organization?.id) throw new Error('No organization found')
+
+      let logoUrl = organization.logo_url
+
+      // Handle logo upload
+      if (branding.logoFile) {
+        const randomId = Math.random().toString(36).substring(2, 10)
+        const extension = branding.logoFile.name.split('.').pop() || 'png'
+        const storagePath = `org/${organization.id}/${randomId}.${extension}`
+
+        // Remove old logo if exists
+        if (organization.logo_url) {
+          await supabase.storage.from('template-branding').remove([organization.logo_url])
+        }
+
+        const { error: uploadError } = await supabase.storage
+          .from('template-branding')
+          .upload(storagePath, branding.logoFile)
+
+        if (uploadError) throw uploadError
+        logoUrl = storagePath
+      } else if (branding.removeLogo && organization.logo_url) {
+        await supabase.storage.from('template-branding').remove([organization.logo_url])
+        logoUrl = null
+      }
+
+      // Merge branding into existing settings JSONB
+      const existingSettings = organization.settings || {}
+      const newSettings = {
+        ...existingSettings,
+        branding: {
+          firm_name: branding.firm_name,
+          tagline: branding.tagline,
+          default_disclaimer: branding.default_disclaimer,
+        }
+      }
+
+      const { error } = await supabase
+        .from('organizations')
+        .update({
+          settings: newSettings,
+          logo_url: logoUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', organization.id)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization'] })
+      setBrandingLogoFile(null)
+      setIsBrandingLocked(true)
     }
   })
 
@@ -3447,6 +3544,199 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                     </div>
                   ))}
                 </div>
+              </Card>
+
+              {/* Branding & Compliance */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-gray-900">Branding & Compliance</h3>
+                      {isBrandingLocked && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                          <Lock className="h-3 w-3" />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">Organization identity, logo, and default disclaimer for reports</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isBrandingLocked ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsBrandingLocked(false)}
+                        className="flex items-center gap-2"
+                      >
+                        <Lock className="h-4 w-4" />
+                        Unlock to Edit
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            // Reset to saved values
+                            const branding = organization?.settings?.branding || {}
+                            setEditingBranding({
+                              firm_name: branding.firm_name || '',
+                              tagline: branding.tagline || '',
+                              default_disclaimer: branding.default_disclaimer || '',
+                            })
+                            setBrandingLogoFile(null)
+                            if (organization?.logo_url) {
+                              supabase.storage.from('template-branding')
+                                .createSignedUrl(organization.logo_url, 3600)
+                                .then(({ data }) => {
+                                  if (data?.signedUrl) setBrandingLogoPreview(data.signedUrl)
+                                })
+                            } else {
+                              setBrandingLogoPreview(null)
+                            }
+                            setIsBrandingLocked(true)
+                          }}
+                          className="flex items-center gap-2"
+                        >
+                          <X className="h-4 w-4" />
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (!editingBranding) return
+                            saveBrandingMutation.mutate({
+                              ...editingBranding,
+                              logoFile: brandingLogoFile,
+                              removeLogo: !brandingLogoPreview && !!organization?.logo_url,
+                            })
+                          }}
+                          loading={saveBrandingMutation.isPending}
+                        >
+                          Save Changes
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {editingBranding && (
+                  <div className="space-y-5">
+                    {/* Logo */}
+                    <div className={isBrandingLocked ? 'opacity-60' : ''}>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Organization Logo
+                      </label>
+                      <p className="text-xs text-gray-500 mb-3">
+                        Used on investment case reports and shared documents when &ldquo;Use org branding&rdquo; is enabled
+                      </p>
+                      <div className="flex items-start gap-4">
+                        <div className="w-24 h-16 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {brandingLogoPreview ? (
+                            <img
+                              src={brandingLogoPreview}
+                              alt="Org logo"
+                              className="max-w-full max-h-full object-contain"
+                            />
+                          ) : (
+                            <Image className="w-6 h-6 text-gray-300" />
+                          )}
+                        </div>
+                        {!isBrandingLocked && (
+                          <div className="flex flex-col gap-2">
+                            <input
+                              ref={brandingLogoInputRef}
+                              type="file"
+                              accept="image/png,image/jpeg,image/svg+xml"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) {
+                                  setBrandingLogoFile(file)
+                                  setBrandingLogoPreview(URL.createObjectURL(file))
+                                }
+                                e.target.value = ''
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => brandingLogoInputRef.current?.click()}
+                              className="flex items-center gap-2"
+                            >
+                              <Upload className="h-3.5 w-3.5" />
+                              {brandingLogoPreview ? 'Replace' : 'Upload'}
+                            </Button>
+                            {brandingLogoPreview && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBrandingLogoFile(null)
+                                  setBrandingLogoPreview(null)
+                                }}
+                                className="text-xs text-red-600 hover:text-red-700"
+                              >
+                                Remove logo
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Firm Name */}
+                    <div className={isBrandingLocked ? 'opacity-60' : ''}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Firm Name
+                      </label>
+                      <p className="text-xs text-gray-500 mb-2">
+                        Displayed on report covers and headers
+                      </p>
+                      <input
+                        type="text"
+                        value={editingBranding.firm_name}
+                        disabled={isBrandingLocked}
+                        onChange={(e) => setEditingBranding({ ...editingBranding, firm_name: e.target.value })}
+                        placeholder="e.g. Acme Capital"
+                        className={`w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      />
+                    </div>
+
+                    {/* Tagline */}
+                    <div className={isBrandingLocked ? 'opacity-60' : ''}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tagline
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBranding.tagline}
+                        disabled={isBrandingLocked}
+                        onChange={(e) => setEditingBranding({ ...editingBranding, tagline: e.target.value })}
+                        placeholder="e.g. Investing in tomorrow"
+                        className={`w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      />
+                    </div>
+
+                    {/* Default Disclaimer */}
+                    <div className={isBrandingLocked ? 'opacity-60' : ''}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Default Disclaimer
+                      </label>
+                      <p className="text-xs text-gray-500 mb-2">
+                        Used as the default on investment case reports when &ldquo;Use org default disclaimer&rdquo; is enabled
+                      </p>
+                      <textarea
+                        value={editingBranding.default_disclaimer}
+                        disabled={isBrandingLocked}
+                        onChange={(e) => setEditingBranding({ ...editingBranding, default_disclaimer: e.target.value })}
+                        rows={3}
+                        placeholder="This document is for informational purposes only and does not constitute investment advice..."
+                        className={`w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      />
+                    </div>
+                  </div>
+                )}
               </Card>
 
               {/* Coverage Settings - Only for coverage admins */}

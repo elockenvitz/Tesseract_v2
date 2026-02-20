@@ -14,6 +14,9 @@ export interface CoverPageConfig {
   showLogo: boolean
   titlePosition: 'left' | 'center' | 'right'
   logoPosition: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
+  includeTimestamp: boolean
+  useOrgBranding: boolean
+  useOrgDisclaimer: boolean
 }
 
 // Font Configuration
@@ -73,7 +76,17 @@ export interface BrandingConfig {
   watermarkEnabled: boolean
   watermarkText: string | null
   watermarkOpacity: number
+  watermarkPosition: 'diagonal' | 'center' | 'footer'
 }
+
+// Header/Footer alignment
+export type HFAlignment = 'left' | 'center' | 'right' | 'split'
+
+// Cover page behavior for header/footer
+export type CoverBehavior = 'hide' | 'same' | 'custom'
+
+// Page number position
+export type PageNumberPosition = 'left' | 'center' | 'right' | 'inline'
 
 // Header Configuration
 export interface HeaderConfig {
@@ -81,6 +94,10 @@ export interface HeaderConfig {
   content: string | null
   showOnFirstPage: boolean
   showPageNumber: boolean
+  alignment: HFAlignment
+  leftContent: string | null
+  rightContent: string | null
+  coverBehavior: CoverBehavior
 }
 
 // Footer Configuration
@@ -89,6 +106,10 @@ export interface FooterConfig {
   content: string | null
   showPageNumber: boolean
   pageNumberFormat: string // e.g., "Page {page} of {total}"
+  alignment: HFAlignment
+  leftContent: string | null
+  rightContent: string | null
+  pageNumberPosition: PageNumberPosition
 }
 
 // Header/Footer Configuration
@@ -133,7 +154,10 @@ export const DEFAULT_COVER_CONFIG: CoverPageConfig = {
   showCurrentPrice: true,
   showLogo: true,
   titlePosition: 'center',
-  logoPosition: 'top-left'
+  logoPosition: 'top-left',
+  includeTimestamp: false,
+  useOrgBranding: true,
+  useOrgDisclaimer: true
 }
 
 export const DEFAULT_STYLE_CONFIG: StyleConfig = {
@@ -165,12 +189,13 @@ export const DEFAULT_BRANDING_CONFIG: BrandingConfig = {
   tagline: null,
   watermarkEnabled: false,
   watermarkText: null,
-  watermarkOpacity: 0.1
+  watermarkOpacity: 0.1,
+  watermarkPosition: 'diagonal'
 }
 
 export const DEFAULT_HEADER_FOOTER_CONFIG: HeaderFooterConfig = {
-  header: { enabled: false, content: null, showOnFirstPage: false, showPageNumber: false },
-  footer: { enabled: true, content: null, showPageNumber: true, pageNumberFormat: 'Page {page} of {total}' }
+  header: { enabled: false, content: null, showOnFirstPage: false, showPageNumber: false, alignment: 'center', leftContent: null, rightContent: null, coverBehavior: 'hide' },
+  footer: { enabled: true, content: null, showPageNumber: true, pageNumberFormat: 'Page {page} of {total}', alignment: 'center', leftContent: null, rightContent: null, pageNumberPosition: 'center' }
 }
 
 export const DEFAULT_TOC_CONFIG: TocConfig = {
@@ -290,3 +315,64 @@ export const PAGE_FORMATS = [
   { value: 'letter', label: 'Letter (8.5" x 11")' },
   { value: 'legal', label: 'Legal (8.5" x 14")' }
 ]
+
+// Template variable tokens for dynamic title/content
+export const TEMPLATE_VARIABLES = [
+  { key: '{{symbol}}', label: 'Ticker Symbol', example: 'AAPL' },
+  { key: '{{company_name}}', label: 'Company Name', example: 'Apple Inc.' },
+  { key: '{{as_of_date}}', label: 'As-of Date', example: 'Feb 19, 2026' },
+  { key: '{{author}}', label: 'Author', example: 'John Smith' },
+  { key: '{{current_price}}', label: 'Current Price', example: '$185.50' },
+  { key: '{{firm_name}}', label: 'Firm Name', example: 'Acme Capital' },
+] as const
+
+// Header/Footer variable tokens (superset — includes page tokens)
+export const HF_VARIABLES = [
+  { key: '{{firm_name}}', label: 'Firm Name' },
+  { key: '{{symbol}}', label: 'Symbol' },
+  { key: '{{company_name}}', label: 'Company Name' },
+  { key: '{{as_of_date}}', label: 'Date' },
+  { key: '{{author}}', label: 'Analyst' },
+  { key: '{page}', label: 'Page' },
+  { key: '{total}', label: 'Total Pages' },
+] as const
+
+export interface TemplatePreviewContext {
+  symbol: string
+  companyName: string
+  currentPrice: number
+  asOfDate: string
+  author: string
+  firmName: string
+  mode: 'single' | 'packet'
+}
+
+export const DEFAULT_PREVIEW_CONTEXT: TemplatePreviewContext = {
+  symbol: 'AAPL',
+  companyName: 'Apple Inc.',
+  currentPrice: 185.50,
+  asOfDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+  author: 'Analyst',
+  firmName: '',
+  mode: 'single',
+}
+
+// Template sharing
+export type TemplateShareScope = 'private' | 'specific' | 'org'
+
+export interface TemplateShareRecipient {
+  id: string
+  type: 'user' | 'team' | 'department'
+  name: string
+  email?: string
+}
+
+export function resolveTemplateVariables(text: string, ctx: TemplatePreviewContext): string {
+  return text
+    .replace(/\{\{symbol\}\}/g, ctx.symbol)
+    .replace(/\{\{company_name\}\}/g, ctx.companyName)
+    .replace(/\{\{as_of_date\}\}/g, ctx.asOfDate)
+    .replace(/\{\{author\}\}/g, ctx.author)
+    .replace(/\{\{current_price\}\}/g, `$${ctx.currentPrice.toFixed(2)}`)
+    .replace(/\{\{firm_name\}\}/g, ctx.firmName)
+}

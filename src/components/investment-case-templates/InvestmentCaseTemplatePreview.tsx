@@ -1,59 +1,151 @@
 import { clsx } from 'clsx'
-import { FileText, Building, Image } from 'lucide-react'
-import { InvestmentCaseTemplate } from '../../types/investmentCaseTemplates'
+import { Image } from 'lucide-react'
+import {
+  InvestmentCaseTemplate,
+  TemplatePreviewContext,
+  DEFAULT_PREVIEW_CONTEXT,
+  resolveTemplateVariables
+} from '../../types/investmentCaseTemplates'
+
+const HIGHLIGHT_CLASS = 'ring-2 ring-primary-400/60 ring-offset-1 rounded-sm transition-all duration-300'
 
 interface Props {
   template: InvestmentCaseTemplate
+  previewContext?: TemplatePreviewContext
+  highlightArea?: string | null
+  highlightBranding?: boolean
+  showMarginGuides?: boolean
+  /** @deprecated Use previewContext instead */
   symbol?: string
+  /** @deprecated Use previewContext instead */
   companyName?: string
+  /** @deprecated Use previewContext instead */
   currentPrice?: number
 }
 
 export function InvestmentCaseTemplatePreview({
   template,
-  symbol = 'AAPL',
-  companyName = 'Apple Inc.',
-  currentPrice = 185.50
+  previewContext,
+  highlightArea,
+  highlightBranding,
+  showMarginGuides,
+  symbol,
+  companyName,
+  currentPrice
 }: Props) {
   const { cover_config, style_config, branding_config, section_config, toc_config, header_footer_config } = template
 
+  // Build context: prefer previewContext, fall back to legacy props, then defaults
+  const ctx: TemplatePreviewContext = previewContext || {
+    ...DEFAULT_PREVIEW_CONTEXT,
+    ...(symbol ? { symbol } : {}),
+    ...(companyName ? { companyName } : {}),
+    ...(currentPrice != null ? { currentPrice } : {}),
+    firmName: branding_config.firmName || '',
+  }
+
   const enabledSections = section_config.filter(s => s.enabled)
 
-  // Calculate page dimensions (scaled down for preview)
-  const scale = 0.5
-  const pageWidth = style_config.pageFormat === 'letter' ? 216 : style_config.pageFormat === 'legal' ? 216 : 210
-  const pageHeight = style_config.pageFormat === 'letter' ? 279 : style_config.pageFormat === 'legal' ? 356 : 297
+  // Resolve title with template variables
+  const defaultTitleText = ctx.mode === 'packet'
+    ? `Investment Case Packet: ${ctx.symbol}`
+    : `Investment Case: ${ctx.symbol}`
+  const resolvedTitle = cover_config.customTitle
+    ? resolveTemplateVariables(cover_config.customTitle, ctx)
+    : defaultTitleText
 
-  const scaledWidth = pageWidth * scale
-  const scaledHeight = pageHeight * scale
+  // Calculate page dimensions in px (fixed preview width, aspect ratio preserved)
+  const PREVIEW_WIDTH = 280 // px — fits comfortably in the preview panel
+  const scale = 0.5 // font scale factor
+  const isLandscape = style_config.orientation === 'landscape'
+  const baseW = style_config.pageFormat === 'letter' ? 216 : style_config.pageFormat === 'legal' ? 216 : 210
+  const baseH = style_config.pageFormat === 'letter' ? 279 : style_config.pageFormat === 'legal' ? 356 : 297
+  const pageW = isLandscape ? baseH : baseW
+  const pageH = isLandscape ? baseW : baseH
+  const aspectRatio = pageH / pageW
+  const scaledWidth = PREVIEW_WIDTH
+  const scaledHeight = Math.round(PREVIEW_WIDTH * aspectRatio)
+
+  // Map jsPDF font family names to CSS font-family stacks
+  const fontFamilyCss = (family: string) =>
+    family === 'times' ? '"Times New Roman", Times, serif' :
+    family === 'courier' ? '"Courier New", Courier, monospace' :
+    'Helvetica, Arial, sans-serif'
+
+  // Margin guides — scaled from mm to preview px
+  const mmToPx = PREVIEW_WIDTH / pageW
+  const marginGuides = {
+    top: Math.round(style_config.margins.top * mmToPx),
+    right: Math.round(style_config.margins.right * mmToPx),
+    bottom: Math.round(style_config.margins.bottom * mmToPx),
+    left: Math.round(style_config.margins.left * mmToPx),
+  }
 
   return (
-    <div className="space-y-4">
-      <h4 className="text-sm font-medium text-gray-700">Live Preview</h4>
-
-      <div className="space-y-4">
+    <div className="space-y-3">
+      <div className="space-y-3">
         {/* Cover Page Preview */}
         <div
-          className="bg-white rounded shadow-lg relative overflow-hidden mx-auto"
+          className={clsx(
+            'bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto transition-all duration-300',
+            highlightArea === 'margins' && 'ring-2 ring-primary-400/60'
+          )}
           style={{
-            width: `${scaledWidth}mm`,
-            minHeight: `${scaledHeight}mm`,
-            fontFamily: style_config.fonts.body.family === 'times' ? 'Times New Roman' :
-                       style_config.fonts.body.family === 'courier' ? 'Courier New' : 'Helvetica, Arial, sans-serif'
+            width: `${scaledWidth}px`,
+            minHeight: `${scaledHeight}px`,
+            fontFamily: fontFamilyCss(style_config.fonts.body.family)
           }}
         >
-          {/* Header (if enabled and showOnFirstPage) */}
-          {header_footer_config.header.enabled && header_footer_config.header.showOnFirstPage && (
-            <div
-              className="absolute top-0 left-0 right-0 px-3 py-1 text-center border-b"
-              style={{
-                fontSize: `${8 * scale}pt`,
-                color: style_config.colors.mutedText,
-                borderColor: style_config.colors.secondary + '40'
-              }}
-            >
-              {header_footer_config.header.content || branding_config.firmName || 'Header Content'}
+          {/* Margin Guides Overlay */}
+          {showMarginGuides && (
+            <div className="absolute inset-0 pointer-events-none z-10">
+              {/* Top margin */}
+              <div className="absolute top-0 left-0 right-0 border-b border-dashed border-rose-400/50" style={{ height: `${marginGuides.top}px` }}>
+                <span className="absolute right-1 bottom-0 text-[7px] text-rose-400">{style_config.margins.top}</span>
+              </div>
+              {/* Bottom margin */}
+              <div className="absolute bottom-0 left-0 right-0 border-t border-dashed border-rose-400/50" style={{ height: `${marginGuides.bottom}px` }}>
+                <span className="absolute right-1 top-0 text-[7px] text-rose-400">{style_config.margins.bottom}</span>
+              </div>
+              {/* Left margin */}
+              <div className="absolute top-0 bottom-0 left-0 border-r border-dashed border-rose-400/50" style={{ width: `${marginGuides.left}px` }} />
+              {/* Right margin */}
+              <div className="absolute top-0 bottom-0 right-0 border-l border-dashed border-rose-400/50" style={{ width: `${marginGuides.right}px` }} />
             </div>
+          )}
+          {/* Header (if enabled and visible on cover) */}
+          {header_footer_config.header.enabled && (header_footer_config.header.coverBehavior || 'hide') !== 'hide' && (
+            (() => {
+              const ha = header_footer_config.header.alignment || 'center'
+              const hContent = ha === 'split'
+                ? null
+                : (header_footer_config.header.content || branding_config.firmName || 'Header Content')
+              return (
+                <div
+                  className={clsx(
+                    'absolute top-0 left-0 right-0 px-3 py-1 border-b',
+                    highlightArea === 'header' && HIGHLIGHT_CLASS,
+                    ha === 'split' ? 'flex justify-between' :
+                    ha === 'right' ? 'text-right' :
+                    ha === 'left' ? 'text-left' : 'text-center'
+                  )}
+                  style={{
+                    fontSize: `${8 * scale}pt`,
+                    color: style_config.colors.mutedText,
+                    borderColor: style_config.colors.secondary + '40'
+                  }}
+                >
+                  {ha === 'split' ? (
+                    <>
+                      <span>{header_footer_config.header.leftContent || branding_config.firmName || ''}</span>
+                      <span>{header_footer_config.header.rightContent || ''}</span>
+                    </>
+                  ) : (
+                    <span>{hContent}</span>
+                  )}
+                </div>
+              )
+            })()
           )}
 
           {/* Logo (if enabled) */}
@@ -65,20 +157,22 @@ export function InvestmentCaseTemplatePreview({
               cover_config.logoPosition === 'top-right' && 'top-2 right-2',
               cover_config.logoPosition === 'bottom-left' && 'bottom-8 left-2',
               cover_config.logoPosition === 'bottom-center' && 'bottom-8 left-1/2 -translate-x-1/2',
-              cover_config.logoPosition === 'bottom-right' && 'bottom-8 right-2'
+              cover_config.logoPosition === 'bottom-right' && 'bottom-8 right-2',
+              (highlightArea === 'logo' || highlightBranding) && HIGHLIGHT_CLASS
             )}>
               {branding_config.logoPath ? (
                 <div
                   className="bg-gray-100 rounded flex items-center justify-center"
                   style={{
-                    width: `${branding_config.logoWidth * scale * 0.8}mm`,
-                    height: `${(branding_config.logoHeight || branding_config.logoWidth * 0.5) * scale * 0.8}mm`
+                    width: `${Math.round(branding_config.logoWidth * scale * 0.8 * 3.78)}px`,
+                    height: `${Math.round((branding_config.logoHeight || branding_config.logoWidth * 0.5) * scale * 0.8 * 3.78)}px`
                   }}
                 >
                   <Image className="w-4 h-4 text-gray-400" />
                 </div>
               ) : branding_config.firmName ? (
                 <span
+                  className={clsx((highlightArea === 'firmName' || highlightBranding) && HIGHLIGHT_CLASS)}
                   style={{
                     fontSize: `${10 * scale}pt`,
                     fontWeight: 'bold',
@@ -87,7 +181,17 @@ export function InvestmentCaseTemplatePreview({
                 >
                   {branding_config.firmName}
                 </span>
-              ) : null}
+              ) : (
+                <div
+                  className="bg-gray-100 rounded flex items-center justify-center"
+                  style={{
+                    width: `${Math.round(branding_config.logoWidth * scale * 0.8 * 3.78)}px`,
+                    height: `${Math.round((branding_config.logoHeight || branding_config.logoWidth * 0.5) * scale * 0.8 * 3.78)}px`
+                  }}
+                >
+                  <Image className="w-4 h-4 text-gray-300" />
+                </div>
+              )}
             </div>
           )}
 
@@ -101,13 +205,15 @@ export function InvestmentCaseTemplatePreview({
             )}
           >
             <h1
+              className={highlightArea === 'title' ? HIGHLIGHT_CLASS : undefined}
               style={{
                 fontSize: `${style_config.fonts.title.size * scale}pt`,
                 fontWeight: style_config.fonts.title.weight === 'bold' ? 700 : 400,
+                fontFamily: fontFamilyCss(style_config.fonts.title.family),
                 color: style_config.colors.headingText
               }}
             >
-              {cover_config.customTitle || `Investment Case: ${symbol}`}
+              {resolvedTitle}
             </h1>
 
             {cover_config.showCompanyName && (
@@ -115,10 +221,11 @@ export function InvestmentCaseTemplatePreview({
                 className="mt-2"
                 style={{
                   fontSize: `${style_config.fonts.heading.size * scale}pt`,
+                  fontFamily: fontFamilyCss(style_config.fonts.heading.family),
                   color: style_config.colors.secondary
                 }}
               >
-                {companyName}
+                {ctx.companyName}
               </p>
             )}
 
@@ -127,16 +234,17 @@ export function InvestmentCaseTemplatePreview({
                 className="mt-1"
                 style={{
                   fontSize: `${style_config.fonts.subheading.size * scale}pt`,
+                  fontFamily: fontFamilyCss(style_config.fonts.subheading.family),
                   color: style_config.colors.text
                 }}
               >
-                Current Price: ${currentPrice.toFixed(2)}
+                Current Price: ${ctx.currentPrice.toFixed(2)}
               </p>
             )}
           </div>
 
           {/* Metadata */}
-          <div className="absolute bottom-10 left-0 right-0 text-center">
+          <div className="absolute bottom-10 left-0 right-0 text-center space-y-0.5">
             {cover_config.includeDate && (
               <p
                 style={{
@@ -144,11 +252,7 @@ export function InvestmentCaseTemplatePreview({
                   color: style_config.colors.mutedText
                 }}
               >
-                Generated: {new Date().toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
+                As of: {ctx.asOfDate}
               </p>
             )}
             {cover_config.includeAuthor && (
@@ -158,7 +262,23 @@ export function InvestmentCaseTemplatePreview({
                   color: style_config.colors.mutedText
                 }}
               >
-                Prepared using Tesseract Research Platform
+                Prepared by: {ctx.author}
+              </p>
+            )}
+            {cover_config.includeTimestamp && (
+              <p
+                style={{
+                  fontSize: `${7 * scale}pt`,
+                  color: style_config.colors.mutedText
+                }}
+              >
+                Generated: {new Date().toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </p>
             )}
           </div>
@@ -178,37 +298,87 @@ export function InvestmentCaseTemplatePreview({
           )}
 
           {/* Footer */}
-          {header_footer_config.footer.enabled && (
-            <div
-              className="absolute bottom-0 left-0 right-0 px-3 py-1 text-center border-t"
-              style={{
-                fontSize: `${8 * scale}pt`,
-                color: style_config.colors.mutedText,
-                borderColor: style_config.colors.secondary + '40'
-              }}
-            >
-              {header_footer_config.footer.showPageNumber && (
-                <span>{header_footer_config.footer.pageNumberFormat.replace('{page}', '1').replace('{total}', '3')}</span>
-              )}
-            </div>
-          )}
-
-          {/* Watermark */}
-          {branding_config.watermarkEnabled && branding_config.watermarkText && (
-            <div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{
-                opacity: branding_config.watermarkOpacity
-              }}
-            >
-              <span
-                className="text-gray-400 font-bold rotate-[-30deg]"
+          {header_footer_config.footer.enabled && (() => {
+            const fa = header_footer_config.footer.alignment || 'center'
+            const pageNum = header_footer_config.footer.showPageNumber
+              ? header_footer_config.footer.pageNumberFormat.replace('{page}', '1').replace('{total}', '3')
+              : null
+            const pnPos = header_footer_config.footer.pageNumberPosition || 'center'
+            const fContent = header_footer_config.footer.content
+            return (
+              <div
+                className={clsx(
+                  'absolute bottom-0 left-0 right-0 px-3 py-1 border-t',
+                  highlightArea === 'footer' && HIGHLIGHT_CLASS,
+                  fa === 'split' ? 'flex justify-between' :
+                  fa === 'right' ? 'text-right' :
+                  fa === 'left' ? 'text-left' : 'text-center'
+                )}
                 style={{
-                  fontSize: `${24 * scale}pt`
+                  fontSize: `${8 * scale}pt`,
+                  color: style_config.colors.mutedText,
+                  borderColor: style_config.colors.secondary + '40'
                 }}
               >
-                {branding_config.watermarkText}
-              </span>
+                {fa === 'split' ? (
+                  <>
+                    <span>{header_footer_config.footer.leftContent || fContent || ''}</span>
+                    <span>{header_footer_config.footer.rightContent || (pageNum || '')}</span>
+                  </>
+                ) : pnPos === 'inline' ? (
+                  <span>{fContent}{fContent && pageNum ? ' \u00B7 ' : ''}{pageNum}</span>
+                ) : (
+                  <div className="flex justify-between">
+                    <span className={clsx(pnPos === 'left' && 'order-first')}>{pnPos === 'left' ? pageNum : (fa === 'left' ? (fContent || '') : '')}</span>
+                    <span>{fa === 'center' ? (fContent || '') : ''}</span>
+                    <span className={clsx(pnPos === 'right' && 'order-last')}>{pnPos === 'right' ? pageNum : (fa === 'right' ? (fContent || '') : '')}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Watermark */}
+          {branding_config.watermarkEnabled && branding_config.watermarkText && (() => {
+            const position = branding_config.watermarkPosition || 'diagonal'
+            return (
+              <div
+                className={clsx(
+                  'absolute pointer-events-none',
+                  (highlightArea === 'watermark' || highlightBranding) && HIGHLIGHT_CLASS,
+                  position === 'footer'
+                    ? 'bottom-6 left-0 right-0 text-center'
+                    : 'inset-0 flex items-center justify-center'
+                )}
+                style={{ opacity: branding_config.watermarkOpacity }}
+              >
+                <span
+                  className={clsx(
+                    'text-gray-400 font-bold',
+                    position === 'diagonal' && 'rotate-[-30deg]'
+                  )}
+                  style={{
+                    fontSize: `${(position === 'footer' ? 14 : 24) * scale}pt`
+                  }}
+                >
+                  {branding_config.watermarkText}
+                </span>
+              </div>
+            )
+          })()}
+
+          {/* Packet mode indicator */}
+          {ctx.mode === 'packet' && (
+            <div className="absolute top-1/2 left-0 right-0 mt-6 px-4 text-center space-y-1">
+              <div className="border-t border-dashed border-gray-300 mx-4" />
+              <p
+                style={{
+                  fontSize: `${7 * scale}pt`,
+                  color: style_config.colors.mutedText
+                }}
+              >
+                Includes: Investment Case + Attachments (2)
+              </p>
             </div>
           )}
         </div>
@@ -216,16 +386,18 @@ export function InvestmentCaseTemplatePreview({
         {/* TOC Preview (if enabled) */}
         {toc_config.enabled && (
           <div
-            className="bg-white rounded shadow-lg relative overflow-hidden mx-auto p-4"
+            className="bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto p-4"
             style={{
-              width: `${scaledWidth}mm`,
-              minHeight: `${scaledHeight * 0.6}mm`
+              width: `${scaledWidth}px`,
+              minHeight: `${Math.round(scaledHeight * 0.6)}px`,
+              fontFamily: fontFamilyCss(style_config.fonts.body.family)
             }}
           >
             <h2
               style={{
                 fontSize: `${style_config.fonts.heading.size * scale}pt`,
                 fontWeight: 'bold',
+                fontFamily: fontFamilyCss(style_config.fonts.heading.family),
                 color: style_config.colors.headingText,
                 marginBottom: '8px'
               }}
@@ -262,16 +434,17 @@ export function InvestmentCaseTemplatePreview({
         {/* Content Section Preview */}
         {enabledSections.length > 0 && (
           <div
-            className="bg-white rounded shadow-lg relative overflow-hidden mx-auto p-4"
+            className="bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto p-4"
             style={{
-              width: `${scaledWidth}mm`,
-              minHeight: `${scaledHeight * 0.6}mm`
+              width: `${scaledWidth}px`,
+              minHeight: `${Math.round(scaledHeight * 0.6)}px`,
+              fontFamily: fontFamilyCss(style_config.fonts.body.family)
             }}
           >
             {/* Sample Section */}
             <div className="mb-4">
               <div
-                className="pb-1 mb-2"
+                className={clsx('pb-1 mb-2', highlightArea === 'primary' && HIGHLIGHT_CLASS)}
                 style={{
                   borderBottomWidth: '1px',
                   borderBottomStyle: 'solid',
@@ -279,9 +452,11 @@ export function InvestmentCaseTemplatePreview({
                 }}
               >
                 <h2
+                  className={highlightArea === 'heading' ? HIGHLIGHT_CLASS : undefined}
                   style={{
                     fontSize: `${style_config.fonts.heading.size * scale}pt`,
                     fontWeight: 'bold',
+                    fontFamily: fontFamilyCss(style_config.fonts.heading.family),
                     color: style_config.colors.primary
                   }}
                 >
@@ -295,6 +470,7 @@ export function InvestmentCaseTemplatePreview({
                     style={{
                       fontSize: `${style_config.fonts.subheading.size * scale}pt`,
                       fontWeight: style_config.fonts.subheading.weight === 'bold' ? 600 : 400,
+                      fontFamily: fontFamilyCss(style_config.fonts.subheading.family),
                       color: style_config.colors.headingText,
                       marginBottom: '2px'
                     }}
@@ -302,8 +478,10 @@ export function InvestmentCaseTemplatePreview({
                     {field.name}
                   </h3>
                   <p
+                    className={highlightArea === 'body' ? HIGHLIGHT_CLASS : undefined}
                     style={{
                       fontSize: `${style_config.fonts.body.size * scale}pt`,
+                      fontFamily: fontFamilyCss(style_config.fonts.body.family),
                       color: style_config.colors.text
                     }}
                   >
@@ -314,29 +492,50 @@ export function InvestmentCaseTemplatePreview({
             </div>
 
             {/* Footer */}
-            {header_footer_config.footer.enabled && (
-              <div
-                className="absolute bottom-0 left-0 right-0 px-3 py-1 text-center border-t"
-                style={{
-                  fontSize: `${8 * scale}pt`,
-                  color: style_config.colors.mutedText,
-                  borderColor: style_config.colors.secondary + '40'
-                }}
-              >
-                {header_footer_config.footer.content && (
-                  <span className="mr-2">{header_footer_config.footer.content}</span>
-                )}
-                {header_footer_config.footer.showPageNumber && (
-                  <span>{header_footer_config.footer.pageNumberFormat.replace('{page}', '2').replace('{total}', '3')}</span>
-                )}
-              </div>
-            )}
+            {header_footer_config.footer.enabled && (() => {
+              const fa = header_footer_config.footer.alignment || 'center'
+              const pageNum = header_footer_config.footer.showPageNumber
+                ? header_footer_config.footer.pageNumberFormat.replace('{page}', '2').replace('{total}', '3')
+                : null
+              const pnPos = header_footer_config.footer.pageNumberPosition || 'center'
+              const fContent = header_footer_config.footer.content
+              return (
+                <div
+                  className={clsx(
+                    'absolute bottom-0 left-0 right-0 px-3 py-1 border-t',
+                    fa === 'split' ? 'flex justify-between' :
+                    fa === 'right' ? 'text-right' :
+                    fa === 'left' ? 'text-left' : 'text-center'
+                  )}
+                  style={{
+                    fontSize: `${8 * scale}pt`,
+                    color: style_config.colors.mutedText,
+                    borderColor: style_config.colors.secondary + '40'
+                  }}
+                >
+                  {fa === 'split' ? (
+                    <>
+                      <span>{header_footer_config.footer.leftContent || fContent || ''}</span>
+                      <span>{header_footer_config.footer.rightContent || (pageNum || '')}</span>
+                    </>
+                  ) : pnPos === 'inline' ? (
+                    <span>{fContent}{fContent && pageNum ? ' \u00B7 ' : ''}{pageNum}</span>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span>{pnPos === 'left' ? pageNum : (fa === 'left' ? (fContent || '') : '')}</span>
+                      <span>{fa === 'center' ? (fContent || '') : ''}</span>
+                      <span>{pnPos === 'right' ? pageNum : (fa === 'right' ? (fContent || '') : '')}</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )}
 
         {/* Info */}
-        <div className="text-xs text-gray-500 text-center">
-          Preview is scaled. Actual PDF will be full size.
+        <div className="text-[10px] text-gray-400 text-center pt-1">
+          Scaled preview. Actual PDF renders at full size.
         </div>
       </div>
     </div>

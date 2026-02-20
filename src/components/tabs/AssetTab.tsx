@@ -28,9 +28,9 @@ import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
-import { DocumentLibrarySection } from '../documents/DocumentLibrarySection'
+// DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
-import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer } from '../contributions'
+import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
@@ -118,6 +118,52 @@ interface AssetTabProps {
   onCite?: (content: string, fieldName?: string) => void
   onNavigate?: (tab: { id: string, title: string, type: string, data?: any }) => void
   isFocusMode?: boolean
+}
+
+// Inline Key References wrapper for AssetTab supporting_docs section
+function AssetTabKeyReferencesInline({
+  assetId,
+  isCollapsed,
+  onToggle,
+  notes,
+  onCreateNote,
+  isEmbedded
+}: {
+  assetId: string
+  isCollapsed: boolean
+  onToggle: () => void
+  notes?: any[]
+  onCreateNote?: () => void
+  isEmbedded?: boolean
+}) {
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+  const { models: mdls } = useAssetModels(assetId)
+  const selModel = selectedModelId ? mdls.find(m => m.id === selectedModelId) : null
+
+  return (
+    <>
+      <KeyReferencesSection
+        assetId={assetId}
+        isExpanded={!isCollapsed}
+        onToggleExpanded={onToggle}
+        onViewModelHistory={(modelId) => { setSelectedModelId(modelId); setShowVersionHistory(true) }}
+        onCreateNote={onCreateNote}
+        notes={notes}
+        isEmbedded={isEmbedded}
+      />
+      {selModel && (
+        <ModelVersionHistory
+          isOpen={showVersionHistory}
+          onClose={() => { setShowVersionHistory(false); setSelectedModelId(null) }}
+          modelId={selModel.id}
+          assetId={assetId}
+          modelName={selModel.name}
+          currentVersion={selModel.version}
+        />
+      )}
+    </>
+  )
 }
 
 export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
@@ -2935,14 +2981,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 />
               </Card>
             ) : thesisViewMode === 'references' ? (
-              /* References View - per-user curated key references */
-              <Card padding="md">
-                <ThesisContainer
-                  assetId={asset.id}
-                  viewFilter={researchViewFilter}
-                  viewMode="references"
-                />
-              </Card>
+              /* References View - unified Key References surface */
+              <AssetTabKeyReferencesInline
+                assetId={asset.id}
+                isCollapsed={false}
+                onToggle={() => {}}
+                notes={notes || []}
+                onCreateNote={handleCreateNote}
+                isEmbedded
+              />
             ) : isAggregatedView ? (
               /* Aggregated "All" View - clean flat list of fields with content */
               allAssetContributions.length === 0 ? (
@@ -2987,6 +3034,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {displayedFieldsBySection.flatMap(section => {
                     if (section.section_is_hidden) return []
 
+                    // Skip Key References section — shown in references view tab
+                    if (section.section_slug === 'supporting_docs') return []
+
                     return section.fields
                       .filter(f => f.is_visible)
                       .map(field => {
@@ -2994,7 +3044,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
                         // Skip non-contribution field types in aggregated view
                         // (handled by dedicated summary components above)
-                        if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'documents', 'rating', 'estimates', 'price_target'].includes(fieldType)) {
+                        if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'rating', 'estimates', 'price_target', 'key_references'].includes(fieldType)) {
                           return null
                         }
 
@@ -3022,19 +3072,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               )
             ) : (
               /* Individual User "All" View - shows full layout with all sections */
-              displayedFieldsBySection.map(section => {
+              displayedFieldsBySection.map((section, sectionIdx) => {
                 // Skip hidden sections
                 if (section.section_is_hidden) return null
+
+                // Alternating shade for visual separation
+                const sectionShade = sectionIdx % 2 === 1 ? '!bg-gray-50/60' : ''
 
               // Forecasts Section - render fields individually as tiles
               if (section.section_slug === 'forecasts') {
                 return (
-                  <Card key={section.section_id} padding="none">
+                  <Card key={section.section_id} padding="none" className={sectionShade}>
                     <button
                       onClick={() => toggleSection('outcomes')}
-                      className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                      className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
                     >
-                      <span className="font-medium text-gray-900">{section.section_name}</span>
+                      <span className="font-semibold text-gray-900">{section.section_name}</span>
                       {collapsedSections.outcomes ? (
                         <ChevronDown className="h-5 w-5 text-gray-400" />
                       ) : (
@@ -3042,7 +3095,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.outcomes && (
-                      <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+                      <div className="border-t border-gray-100 px-5 py-2 space-y-3">
                         {section.fields
                           .filter(f => f.is_visible)
                           .map(field => {
@@ -3131,42 +3184,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 )
               }
 
-              // Supporting Documents Section
+              // Key References section — skip here, shown in references view tab
               if (section.section_slug === 'supporting_docs') {
-                return (
-            <DocumentLibrarySection
-              key={section.section_id}
-              assetId={asset.id}
-              notes={notes || []}
-              researchViewFilter={researchViewFilter}
-              isExpanded={!collapsedSections.notes}
-              onToggleExpanded={() => toggleSection('notes')}
-              onNoteClick={handleNoteClick}
-              onCreateNote={handleCreateNote}
-              onViewAllNotes={() => onNavigate?.({
-                id: 'notes-list',
-                title: 'Notes',
-                type: 'notes-list',
-                data: { initialAssetFilter: asset.id }
-              })}
-              onViewAllFiles={() => onNavigate?.({
-                id: 'files',
-                title: 'Files',
-                type: 'files',
-                data: { initialAssetFilter: asset.id }
-              })}
-            />
-                )
+                return null
               }
 
               // Generic Section - for all other section types
               return (
-                <Card key={section.section_id} padding="none">
+                <Card key={section.section_id} padding="none" className={sectionShade}>
                   <button
                     onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                    className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
                   >
-                    <span className="font-medium text-gray-900">{section.section_name}</span>
+                    <span className="font-semibold text-gray-900">{section.section_name}</span>
                     {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
                       <ChevronDown className="h-5 w-5 text-gray-400" />
                     ) : (
@@ -3174,7 +3204,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     )}
                   </button>
                   {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
-                    <div className="border-t border-gray-100 px-6 py-6 space-y-4">
+                    <div className="border-t border-gray-100 px-5 py-2 space-y-3">
                       {section.fields
                         .filter(f => f.is_visible)
                         .map(field => {
@@ -3261,28 +3291,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   fieldId={field.field_id}
                                   assetId={asset.id}
                                   config={{}}
-                                />
-                              </div>
-                            )
-                          }
-
-                          // Documents field - render document library inline
-                          if (fieldType === 'documents') {
-                            return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
-                                {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
-                                )}
-                                <DocumentLibrarySection
-                                  assetId={asset.id}
-                                  notes={notes}
-                                  researchViewFilter={researchViewFilter}
-                                  isExpanded={true}
-                                  onToggleExpanded={() => {}}
-                                  onNoteClick={(noteId) => handleNoteClick({ id: noteId })}
-                                  onCreateNote={handleCreateNote}
-                                  isEmbedded={true}
                                 />
                               </div>
                             )
@@ -3675,7 +3683,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-listsContent">
                     <button
                       onClick={() => toggleSection('listsContent')}
-                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex justify-between items-center flex-1">
                         <h4
@@ -3703,7 +3711,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.listsContent && (
-                      <div className="border-t border-gray-100 px-6 py-6">
+                      <div className="border-t border-gray-100 px-5 py-2">
                         {listsByType.list && listsByType.list.length > 0 ? (
                           <div className="grid gap-3">
                             {listsByType.list.map((list: any) => (
@@ -3740,7 +3748,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-themesContent">
                     <button
                       onClick={() => toggleSection('themesContent')}
-                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex justify-between items-center flex-1">
                         <h4
@@ -3768,7 +3776,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.themesContent && (
-                      <div className="border-t border-gray-100 px-6 py-6">
+                      <div className="border-t border-gray-100 px-5 py-2">
                         {assetThemes && assetThemes.length > 0 ? (
                           <div className="grid gap-2">
                             {assetThemes.map((theme: any) => (
@@ -3810,7 +3818,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-portfoliosContent">
                     <button
                       onClick={() => toggleSection('portfoliosContent')}
-                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex justify-between items-center flex-1">
                         <h4
@@ -3838,7 +3846,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.portfoliosContent && (
-                      <div className="border-t border-gray-100 px-6 py-6">
+                      <div className="border-t border-gray-100 px-5 py-2">
                         {portfolioHoldings && portfolioHoldings.length > 0 ? (
                           <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -3928,7 +3936,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-projectsContent">
                     <button
                       onClick={() => toggleSection('projectsContent')}
-                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
                       <span className="font-medium text-gray-900">Projects</span>
                       {collapsedSections.projectsContent ? (
@@ -3938,7 +3946,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.projectsContent && (
-                      <div className="border-t border-gray-100 px-6 py-6">
+                      <div className="border-t border-gray-100 px-5 py-2">
                         <RelatedProjects
                           contextType="asset"
                           contextId={asset.id}

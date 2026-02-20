@@ -274,11 +274,6 @@ function TemplateCard({
                 Custom Colors
               </span>
             )}
-            {template.section_config.length > 0 && (
-              <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                {template.section_config.filter(s => s.enabled).length} sections
-              </span>
-            )}
           </div>
         </div>
 

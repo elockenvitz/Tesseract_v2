@@ -1700,19 +1700,6 @@ function FieldTypePreview({ type }: { type: string }) {
           </div>
         </div>
       )
-    case 'documents':
-      return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-3 p-2 bg-blue-50 rounded">
-            <FileText className="w-4 h-4 text-blue-500" />
-            <span className="text-gray-700">Q3 Earnings Report.pdf</span>
-          </div>
-          <div className="flex items-center gap-3 p-2 bg-green-50 rounded">
-            <FileText className="w-4 h-4 text-green-500" />
-            <span className="text-gray-700">Financial Model.xlsx</span>
-          </div>
-        </div>
-      )
     case 'single_select':
       return (
         <div className="bg-white rounded-lg p-4 text-xs space-y-1.5 border border-gray-200 shadow-sm">
@@ -3121,7 +3108,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         if (name.includes('catalyst') || name.includes('event')) return 'events'
                         if (type === 'rating' || type === 'price_target' || type === 'estimates' ||
                             name.includes('rating') || name.includes('target') || name.includes('estimate')) return 'data'
-                        if (type === 'documents' || name.includes('document')) return 'specialized'
+                        if (name.includes('document')) return 'specialized'
                         return 'analysis'
                       }
 

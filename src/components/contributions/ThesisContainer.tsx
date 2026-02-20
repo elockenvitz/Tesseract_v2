@@ -163,7 +163,7 @@ export function ThesisContainer({
   // Render Summary view
   if (viewMode === 'summary') {
     return (
-      <div className={clsx('space-y-6', className)}>
+      <div className={clsx('space-y-3', className)}>
         <ThesisUnifiedSummary
           assetId={assetId}
           viewFilter={activeTab}
@@ -230,7 +230,7 @@ export function ThesisContainer({
 
   // Default: Render All (3 sections) view
   return (
-    <div className={clsx('space-y-6', className)}>
+    <div className={clsx('space-y-3', className)}>
       {/* Universal tabs - hidden when externally controlled */}
       {!isExternallyControlled && (
         <div className="flex items-center gap-3 pb-4">

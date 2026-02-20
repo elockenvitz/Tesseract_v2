@@ -906,9 +906,10 @@ export function AssetPageFieldCustomizer({
     }
 
     // Sort by display order and filter
+    // Exclude supporting_docs — Key References has its own dedicated view tab
     return sectionsWithDraft
       .sort((a, b) => a.section_display_order - b.section_display_order)
-      .filter(section => section.fields.length > 0 || section.section_is_added)
+      .filter(section => (section.fields.length > 0 || section.section_is_added) && section.section_slug !== 'supporting_docs')
   }, [fieldsBySection, templateFieldIds, draftOverrideAddedFieldIds, draftFieldOverrides, draftSectionOverrides, draftNewSections, isDraftUsingDefault, draftActiveLayout, fieldsWithPreferences, allSections])
 
   // ALL fields from library for the Add Field dropdown, filtered by search
@@ -916,6 +917,7 @@ export function AssetPageFieldCustomizer({
   const allLibraryFields = useMemo(() => {
     const search = addFieldSearch.toLowerCase().trim()
     return fieldsWithPreferences
+      .filter(f => f.field_type !== 'key_references' && f.section_slug !== 'supporting_docs')
       .filter(f => !search ||
         f.field_name.toLowerCase().includes(search) ||
         f.section_name.toLowerCase().includes(search) ||
@@ -1715,7 +1717,7 @@ export function AssetPageFieldCustomizer({
       'analysis': ['thesis', 'investment_thesis', 'analysis'],
       'data': ['data', 'metrics', 'ratings'],
       'events': ['catalysts', 'events', 'catalysts_events'],
-      'specialized': ['documents', 'specialized', 'other']
+      'specialized': ['specialized', 'other']
     }
 
     const slugsToTry = categoryToSlugMap[category] || []
@@ -3448,7 +3450,6 @@ function SortableFieldRow({
     'boolean': 'Yes/No',
     'currency': 'Currency',
     'price_targets': 'Price Targets',
-    'documents': 'Documents',
     'scorecard': 'Scorecard',
     'slider': 'Slider / Gauge',
     'spreadsheet': 'Spreadsheet',
