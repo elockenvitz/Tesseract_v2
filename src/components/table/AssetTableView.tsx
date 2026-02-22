@@ -147,7 +147,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'listNote', label: 'List Note', visible: false, width: 180, minWidth: 100, sortable: false, pinned: false, category: 'research' },
 
   // Workflow columns
-  { id: 'workflows', label: 'Workflows', visible: true, width: 120, minWidth: 80, sortable: true, pinned: false, category: 'workflow' },
+  { id: 'workflows', label: 'Processes', visible: true, width: 120, minWidth: 80, sortable: true, pinned: false, category: 'workflow' },
   { id: 'stage', label: 'Stage', visible: false, width: 100, minWidth: 80, sortable: true, pinned: false, category: 'workflow' },
   { id: 'updated', label: 'Last Updated', visible: true, width: 130, minWidth: 100, sortable: true, pinned: false, category: 'workflow' },
   { id: 'created', label: 'Created', visible: false, width: 130, minWidth: 100, sortable: true, pinned: false, category: 'workflow' },
@@ -171,7 +171,7 @@ const COLUMN_CATEGORIES = {
   core: { label: 'Core', icon: 'Layers' },
   price: { label: 'Price & Market', icon: 'TrendingUp' },
   research: { label: 'Research', icon: 'FileText' },
-  workflow: { label: 'Workflow', icon: 'GitBranch' },
+  workflow: { label: 'Process', icon: 'GitBranch' },
   fundamentals: { label: 'Fundamentals', icon: 'Activity' },
 }
 
@@ -2248,9 +2248,9 @@ export function AssetTableView({
       case 'workflows':
         centerZone = (
           <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Active Workflows</h5>
+            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Active Processes</h5>
             {workflows.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No active workflows</p>
+              <p className="text-xs text-gray-400 italic">No active processes</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {workflows.map((wf, idx) => (
@@ -3555,7 +3555,7 @@ export function AssetTableView({
                                         }}
                                         className="text-gray-400 hover:text-blue-600 transition-colors"
                                       >
-                                        {isMicro ? '—' : 'Add workflow'}
+                                        {isMicro ? '—' : 'Add process'}
                                       </button>
                                     )
                                   }
@@ -3570,7 +3570,7 @@ export function AssetTableView({
                                       className={clsx('pro-workflow-badge', isMicro && 'px-1 py-0')}
                                     >
                                       <span className={clsx('pro-workflow-dot', isMicro && 'w-1.5 h-1.5')} style={{ backgroundColor: workflows[0]?.color || '#6366f1' }} />
-                                      <span>{workflows.length}{isMicro ? '' : ` workflow${workflows.length !== 1 ? 's' : ''}`}</span>
+                                      <span>{workflows.length}{isMicro ? '' : ` process${workflows.length !== 1 ? 'es' : ''}`}</span>
                                     </button>
                                   )
                                 })()}
@@ -3884,7 +3884,7 @@ export function AssetTableView({
                     style={{ left: workflowPopover.x, top: workflowPopover.y }}
                   >
                     <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-900">{asset?.symbol} Workflows</span>
+                      <span className="text-sm font-medium text-gray-900">{asset?.symbol} Processes</span>
                       <button onClick={() => setWorkflowPopover(null)} className="p-1 hover:bg-gray-100 rounded">
                         <X className="w-3 h-3 text-gray-400" />
                       </button>
@@ -3898,7 +3898,17 @@ export function AssetTableView({
                           {currentWorkflows.map((wf, idx) => (
                             <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50">
                               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: wf.color }} />
-                              <span className="text-sm text-gray-700">{wf.name}</span>
+                              <button
+                                className="text-sm text-gray-700 hover:text-primary-600 hover:underline text-left truncate"
+                                onClick={() => {
+                                  setWorkflowPopover(null)
+                                  window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                    detail: { type: 'workflow', id: wf.id, title: wf.name, data: { id: wf.id } }
+                                  }))
+                                }}
+                              >
+                                {wf.name}
+                              </button>
                             </div>
                           ))}
                         </div>
@@ -3910,23 +3920,36 @@ export function AssetTableView({
                       <div>
                         {currentWorkflows.length > 0 && <div className="border-t border-gray-100 my-2" />}
                         <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 px-1">
-                          Add to Workflow
+                          Add to Process
                         </div>
                         <div className="space-y-1 max-h-[200px] overflow-y-auto">
                           {addableWorkflows.map((wf) => (
-                            <button
+                            <div
                               key={wf.id}
-                              onClick={() => joinWorkflowMutation.mutate({ assetId: workflowPopover.assetId, workflowId: wf.id })}
-                              disabled={joinWorkflowMutation.isPending}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-blue-50 text-left transition-colors group"
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-blue-50 transition-colors group"
                             >
                               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: wf.color || '#6366f1' }} />
-                              <span className="text-sm text-gray-700 flex-1 truncate">
+                              <button
+                                className="text-sm text-gray-700 hover:text-primary-600 hover:underline flex-1 truncate text-left"
+                                onClick={() => {
+                                  setWorkflowPopover(null)
+                                  window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                    detail: { type: 'workflow', id: wf.id, title: wf.name, data: { id: wf.id } }
+                                  }))
+                                }}
+                              >
                                 {wf.name}
                                 {wf.branch_suffix && <span className="text-gray-400"> ({wf.branch_suffix})</span>}
-                              </span>
-                              <Plus className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600 transition-colors flex-shrink-0" />
-                            </button>
+                              </button>
+                              <button
+                                onClick={() => joinWorkflowMutation.mutate({ assetId: workflowPopover.assetId, workflowId: wf.id })}
+                                disabled={joinWorkflowMutation.isPending}
+                                className="p-0.5 rounded hover:bg-blue-100 transition-colors flex-shrink-0"
+                                title="Add to process"
+                              >
+                                <Plus className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -3935,7 +3958,7 @@ export function AssetTableView({
                     {/* Empty state */}
                     {currentWorkflows.length === 0 && addableWorkflows.length === 0 && (
                       <div className="text-sm text-gray-500 text-center py-2">
-                        No workflows available
+                        No processes available
                       </div>
                     )}
                   </div>
@@ -4390,7 +4413,7 @@ export function AssetTableView({
                                               }}
                                               className={clsx('pro-empty-cell hover:text-blue-500 transition-colors', isMicro && 'text-[9px]')}
                                             >
-                                              {isMicro ? '\u2014' : 'Add workflow'}
+                                              {isMicro ? '\u2014' : 'Add process'}
                                             </button>
                                           )
                                         }

@@ -1046,6 +1046,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       <style>{`
         .ProseMirror {
           outline: none;
+          cursor: text;
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {
@@ -1394,8 +1395,8 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
         /* Drag Handle */
         .editor-drag-handle {
           position: absolute;
-          width: 20px;
-          height: 20px;
+          width: 24px;
+          height: 24px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1403,9 +1404,9 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           border-radius: 4px;
           color: #94a3b8;
           opacity: 0;
-          transition: opacity 0.15s, background 0.15s, color 0.15s;
+          transition: opacity 0.08s, background 0.08s, color 0.08s;
           z-index: 50;
-          pointer-events: auto;
+          pointer-events: none;
         }
 
         .editor-drag-handle:hover {

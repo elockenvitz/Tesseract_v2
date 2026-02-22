@@ -10,7 +10,7 @@ export { AddStageModal } from './AddStageModal'
 export type { AddStageModalProps } from './AddStageModal'
 
 export { EditStageModal } from './EditStageModal'
-export type { EditStageModalProps } from './EditStageModal'
+export type { EditStageModalProps, EditStageChecklistChanges } from './EditStageModal'
 
 // Checklist Modals
 export { AddChecklistItemModal } from './AddChecklistItemModal'

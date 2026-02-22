@@ -220,7 +220,7 @@ export function MetricPopover({
         return (
           <div className="space-y-2">
             {workflows.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No active workflows</p>
+              <p className="text-sm text-gray-500 italic">No active processes</p>
             ) : (
               workflows.map((workflow, idx) => (
                 <button
@@ -284,7 +284,7 @@ export function MetricPopover({
     switch (type) {
       case 'price': return 'Price Details'
       case 'coverage': return 'Coverage Team'
-      case 'workflows': return 'Active Workflows'
+      case 'workflows': return 'Active Processes'
       case 'priority': return 'Change Priority'
       default: return ''
     }

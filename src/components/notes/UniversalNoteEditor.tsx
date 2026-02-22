@@ -153,6 +153,9 @@ export function UniversalNoteEditor({
   // Use ref for immediate content access without re-renders
   const editingContentRef = useRef('')
   const contentUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Refs for empty-note cleanup on unmount / note switch
+  const selectedNoteIdRef = useRef<string | undefined>(selectedNoteId)
+  const editingTitleRef = useRef('')
   const { user } = useAuth()
   const { isOnline, pendingCount, isSyncing, saveOffline, syncPendingNotes, hasPendingChanges } = useOfflineNotes()
 
@@ -257,6 +260,45 @@ export function UniversalNoteEditor({
     ...selectedNoteMetadata,
     content: selectedNoteContent?.content || ''
   } : undefined
+
+  // Keep refs in sync for cleanup access
+  useEffect(() => { selectedNoteIdRef.current = selectedNoteId }, [selectedNoteId])
+  useEffect(() => { editingTitleRef.current = editingTitle }, [editingTitle])
+
+  // Check if a note is empty (default title + no meaningful content)
+  const isNoteEmpty = useCallback((noteId: string | undefined, title: string, content: string) => {
+    if (!noteId) return false
+    const titleEmpty = !title || title === 'Untitled'
+    const contentEmpty = !content || !stripHtml(content).trim()
+    return titleEmpty && contentEmpty
+  }, [])
+
+  // Silently delete an empty note (no confirm dialog) — stable ref for unmount cleanup
+  const cleanupEmptyNoteRef = useRef<(noteId: string) => Promise<void>>()
+  cleanupEmptyNoteRef.current = async (noteId: string) => {
+    if (!user) return
+    const { error } = await supabase
+      .from(config.tableName)
+      .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
+      .eq('id', noteId)
+      .eq('created_by', user.id)
+    if (!error) {
+      queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
+      queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
+      queryClient.invalidateQueries({ queryKey: ['all-notes-with-users'] })
+    }
+  }
+
+  // Stable wrapper for inline use (handleNoteClick, handleCreateNote)
+  const cleanupEmptyNote = useCallback((noteId: string) => {
+    return cleanupEmptyNoteRef.current?.(noteId) ?? Promise.resolve()
+  }, [])
+
+  // NOTE: No unmount cleanup for empty notes — unmount fires on tab switch too,
+  // which would delete notes the user expects to keep. Empty note cleanup happens:
+  //   1. handleNoteClick — when clicking a different note
+  //   2. handleCreateNote — when creating another note
+  //   3. DashboardPage handleTabClose — when the tab is explicitly closed
 
   // Note version hook for history and restore
   const {
@@ -396,8 +438,8 @@ export function UniversalNoteEditor({
     contentInitializedRef.current = false
   }, [selectedNoteId])
 
-  // Track if we've already auto-created a note
-  const [hasAutoCreated, setHasAutoCreated] = useState(false)
+  // Track if we've already auto-created a note (ref to survive React 18 strict mode double-effect)
+  const hasAutoCreatedRef = useRef(false)
 
   // Helper to compute content preview (first 150 chars of plain text)
   const computeContentPreview = (html: string): string => {
@@ -553,26 +595,34 @@ export function UniversalNoteEditor({
     }
   })
 
+  // Stable refs for mutation/callback access in effects
+  const createNoteMutateRef = useRef(createNoteMutation.mutate)
+  createNoteMutateRef.current = createNoteMutation.mutate
+  const createPendingRef = useRef(createNoteMutation.isPending)
+  createPendingRef.current = createNoteMutation.isPending
+  const onNoteSelectRef = useRef(onNoteSelect)
+  onNoteSelectRef.current = onNoteSelect
+
   // Auto-select the first note when notes are available but none selected
   useEffect(() => {
-    if (!selectedNoteId && !isLoading && notes && notes.length > 0 && !createNoteMutation.isPending) {
+    if (!selectedNoteId && !isLoading && notes && notes.length > 0 && !createPendingRef.current) {
       // Auto-select the first (most recently updated) note
-      onNoteSelect(notes[0].id)
+      onNoteSelectRef.current(notes[0].id)
     }
-  }, [selectedNoteId, isLoading, notes, createNoteMutation.isPending, onNoteSelect])
+  }, [selectedNoteId, isLoading, notes])
 
   // Auto-create a note when editor is opened without a selected note AND no notes exist
   useEffect(() => {
-    if (!selectedNoteId && notes?.length === 0 && !createNoteMutation.isPending && !isLoading && !hasAutoCreated && user) {
-      setHasAutoCreated(true)
-      createNoteMutation.mutate()
+    if (!selectedNoteId && notes?.length === 0 && !createPendingRef.current && !isLoading && !hasAutoCreatedRef.current && user) {
+      hasAutoCreatedRef.current = true
+      createNoteMutateRef.current()
     }
-  }, [selectedNoteId, notes?.length, isLoading, hasAutoCreated, user, createNoteMutation])
+  }, [selectedNoteId, notes?.length, isLoading, user])
 
   // Reset auto-created flag when a note is selected
   useEffect(() => {
     if (selectedNoteId) {
-      setHasAutoCreated(false)
+      hasAutoCreatedRef.current = false
     }
   }, [selectedNoteId])
 
@@ -1124,15 +1174,26 @@ export function UniversalNoteEditor({
   }
 
   const handleNoteClick = async (noteId: string) => {
+    const prevNoteId = selectedNoteId
     // Save current note before switching if there are changes
     if (selectedNote && (editingContentRef.current !== selectedNote.content || editingTitle !== selectedNote.title)) {
       await saveCurrentNote()
+    }
+    // Auto-delete the previous note if it was empty
+    if (prevNoteId && prevNoteId !== noteId && isNoteEmpty(prevNoteId, editingTitle, editingContentRef.current)) {
+      setHiddenNoteIds(prev => new Set([...prev, prevNoteId]))
+      cleanupEmptyNote(prevNoteId)
     }
     onNoteSelect(noteId)
     setIsTitleEditing(false)
   }
 
   const handleCreateNote = () => {
+    // Auto-delete current note if empty before creating new one
+    if (selectedNoteId && isNoteEmpty(selectedNoteId, editingTitle, editingContentRef.current)) {
+      setHiddenNoteIds(prev => new Set([...prev, selectedNoteId]))
+      cleanupEmptyNote(selectedNoteId)
+    }
     createNoteMutation.mutate()
   }
 
@@ -1797,7 +1858,7 @@ export function UniversalNoteEditor({
 
       {/* Right Side - Note Editor */}
       <div className="flex-1 flex flex-col bg-white">
-        {!selectedNote && (isLoading || isLoadingContent || createNoteMutation.isPending || (notes && notes.length > 0) || (notes?.length === 0 && !hasAutoCreated)) ? (
+        {!selectedNote && (isLoading || isLoadingContent || createNoteMutation.isPending || (notes && notes.length > 0) || (notes?.length === 0 && !hasAutoCreatedRef.current)) ? (
           /* Loading/Creating state - show spinner whenever we don't have a selected note ready */
           <div className="flex-1 flex items-center justify-center bg-gray-50/50">
             <div className="text-center">

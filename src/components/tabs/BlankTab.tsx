@@ -48,9 +48,9 @@ const PRIMARY_SURFACES = [
   },
   {
     id: 'workflows',
-    title: 'Workflows',
+    title: 'Process',
     type: 'workflows',
-    description: 'Repeatable processes',
+    description: 'Recurring investment processes',
     icon: Workflow,
     gradient: 'from-blue-100 to-cyan-100',
     iconColor: 'text-blue-600'

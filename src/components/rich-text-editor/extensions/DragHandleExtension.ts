@@ -9,20 +9,21 @@ export const DragHandleExtension = Extension.create({
     let dropLine: HTMLElement | null = null
     let currentNode: { pos: number; node: any; dom: HTMLElement } | null = null
     let isDragging = false
-    let isHandleHovered = false
     let dropTargetPos: number | null = null
     let editorView: any = null
+    // Resolved lazily — initial contentArea may be a temp element before EditorContent mounts
+    let resolvedContentArea: HTMLElement | null = null
 
     const createHandle = () => {
       const el = document.createElement('div')
       el.className = 'editor-drag-handle'
-      el.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-        <circle cx="3.5" cy="2" r="1.2"/>
-        <circle cx="8.5" cy="2" r="1.2"/>
-        <circle cx="3.5" cy="6" r="1.2"/>
-        <circle cx="8.5" cy="6" r="1.2"/>
-        <circle cx="3.5" cy="10" r="1.2"/>
-        <circle cx="8.5" cy="10" r="1.2"/>
+      el.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+        <circle cx="4" cy="2.5" r="1.3"/>
+        <circle cx="10" cy="2.5" r="1.3"/>
+        <circle cx="4" cy="7" r="1.3"/>
+        <circle cx="10" cy="7" r="1.3"/>
+        <circle cx="4" cy="11.5" r="1.3"/>
+        <circle cx="10" cy="11.5" r="1.3"/>
       </svg>`
       return el
     }
@@ -31,6 +32,26 @@ export const DragHandleExtension = Extension.create({
       const el = document.createElement('div')
       el.className = 'editor-drop-line'
       return el
+    }
+
+    // Dynamically resolve the content area — handles the case where
+    // view.dom is reparented by EditorContent after plugin init
+    const getContentArea = (): HTMLElement | null => {
+      if (!editorView?.dom) return null
+      // After EditorContent mounts, view.dom is inside .editor-content
+      const area = (editorView.dom.closest('.editor-content') || editorView.dom.parentElement) as HTMLElement | null
+      if (area && area !== resolvedContentArea) {
+        resolvedContentArea = area
+        area.style.position = 'relative'
+        // Re-append elements to the correct parent if needed
+        if (dragHandle && dragHandle.parentElement !== area) {
+          area.appendChild(dragHandle)
+        }
+        if (dropLine && dropLine.parentElement !== area) {
+          area.appendChild(dropLine)
+        }
+      }
+      return resolvedContentArea
     }
 
     const getBlockAtY = (view: any, y: number) => {
@@ -68,8 +89,61 @@ export const DragHandleExtension = Extension.create({
       return closestBlock
     }
 
+    const showHandle = (mouseY: number) => {
+      if (!editorView || !dragHandle) return
+      const contentArea = getContentArea()
+      if (!contentArea) return
+
+      const block = getBlockAtY(editorView, mouseY)
+      if (!block) {
+        dragHandle.style.opacity = '0'
+        dragHandle.style.pointerEvents = 'none'
+        currentNode = null
+        return
+      }
+
+      try {
+        const blockNode = editorView.state.doc.nodeAt(block.pos)
+        if (!blockNode) {
+          dragHandle.style.opacity = '0'
+          dragHandle.style.pointerEvents = 'none'
+          currentNode = null
+          return
+        }
+
+        const contentRect = contentArea.getBoundingClientRect()
+        const blockRect = block.dom.getBoundingClientRect()
+
+        dragHandle.style.left = '2px'
+        dragHandle.style.top = `${blockRect.top - contentRect.top + contentArea.scrollTop + (blockRect.height / 2) - 12}px`
+        dragHandle.style.pointerEvents = 'auto'
+
+        if (dragHandle.style.opacity !== '1') {
+          dragHandle.style.opacity = '0.6'
+        }
+
+        currentNode = { pos: block.pos, node: blockNode, dom: block.dom }
+      } catch (e) {
+        dragHandle.style.opacity = '0'
+        dragHandle.style.pointerEvents = 'none'
+        currentNode = null
+      }
+    }
+
+    const hideHandle = () => {
+      if (isDragging) return
+      if (dragHandle) {
+        dragHandle.style.opacity = '0'
+        dragHandle.style.background = ''
+        dragHandle.style.pointerEvents = 'none'
+      }
+      currentNode = null
+    }
+
     const updateDropLine = (y: number) => {
       if (!editorView || !dropLine) return
+      const contentArea = getContentArea()
+      if (!contentArea) return
 
       const block = getBlockAtY(editorView, y)
       if (!block) {
@@ -78,13 +152,9 @@ export const DragHandleExtension = Extension.create({
         return
       }
 
-      const contentArea = editorView.dom.closest('.editor-content') as HTMLElement
-      if (!contentArea) return
-
       const contentRect = contentArea.getBoundingClientRect()
       const blockMid = (block.top + block.bottom) / 2
 
-      // Insert before or after based on cursor position
       const insertBefore = y < blockMid
       const lineY = insertBefore
         ? block.top - contentRect.top + contentArea.scrollTop
@@ -93,7 +163,6 @@ export const DragHandleExtension = Extension.create({
       dropLine.style.top = `${lineY}px`
       dropLine.style.opacity = '1'
 
-      // Calculate target position
       if (insertBefore) {
         dropTargetPos = block.pos
       } else {
@@ -102,7 +171,6 @@ export const DragHandleExtension = Extension.create({
       }
     }
 
-    // Global drag handlers for when cursor is outside ProseMirror
     const handleGlobalDragOver = (e: DragEvent) => {
       if (!isDragging) return
       e.preventDefault()
@@ -130,25 +198,19 @@ export const DragHandleExtension = Extension.create({
         let targetPos = dropTargetPos
 
         if (targetPos === fromPos || targetPos === fromPos + node.nodeSize) {
-          if (currentNode?.dom) {
-            currentNode.dom.style.opacity = ''
-          }
+          if (currentNode?.dom) currentNode.dom.style.opacity = ''
           return
         }
 
         const tr = state.tr
         tr.delete(fromPos, fromPos + node.nodeSize)
 
-        if (targetPos > fromPos) {
-          targetPos -= node.nodeSize
-        }
+        if (targetPos > fromPos) targetPos -= node.nodeSize
 
         tr.insert(targetPos, node)
         dispatch(tr)
 
-        if (currentNode?.dom) {
-          currentNode.dom.style.opacity = ''
-        }
+        if (currentNode?.dom) currentNode.dom.style.opacity = ''
       } catch (e) {
         console.error('Drop error:', e)
       }
@@ -160,9 +222,29 @@ export const DragHandleExtension = Extension.create({
       if (dragHandle) {
         dragHandle.style.opacity = '0'
         dragHandle.style.background = ''
+        dragHandle.style.pointerEvents = 'none'
       }
-      if (currentNode?.dom) {
-        currentNode.dom.style.opacity = ''
+      if (currentNode?.dom) currentNode.dom.style.opacity = ''
+    }
+
+    // Document-level mousemove — dynamically resolves contentArea bounds
+    const handleDocMouseMove = (e: MouseEvent) => {
+      if (isDragging || !editorView || !dragHandle) return
+
+      const contentArea = getContentArea()
+      if (!contentArea) return
+
+      const rect = contentArea.getBoundingClientRect()
+      const inGutter =
+        e.clientX >= rect.left - 4 &&
+        e.clientX <= rect.left + 28 &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
+
+      if (inGutter) {
+        showHandle(e.clientY)
+      } else {
+        hideHandle()
       }
     }
 
@@ -174,20 +256,24 @@ export const DragHandleExtension = Extension.create({
           dragHandle = createHandle()
           dropLine = createDropLine()
 
-          const contentArea = view.dom.closest('.editor-content') || view.dom.parentElement
-          if (contentArea) {
-            (contentArea as HTMLElement).style.position = 'relative'
-            contentArea.appendChild(dragHandle)
-            contentArea.appendChild(dropLine)
+          // Try to append immediately — elements will be re-appended
+          // to the correct parent lazily via getContentArea() if needed
+          const initialParent = (view.dom.closest('.editor-content') || view.dom.parentElement) as HTMLElement
+          if (initialParent) {
+            initialParent.style.position = 'relative'
+            initialParent.appendChild(dragHandle)
+            initialParent.appendChild(dropLine)
+            resolvedContentArea = initialParent
           }
 
-          // Add global listeners
+          // Document-level listener — always fires regardless of DOM nesting/reparenting
+          document.addEventListener('mousemove', handleDocMouseMove)
           document.addEventListener('dragover', handleGlobalDragOver)
           document.addEventListener('drop', handleGlobalDrop)
           document.addEventListener('dragend', handleGlobalDragEnd)
 
+          // Handle hover highlight on the drag handle itself
           dragHandle.addEventListener('mouseenter', () => {
-            isHandleHovered = true
             if (dragHandle) {
               dragHandle.style.opacity = '1'
               dragHandle.style.background = '#f1f5f9'
@@ -195,9 +281,8 @@ export const DragHandleExtension = Extension.create({
           })
 
           dragHandle.addEventListener('mouseleave', () => {
-            isHandleHovered = false
             if (dragHandle && !isDragging) {
-              dragHandle.style.opacity = '0'
+              dragHandle.style.opacity = '0.6'
               dragHandle.style.background = ''
             }
           })
@@ -213,27 +298,19 @@ export const DragHandleExtension = Extension.create({
             isDragging = true
             dragHandle!.style.opacity = '1'
             dragHandle!.style.background = '#e0e7ff'
-
             currentNode.dom.style.opacity = '0.4'
 
             e.dataTransfer!.effectAllowed = 'move'
             e.dataTransfer!.setData('text/plain', String(currentNode.pos))
 
-            // Minimal drag image
             const ghost = document.createElement('div')
             ghost.style.cssText = `
               position: fixed; top: -100px; left: -100px;
-              padding: 6px 12px;
-              background: #4f46e5;
-              color: white;
-              font-size: 12px;
-              font-weight: 500;
-              border-radius: 4px;
+              padding: 6px 12px; background: #4f46e5; color: white;
+              font-size: 12px; font-weight: 500; border-radius: 4px;
               box-shadow: 0 2px 8px rgba(79, 70, 229, 0.4);
-              max-width: 200px;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
+              max-width: 200px; white-space: nowrap;
+              overflow: hidden; text-overflow: ellipsis;
             `
             const text = currentNode.dom.textContent?.trim().slice(0, 30) || 'Block'
             ghost.textContent = text + (text.length >= 30 ? '...' : '')
@@ -246,6 +323,7 @@ export const DragHandleExtension = Extension.create({
 
           return {
             destroy: () => {
+              document.removeEventListener('mousemove', handleDocMouseMove)
               document.removeEventListener('dragover', handleGlobalDragOver)
               document.removeEventListener('drop', handleGlobalDrop)
               document.removeEventListener('dragend', handleGlobalDragEnd)
@@ -254,65 +332,7 @@ export const DragHandleExtension = Extension.create({
               dragHandle = null
               dropLine = null
               editorView = null
-            }
-          }
-        },
-        props: {
-          handleDOMEvents: {
-            mousemove: (view, event) => {
-              if (isDragging || isHandleHovered) return false
-
-              const target = event.target as HTMLElement
-              if (target.closest('.editor-drag-handle')) return false
-
-              const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })
-              if (!pos) {
-                if (dragHandle && !isHandleHovered) dragHandle.style.opacity = '0'
-                currentNode = null
-                return false
-              }
-
-              try {
-                const $pos = view.state.doc.resolve(pos.pos)
-                const blockPos = $pos.before(1)
-                const blockNode = view.state.doc.nodeAt(blockPos)
-
-                if (!blockNode) {
-                  if (dragHandle && !isHandleHovered) dragHandle.style.opacity = '0'
-                  currentNode = null
-                  return false
-                }
-
-                const domAtPos = view.domAtPos(blockPos + 1)
-                let blockDom = domAtPos.node as HTMLElement
-
-                if (blockDom.nodeType === Node.TEXT_NODE) {
-                  blockDom = blockDom.parentElement as HTMLElement
-                }
-
-                while (blockDom && blockDom.parentElement !== view.dom) {
-                  blockDom = blockDom.parentElement as HTMLElement
-                }
-
-                if (!blockDom || !dragHandle) return false
-
-                const contentArea = view.dom.closest('.editor-content') as HTMLElement
-                if (!contentArea) return false
-
-                const contentRect = contentArea.getBoundingClientRect()
-                const blockRect = blockDom.getBoundingClientRect()
-
-                dragHandle.style.left = '4px'
-                dragHandle.style.top = `${blockRect.top - contentRect.top + contentArea.scrollTop + (blockRect.height / 2) - 10}px`
-                dragHandle.style.opacity = '0.4'
-
-                currentNode = { pos: blockPos, node: blockNode, dom: blockDom }
-              } catch (e) {
-                if (dragHandle && !isHandleHovered) dragHandle.style.opacity = '0'
-                currentNode = null
-              }
-
-              return false
+              resolvedContentArea = null
             }
           }
         }

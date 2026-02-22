@@ -97,7 +97,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
         }
         break
       case 'workflow_item':
-        onNavigate({ id: 'workflows', title: 'Workflows', type: 'workflows', data: null })
+        onNavigate({ id: 'workflows', title: 'Process', type: 'workflows', data: null })
         break
       case 'quick_thought':
         onNavigate({ id: 'ideas', title: 'Ideas', type: 'ideas', data: { selectedThoughtId: source_id } })

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { clsx } from 'clsx'
 import { arrayMove } from '@dnd-kit/sortable'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
@@ -71,7 +71,9 @@ function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
     return {
       tabs: savedState.tabs.map(tab => ({
         ...tab,
-        isActive: tab.id === savedState.activeTabId
+        isActive: tab.id === savedState.activeTabId,
+        // Migrate old tab titles
+        ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
       })),
       activeTabId: savedState.activeTabId
     }
@@ -104,6 +106,7 @@ export function DashboardPage() {
 
   // Auth
   const { user } = useAuth()
+  const queryClient = useQueryClient()
 
   // Dashboard scope (portfolio, coverage, urgent filters)
   const [scope, setScope] = useDashboardScope()
@@ -305,6 +308,42 @@ export function DashboardPage() {
   const handleTabClose = (tabId: string) => {
     if (tabId === 'dashboard') return // Can't close dashboard tab
 
+    // Clean up empty notes when closing a note tab
+    const closingTab = tabs.find(t => t.id === tabId)
+    if (closingTab?.type === 'note' && closingTab.data?.id && user) {
+      const noteTableMap: Record<string, string> = {
+        asset: 'asset_notes',
+        portfolio: 'portfolio_notes',
+        theme: 'theme_notes',
+      }
+      const entityType = closingTab.data.entityType || 'asset'
+      const tableName = noteTableMap[entityType]
+      if (tableName) {
+        // Fire-and-forget: check if note is empty and soft-delete it
+        supabase
+          .from(tableName)
+          .select('id, title, content')
+          .eq('id', closingTab.data.id)
+          .eq('created_by', user.id)
+          .single()
+          .then(({ data: note }) => {
+            if (!note) return
+            const titleEmpty = !note.title || note.title === 'Untitled'
+            const contentEmpty = !note.content || !note.content.replace(/<[^>]*>/g, '').trim()
+            if (titleEmpty && contentEmpty) {
+              supabase
+                .from(tableName)
+                .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
+                .eq('id', note.id)
+                .then(() => {
+                  queryClient.invalidateQueries({ queryKey: ['all-notes-with-users'] })
+                  queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
+                })
+            }
+          })
+      }
+    }
+
     // Remove the tab's stored state
     TabStateManager.removeTabState(tabId)
 
@@ -478,7 +517,7 @@ export function DashboardPage() {
       case 'idea-generator':
         return <IdeaGeneratorPage onItemSelect={handleSearchResult} initialFilters={activeTab.data?.initialFilters} />
       case 'workflows':
-        return <WorkflowsPage />
+        return <WorkflowsPage onNavigate={handleSearchResult} />
       case 'projects-list':
         return <ProjectsPage onProjectSelect={handleSearchResult} />
       case 'project':
@@ -593,10 +632,10 @@ export function DashboardPage() {
         return <TemplatesTab />
       case 'workflow':
         // Individual workflow - navigate to workflows page focused on this workflow
-        return <WorkflowsPage initialWorkflowId={activeTab.data?.id} />
+        return <WorkflowsPage initialWorkflowId={activeTab.data?.id} initialBranchId={activeTab.data?.branchId} onNavigate={handleSearchResult} />
       case 'workflow-template':
         // Workflow template - navigate to workflows page to create from template
-        return <WorkflowsPage initialTemplateId={activeTab.data?.id} />
+        return <WorkflowsPage initialTemplateId={activeTab.data?.id} onNavigate={handleSearchResult} />
       case 'notebook':
         // Custom notebook - open the notes editor for this notebook
         return activeTab.data ? (

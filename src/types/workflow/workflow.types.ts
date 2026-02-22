@@ -51,11 +51,14 @@ export interface WorkflowWithStats {
   deleted?: boolean
   deleted_at?: string
   deleted_by?: string
+  scope_type?: WorkflowScopeType
 }
 
 export type CadenceTimeframe = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi-annually' | 'annually' | 'persistent'
 
 export type KickoffCadence = 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
+
+export type WorkflowScopeType = 'asset' | 'portfolio' | 'general'
 
 export type WorkflowPermission = 'read' | 'admin'
 

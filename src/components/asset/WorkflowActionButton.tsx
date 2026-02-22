@@ -67,7 +67,7 @@ export function WorkflowActionButton({
           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-300"
         >
           <Play className="w-4 h-4 mr-2" />
-          Resume Workflow
+          Resume Process
         </Button>
       )
     }

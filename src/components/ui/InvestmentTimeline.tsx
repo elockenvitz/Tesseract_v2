@@ -499,7 +499,7 @@ export function InvestmentTimeline({
     },
     onError: (error) => {
       console.error('Error saving workflow priority:', error)
-      alert('Failed to save workflow priority. Please try again.')
+      alert('Failed to save process priority. Please try again.')
     }
   })
 
@@ -545,7 +545,7 @@ export function InvestmentTimeline({
     stages.push({
       id: 'completed',
       label: 'Completed',
-      description: 'Workflow completed successfully',
+      description: 'Process completed successfully',
       checklist: []
     })
 
@@ -615,7 +615,7 @@ export function InvestmentTimeline({
     },
     onError: (error) => {
       console.error('Error managing workflow progress:', error)
-      alert('Failed to update workflow. Please try again.')
+      alert('Failed to update process. Please try again.')
     }
   })
 
@@ -1113,7 +1113,7 @@ export function InvestmentTimeline({
   const handleChecklistToggle = (stageId: string, itemId: string) => {
     if (!isStageEditable(stageId)) {
       if (workflowProgress?.is_completed) {
-        alert('This workflow has been marked complete. Click "Resume Workflow" to continue working on it.')
+        alert('This process has been marked complete. Click "Resume Process" to continue working on it.')
       } else {
         alert('This checklist is locked. You can only edit items from the current stage.')
       }
@@ -1823,9 +1823,9 @@ export function InvestmentTimeline({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Active Workflows</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Active Processes</h3>
             <p className="text-sm text-gray-500 max-w-md">
-              This asset is not currently assigned to any workflow. Select a workflow from the dropdown above to get started.
+              This asset is not currently assigned to any process. Select a process from the dropdown above to get started.
             </p>
           </div>
         </div>
@@ -1866,7 +1866,7 @@ export function InvestmentTimeline({
                         }`}
                       >
                         <current.icon className="w-3 h-3" />
-                        <span>Workflow: {current.label}</span>
+                        <span>Process: {current.label}</span>
                         <ChevronDown className="w-3 h-3" />
                       </button>
 
@@ -2297,7 +2297,7 @@ export function InvestmentTimeline({
                   <Check className="w-10 h-10 text-green-600" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  🎉 Workflow Completed!
+                  🎉 Process Completed!
                 </h3>
                 <p className="text-gray-600">
                   All stages have been successfully completed for {assetSymbol || 'this asset'}.
@@ -2859,15 +2859,15 @@ export function InvestmentTimeline({
                     size="sm"
                     onClick={handleAdvanceStage}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                    title={timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete workflow' : 'Advance to next stage'}
+                    title={timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete process' : 'Advance to next stage'}
                   >
-                    {timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete Workflow ✓' : 'Advance Stage →'}
+                    {timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete Process ✓' : 'Advance Stage →'}
                   </Button>
                 )}
 
                 {currentIndex === timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && effectiveCurrentStage === 'completed' && (
                   <div className="text-sm text-green-600 font-medium">
-                    🎉 Workflow completed!
+                    🎉 Process completed!
                   </div>
                 )}
               </div>

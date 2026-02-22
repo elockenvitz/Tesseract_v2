@@ -283,7 +283,7 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'lists', title: 'Lists', type: 'lists', icon: List, color: 'text-violet-500', bg: 'bg-violet-50' },
-                      { id: 'workflows', title: 'Workflows', type: 'workflows', icon: Workflow, color: 'text-cyan-500', bg: 'bg-cyan-50' },
+                      { id: 'workflows', title: 'Process', type: 'workflows', icon: Workflow, color: 'text-cyan-500', bg: 'bg-cyan-50' },
                       { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'coverage', title: 'Coverage', type: 'coverage', icon: Users, color: 'text-sky-500', bg: 'bg-sky-50' },
                     ].map(item => (

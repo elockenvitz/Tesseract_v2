@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Search, X, Calendar, Share2, ArrowUp, ArrowDown, TrendingUp, Briefcase, Tag, Book, SlidersHorizontal, Check } from 'lucide-react'
+import { FileText, Search, X, Calendar, Share2, ArrowUp, ArrowDown, TrendingUp, Briefcase, Tag, Book, SlidersHorizontal, Check, Plus, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -74,9 +74,93 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   // UI state
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
 
+  // New Note picker state
+  const [showNewNotePicker, setShowNewNotePicker] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState('')
+  const pickerRef = useRef<HTMLDivElement>(null)
+  const pickerInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus search input when picker opens
+  useEffect(() => {
+    if (showNewNotePicker) {
+      setTimeout(() => pickerInputRef.current?.focus(), 0)
+    } else {
+      setPickerSearch('')
+    }
+  }, [showNewNotePicker])
+
+  // Search entities for the picker
+  const { data: pickerResults, isLoading: isPickerLoading } = useQuery({
+    queryKey: ['new-note-picker', pickerSearch],
+    queryFn: async () => {
+      const term = pickerSearch.trim()
+      const results: { id: string; name: string; type: 'asset' | 'portfolio' | 'theme'; symbol?: string }[] = []
+
+      const [assetsRes, portfoliosRes, themesRes] = await Promise.all([
+        supabase
+          .from('assets')
+          .select('id, symbol, company_name')
+          .or(term ? `symbol.ilike.%${term}%,company_name.ilike.%${term}%` : 'id.not.is.null')
+          .order('symbol')
+          .limit(8),
+        supabase
+          .from('portfolios')
+          .select('id, name')
+          .or(term ? `name.ilike.%${term}%` : 'id.not.is.null')
+          .order('name')
+          .limit(5),
+        supabase
+          .from('themes')
+          .select('id, name')
+          .or(term ? `name.ilike.%${term}%` : 'id.not.is.null')
+          .order('name')
+          .limit(5),
+      ])
+
+      if (assetsRes.data) {
+        results.push(...assetsRes.data.map(a => ({
+          id: a.id, name: a.company_name || a.symbol, type: 'asset' as const, symbol: a.symbol
+        })))
+      }
+      if (portfoliosRes.data) {
+        results.push(...portfoliosRes.data.map(p => ({
+          id: p.id, name: p.name, type: 'portfolio' as const
+        })))
+      }
+      if (themesRes.data) {
+        results.push(...themesRes.data.map(t => ({
+          id: t.id, name: t.name, type: 'theme' as const
+        })))
+      }
+      return results
+    },
+    enabled: showNewNotePicker,
+    staleTime: 30_000,
+  })
+
+  const handlePickerSelect = (item: { id: string; name: string; type: 'asset' | 'portfolio' | 'theme'; symbol?: string }) => {
+    setShowNewNotePicker(false)
+    const tabId = `note-${item.type}-${item.id}`
+    const label = item.symbol || item.name
+    onNoteSelect?.({
+      id: tabId,
+      title: `Note - ${label}`,
+      type: 'note',
+      data: {
+        entityType: item.type,
+        entityId: item.id,
+        isNew: true,
+        ...(item.type === 'asset' && { assetId: item.id, assetSymbol: item.symbol || item.name }),
+        ...(item.type === 'portfolio' && { portfolioId: item.id, portfolioName: item.name }),
+        ...(item.type === 'theme' && { themeId: item.id, themeName: item.name }),
+      }
+    })
+  }
+
   // Fetch all notes
   const { data: notes, isLoading } = useQuery({
     queryKey: ['all-notes-with-users'],
+    staleTime: 0, // Always refetch on mount (override 5min global default)
     queryFn: async (): Promise<Note[]> => {
       const [assetNotesRes, portfolioNotesRes, themeNotesRes, customNotesRes] = await Promise.all([
         supabase
@@ -434,7 +518,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full space-y-4">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -443,6 +527,100 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
             {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
             {activeFilters.length > 0 && ` (filtered)`}
           </p>
+        </div>
+        <div className="relative" ref={pickerRef}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setShowNewNotePicker(!showNewNotePicker)}
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Note
+          </Button>
+
+          {showNewNotePicker && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowNewNotePicker(false)} />
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                    <input
+                      ref={pickerInputRef}
+                      type="text"
+                      placeholder="Search assets, portfolios, themes..."
+                      value={pickerSearch}
+                      onChange={(e) => setPickerSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                  </div>
+                </div>
+                <div className="max-h-64 overflow-y-auto py-1">
+                  {isPickerLoading ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                    </div>
+                  ) : pickerResults && pickerResults.length > 0 ? (
+                    <>
+                      {/* Assets */}
+                      {pickerResults.filter(r => r.type === 'asset').length > 0 && (
+                        <>
+                          <div className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Assets</div>
+                          {pickerResults.filter(r => r.type === 'asset').map(item => (
+                            <button
+                              key={item.id}
+                              onClick={() => handlePickerSelect(item)}
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm"
+                            >
+                              <TrendingUp className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                              <span className="font-medium text-gray-700">{item.symbol}</span>
+                              <span className="text-gray-400 truncate text-xs">{item.name !== item.symbol ? item.name : ''}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {/* Portfolios */}
+                      {pickerResults.filter(r => r.type === 'portfolio').length > 0 && (
+                        <>
+                          <div className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-1">Portfolios</div>
+                          {pickerResults.filter(r => r.type === 'portfolio').map(item => (
+                            <button
+                              key={item.id}
+                              onClick={() => handlePickerSelect(item)}
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm"
+                            >
+                              <Briefcase className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                              <span className="text-gray-700">{item.name}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {/* Themes */}
+                      {pickerResults.filter(r => r.type === 'theme').length > 0 && (
+                        <>
+                          <div className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-1">Themes</div>
+                          {pickerResults.filter(r => r.type === 'theme').map(item => (
+                            <button
+                              key={item.id}
+                              onClick={() => handlePickerSelect(item)}
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm"
+                            >
+                              <Tag className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                              <span className="text-gray-700">{item.name}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <div className="px-3 py-4 text-center text-sm text-gray-400">
+                      {pickerSearch ? 'No results found' : 'Start typing to search...'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -609,16 +787,16 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       )}
 
       {/* Notes Table */}
-      <Card padding="none">
+      <Card padding="none" className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
           <div className="p-6">
             <ListSkeleton count={8} />
           </div>
         ) : filteredNotes.length > 0 ? (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1 min-h-0">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
+                <tr className="border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%]">
                     <SortHeader field="title">Note</SortHeader>
                   </th>

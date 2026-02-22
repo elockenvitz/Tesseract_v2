@@ -69,8 +69,6 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
     ? `${workflowName} - ${processedSuffix}`
     : workflowName
 
-  // Check if suffix contains dynamic placeholders
-  const hasDynamicPlaceholders = /\{(MONTH|YEAR|YY|Q|QUARTER|DATE|DAY|START_MONTH|END_MONTH)\}/.test(branchSuffix)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,8 +85,8 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Create Workflow Branch</h2>
-              <p className="text-sm text-gray-500 mt-1">Create a new branch of "{workflowName}"</p>
+              <h2 className="text-xl font-bold text-gray-900">Create Run</h2>
+              <p className="text-sm text-gray-500 mt-1">Create a new run of "{workflowName}"</p>
             </div>
             <button
               onClick={onClose}
@@ -102,7 +100,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Branch Suffix
+              Run Suffix
             </label>
             <input
               type="text"
@@ -156,18 +154,13 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                   <span className="text-gray-500">Branch name:</span>{' '}
                   <span className="font-medium text-gray-900">{fullBranchName}</span>
                 </p>
-                {hasDynamicPlaceholders && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Dynamic placeholders will be resolved to current date values
-                  </p>
-                )}
               </div>
             )}
           </div>
 
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Branch Source
+              Run Source
             </label>
 
             {/* Branch from Template Option */}
@@ -261,7 +254,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                 </select>
                 {existingBranches.length === 0 && (
                   <p className="text-xs text-gray-500 mt-1">
-                    No existing branches available to copy from
+                    No existing runs to copy from
                   </p>
                 )}
               </div>
@@ -273,7 +266,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
               Cancel
             </Button>
             <Button type="submit">
-              Create Branch
+              Create Run
             </Button>
           </div>
         </form>

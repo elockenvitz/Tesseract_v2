@@ -2083,7 +2083,19 @@ export function TradeQueuePage() {
                                 "h-4 w-4 text-gray-400 transition-transform",
                                 isExpanded && "rotate-90"
                               )} />
-                              <span className="font-bold text-gray-900 dark:text-white">{group.ticker}</span>
+                              <button
+                                className="font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!group.assetId) return
+                                  const proposerUserId = group.proposals[0]?.user_id
+                                  window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                    detail: { type: 'asset', id: group.assetId, title: group.ticker, data: { id: group.assetId, symbol: group.ticker, researchViewFilter: proposerUserId } }
+                                  }))
+                                }}
+                              >
+                                {group.ticker}
+                              </button>
                               <span className="text-xs text-gray-500 dark:text-gray-400 truncate flex-1">{group.companyName}</span>
                               <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                                 {group.proposals.length} {group.proposals.length === 1 ? 'proposal' : 'proposals'}
@@ -2213,30 +2225,60 @@ export function TradeQueuePage() {
                                       >
                                         {/* Header: Legs for Portfolio */}
                                         <div className="flex items-start justify-between mb-2">
-                                          <div className="flex-1">
-                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                                              {legs.map((leg: any, idx: number) => (
+                                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+                                            {legs.map((leg: any, idx: number) => {
+                                              // Look up asset ID from the pair trade's actual legs data
+                                              const matchedLeg = pairTradeInfo?.legs?.find((l: any) => l.id === leg.legId)
+                                              const assetId = matchedLeg?.assets?.id || matchedLeg?.asset_id
+                                              return (
                                                 <span key={idx} className="flex items-center gap-1">
+                                                  {idx > 0 && <span className="text-gray-300 dark:text-gray-600 mr-0.5">,</span>}
                                                   <span className={clsx(
                                                     "font-bold uppercase",
                                                     leg.action === 'buy' ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                                                   )}>
                                                     {leg.action === 'buy' ? 'BUY' : 'SELL'}
                                                   </span>
-                                                  <span className="font-bold text-gray-900 dark:text-white">{leg.symbol}</span>
-                                                  {leg.weight != null && (
-                                                    <span className="text-gray-500 dark:text-gray-400">
-                                                      {leg.weight.toFixed(1)}%
-                                                    </span>
-                                                  )}
+                                                  <button
+                                                    className="font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      if (!assetId) return
+                                                      window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                                        detail: { type: 'asset', id: assetId, title: leg.symbol, data: { id: assetId, symbol: leg.symbol, researchViewFilter: proposal.user_id } }
+                                                      }))
+                                                    }}
+                                                  >
+                                                    {leg.symbol}
+                                                  </button>
                                                 </span>
-                                              ))}
-                                            </div>
-                                            <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                              <span className="text-gray-400">for</span>
-                                              <Briefcase className="h-3 w-3" />
-                                              <span className="font-medium text-gray-600 dark:text-gray-300">{portfolioName}</span>
-                                            </div>
+                                              )
+                                            })}
+                                            <span className="text-gray-400 dark:text-gray-500">for</span>
+                                            {(() => {
+                                              // Find lab info for this portfolio to enable trade lab navigation
+                                              const legId = proposal.trade_queue_item_id
+                                              const legLabInfo = expressionCounts?.get(legId)
+                                              const portfolioIdx = legLabInfo?.portfolioIds?.indexOf(proposal.portfolio_id) ?? -1
+                                              const labId = portfolioIdx >= 0 ? legLabInfo?.labIds?.[portfolioIdx] : undefined
+                                              const labName = portfolioIdx >= 0 ? legLabInfo?.labNames?.[portfolioIdx] : undefined
+                                              if (labId) {
+                                                return (
+                                                  <button
+                                                    className="font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      window.dispatchEvent(new CustomEvent('openTradeLab', {
+                                                        detail: { labId, labName, portfolioId: proposal.portfolio_id }
+                                                      }))
+                                                    }}
+                                                  >
+                                                    {portfolioName}
+                                                  </button>
+                                                )
+                                              }
+                                              return <span className="font-medium text-gray-600 dark:text-gray-300">{portfolioName}</span>
+                                            })()}
                                           </div>
                                         </div>
 
@@ -3410,10 +3452,48 @@ function PairTradeCard({
           <div className="flex items-center gap-1.5 text-sm flex-1 min-w-0">
             <Link2 className="h-4 w-4 text-purple-500 dark:text-purple-400 flex-shrink-0" />
             <span className="font-semibold text-green-600 dark:text-green-400">BUY</span>
-            <span className="font-semibold text-gray-900 dark:text-white truncate">{longSymbols}</span>
+            <span className="font-semibold text-gray-900 dark:text-white truncate">
+              {longLegs.map((l, i) => (
+                <span key={l.id}>
+                  {i > 0 && ', '}
+                  <button
+                    className="hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const assetId = l.assets?.id || l.asset_id
+                      if (!assetId) return
+                      window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                        detail: { type: 'asset', id: assetId, title: l.assets?.symbol, data: { id: assetId, symbol: l.assets?.symbol, researchViewFilter: l.created_by } }
+                      }))
+                    }}
+                  >
+                    {l.assets?.symbol}
+                  </button>
+                </span>
+              ))}
+            </span>
             <span className="text-gray-400 dark:text-gray-500">/</span>
             <span className="font-semibold text-red-600 dark:text-red-400">SELL</span>
-            <span className="font-semibold text-gray-900 dark:text-white truncate">{shortSymbols}</span>
+            <span className="font-semibold text-gray-900 dark:text-white truncate">
+              {shortLegs.map((l, i) => (
+                <span key={l.id}>
+                  {i > 0 && ', '}
+                  <button
+                    className="hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const assetId = l.assets?.id || l.asset_id
+                      if (!assetId) return
+                      window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                        detail: { type: 'asset', id: assetId, title: l.assets?.symbol, data: { id: assetId, symbol: l.assets?.symbol, researchViewFilter: l.created_by } }
+                      }))
+                    }}
+                  >
+                    {l.assets?.symbol}
+                  </button>
+                </span>
+              ))}
+            </span>
           </div>
           <button
             onClick={(e) => {
@@ -3528,7 +3608,19 @@ function PairTradeCard({
             {longLegs.map(leg => (
               <div key={leg.id} className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
                 <span className="text-xs font-medium text-green-700 dark:text-green-300 uppercase">Buy</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
+                <button
+                  className="font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const assetId = leg.assets?.id || leg.asset_id
+                    if (!assetId) return
+                    window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                      detail: { type: 'asset', id: assetId, title: leg.assets?.symbol, data: { id: assetId, symbol: leg.assets?.symbol, researchViewFilter: leg.created_by } }
+                    }))
+                  }}
+                >
+                  {leg.assets?.symbol}
+                </button>
                 <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{leg.assets?.company_name}</span>
                 {leg.proposed_weight && (
                   <span className="text-xs font-medium text-green-600 dark:text-green-400">+{leg.proposed_weight.toFixed(1)}%</span>
@@ -3543,7 +3635,19 @@ function PairTradeCard({
             {shortLegs.map(leg => (
               <div key={leg.id} className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
                 <span className="text-xs font-medium text-red-700 dark:text-red-300 uppercase">Sell</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{leg.assets?.symbol}</span>
+                <button
+                  className="font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const assetId = leg.assets?.id || leg.asset_id
+                    if (!assetId) return
+                    window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                      detail: { type: 'asset', id: assetId, title: leg.assets?.symbol, data: { id: assetId, symbol: leg.assets?.symbol, researchViewFilter: leg.created_by } }
+                    }))
+                  }}
+                >
+                  {leg.assets?.symbol}
+                </button>
                 <span className="text-sm text-gray-500 dark:text-gray-400 truncate flex-1">{leg.assets?.company_name}</span>
                 {leg.proposed_weight && (
                   <span className="text-xs font-medium text-red-600 dark:text-red-400">-{leg.proposed_weight.toFixed(1)}%</span>
@@ -4049,9 +4153,18 @@ function ProposalCard({
           )}>
             {tradeItem?.action || 'BUY'}
           </span>
-          <span className="font-bold text-gray-900 dark:text-white">
+          <button
+            className="font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!asset?.id) return
+              window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                detail: { type: 'asset', id: asset.id, title: asset.symbol, data: { id: asset.id, symbol: asset.symbol, researchViewFilter: proposal.user_id } }
+              }))
+            }}
+          >
             {asset?.symbol || '???'}
-          </span>
+          </button>
           <span className="text-gray-400 dark:text-gray-500">for</span>
           <span className="text-gray-600 dark:text-gray-300">{portfolioName}</span>
           {(proposal.weight != null || proposal.shares != null) && (
@@ -4249,6 +4362,7 @@ interface GroupedProposals {
   tradeId: string
   ticker: string
   companyName: string
+  assetId: string | null
   action: TradeAction
   proposals: ProposalData[]
 }
@@ -4271,6 +4385,7 @@ function groupProposalsByTradeIdea(proposals: ProposalData[]): GroupedProposals[
         tradeId,
         ticker: tradeItem?.assets?.symbol || '???',
         companyName: tradeItem?.assets?.company_name || 'Unknown',
+        assetId: tradeItem?.assets?.id || tradeItem?.asset_id || null,
         action: tradeItem?.action || 'buy',
         proposals: [proposal],
       })
@@ -4466,7 +4581,19 @@ function TradeQueueCard({
             )}>
               {actionLabel}
             </span>
-            <span className="font-semibold text-gray-900 dark:text-white">{item.assets?.symbol}</span>
+            <button
+              className="font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+              onClick={(e) => {
+                e.stopPropagation()
+                const assetId = item.assets?.id || item.asset_id
+                if (!assetId) return
+                window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                  detail: { type: 'asset', id: assetId, title: item.assets?.symbol, data: { id: assetId, symbol: item.assets?.symbol, researchViewFilter: item.created_by } }
+                }))
+              }}
+            >
+              {item.assets?.symbol}
+            </button>
             <span className="text-gray-500 dark:text-gray-400">{item.assets?.company_name}</span>
           </div>
         </div>

@@ -140,6 +140,11 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      // Reset body styles on unmount to prevent stuck cursor/userSelect
+      if (isResizingRef.current) {
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
     }
   }, [updateAttributes, lockedAspectRatio])
 

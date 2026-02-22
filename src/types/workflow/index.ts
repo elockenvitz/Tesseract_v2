@@ -11,5 +11,6 @@ export type {
   CadenceTimeframe,
   KickoffCadence,
   WorkflowPermission,
+  WorkflowScopeType,
   WorkflowsPageProps
 } from './workflow.types'

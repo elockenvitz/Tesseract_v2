@@ -316,7 +316,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
           assets:asset_id (id, symbol)
         `)
         .in('asset_id', coverage.assetIds)
-        .eq('section', 'thesis')
+        .in('section', ['thesis', 'where_different', 'risks_to_thesis'])
         .eq('is_archived', false)
         .order('updated_at', { ascending: false })
 

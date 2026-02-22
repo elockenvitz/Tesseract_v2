@@ -1,36 +1,46 @@
 /**
  * AddStakeholderModal Component
  *
- * Modal for adding a stakeholder to a workflow.
- * Extracted from WorkflowsPage.tsx during Phase 5 refactoring.
+ * Modal for adding one or more stakeholders to a workflow.
+ * Supports multi-select with removable chips.
  */
 
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { supabase } from '../../../lib/supabase'
 
+interface PickedUser {
+  id: string
+  email: string
+  name: string
+}
+
 export interface AddStakeholderModalProps {
-  /** Workflow ID */
   workflowId: string
-
-  /** Workflow name */
   workflowName: string
-
-  /** Callback when modal is closed */
   onClose: () => void
-
-  /** Callback when stakeholder is added */
-  onAdd: (userId: string) => void
+  onAdd: (userIds: string[]) => void
 }
 
 export function AddStakeholderModal({ workflowId, workflowName, onClose, onAdd }: AddStakeholderModalProps) {
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedUser, setSelectedUser] = useState<{id: string, email: string, name: string} | null>(null)
+  const [selectedUsers, setSelectedUsers] = useState<PickedUser[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Query to get all users for searchable dropdown
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const { data: users } = useQuery({
     queryKey: ['users-search'],
     queryFn: async () => {
@@ -50,72 +60,96 @@ export function AddStakeholderModal({ workflowId, workflowName, onClose, onAdd }
     }
   })
 
-  // Filter users based on search term
+  const selectedIds = new Set(selectedUsers.map(u => u.id))
+
   const filteredUsers = users?.filter(user =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+    !selectedIds.has(user.id) &&
+    (user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     user.email.toLowerCase().includes(searchTerm.toLowerCase()))
   ) || []
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedUser) {
-      onAdd(selectedUser.id)
+    if (selectedUsers.length > 0) {
+      onAdd(selectedUsers.map(u => u.id))
     }
   }
 
-  const handleUserSelect = (user: {id: string, email: string, name: string}) => {
-    setSelectedUser(user)
-    setSearchTerm(user.name)
+  const handleUserSelect = (user: PickedUser) => {
+    setSelectedUsers(prev => [...prev, user])
+    setSearchTerm('')
     setShowDropdown(false)
+    inputRef.current?.focus()
   }
 
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value)
-    setSelectedUser(null)
-    setShowDropdown(true)
+  const handleRemoveUser = (userId: string) => {
+    setSelectedUsers(prev => prev.filter(u => u.id !== userId))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && searchTerm === '' && selectedUsers.length > 0) {
+      setSelectedUsers(prev => prev.slice(0, -1))
+    }
   }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Add Stakeholder</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
+          <h2 className="text-lg font-semibold text-gray-900">Add Stakeholders</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="mb-4">
-          <p className="text-sm text-gray-600 mb-2">
-            Add a stakeholder who will be using "{workflowName}"
+          <p className="text-sm text-gray-600 mb-1">
+            Add stakeholders to "{workflowName}"
           </p>
           <p className="text-xs text-gray-500">
-            Stakeholders can view the workflow but won't have permission to edit it.
+            Stakeholders are notified on run activity but cannot edit.
           </p>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div className="relative">
+          <div className="space-y-3">
+            <div ref={containerRef} className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Search User
+                Search users
               </label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                onFocus={() => setShowDropdown(true)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Search by name or email..."
-                required
-              />
+              <div
+                className="flex flex-wrap gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-md focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 min-h-[38px] cursor-text"
+                onClick={() => inputRef.current?.focus()}
+              >
+                {selectedUsers.map(user => (
+                  <span
+                    key={user.id}
+                    className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                  >
+                    {user.name}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleRemoveUser(user.id) }}
+                      className="p-0.5 rounded-full hover:bg-blue-200 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setShowDropdown(true) }}
+                  onFocus={() => setShowDropdown(true)}
+                  onKeyDown={handleKeyDown}
+                  className="flex-1 min-w-[120px] py-0.5 text-sm outline-none bg-transparent"
+                  placeholder={selectedUsers.length === 0 ? 'Search by name or email...' : 'Add another...'}
+                />
+              </div>
 
-              {/* Searchable dropdown */}
               {showDropdown && filteredUsers.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
                   {filteredUsers.slice(0, 10).map((user) => (
                     <button
                       key={user.id}
@@ -130,30 +164,14 @@ export function AddStakeholderModal({ workflowId, workflowName, onClose, onAdd }
                 </div>
               )}
             </div>
-
-            {selectedUser && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                    <span className="text-white font-semibold text-xs">
-                      {selectedUser.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-medium text-sm text-gray-900">{selectedUser.name}</div>
-                    <div className="text-xs text-gray-500">{selectedUser.email}</div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex justify-end space-x-3 mt-6">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!selectedUser}>
-              Add Stakeholder
+            <Button type="submit" disabled={selectedUsers.length === 0}>
+              {selectedUsers.length <= 1 ? 'Add Stakeholder' : `Add ${selectedUsers.length} Stakeholders`}
             </Button>
           </div>
         </form>

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, forwardRef } from 'react'
 import { clsx } from 'clsx'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -25,7 +25,7 @@ const SIZES = {
 
 const BASE_CLASSES = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
 
-export const Button = React.memo(function Button({
+export const Button = React.memo(forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   variant = 'primary',
   size = 'md',
   loading = false,
@@ -33,7 +33,7 @@ export const Button = React.memo(function Button({
   disabled,
   children,
   ...props
-}: ButtonProps) {
+}, ref) {
   // Memoize className computation
   const buttonClassName = useMemo(() =>
     clsx(
@@ -47,6 +47,7 @@ export const Button = React.memo(function Button({
 
   return (
     <button
+      ref={ref}
       className={buttonClassName}
       disabled={disabled || loading}
       {...props}
@@ -60,4 +61,4 @@ export const Button = React.memo(function Button({
       {children}
     </button>
   )
-})
+}))

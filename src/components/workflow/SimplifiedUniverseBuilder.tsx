@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Edit2, Eye, X, Search, UserPlus, UserMinus, ExternalLink } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Search, UserPlus, UserMinus, ExternalLink, AlertTriangle } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -11,7 +11,6 @@ import {
   FilterOperator,
   getFilterDefinition
 } from '../../lib/universeFilters'
-import { UniversePreviewModal } from '../modals/UniversePreviewModal'
 import { supabase } from '../../lib/supabase'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -61,7 +60,6 @@ export function SimplifiedUniverseBuilder({
 }: SimplifiedUniverseBuilderProps) {
   console.log('SimplifiedUniverseBuilder analysts prop:', analysts)
   const [showAddFilter, setShowAddFilter] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
   const [editingRule, setEditingRule] = useState<FilterRule | null>(null)
   const [selectedFilterType, setSelectedFilterType] = useState<string | null>(null)
   const [currentOperator, setCurrentOperator] = useState<FilterOperator>('includes')
@@ -957,60 +955,51 @@ export function SimplifiedUniverseBuilder({
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <h3 className="text-lg font-semibold text-gray-900">Universe Filters</h3>
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Selection Rules</h3>
+          <p className="text-[11px] text-gray-400 mt-0.5">These rules determine which assets this process applies to.</p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              console.log('🔍 Preview button clicked')
-              console.log('📋 Current rules:', rules)
-              console.log('📏 Rules count:', rules.length)
-              setShowPreview(true)
-            }}
-            disabled={rules.length === 0}
-          >
-            <Eye className="w-4 h-4 mr-1" />
-            Preview
-          </Button>
+        <div className="flex items-center space-x-2 flex-shrink-0">
           {isEditable && (
             <Button size="sm" onClick={openAddFilterModal}>
               <Plus className="w-4 h-4 mr-1" />
-              Add Filter
+              Add Rule
             </Button>
           )}
         </div>
       </div>
 
-      {/* Filter Rules */}
+      {/* Selection Rules */}
       {rules.length === 0 ? (
-        <Card className="p-8 text-center border-2 border-dashed border-gray-300">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3">
-            <Plus className="w-6 h-6 text-gray-400" />
+        <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-900">This process applies to all assets</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {isEditable
+                  ? 'No selection rules defined. Add rules to target a specific set of assets.'
+                  : 'No selection rules have been defined for this process.'}
+              </p>
+              {isEditable && (
+                <Button size="sm" onClick={openAddFilterModal} className="mt-2">
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add selection rule
+                </Button>
+              )}
+            </div>
           </div>
-          <h4 className="text-lg font-medium text-gray-900 mb-2">No Filters Defined</h4>
-          <p className="text-sm text-gray-500 mb-4">
-            {isEditable ? 'Add filters to define your universe of assets' : 'No universe filters have been defined for this workflow'}
-          </p>
-          {isEditable && (
-            <Button onClick={openAddFilterModal}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add First Filter
-            </Button>
-          )}
-        </Card>
+        </div>
       ) : (
-        <div className="space-y-4">
-          {/* Logic Builder Section - Show when there are 2+ filters */}
+        <div className="space-y-3">
+          {/* Logic Builder Section - Show when there are 2+ rules */}
           {rules.length >= 2 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium text-gray-700">Filter Logic</h4>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">Rule Logic</h4>
                 <div className="flex items-center gap-2">
                   {isEditable && selectedTokens.size >= 2 && (
                     <>
@@ -1148,13 +1137,13 @@ export function SimplifiedUniverseBuilder({
               </div>
 
               <p className="text-xs text-gray-500 mt-2">
-                {isEditable ? 'Click AND/OR to toggle. Click filters to select, then group with parentheses.' : 'View-only mode'}
+                {isEditable ? 'Click AND/OR to toggle. Click rules to select, then group with parentheses.' : 'View-only mode'}
               </p>
             </div>
           )}
 
-          {/* Filter Cards */}
-          <div className="space-y-2">
+          {/* Rule Cards */}
+          <div className="space-y-1.5">
             {rules.map((rule) => {
               const definition = getFilterDefinition(rule.type)
               if (!definition) return null
@@ -1162,78 +1151,56 @@ export function SimplifiedUniverseBuilder({
               const Icon = definition.icon
 
               return (
-                <div key={rule.id} className="flex items-center space-x-4 p-4 bg-white rounded-lg border-2 border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
-                  <Icon className={`w-6 h-6 text-${definition.color}-500 flex-shrink-0`} />
+                <div key={rule.id} className="flex items-start space-x-3 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group">
+                  <div className="mt-0.5 flex-shrink-0">
+                    <Icon className={`w-4 h-4 text-${definition.color}-500`} />
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-2 flex-wrap gap-2">
-                      <Badge variant="secondary" size="md" className="font-semibold">
-                        {definition.name}
-                      </Badge>
-                      <Badge
-                        variant={rule.operator === 'excludes' ? 'destructive' : 'default'}
-                        size="md"
-                      >
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-sm font-medium text-gray-900">{definition.name}</span>
+                      <span className="text-gray-300">&middot;</span>
+                      <span className={`text-xs font-medium ${rule.operator === 'excludes' ? 'text-red-600' : 'text-gray-500'}`}>
                         {OPERATOR_LABELS[rule.operator]}
-                      </Badge>
-                      <span className="text-base text-gray-700 font-medium truncate">
-                        {(() => {
-                          // Handle array values (multi-select)
-                          if (Array.isArray(rule.values)) {
-                            const options = getOptionsForFilter(rule.type)
-                            const labels = rule.values.map(val => {
-                              const option = options.find(opt => opt.value === val)
-                              return option ? option.label : val
-                            })
-                            return labels.length > 3
-                              ? `${labels.slice(0, 3).join(', ')} +${labels.length - 3} more`
-                              : labels.join(', ')
-                          }
-
-                          // Handle range values (objects with min/max)
-                          if (typeof rule.values === 'object' && rule.values !== null) {
-                            const parts = []
-                            if (rule.type === 'financial_metric' && rule.values.metric) {
-                              const metricLabels: Record<string, string> = {
-                                market_cap: 'Market Cap',
-                                price: 'Stock Price',
-                                volume: 'Trading Volume',
-                                pe_ratio: 'P/E Ratio',
-                                dividend_yield: 'Dividend Yield'
-                              }
-                              parts.push(metricLabels[rule.values.metric] || rule.values.metric)
-                            }
-                            if (rule.values.min !== null && rule.values.min !== undefined) {
-                              parts.push(`Min: ${rule.values.min}`)
-                            }
-                            if (rule.values.max !== null && rule.values.max !== undefined) {
-                              parts.push(`Max: ${rule.values.max}`)
-                            }
-                            return parts.join(', ')
-                          }
-
-                          return String(rule.values)
-                        })()}
                       </span>
                     </div>
+                    <p className="text-xs text-gray-600 mt-0.5 truncate">
+                      {(() => {
+                        if (Array.isArray(rule.values)) {
+                          const options = getOptionsForFilter(rule.type)
+                          const labels = rule.values.map(val => {
+                            const option = options.find(opt => opt.value === val)
+                            return option ? option.label : val
+                          })
+                          return labels.length > 3
+                            ? `${labels.slice(0, 3).join(', ')} +${labels.length - 3} more`
+                            : labels.join(', ')
+                        }
+                        if (typeof rule.values === 'object' && rule.values !== null) {
+                          const parts: string[] = []
+                          if (rule.type === 'financial_metric' && rule.values.metric) {
+                            const metricLabels: Record<string, string> = {
+                              market_cap: 'Market Cap', price: 'Stock Price',
+                              volume: 'Trading Volume', pe_ratio: 'P/E Ratio',
+                              dividend_yield: 'Dividend Yield'
+                            }
+                            parts.push(metricLabels[rule.values.metric] || rule.values.metric)
+                          }
+                          if (rule.values.min != null) parts.push(`Min: ${rule.values.min}`)
+                          if (rule.values.max != null) parts.push(`Max: ${rule.values.max}`)
+                          return parts.join(', ')
+                        }
+                        return String(rule.values)
+                      })()}
+                    </p>
                   </div>
                   {isEditable && (
-                    <div className="flex items-center space-x-2 flex-shrink-0">
-                      <Button
-                        size="md"
-                        variant="ghost"
-                        onClick={() => openEditFilterModal(rule)}
-                        className="hover:bg-blue-50"
-                      >
-                        <Edit2 className="w-5 h-5" />
-                      </Button>
-                      <Button
-                        size="md"
-                        variant="ghost"
-                        onClick={() => deleteRule(rule.id)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </Button>
+                    <div className="flex items-center space-x-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => openEditFilterModal(rule)} className="p-1 rounded hover:bg-gray-100 transition-colors" title="Edit rule">
+                        <Edit2 className="w-3.5 h-3.5 text-gray-400" />
+                      </button>
+                      <button type="button" onClick={() => deleteRule(rule.id)} className="p-1 rounded hover:bg-red-50 transition-colors" title="Remove rule">
+                        <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1323,7 +1290,7 @@ export function SimplifiedUniverseBuilder({
             {/* Header */}
             <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingRule ? 'Edit Filter' : 'Add Filter'}
+                {editingRule ? 'Edit Rule' : 'Add Rule'}
               </h3>
               <button
                 onClick={() => {
@@ -1518,7 +1485,7 @@ export function SimplifiedUniverseBuilder({
                     return false
                   })()}
                 >
-                  {editingRule ? 'Update' : 'Add'} Filter
+                  {editingRule ? 'Update' : 'Add'} Rule
                 </Button>
               </div>
             </div>
@@ -1526,14 +1493,6 @@ export function SimplifiedUniverseBuilder({
         </div>
       )}
 
-      {/* Preview Modal */}
-      {showPreview && (
-        <UniversePreviewModal
-          workflowId={workflowId}
-          rules={rules}
-          onClose={() => setShowPreview(false)}
-        />
-      )}
     </div>
   )
 }

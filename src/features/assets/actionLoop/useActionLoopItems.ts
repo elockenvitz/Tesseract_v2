@@ -201,7 +201,7 @@ export function useActionLoopItems({
         .from('asset_contributions')
         .select('updated_at, created_by')
         .eq('asset_id', assetId)
-        .eq('section', 'thesis')
+        .in('section', ['thesis', 'where_different', 'risks_to_thesis'])
         .eq('is_archived', false)
         .order('updated_at', { ascending: false })
         .limit(1)

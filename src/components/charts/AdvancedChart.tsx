@@ -339,6 +339,9 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     setStatistics(newStatistics)
   }, [chartData])
 
+  // Track whether body styles need cleanup
+  const bodyStyleDirtyRef = useRef(false)
+
   // Mouse event handlers for dragging
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Prevent text selection during drag
@@ -356,6 +359,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     // Disable user selection during drag
     document.body.style.userSelect = 'none'
     document.body.style.webkitUserSelect = 'none'
+    bodyStyleDirtyRef.current = true
 
     // Check if clicking on axis areas
     if (x < 60) {
@@ -465,7 +469,26 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     // Re-enable user selection
     document.body.style.userSelect = ''
     document.body.style.webkitUserSelect = ''
+    bodyStyleDirtyRef.current = false
   }, [])
+
+  // Global mouseup listener — catches mouseup even when cursor leaves the chart
+  useEffect(() => {
+    const onWindowMouseUp = () => {
+      if (bodyStyleDirtyRef.current) {
+        handleMouseUp()
+      }
+    }
+    window.addEventListener('mouseup', onWindowMouseUp)
+    return () => {
+      window.removeEventListener('mouseup', onWindowMouseUp)
+      // Cleanup on unmount — prevent stuck body styles if component unmounts mid-drag
+      if (bodyStyleDirtyRef.current) {
+        document.body.style.userSelect = ''
+        document.body.style.webkitUserSelect = ''
+      }
+    }
+  }, [handleMouseUp])
 
   // Add technical indicator
   const addTechnicalIndicator = useCallback((indicator: string) => {

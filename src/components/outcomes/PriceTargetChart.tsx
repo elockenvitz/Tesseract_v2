@@ -129,6 +129,12 @@ export function PriceTargetChart({
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
+      // Reset body styles on unmount to prevent stuck cursor/userSelect
+      if (yDragRef.current) {
+        yDragRef.current = null
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
     }
   }, [])
 

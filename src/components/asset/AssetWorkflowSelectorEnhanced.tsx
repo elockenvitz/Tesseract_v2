@@ -22,6 +22,7 @@ interface WorkflowProgress {
     status: 'active' | 'ended'
     template_version_id: string | null
     template_version_number: number | null
+    parent_workflow_id: string | null
     created_at: string
     archived: boolean
     deleted?: boolean
@@ -172,11 +173,11 @@ export function AssetWorkflowSelectorEnhanced({
         <span className={`font-medium ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-900'}`}>
           {mode === 'header'
             ? activeWorkflows.length === 0
-              ? 'Add to Workflow'
-              : `Active Workflows (${activeWorkflows.length})`
+              ? 'Add to Process'
+              : `Active Processes (${activeWorkflows.length})`
             : selectedWorkflowData
-              ? `${selectedWorkflowData.name}${selectedWorkflowData.branch_suffix ? ` (${selectedWorkflowData.branch_suffix})` : ''}`
-              : 'Select Workflow'
+              ? selectedWorkflowData.name
+              : 'Select Process'
           }
         </span>
         {mode !== 'header' && selectedWorkflow && selectedWorkflowData && (
@@ -211,7 +212,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {activeWorkflows.length > 0 && (
                   <div className="p-2">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1">
-                      Active Workflows ({activeWorkflows.length})
+                      Active Processes ({activeWorkflows.length})
                     </div>
                     {activeWorkflows.map(aw => (
                       <div
@@ -226,7 +227,6 @@ export function AssetWorkflowSelectorEnhanced({
                             <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
                             <span className="font-medium text-gray-900 truncate text-sm">
                               {aw.workflows?.name}
-                              {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
                             </span>
                             {aw.workflow_id === selectedWorkflowId && (
                               <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -246,7 +246,7 @@ export function AssetWorkflowSelectorEnhanced({
                           <button
                             onClick={(e) => handleRemove(aw.workflow_id, e)}
                             className="ml-2 p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                            title="Remove from workflow"
+                            title="Remove from process"
                           >
                             <XCircle className="w-4 h-4" />
                           </button>
@@ -260,7 +260,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {availableWorkflows.length > 0 && (
                   <div className="p-2">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1">
-                      Available Workflows ({availableWorkflows.length})
+                      Available Processes ({availableWorkflows.length})
                     </div>
                     {availableWorkflows.map(workflow => (
                       <div
@@ -272,7 +272,6 @@ export function AssetWorkflowSelectorEnhanced({
                             <Plus className="w-3 h-3 text-blue-600 flex-shrink-0" />
                             <span className="font-medium text-gray-900 truncate text-sm">
                               {workflow.name}
-                              {workflow.branch_suffix && ` (${workflow.branch_suffix})`}
                             </span>
                           </div>
                           <div className="flex items-center space-x-2 mt-1 ml-5">
@@ -303,7 +302,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {/* Empty State */}
                 {activeWorkflows.length === 0 && availableWorkflows.length === 0 && (
                   <div className="px-3 py-8 text-center text-gray-500 text-sm">
-                    No workflows available
+                    No processes available
                   </div>
                 )}
               </div>
@@ -314,7 +313,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {activeWorkflows.length > 0 && (
                   <div className="p-3">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                      Active Workflows ({activeWorkflows.length})
+                      Active Processes ({activeWorkflows.length})
                     </div>
                     <div className="space-y-1">
                       {activeWorkflows.map(aw => (
@@ -330,7 +329,6 @@ export function AssetWorkflowSelectorEnhanced({
                               <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
                               <span className="font-medium text-gray-900 truncate text-sm">
                                 {aw.workflows?.name}
-                                {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
                               </span>
                               {aw.workflow_id === selectedWorkflowId && (
                                 <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
@@ -350,7 +348,7 @@ export function AssetWorkflowSelectorEnhanced({
                             <button
                               onClick={(e) => handleRemove(aw.workflow_id, e)}
                               className="ml-2 p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                              title="Remove from workflow"
+                              title="Remove from process"
                             >
                               <XCircle className="w-4 h-4" />
                             </button>
@@ -380,7 +378,6 @@ export function AssetWorkflowSelectorEnhanced({
                                 <CheckCircle className="w-3 h-3 text-gray-400 flex-shrink-0" />
                                 <span className="font-medium text-gray-700 truncate text-sm">
                                   {aw.workflows?.name}
-                                  {aw.workflows?.branch_suffix && ` (${aw.workflows.branch_suffix})`}
                                 </span>
                                 {aw.workflow_id === selectedWorkflowId && (
                                   <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
@@ -420,7 +417,6 @@ export function AssetWorkflowSelectorEnhanced({
                               <Plus className="w-3 h-3 text-blue-600 flex-shrink-0" />
                               <span className="font-medium text-gray-900 truncate text-sm">
                                 {workflow.name}
-                                {workflow.branch_suffix && ` (${workflow.branch_suffix})`}
                               </span>
                             </div>
                             <div className="flex items-center space-x-2 mt-1 ml-5">
@@ -479,7 +475,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {/* Empty State */}
                 {displayWorkflows.length === 0 && availableWorkflows.length === 0 && upcomingBranches.length === 0 && (
                   <div className="px-3 py-8 text-center text-gray-500 text-sm">
-                    No workflows available
+                    No processes available
                   </div>
                 )}
               </div>

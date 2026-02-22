@@ -8,13 +8,11 @@ import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
-import { PriorityBadge } from '../ui/PriorityBadge'
-import { BadgeSelect } from '../ui/BadgeSelect'
+// PriorityBadge and BadgeSelect removed — priority selector replaced by state chips
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
 import { InvestmentTimeline } from '../ui/InvestmentTimeline'
 import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
-import { AssetWorkflowSelector } from '../ui/AssetWorkflowSelector'
-import { WorkflowSelector } from '../ui/WorkflowSelector'
+// AssetWorkflowSelector and WorkflowSelector removed — header workflow dropdown replaced by state chips
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
@@ -253,8 +251,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
 
-  // Active sub-page selector (Research, Workflow, Lists)
-  const [activeSubPage, setActiveSubPage] = useState<'research' | 'workflow' | 'lists'>(() => {
+  // Active sub-page selector (Research, Workflow, Decisions, Lists)
+  const [activeSubPage, setActiveSubPage] = useState<'research' | 'workflow' | 'decisions' | 'lists'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.activeSubPage || 'research'
   })
@@ -292,7 +290,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showTemplatesView, setShowTemplatesView] = useState(false)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
-  const [showAssetPriorityDropdown, setShowAssetPriorityDropdown] = useState(false)
+  // showAssetPriorityDropdown removed — priority selector replaced by state chips
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
   const [listsFocus, setListsFocus] = useState<string | null>(null)
@@ -431,6 +429,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       // Switch to Workflow sub-page
       setActiveSubPage('workflow')
 
+      // Optimistically set the effective workflow ID so the query doesn't flash "No Active Workflows"
+      if (effectiveWorkflowId) {
+        queryClient.setQueryData(['asset-effective-workflow', asset.id], effectiveWorkflowId)
+      }
+
       // If the notification has a workflow ID and it's different from current asset workflow,
       // mark it for switching
       if (effectiveWorkflowId && asset.workflow_id !== effectiveWorkflowId) {
@@ -445,6 +448,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
     }
   }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
+
+  // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
+  useEffect(() => {
+    if (asset.data?.researchViewFilter) {
+      setResearchViewFilter(asset.data.researchViewFilter)
+      setActiveSubPage('research')
+    }
+  }, [asset.data?.researchViewFilter])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
@@ -992,7 +1003,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   // Query to determine the effective workflow ID for this asset
   // Fetch all workflow relationships for this asset
-  const { data: allAssetWorkflows, refetch: refetchAllWorkflows } = useQuery({
+  const { data: allAssetWorkflows, refetch: refetchAllWorkflows, isLoading: allWorkflowsLoading, isFetching: allWorkflowsFetching } = useQuery({
     queryKey: ['asset-all-workflows', effectiveAsset.id],
     queryFn: async () => {
       // Get all workflow progress records for this asset
@@ -1076,6 +1087,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
     enabled: !!effectiveAsset.id
   })
+
+  // Count of active (non-completed) processes for badge/chip display
+  const activeProcessCount = allAssetWorkflows?.filter(w => w.workflows?.status === 'active').length ?? 0
 
   // Fetch available active workflow branches that asset can join
   const { data: availableWorkflows } = useQuery({
@@ -1214,7 +1228,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     enabled: !!user?.id
   })
 
-  const { data: effectiveWorkflowId, isLoading: workflowIdLoading } = useQuery({
+  const { data: effectiveWorkflowId, isLoading: workflowIdLoading, isFetching: workflowIdFetching } = useQuery({
     queryKey: ['asset-effective-workflow', asset.id],
     queryFn: async () => {
       console.log(`🔍 AssetTab: Determining effective workflow for ${asset.symbol}:`, {
@@ -1938,14 +1952,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }
 
-  const handleAssetPriorityChange = async (newPriority: Priority) => {
-    try {
-      await setUserPriority(newPriority)
-    } catch (error) {
-      console.error('Error updating priority:', error)
-    }
-  }
-
   const handleWorkflowPriorityChange = async (newPriority: string) => {
     if (!asset.workflow_id) return
 
@@ -1997,6 +2003,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const handleWorkflowChange = async (workflowId: string) => {
     console.log(`🔄 Switching workflow for asset ${asset.symbol} (${effectiveAsset.id}) to workflow ${workflowId}`)
     setHasLocalChanges(true)
+
+    // Optimistically set the effective workflow ID so the UI never flashes "No Active Workflows"
+    queryClient.setQueryData(['asset-effective-workflow', effectiveAsset.id], workflowId)
 
     // Clear the viewing stage initially to prevent showing stale information from previous workflow
     setViewingStageId(null)
@@ -2091,6 +2100,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       if (workflowExists || (allAssetWorkflows !== undefined && availableWorkflows !== undefined)) {
         console.log('📋 AssetTab: Executing pending workflow switch:', pendingWorkflowSwitch)
+
+        // Optimistically set the effective workflow ID in cache BEFORE clearing pendingWorkflowSwitch.
+        // handleWorkflowChange is async (DB queries) but not awaited, so without this the UI would
+        // briefly show "No Active Workflows" between clearing the pending guard and the refetch resolving.
+        queryClient.setQueryData(['asset-effective-workflow', effectiveAsset.id], pendingWorkflowSwitch.workflowId)
+
         handleWorkflowChange(pendingWorkflowSwitch.workflowId)
 
         // After switching, set the stage if provided
@@ -2519,101 +2534,57 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-          {/* Priority Badges - User Priority + Firm Priority */}
+          {/* ─── Header State Chips ──────────────────────────── */}
           <div className="flex items-center gap-2">
-            {/* User's Priority (editable) */}
-            <div className="relative">
+            {/* Active Processes chip */}
+            <button
+              onClick={() => setActiveSubPage('workflow')}
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-colors"
+              title="View active processes"
+            >
+              <Activity className="w-3 h-3" />
+              <span>Processes</span>
+              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                {activeProcessCount}
+              </span>
+            </button>
+
+            {/* Open Decisions chip */}
+            <button
+              onClick={() => {
+                setActiveSubPage('decisions')
+                // Scroll to open items after tab renders
+                requestAnimationFrame(() => {
+                  document.getElementById('decisions-open-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                })
+              }}
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 transition-colors"
+              title="View decisions and exposure"
+            >
+              <Layers className="w-3 h-3" />
+              <span>Decisions</span>
+              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                0
+              </span>
+            </button>
+
+            {/* In Portfolios chip */}
+            {headerContext.portfolios.length > 0 && (
               <button
-                onClick={() => setShowAssetPriorityDropdown(!showAssetPriorityDropdown)}
-                disabled={isPrioritySaving}
-                className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 hover:opacity-90 transition-opacity ${
-                  myPriority === 'critical' ? 'bg-red-600 text-white' :
-                  myPriority === 'high' ? 'bg-orange-500 text-white' :
-                  myPriority === 'medium' ? 'bg-blue-500 text-white' :
-                  myPriority === 'low' ? 'bg-green-500 text-white' :
-                  'bg-gray-400 text-white'
-                } ${isPrioritySaving ? 'opacity-50' : ''}`}
-                title="Your personal priority for this asset"
+                onClick={() => {
+                  setActiveSubPage('lists')
+                  setListsFocus('portfoliosContent')
+                }}
+                className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition-colors"
+                title="View portfolio holdings"
               >
-                {myPriority === 'critical' && <AlertTriangle className="w-3 h-3" />}
-                {myPriority === 'high' && <Zap className="w-3 h-3" />}
-                {myPriority === 'medium' && <Target className="w-3 h-3" />}
-                {myPriority === 'low' && <Clock className="w-3 h-3" />}
-                {(!myPriority || myPriority === 'none') && <Clock className="w-3 h-3" />}
-                <span>You: {myPriority === 'critical' ? 'Critical' : myPriority === 'high' ? 'High' : myPriority === 'medium' ? 'Medium' : myPriority === 'low' ? 'Low' : 'None'}</span>
-                <ChevronDown className="w-3 h-3" />
+                <Briefcase className="w-3 h-3" />
+                <span>Portfolios</span>
+                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                  {headerContext.portfolios.length}
+                </span>
               </button>
-
-              {showAssetPriorityDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowAssetPriorityDropdown(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden min-w-[120px]">
-                    <div className="px-3 py-1.5 text-[10px] font-medium text-gray-500 border-b border-gray-100 uppercase tracking-wide">
-                      Your Priority
-                    </div>
-                    <div className="p-1.5">
-                      {(['critical', 'high', 'medium', 'low', 'none'] as Priority[]).map((priority) => {
-                        const config = {
-                          critical: { bg: 'bg-red-600', icon: AlertTriangle, label: 'Critical' },
-                          high: { bg: 'bg-orange-500', icon: Zap, label: 'High' },
-                          medium: { bg: 'bg-blue-500', icon: Target, label: 'Medium' },
-                          low: { bg: 'bg-green-500', icon: Clock, label: 'Low' },
-                          none: { bg: 'bg-gray-400', icon: Clock, label: 'None' }
-                        }[priority]
-                        const IconComponent = config.icon
-                        const isSelected = myPriority === priority || (!myPriority && priority === 'none')
-                        return (
-                          <button
-                            key={priority}
-                            onClick={() => {
-                              handleAssetPriorityChange(priority)
-                              setShowAssetPriorityDropdown(false)
-                            }}
-                            className={`w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${config.bg} text-white flex items-center gap-1.5 mb-1 last:mb-0 ${
-                              isSelected ? 'ring-2 ring-offset-1 ring-blue-300' : 'opacity-70 hover:opacity-100'
-                            }`}
-                          >
-                            <IconComponent className="w-3 h-3" />
-                            <span>{config.label}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Others' priorities indicator */}
-            {otherPriorities.length > 0 && (
-              <div
-                className="px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 cursor-default bg-gray-100 text-gray-600 border border-gray-200"
-                title={otherPriorities.map(p => {
-                  const name = p.user ? `${p.user.first_name || ''} ${p.user.last_name || ''}`.trim() || 'Unknown' : 'Unknown'
-                  const priorityLabel = p.priority === 'critical' ? 'Critical' : p.priority === 'high' ? 'High' : p.priority === 'medium' ? 'Medium' : p.priority === 'low' ? 'Low' : 'None'
-                  return `${name}: ${priorityLabel}`
-                }).join('\n')}
-              >
-                <Users className="w-3 h-3" />
-                <span>{otherPriorities.length} other{otherPriorities.length !== 1 ? 's' : ''}</span>
-              </div>
             )}
-          </div>
-
-          {/* Workflow Selector */}
-          <AssetWorkflowSelectorEnhanced
-            mode="header"
-            selectedWorkflowId={effectiveWorkflowId || null}
-            allAssetWorkflows={allAssetWorkflows || []}
-            availableWorkflows={availableWorkflows || []}
-            onSelectWorkflow={handleWorkflowChange}
-            onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
-            onRemoveWorkflow={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-          />
           </div>
         </div>
       </div>
@@ -2646,7 +2617,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           >
             <div className="flex items-center space-x-2">
               <Activity className="h-4 w-4" />
-              <span>Workflow</span>
+              <span>Process</span>
+              {activeProcessCount > 0 && (
+                <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                  {activeProcessCount}
+                </span>
+              )}
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveSubPage('decisions')}
+            className={clsx(
+              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+              activeSubPage === 'decisions'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <Layers className="h-4 w-4" />
+              <span>Decisions</span>
             </div>
           </button>
           <button
@@ -3447,6 +3437,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <div className="flex items-center space-x-3">
                     {showTimelineView ? (
                       <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
+                    ) : allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
+                      <div className="flex items-center space-x-3 animate-pulse">
+                        <div className="h-8 w-44 bg-gray-200 rounded-lg" />
+                        <div className="h-8 w-20 bg-gray-200 rounded-lg" />
+                      </div>
                     ) : (
                       <>
                         <AssetWorkflowSelectorEnhanced
@@ -3513,8 +3508,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {/* Workflow Templates Section */}
                   <Card>
                     <div className="p-4 border-b border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900">Workflow Templates</h3>
-                      <p className="text-sm text-gray-500 mt-1">Templates available for this workflow</p>
+                      <h3 className="text-lg font-semibold text-gray-900">Process Templates</h3>
+                      <p className="text-sm text-gray-500 mt-1">Templates available for this process</p>
                     </div>
                     <div className="p-4">
                       {templatesLoading ? (
@@ -3560,7 +3555,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                           <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                           <p className="text-sm text-gray-500 font-medium">No templates available</p>
-                          <p className="text-xs text-gray-400 mt-2">Workflow admins can upload templates in the Workflows tab</p>
+                          <p className="text-xs text-gray-400 mt-2">Process admins can upload templates in the Processes tab</p>
                         </div>
                       )}
                     </div>
@@ -3569,8 +3564,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {/* Workflow Attachments Section */}
                   <Card>
                     <div className="p-4 border-b border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900">Workflow Attachments</h3>
-                      <p className="text-sm text-gray-500 mt-1">Files attached to workflow tasks and stages</p>
+                      <h3 className="text-lg font-semibold text-gray-900">Process Attachments</h3>
+                      <p className="text-sm text-gray-500 mt-1">Files attached to process tasks and stages</p>
                     </div>
                     <div className="p-4">
                       {attachmentsLoading ? (
@@ -3612,7 +3607,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                           <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                           <p className="text-sm text-gray-500 font-medium">No attachments yet</p>
-                          <p className="text-xs text-gray-400 mt-2">Files can be attached to workflow tasks in the Stage view</p>
+                          <p className="text-xs text-gray-400 mt-2">Files can be attached to process tasks in the Stage view</p>
                         </div>
                       )}
                     </div>
@@ -3627,12 +3622,61 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   onClose={() => setShowTimelineView(false)}
                   inline={true}
                 />
-              ) : workflowIdLoading || effectiveWorkflowId === undefined ? (
-                <div className="bg-white border border-gray-200 rounded-lg p-12 animate-pulse">
-                  <div className="flex flex-col items-center justify-center text-center space-y-4">
-                    <div className="w-16 h-16 rounded-full bg-gray-200"></div>
-                    <div className="h-4 w-48 bg-gray-200 rounded"></div>
-                    <div className="h-3 w-64 bg-gray-100 rounded"></div>
+              ) : workflowIdLoading || (workflowIdFetching && !effectiveWorkflowId) || effectiveWorkflowId === undefined || pendingWorkflowSwitch || allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
+                <div className="space-y-6 animate-pulse">
+                  {/* Timeline card skeleton */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    {/* Priority badge placeholder */}
+                    <div className="h-7 w-36 bg-gray-100 rounded-full mb-5"></div>
+                    {/* Chevron stage cards row */}
+                    <div className="hidden md:flex gap-0.5">
+                      {[1,2,3,4].map(i => (
+                        <div key={i} className={`flex-1 min-h-[85px] rounded-md p-3 ${i === 1 ? 'bg-slate-200' : 'bg-slate-100'}`}>
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <div className="w-7 h-7 rounded-full bg-white/60"></div>
+                            <div className="h-4 w-20 bg-white/50 rounded"></div>
+                          </div>
+                          <div className="h-1.5 w-full bg-white/40 rounded-full mb-2"></div>
+                          <div className="h-3 w-16 bg-white/30 rounded"></div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Mobile stage list */}
+                    <div className="md:hidden space-y-3">
+                      {[1,2,3].map(i => (
+                        <div key={i} className="h-12 bg-gray-100 rounded-lg"></div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Stage details card skeleton */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    {/* Stage header */}
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="w-8 h-8 rounded-full bg-gray-200"></div>
+                      <div>
+                        <div className="h-5 w-40 bg-gray-200 rounded mb-1.5"></div>
+                        <div className="h-3 w-56 bg-gray-100 rounded"></div>
+                      </div>
+                    </div>
+                    {/* Checklist header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                      <div className="h-3 w-20 bg-gray-100 rounded"></div>
+                    </div>
+                    {/* Checklist items */}
+                    <div className="space-y-3">
+                      {[1,2,3,4].map(i => (
+                        <div key={i} className="flex items-center gap-3 py-2">
+                          <div className="w-5 h-5 rounded border-2 border-gray-200 flex-shrink-0"></div>
+                          <div className={`h-3.5 rounded ${i % 2 === 0 ? 'bg-gray-100' : 'bg-gray-200'}`} style={{ width: `${50 + i * 10}%` }}></div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Footer */}
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-100">
+                      <div className="h-3 w-28 bg-gray-100 rounded"></div>
+                      <div className="h-8 w-32 bg-gray-200 rounded-lg"></div>
+                    </div>
                   </div>
                 </div>
               ) : !effectiveWorkflowId ? (
@@ -3640,8 +3684,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <div className="flex flex-col items-center justify-center text-center space-y-4">
                     <Activity className="w-16 h-16 text-gray-300" />
                     <div>
-                      <h3 className="text-lg font-medium text-gray-900">No Active Workflows</h3>
-                      <p className="text-sm text-gray-500 mt-1">Add this asset to a workflow to start tracking progress</p>
+                      <h3 className="text-lg font-medium text-gray-900">No Active Processes</h3>
+                      <p className="text-sm text-gray-500 mt-1">Add this asset to a process to start tracking progress</p>
                     </div>
                   </div>
                 </div>
@@ -3665,6 +3709,205 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           })()}
           </div>
         )}
+
+        {/* ========== DECISIONS SUB-PAGE ========== */}
+        {activeSubPage === 'decisions' && (() => {
+          // Derive summary metrics from portfolio holdings
+          const portfolioCount = portfolioHoldings?.length ?? 0
+          const holdingMetrics = portfolioHoldings?.map((h: any) => {
+            const shares = parseFloat(h.shares)
+            const cost = parseFloat(h.cost)
+            const total = shares * cost
+            const ptotal = portfolioTotals?.[h.portfolio_id] || 0
+            return { weight: ptotal > 0 ? (total / ptotal) * 100 : 0 }
+          }) || []
+          const netWeight = holdingMetrics.length > 0
+            ? holdingMetrics.reduce((s, m) => s + m.weight, 0) / holdingMetrics.length
+            : null
+
+          return (
+            <div className="space-y-5">
+              {/* ─── Decision Summary Strip ──────────────────────── */}
+              <div className="flex items-center gap-6 px-1 py-2 border-b border-gray-100">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-400">Held in</span>
+                  <span className="text-[13px] font-semibold text-gray-800 tabular-nums">
+                    {portfolioCount > 0 ? `${portfolioCount} portfolio${portfolioCount !== 1 ? 's' : ''}` : '\u2014'}
+                  </span>
+                </div>
+                <div className="h-3.5 w-px bg-gray-200" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-400">Avg weight</span>
+                  <span className="text-[13px] font-semibold text-gray-800 tabular-nums">
+                    {netWeight !== null ? `${netWeight.toFixed(2)}%` : '\u2014'}
+                  </span>
+                </div>
+                <div className="h-3.5 w-px bg-gray-200" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-400">Active vs BM</span>
+                  <span className="text-[13px] font-semibold text-gray-400 tabular-nums">{'\u2014'}</span>
+                </div>
+                <div className="h-3.5 w-px bg-gray-200" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-400">Last action</span>
+                  <span className="text-[13px] font-semibold text-gray-400">{'\u2014'}</span>
+                </div>
+              </div>
+
+              {/* ─── Current Exposure ────────────────────────────── */}
+              <Card padding="none">
+                <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+                  <h4 className="text-[13px] font-semibold text-gray-900">Current Exposure</h4>
+                  {portfolioCount > 0 && (
+                    <span className="text-[10px] text-gray-400">{portfolioCount} position{portfolioCount !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
+                {portfolioHoldings && portfolioHoldings.length > 0 ? (
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="px-4 py-1.5 text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider">Portfolio</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Weight</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">BM</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Active</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Shares</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Mkt Val</th>
+                        <th className="w-8" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {portfolioHoldings.map((holding: any) => {
+                        const currentPrice = currentQuote?.price || 0
+                        const shares = parseFloat(holding.shares)
+                        const costPerShare = parseFloat(holding.cost)
+                        const totalCost = shares * costPerShare
+                        const currentValue = shares * currentPrice
+                        const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
+                        const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
+
+                        return (
+                          <tr key={holding.id} className="hover:bg-gray-50/50 group">
+                            <td className="px-4 py-2 text-[13px] font-medium text-gray-900">
+                              {holding.portfolios?.name || 'Unknown'}
+                            </td>
+                            <td className="px-4 py-2 text-[13px] text-right text-gray-900 tabular-nums">
+                              {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
+                            </td>
+                            <td className="px-4 py-2 text-[13px] text-right text-gray-400 tabular-nums">{'\u2014'}</td>
+                            <td className="px-4 py-2 text-[13px] text-right text-gray-400 tabular-nums">{'\u2014'}</td>
+                            <td className="px-4 py-2 text-[13px] text-right text-gray-900 tabular-nums">
+                              {shares.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2 text-[13px] text-right text-gray-900 tabular-nums">
+                              {currentPrice > 0
+                                ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                                : '\u2014'}
+                            </td>
+                            <td className="px-1 py-2">
+                              <button
+                                onClick={() => {
+                                  if (onNavigate) {
+                                    onNavigate({
+                                      id: holding.portfolio_id,
+                                      title: holding.portfolios?.name || 'Portfolio',
+                                      type: 'portfolio',
+                                      data: { id: holding.portfolio_id }
+                                    })
+                                  }
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-primary-600"
+                                title="Open portfolio"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="px-4 py-4 flex items-center gap-3">
+                    <span className="text-[13px] text-gray-400">Not held in any portfolios.</span>
+                    <button
+                      onClick={() => {
+                        setActiveSubPage('lists')
+                        setListsFocus('portfoliosContent')
+                      }}
+                      className="text-[11px] text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                      Add to portfolio
+                    </button>
+                  </div>
+                )}
+              </Card>
+
+              {/* ─── Open Items ──────────────────────────────────── */}
+              <Card padding="none" id="decisions-open-items">
+                <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+                  <h4 className="text-[13px] font-semibold text-gray-900">Open Items</h4>
+                  <div className="flex items-center gap-1">
+                    {['All', 'Modeling', 'Deciding', 'Approved'].map((status) => (
+                      <button
+                        key={status}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                          status === 'All'
+                            ? 'bg-gray-900 text-white'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="px-4 py-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] text-gray-400">No open items for {asset.symbol}.</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                            detail: {
+                              type: 'trade-queue',
+                              data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
+                            }
+                          }))
+                        }}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-medium"
+                      >
+                        Open Trade Queue
+                      </button>
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                            detail: {
+                              type: 'new-trade-idea',
+                              data: { assetId: asset.id, symbol: asset.symbol }
+                            }
+                          }))
+                        }}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-medium"
+                      >
+                        New Trade Idea
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* ─── Decision History ────────────────────────────── */}
+              <Card padding="none">
+                <div className="px-4 py-2.5 border-b border-gray-100">
+                  <h4 className="text-[13px] font-semibold text-gray-900">Decision History</h4>
+                </div>
+                <div className="px-4 py-3">
+                  <span className="text-[13px] text-gray-400">No decisions recorded yet.</span>
+                </div>
+              </Card>
+            </div>
+          )
+        })()}
 
         {/* ========== LISTS SUB-PAGE ========== */}
         {activeSubPage === 'lists' && (
@@ -3846,87 +4089,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.portfoliosContent && (
-                      <div className="border-t border-gray-100 px-5 py-2">
+                      <div className="border-t border-gray-100 px-5 py-3">
                         {portfolioHoldings && portfolioHoldings.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50">
-                                <tr>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Portfolio</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shares</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Cost</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized P&L</th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unrealized %</th>
-                                </tr>
-                              </thead>
-                              <tbody className="bg-white divide-y divide-gray-200">
-                                {portfolioHoldings.map((holding: any) => {
-                                  const currentPrice = currentQuote?.price || 0
-                                  const shares = parseFloat(holding.shares)
-                                  const costPerShare = parseFloat(holding.cost)
-                                  const totalCost = shares * costPerShare
-                                  const currentValue = shares * currentPrice
-                                  const unrealizedPnL = currentValue - totalCost
-                                  const unrealizedPercentage = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0
-                                  const isPositive = unrealizedPnL >= 0
-
-                                  // Calculate weight as percentage of total portfolio
-                                  const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                                  const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
-
-                                  return (
-                                    <tr key={holding.id} className="hover:bg-gray-50">
-                                      <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm font-medium text-gray-900">
-                                          {holding.portfolios?.name || 'Unknown Portfolio'}
-                                        </div>
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '--'}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {shares.toLocaleString()}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        ${costPerShare.toFixed(2)}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {currentPrice > 0 ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {currentPrice > 0 ? (
-                                          <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                                            {isPositive ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                          </span>
-                                        ) : (
-                                          <span className="text-gray-400">--</span>
-                                        )}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {currentPrice > 0 ? (
-                                          <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                                            {isPositive ? '+' : ''}{unrealizedPercentage.toFixed(2)}%
-                                          </span>
-                                        ) : (
-                                          <span className="text-gray-400">--</span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
+                          <div className="flex flex-wrap gap-2">
+                            {/* Deduplicate by portfolio_id */}
+                            {Array.from(new Map(portfolioHoldings.map((h: any) => [h.portfolio_id, h])).values()).map((holding: any) => (
+                              <button
+                                key={holding.portfolio_id}
+                                onClick={() => {
+                                  if (onNavigate) {
+                                    onNavigate({
+                                      id: holding.portfolio_id,
+                                      title: holding.portfolios?.name || 'Portfolio',
+                                      type: 'portfolio',
+                                      data: { id: holding.portfolio_id }
+                                    })
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 hover:border-primary-300 hover:text-primary-700 hover:bg-primary-50/50 transition-colors"
+                              >
+                                <Briefcase className="w-3.5 h-3.5 text-gray-400" />
+                                {holding.portfolios?.name || 'Unknown Portfolio'}
+                                <ExternalLink className="w-3 h-3 text-gray-300" />
+                              </button>
+                            ))}
                           </div>
                         ) : (
-                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                            <p className="text-sm text-gray-500">Not in any portfolios</p>
-                          </div>
+                          <p className="text-sm text-gray-400 py-1">Not in any portfolios</p>
                         )}
                       </div>
                     )}

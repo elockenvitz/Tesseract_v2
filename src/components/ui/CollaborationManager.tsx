@@ -37,16 +37,15 @@ interface Collaboration {
   }
 }
 
-export function CollaborationManager({ 
-  noteId, 
-  noteType, 
-  noteTitle, 
-  isOpen, 
+export function CollaborationManager({
+  noteId,
+  noteType,
+  noteTitle,
+  isOpen,
   onClose,
   noteOwnerId,
   noteOwnerUser
 }: CollaborationManagerProps) {
-  const [inviteEmail, setInviteEmail] = useState('')
   const [invitePermission, setInvitePermission] = useState<'read' | 'write'>('read')
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -62,7 +61,7 @@ export function CollaborationManager({
   const queryClient = useQueryClient()
 
   // Fetch owner details if not fully provided
-  const { data: ownerDetails } = useQuery({
+  const { data: ownerDetails, isLoading: isOwnerLoading } = useQuery({
     queryKey: ['note-owner', noteOwnerId],
     queryFn: async () => {
       if (!noteOwnerId) return null
@@ -73,12 +72,16 @@ export function CollaborationManager({
         .select('id, email, first_name, last_name')
         .eq('id', noteOwnerId)
         .single()
-      
+
       if (error) throw error
       return data
     },
     enabled: isOpen && !!noteOwnerId
   })
+
+  // Resolved owner: prefer pre-fetched prop, then query result
+  const resolvedOwner = noteOwnerUser?.id === noteOwnerId ? noteOwnerUser : ownerDetails
+  const ownerLoading = !resolvedOwner && isOwnerLoading
 
   // Fetch existing collaborations
   const { data: collaborations, isLoading } = useQuery({
@@ -91,24 +94,24 @@ export function CollaborationManager({
         .eq('note_id', noteId)
         .eq('note_type', noteType)
         .order('created_at', { ascending: false })
-      
+
       if (collaborationsError) throw collaborationsError
       if (!collaborationsData || collaborationsData.length === 0) return []
 
       // Get unique user IDs
       const userIds = [...new Set(collaborationsData.map(c => c.user_id))]
-      
+
       // Fetch user details separately
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('id, email, first_name, last_name')
         .in('id', userIds)
-      
+
       if (usersError) throw usersError
-      
+
       // Combine the data
       const usersMap = new Map(usersData?.map(u => [u.id, u]) || [])
-      
+
       return collaborationsData.map(collaboration => ({
         ...collaboration,
         user: usersMap.get(collaboration.user_id)
@@ -122,22 +125,22 @@ export function CollaborationManager({
     queryKey: ['user-search', searchQuery],
     queryFn: async () => {
       if (!searchQuery.trim() || searchQuery.length < 2) return []
-      
+
       const { data, error } = await supabase
         .from('users')
         .select('id, email, first_name, last_name')
         .or(`email.ilike.%${searchQuery.toLowerCase()}%,first_name.ilike.%${searchQuery.toLowerCase()}%,last_name.ilike.%${searchQuery.toLowerCase()}%`)
         .neq('id', user?.id) // Exclude current user
         .limit(10)
-      
+
       if (error) throw error
-      
+
       // Filter out users who are already collaborators or the owner
       const existingUserIds = new Set(collaborations?.map(c => c.user_id) || [])
       existingUserIds.add(noteOwnerId); // Exclude the owner
-      
+
       const filteredResults = data?.filter(u => !existingUserIds.has(u.id)) || []
-      
+
       return filteredResults
     },
     enabled: isOpen && searchQuery.length >= 2
@@ -179,7 +182,6 @@ export function CollaborationManager({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['note-collaborations', noteId, noteType] })
-      setInviteEmail('')
       setSearchQuery('')
     }
   })
@@ -191,7 +193,7 @@ export function CollaborationManager({
         .from('note_collaborations')
         .update({ permission, updated_at: new Date().toISOString() })
         .eq('id', collaborationId)
-      
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -206,7 +208,7 @@ export function CollaborationManager({
         .from('note_collaborations')
         .delete()
         .eq('id', collaborationId)
-      
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -248,11 +250,11 @@ export function CollaborationManager({
 
   const getUserDisplayName = (user: any) => {
     if (!user) return 'Unknown User'
-    
+
     if (user.first_name && user.last_name) {
       return `${user.first_name} ${user.last_name}`
     }
-    
+
     return user.email?.split('@')[0] || 'Unknown User'
   }
 
@@ -264,11 +266,11 @@ export function CollaborationManager({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
-      <div 
+      <div
         className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={onClose}
       />
-      
+
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all">
@@ -290,26 +292,37 @@ export function CollaborationManager({
             {/* Note Owner */}
             <Card>
               <h4 className="text-sm font-semibold text-gray-900 mb-4">Note Owner</h4>
-              <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
-                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                  <Users className="h-4 w-4 text-primary-600" />
+              {ownerLoading ? (
+                <div className="animate-pulse flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="w-8 h-8 bg-gray-200 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-200 rounded w-28" />
+                    <div className="h-3 bg-gray-200 rounded w-40" />
+                  </div>
+                  <div className="h-5 bg-gray-200 rounded w-14" />
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {getUserDisplayName(ownerDetails || noteOwnerUser)}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {ownerDetails?.email || noteOwnerUser?.email}
-                  </p>
+              ) : (
+                <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                    <Users className="h-4 w-4 text-primary-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {getUserDisplayName(resolvedOwner)}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {resolvedOwner?.email}
+                    </p>
+                  </div>
+                  <Badge variant="primary" size="sm" className="ml-auto">Owner</Badge>
                 </div>
-                <Badge variant="primary" size="sm" className="ml-auto">Owner</Badge>
-              </div>
+              )}
             </Card>
 
             {/* Invite New User */}
             <Card>
               <h4 className="text-sm font-semibold text-gray-900 mb-4">Invite New Collaborator</h4>
-              
+
               <div className="space-y-4">
                 {/* Search for users */}
                 <div className="relative">
@@ -332,7 +345,7 @@ export function CollaborationManager({
                         >
                           <div>
                             <p className="text-sm font-medium text-gray-900">
-                              {searchUser.first_name && searchUser.last_name 
+                              {searchUser.first_name && searchUser.last_name
                                 ? `${searchUser.first_name} ${searchUser.last_name}`
                                 : getUserDisplayName(searchUser)
                               }
@@ -374,7 +387,7 @@ export function CollaborationManager({
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-sm font-semibold text-gray-900">Current Collaborators</h4>
-                {filteredCollaborations && (
+                {!isLoading && filteredCollaborations && (
                   <Badge variant="default" size="sm">
                     {filteredCollaborations.length} collaborator{filteredCollaborations.length !== 1 ? 's' : ''}
                   </Badge>
@@ -384,7 +397,7 @@ export function CollaborationManager({
               {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(2)].map((_, i) => (
-                    <div key={i} className="animate-pulse flex items-center space-x-3">
+                    <div key={i} className="animate-pulse flex items-center space-x-3 p-3 border border-gray-100 rounded-lg">
                       <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
                       <div className="flex-1 space-y-2">
                         <div className="h-4 bg-gray-200 rounded w-1/3"></div>
@@ -411,7 +424,7 @@ export function CollaborationManager({
                           <p className="text-xs text-gray-500">{collaboration.user?.email}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Select
                           value={collaboration.permission}
@@ -424,11 +437,11 @@ export function CollaborationManager({
                           className="text-xs"
                           disabled={updatePermissionMutation.isPending}
                         />
-                        
+
                         <Badge variant={getPermissionColor(collaboration.permission)} size="sm">
                           {collaboration.permission}
                         </Badge>
-                        
+
                         <button
                           onClick={() => handleRemoveCollaboration(collaboration.id, collaboration.user?.email || 'Unknown')}
                           className="p-1 text-gray-400 hover:text-error-600 transition-colors"

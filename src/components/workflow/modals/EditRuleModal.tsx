@@ -1319,8 +1319,15 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">When this rule triggers, what should happen?</label>
               <select
-                value={formData.actionType}
-                onChange={(e) => setFormData({ ...formData, actionType: e.target.value, actionValue: {} })}
+                value={formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy' ? 'branch_create' : formData.actionType}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === 'branch_create') {
+                    setFormData({ ...formData, actionType: 'branch_nocopy', actionValue: {} })
+                  } else {
+                    setFormData({ ...formData, actionType: val, actionValue: {} })
+                  }
+                }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
               >
                 <optgroup label="Workflow Progress">
@@ -1328,15 +1335,50 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                   <option value="advance_stage">Advance to next stage</option>
                   <option value="reset_workflow">Reset workflow to beginning</option>
                 </optgroup>
-                <optgroup label="Create New Branch">
-                  <option value="branch_copy">Create a copy (keep current progress)</option>
-                  <option value="branch_nocopy">Create a new branch (fresh start)</option>
+                <optgroup label="Runs">
+                  <option value="branch_create">Start a new run</option>
                 </optgroup>
                 <optgroup label="Notification">
                   <option value="send_reminder">Send a reminder notification</option>
                 </optgroup>
               </select>
             </div>
+
+            {(formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy') && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Run mode</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    className={`border-2 rounded-lg p-3 cursor-pointer transition-all ${
+                      formData.actionType === 'branch_nocopy'
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => setFormData({ ...formData, actionType: 'branch_nocopy' })}
+                  >
+                    <div className="flex items-center space-x-2 mb-1">
+                      <input type="radio" checked={formData.actionType === 'branch_nocopy'} readOnly className="text-indigo-600" />
+                      <span className="text-sm font-medium text-gray-900">Fresh start</span>
+                    </div>
+                    <p className="text-xs text-gray-500 ml-6">Clean run, no carried-over progress</p>
+                  </div>
+                  <div
+                    className={`border-2 rounded-lg p-3 cursor-pointer transition-all ${
+                      formData.actionType === 'branch_copy'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => setFormData({ ...formData, actionType: 'branch_copy' })}
+                  >
+                    <div className="flex items-center space-x-2 mb-1">
+                      <input type="radio" checked={formData.actionType === 'branch_copy'} readOnly className="text-blue-600" />
+                      <span className="text-sm font-medium text-gray-900">Carry forward</span>
+                    </div>
+                    <p className="text-xs text-gray-500 ml-6">Keep progress from the previous run</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {(formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy') && (
               <div className="space-y-3">

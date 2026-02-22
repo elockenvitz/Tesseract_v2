@@ -13,3 +13,9 @@ export type { UseWorkflowQueriesParams } from './useWorkflowQueries'
 
 export { useWorkflowMutations } from './useWorkflowMutations'
 export type { UseWorkflowMutationsParams } from './useWorkflowMutations'
+
+export { useActiveRuns } from './useActiveRuns'
+export type { ActiveRun } from './useActiveRuns'
+
+export { useCreateRunAction } from './useCreateRunAction'
+export type { CreateRunAction } from './useCreateRunAction'

@@ -18,7 +18,7 @@ const STATIC_PAGES = [
   { id: 'lists', title: 'Lists', type: 'page' as const, subtitle: 'Asset lists and watchlists', keywords: ['watchlist', 'screening'] },
   { id: 'tdf-list', title: 'Target Date Funds', type: 'page' as const, subtitle: 'TDF management', keywords: ['tdf', 'retirement', 'glide path'] },
   { id: 'projects-list', title: 'Projects', type: 'page' as const, subtitle: 'All projects', keywords: ['tasks', 'work'] },
-  { id: 'workflows', title: 'Workflows', type: 'page' as const, subtitle: 'Workflow management', keywords: ['automation', 'process'] },
+  { id: 'workflows', title: 'Process', type: 'page' as const, subtitle: 'Recurring investment processes', keywords: ['automation', 'process', 'workflow'] },
   { id: 'calendar', title: 'Calendar', type: 'page' as const, subtitle: 'Events and schedule', keywords: ['events', 'schedule', 'meetings', 'earnings'] },
   { id: 'trade-lab', title: 'Trade Lab', type: 'page' as const, subtitle: 'Trade analysis and simulation', keywords: ['trading', 'backtest', 'simulation', 'orders'] },
   { id: 'trade-queue', title: 'Trade Queue', type: 'page' as const, subtitle: 'Pending trades', keywords: ['orders', 'execution', 'trading'] },
