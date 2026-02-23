@@ -410,9 +410,9 @@ export function ProjectCollectionsSidebar({
               onSelectView('active')
             }}
             className={clsx(
-              'w-full flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors',
+              'w-full flex items-center gap-2 px-3 py-1.5 rounded text-[13px] font-medium transition-colors',
               !activeCollectionId && activeView === 'active'
-                ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                ? 'bg-primary-50 text-primary-700 ring-1 ring-inset ring-primary-200'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             )}
           >
@@ -421,10 +421,10 @@ export function ProjectCollectionsSidebar({
           </button>
 
           {/* Teams Section */}
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between mt-3">
             <button
               onClick={() => setTeamsExpanded(!teamsExpanded)}
-              className="flex-1 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="flex-1 px-3 py-1.5 text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
             >
               {teamsExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -488,10 +488,10 @@ export function ProjectCollectionsSidebar({
           )}
 
           {/* Org Groups Section */}
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between mt-3">
             <button
               onClick={() => setOrgGroupsExpanded(!orgGroupsExpanded)}
-              className="flex-1 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="flex-1 px-3 py-1.5 text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
             >
               {orgGroupsExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -643,10 +643,10 @@ export function ProjectCollectionsSidebar({
           )}
 
           {/* Tags - Auto-generated from all tags */}
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between mt-3">
             <button
               onClick={() => setTagsExpanded(!tagsExpanded)}
-              className="flex-1 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="flex-1 px-3 py-1.5 text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
             >
               {tagsExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -698,10 +698,10 @@ export function ProjectCollectionsSidebar({
           )}
 
           {/* Filtered Collections (custom collections with status filters) */}
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between mt-3">
             <button
               onClick={() => setFilteredExpanded(!filteredExpanded)}
-              className="flex-1 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="flex-1 px-3 py-1.5 text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
             >
               {filteredExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
