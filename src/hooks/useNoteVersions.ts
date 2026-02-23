@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
 export type NoteType = 'asset' | 'portfolio' | 'theme' | 'custom'
+export type VersionReason = 'auto' | 'manual' | 'restore' | 'checkpoint'
 
 export interface NoteVersion {
   id: string
@@ -15,6 +16,8 @@ export interface NoteVersion {
   created_by: string | null
   created_at: string
   version_reason: string
+  is_pinned: boolean
+  label: string | null
   // Joined user info
   user?: {
     id: string
@@ -30,13 +33,22 @@ interface CreateVersionParams {
   title: string
   content: string
   noteTypeCategory?: string
-  reason?: 'auto' | 'manual' | 'restore'
+  reason?: VersionReason
+  isPinned?: boolean
+  label?: string
 }
 
 interface RestoreVersionParams {
   versionId: string
   noteId: string
   noteType: NoteType
+}
+
+const NOTE_TABLE_MAP: Record<NoteType, string> = {
+  asset: 'asset_notes',
+  portfolio: 'portfolio_notes',
+  theme: 'theme_notes',
+  custom: 'custom_notebook_notes',
 }
 
 export function useNoteVersions(noteId: string | undefined, noteType: NoteType) {
@@ -61,6 +73,8 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
           created_by,
           created_at,
           version_reason,
+          is_pinned,
+          label,
           user:users!note_versions_created_by_fkey (
             id,
             email,
@@ -73,7 +87,6 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
         .order('version_number', { ascending: false })
 
       if (error) throw error
-      // Add null content placeholder for type safety
       return (data || []).map(v => ({ ...v, content: null }))
     },
     enabled: !!noteId
@@ -117,7 +130,9 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
           content: params.content,
           note_type_category: params.noteTypeCategory,
           created_by: user.id,
-          version_reason: params.reason || 'auto'
+          version_reason: params.reason || 'auto',
+          is_pinned: params.isPinned || false,
+          label: params.label || null,
         })
         .select()
         .single()
@@ -130,9 +145,9 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
     }
   })
 
-  // Restore a specific version
+  // Restore a specific version — returns the backup version ID for undo
   const restoreVersion = useMutation({
-    mutationFn: async (params: RestoreVersionParams) => {
+    mutationFn: async (params: RestoreVersionParams): Promise<{ backupVersionId: string; restoredFromLabel: string }> => {
       if (!user) throw new Error('User not authenticated')
 
       // Get the version to restore
@@ -145,24 +160,7 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
       if (versionError) throw versionError
       if (!version) throw new Error('Version not found')
 
-      // Get current note content to create a backup version first
-      let tableName: string
-      switch (params.noteType) {
-        case 'asset':
-          tableName = 'asset_notes'
-          break
-        case 'portfolio':
-          tableName = 'portfolio_notes'
-          break
-        case 'theme':
-          tableName = 'theme_notes'
-          break
-        case 'custom':
-          tableName = 'custom_notebook_notes'
-          break
-        default:
-          throw new Error(`Unknown note type: ${params.noteType}`)
-      }
+      const tableName = NOTE_TABLE_MAP[params.noteType]
 
       // Get current note state
       const { data: currentNote, error: noteError } = await supabase
@@ -175,13 +173,14 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
       if (!currentNote) throw new Error('Note not found')
 
       // Create a backup version of current state before restoring
-      await createVersion.mutateAsync({
+      const backupData = await createVersion.mutateAsync({
         noteId: params.noteId,
         noteType: params.noteType,
         title: currentNote.title,
         content: currentNote.content,
         noteTypeCategory: currentNote.note_type,
-        reason: 'restore'
+        reason: 'restore',
+        label: 'Backup before restore',
       })
 
       // Update the note with the restored version
@@ -198,13 +197,14 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
 
       if (updateError) throw updateError
 
-      return { restoredVersion: version, backupCreated: true }
+      return {
+        backupVersionId: backupData.id,
+        restoredFromLabel: version.label || `v${version.version_number}`,
+      }
     },
     onSuccess: (_, params) => {
-      // Invalidate both versions and the note itself
       queryClient.invalidateQueries({ queryKey: ['note-versions', params.noteId, params.noteType] })
 
-      // Invalidate the notes query based on type
       switch (params.noteType) {
         case 'asset':
           queryClient.invalidateQueries({ queryKey: ['asset-notes'] })
@@ -237,8 +237,7 @@ export function useNoteVersions(noteId: string | undefined, noteType: NoteType) 
     createVersion: createVersion.mutate,
     createVersionAsync: createVersion.mutateAsync,
     isCreating: createVersion.isPending,
-    restoreVersion: restoreVersion.mutate,
-    restoreVersionAsync: restoreVersion.mutateAsync,
+    restoreVersion: restoreVersion.mutateAsync,
     isRestoring: restoreVersion.isPending,
     getVersionAuthor,
     fetchVersionContent
@@ -257,8 +256,6 @@ export function useAutoVersioning(
   const lastVersionedContent = { current: '' }
   const lastVersionTime = { current: 0 }
 
-  // Create a version if significant changes detected
-  // Called periodically or before closing
   const createVersionIfNeeded = async (force: boolean = false): Promise<boolean> => {
     if (!noteId || !currentContent) return false
 
@@ -266,15 +263,12 @@ export function useAutoVersioning(
     const timeSinceLastVersion = now - lastVersionTime.current
     const contentChanged = currentContent !== lastVersionedContent.current
 
-    // Create version if:
-    // 1. Forced (e.g., before closing)
-    // 2. Content has changed significantly AND enough time has passed (5 min)
-    const significantChange = contentChanged && (
+    const meaningfulChange = contentChanged && (
       Math.abs(currentContent.length - lastVersionedContent.current.length) > 100 ||
       force
     )
 
-    if (significantChange && (force || timeSinceLastVersion > 5 * 60 * 1000)) {
+    if (meaningfulChange && (force || timeSinceLastVersion > 5 * 60 * 1000)) {
       try {
         await createVersionAsync({
           noteId,

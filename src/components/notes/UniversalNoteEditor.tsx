@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import {
-  Plus, Search, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users, History,
+  Plus, Search, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users, History, Pin,
   Save, Check, AlertCircle, ArrowUpDown, X, FileText, HelpCircle, AtSign, DollarSign, Hash, FileCode, BarChart3, Sparkles,
   WifiOff, CloudOff, RefreshCw, Download, FileDown, Loader2, Paperclip, Link2, ExternalLink, FileSpreadsheet, Image, FileVideo, File,
   PanelLeftClose, PanelLeft, CornerDownRight
@@ -18,6 +18,7 @@ import { useNoteVersions } from '../../hooks/useNoteVersions'
 import { useOfflineNotes } from '../../hooks/useOfflineNotes'
 import { useTemplates } from '../../hooks/useTemplates'
 import { formatDistanceToNow, format } from 'date-fns'
+import { NOTE_TYPES, getNoteType } from '../../lib/note-types'
 import { clsx } from 'clsx'
 import { stripHtml } from '../../utils/stripHtml'
 
@@ -162,14 +163,8 @@ export function UniversalNoteEditor({
   // Get templates with shortcuts for .template commands
   const { templatesWithShortcuts } = useTemplates()
 
-  const noteTypeOptions = [
-    { value: 'general', label: 'General', color: 'default' },
-    { value: 'research', label: 'Research', color: 'warning' },
-    { value: 'analysis', label: 'Analysis', color: 'primary' },
-    { value: 'idea', label: 'Idea', color: 'error' },
-    { value: 'meeting', label: 'Meeting', color: 'success' },
-    { value: 'call', label: 'Call', color: 'purple' }
-  ]
+  // Note type keyboard navigation
+  const [noteTypeActiveIdx, setNoteTypeActiveIdx] = useState(-1)
 
   // ---------- Queries ----------
   // Fetch notes list with preview (no full content for faster loading)
@@ -313,13 +308,26 @@ export function UniversalNoteEditor({
   const versionInitialized = useRef(false)
 
   // Initialize version tracking when note content loads
+  // Also create an initial v1 snapshot if the note has content but zero versions
   useEffect(() => {
     if (selectedNote?.content && !versionInitialized.current) {
       lastVersionedContent.current = selectedNote.content
       lastVersionTime.current = Date.now()
       versionInitialized.current = true
+
+      // Create initial version if note has content but no versions exist yet
+      if (selectedNote.content.trim().length > 0 && versions.length === 0) {
+        createVersionAsync({
+          noteId: selectedNote.id,
+          noteType: entityType,
+          title: selectedNote.title || 'Untitled',
+          content: selectedNote.content,
+          noteTypeCategory: selectedNote.note_type,
+          reason: 'auto'
+        }).catch(err => console.error('Failed to create initial version:', err))
+      }
     }
-  }, [selectedNote?.content])
+  }, [selectedNote?.content, versions.length])
 
   // Reset version tracking when switching notes
   useEffect(() => {
@@ -328,7 +336,7 @@ export function UniversalNoteEditor({
     lastVersionTime.current = Date.now()
   }, [selectedNote?.id])
 
-  // Auto-version on significant changes (every 30 minutes with major changes)
+  // Auto-version on meaningful changes (every 5 minutes with 100+ char change)
   useEffect(() => {
     if (!selectedNote || !versionInitialized.current) return
 
@@ -340,13 +348,13 @@ export function UniversalNoteEditor({
       const timeSinceLastVersion = now - lastVersionTime.current
       const contentChanged = currentContent !== lastVersionedContent.current
 
-      // Only create version if:
-      // 1. Content changed by 500+ characters (significant edit)
-      // 2. AND at least 30 minutes have passed
+      // Create version if:
+      // 1. Content changed by 100+ characters (meaningful edit)
+      // 2. AND at least 5 minutes have passed since last version
       const charDiff = Math.abs(currentContent.length - lastVersionedContent.current.length)
-      const significantChange = contentChanged && charDiff > 500
+      const meaningfulChange = contentChanged && charDiff > 100
 
-      if (significantChange && timeSinceLastVersion > 30 * 60 * 1000) {
+      if (meaningfulChange && timeSinceLastVersion > 5 * 60 * 1000) {
         try {
           await createVersionAsync({
             noteId: selectedNote.id,
@@ -364,9 +372,28 @@ export function UniversalNoteEditor({
       }
     }
 
-    // Check every 10 minutes
-    const interval = setInterval(checkAndCreateVersion, 10 * 60 * 1000)
+    // Check every 2 minutes
+    const interval = setInterval(checkAndCreateVersion, 2 * 60 * 1000)
     return () => clearInterval(interval)
+  }, [selectedNote?.id, entityType, createVersionAsync, editingTitle])
+
+  // Create a pinned checkpoint with current editor content
+  const handleCreateCheckpoint = useCallback(async (label: string) => {
+    if (!selectedNote) return
+    const currentContent = editingContentRef.current
+    await createVersionAsync({
+      noteId: selectedNote.id,
+      noteType: entityType,
+      title: editingTitle || selectedNote.title,
+      content: currentContent || selectedNote.content || '',
+      noteTypeCategory: selectedNote.note_type,
+      reason: 'checkpoint',
+      isPinned: true,
+      label: label || undefined,
+    })
+    // Update tracking refs so auto-version doesn't fire immediately after
+    lastVersionedContent.current = currentContent || ''
+    lastVersionTime.current = Date.now()
   }, [selectedNote?.id, entityType, createVersionAsync, editingTitle])
 
   // ---------- Dropdown outside-click handling ----------
@@ -1560,17 +1587,7 @@ export function UniversalNoteEditor({
   // Get unique note types for filter dropdown
   const availableNoteTypes = Array.from(new Set((notes || []).map(n => n.note_type).filter(Boolean)))
 
-  const getNoteTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'meeting': return 'success'
-      case 'call': return 'purple'
-      case 'research': return 'warning'
-      case 'idea': return 'error'
-      case 'analysis': return 'primary'
-      case 'general': return 'default'
-      default: return 'default'
-    }
-  }
+  const getNoteTypeColor = (type: string | null) => getNoteType(type).badgeVariant
 
   return (
     <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
@@ -1655,9 +1672,9 @@ export function UniversalNoteEditor({
                 className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-8 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 cursor-pointer"
               >
                 <option value="">All Types</option>
-                {noteTypeOptions.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                {NOTE_TYPES.map(nt => (
+                  <option key={nt.id} value={nt.id}>
+                    {nt.label}
                   </option>
                 ))}
               </select>
@@ -1757,19 +1774,14 @@ export function UniversalNoteEditor({
                             <Share2 className="h-3 w-3" />
                           </>
                         )}
-                        {note.note_type && (
+                        {note.note_type && note.note_type !== 'general' && (
                           <>
                             <span>•</span>
                             <span className={clsx(
-                              'px-1.5 py-0.5 text-[10px] font-medium rounded capitalize',
-                              note.note_type === 'research' && 'bg-amber-100 text-amber-700',
-                              note.note_type === 'analysis' && 'bg-blue-100 text-blue-700',
-                              note.note_type === 'meeting' && 'bg-emerald-100 text-emerald-700',
-                              note.note_type === 'call' && 'bg-purple-100 text-purple-700',
-                              note.note_type === 'idea' && 'bg-rose-100 text-rose-700',
-                              (!note.note_type || note.note_type === 'general') && 'bg-gray-100 text-gray-700'
+                              'px-1.5 py-0.5 text-[10px] font-medium rounded',
+                              getNoteType(note.note_type).pillClasses
                             )}>
-                              {note.note_type}
+                              {getNoteType(note.note_type).label}
                             </span>
                           </>
                         )}
@@ -1897,34 +1909,77 @@ export function UniversalNoteEditor({
                 <div className="flex items-center space-x-3 flex-1">
                   <div className="flex items-center space-x-3" ref={noteTypeDropdownRef}>
                     <div className="relative">
+                      {/* Trigger: clean pill + separate chevron */}
                       <button
-                        onClick={() => setShowNoteTypeDropdown(!showNoteTypeDropdown)}
-                        className="flex items-center"
+                        onClick={() => { setShowNoteTypeDropdown(!showNoteTypeDropdown); setNoteTypeActiveIdx(-1) }}
+                        className="flex items-center gap-1.5 group"
                       >
-                        <Badge variant={getNoteTypeColor(selectedNote.note_type)} size="sm" className="capitalize">
-                          {selectedNote.note_type || 'General'}
-                          <ChevronDown className="ml-1 h-3 w-3" />
-                        </Badge>
+                        <span className={clsx(
+                          'inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium rounded-md transition-all',
+                          getNoteType(selectedNote.note_type).pillClasses,
+                          'group-hover:shadow-sm'
+                        )}>
+                          <span className={clsx('h-1.5 w-1.5 rounded-full', getNoteType(selectedNote.note_type).dotColor)} />
+                          {getNoteType(selectedNote.note_type).label}
+                        </span>
+                        <ChevronDown className={clsx(
+                          'h-3 w-3 text-gray-400 transition-transform',
+                          showNoteTypeDropdown && 'rotate-180'
+                        )} />
                       </button>
 
+                      {/* Dropdown: single-select controlled taxonomy */}
                       {showNoteTypeDropdown && (
-                        <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-50 min-w-[140px]">
-                          {noteTypeOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              onClick={() => handleNoteTypeChange(option.value)}
-                              className={clsx(
-                                'w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-colors flex items-center justify-between',
-                                selectedNote.note_type === option.value && 'bg-gray-50'
-                              )}
-                              disabled={updateNoteTypeMutation.isPending}
-                            >
-                              <span className="font-medium text-gray-700">{option.label}</span>
-                              <Badge variant={option.color as any} size="sm" className="capitalize">
-                                {option.label}
-                              </Badge>
-                            </button>
-                          ))}
+                        <div
+                          className="absolute top-full left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[180px]"
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault()
+                              setNoteTypeActiveIdx(i => i < NOTE_TYPES.length - 1 ? i + 1 : 0)
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault()
+                              setNoteTypeActiveIdx(i => i > 0 ? i - 1 : NOTE_TYPES.length - 1)
+                            } else if (e.key === 'Enter' && noteTypeActiveIdx >= 0) {
+                              e.preventDefault()
+                              handleNoteTypeChange(NOTE_TYPES[noteTypeActiveIdx].id)
+                            } else if (e.key === 'Escape') {
+                              setShowNoteTypeDropdown(false)
+                            }
+                          }}
+                          tabIndex={-1}
+                          ref={(el) => el?.focus()}
+                        >
+                          <div className="px-3 pt-1.5 pb-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Note Type</span>
+                          </div>
+                          {NOTE_TYPES.map((nt, idx) => {
+                            const isActive = (selectedNote.note_type || 'general') === nt.id
+                            const isHighlighted = noteTypeActiveIdx === idx
+                            return (
+                              <button
+                                key={nt.id}
+                                onClick={() => handleNoteTypeChange(nt.id)}
+                                onMouseEnter={() => setNoteTypeActiveIdx(idx)}
+                                className={clsx(
+                                  'w-full px-3 py-[7px] text-left text-[12px] flex items-center gap-2.5 transition-colors',
+                                  isHighlighted ? 'bg-gray-50' : 'hover:bg-gray-50',
+                                  isActive && 'bg-gray-50/80'
+                                )}
+                                disabled={updateNoteTypeMutation.isPending}
+                              >
+                                <span className={clsx('h-2 w-2 rounded-full flex-shrink-0', nt.dotColor)} />
+                                <span className={clsx(
+                                  'font-medium flex-1',
+                                  isActive ? 'text-gray-900' : 'text-gray-600'
+                                )}>
+                                  {nt.label}
+                                </span>
+                                {isActive && (
+                                  <Check className="h-3.5 w-3.5 text-primary-500 flex-shrink-0" />
+                                )}
+                              </button>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -1947,16 +2002,25 @@ export function UniversalNoteEditor({
                       <span className="font-medium">Share</span>
                     </button>
 
+                    {/* Save Checkpoint */}
+                    <button
+                      onClick={() => setShowVersionHistory(true)}
+                      className="flex items-center space-x-1 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all"
+                      title="Save checkpoint & view history"
+                    >
+                      <Pin className="h-3.5 w-3.5" />
+                    </button>
+
                     {/* Version History Button */}
                     <button
                       onClick={() => setShowVersionHistory(true)}
                       className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
-                      title="Version history"
+                      title="Saved versions"
                     >
                       <History className="h-3.5 w-3.5" />
                       <span className="font-medium">History</span>
                       {versions.length > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-primary-100 text-primary-700 rounded-full font-medium">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium tabular-nums">
                           {versions.length}
                         </span>
                       )}
@@ -2326,10 +2390,12 @@ export function UniversalNoteEditor({
           noteType={entityType}
           isOpen={showVersionHistory}
           onClose={() => setShowVersionHistory(false)}
-          onRestore={(version) => {
+          onRestore={() => {
             // Reload the note content after restore
             queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
+            queryClient.invalidateQueries({ queryKey: [config.queryKey, 'content', selectedNoteId] })
           }}
+          onCreateCheckpoint={handleCreateCheckpoint}
         />
       )}
 

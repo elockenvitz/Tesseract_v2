@@ -25,6 +25,7 @@ import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
 // Project widgets removed - content now in Command Center carousel
 import { TradeQueuePage } from './TradeQueuePage'
+import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { OutcomesPage } from './OutcomesPage'
 import { FilesPage } from './FilesPage'
 import { ChartingPage } from './ChartingPage'
@@ -140,6 +141,9 @@ export function DashboardPage() {
 
   // Pipeline stage filter — clicking a stage in TradePipelineLoop filters DECIDE
   const [pipelineStage, setPipelineStage] = useState<StageKey | null>(null)
+
+  // "New Trade Idea" modal — opened via decision-engine-action event from asset page
+  const [tradeIdeaModal, setTradeIdeaModal] = useState<{ open: boolean; assetId?: string; portfolioId?: string }>({ open: false })
 
   // Stable navigate ref — handleSearchResult is defined below but onClick closures
   // only fire on user interaction (never during render), so a ref is safe.
@@ -272,7 +276,17 @@ export function DashboardPage() {
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
-      if (detail) handleSearchResult(detail)
+      if (!detail) return
+      // Intercept new-trade-idea to open the AddTradeIdeaModal
+      if (detail.type === 'new-trade-idea') {
+        setTradeIdeaModal({
+          open: true,
+          assetId: detail.data?.assetId,
+          portfolioId: detail.data?.portfolioId,
+        })
+        return
+      }
+      handleSearchResult(detail)
     }
     window.addEventListener('decision-engine-action', handler)
     return () => window.removeEventListener('decision-engine-action', handler)
@@ -903,7 +917,21 @@ export function DashboardPage() {
       onSearchResult={handleSearchResult}
       onFocusSearch={handleFocusSearch}
     >
-      {renderTabContent()}
+      <>
+        {renderTabContent()}
+
+        {/* New Trade Idea modal — shared across all tabs via decision-engine-action event */}
+        <AddTradeIdeaModal
+          isOpen={tradeIdeaModal.open}
+          onClose={() => setTradeIdeaModal({ open: false })}
+          onSuccess={() => {
+            setTradeIdeaModal({ open: false })
+            queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+          }}
+          preselectedAssetId={tradeIdeaModal.assetId}
+          preselectedPortfolioId={tradeIdeaModal.portfolioId}
+        />
+      </>
     </Layout>
   )
 }

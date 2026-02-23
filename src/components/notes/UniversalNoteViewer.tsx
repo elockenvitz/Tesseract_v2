@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { formatDistanceToNow } from 'date-fns'
+import { getNoteType } from '../../lib/note-types'
 import ReactMarkdown from 'react-markdown'
 
 export type EntityType = 'asset' | 'portfolio' | 'theme'
@@ -125,17 +126,7 @@ export function UniversalNoteViewer({
     }
   }
 
-  const getNoteTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'meeting': return 'success'
-      case 'call': return 'purple'
-      case 'research': return 'warning'
-      case 'idea': return 'error'
-      case 'analysis': return 'primary'
-      case 'general': return 'default'
-      default: return 'default'
-    }
-  }
+  const getNoteTypeColor = (type: string | null) => getNoteType(type).badgeVariant
 
   const getUserName = (userObj: any) => {
     if (!userObj) return 'Unknown'
