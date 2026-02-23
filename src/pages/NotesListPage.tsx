@@ -10,6 +10,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { getContentPreview } from '../utils/stripHtml'
+import { NOTE_TYPES, getNoteType } from '../lib/note-types'
 
 interface NotesListPageProps {
   onNoteSelect?: (note: any) => void
@@ -42,15 +43,8 @@ interface Note {
   updated_by_user?: UserLite
 }
 
-// Note type options with labels
-const NOTE_TYPE_OPTIONS = [
-  { value: 'general', label: 'General' },
-  { value: 'research', label: 'Research' },
-  { value: 'analysis', label: 'Analysis' },
-  { value: 'idea', label: 'Idea' },
-  { value: 'meeting', label: 'Meeting' },
-  { value: 'call', label: 'Call' }
-]
+// Note type options derived from centralized config
+const NOTE_TYPE_OPTIONS = NOTE_TYPES.map(nt => ({ value: nt.id, label: nt.label }))
 
 // Source type options
 const SOURCE_TYPE_OPTIONS = [
@@ -297,16 +291,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
     return str.charAt(0).toUpperCase() + str.slice(1)
   }
 
-  const getNoteTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'meeting': return 'success'
-      case 'call': return 'purple'
-      case 'research': return 'warning'
-      case 'idea': return 'error'
-      case 'analysis': return 'primary'
-      default: return 'default'
-    }
-  }
+  const getNoteTypeColor = (type: string | null) => getNoteType(type).badgeVariant
 
   const getSourceIcon = (sourceType: string) => {
     switch (sourceType) {

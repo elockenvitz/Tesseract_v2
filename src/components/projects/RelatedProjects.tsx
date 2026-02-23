@@ -14,15 +14,29 @@ interface RelatedProjectsProps {
   contextId: string
   contextTitle?: string
   onProjectClick?: (projectId: string) => void
+  /** When true, the component hides its own create buttons (parent places one in a section header). */
+  hideCreateButton?: boolean
+  /** Controlled open state for the create modal — lets the parent trigger it from an external button. */
+  createModalOpen?: boolean
+  /** Called when the externally-controlled create modal should close. */
+  onCreateModalClose?: () => void
 }
 
 export function RelatedProjects({
   contextType,
   contextId,
   contextTitle,
-  onProjectClick
+  onProjectClick,
+  hideCreateButton,
+  createModalOpen,
+  onCreateModalClose
 }: RelatedProjectsProps) {
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const isModalOpen = createModalOpen ?? showCreateModal
+  const closeModal = () => {
+    setShowCreateModal(false)
+    onCreateModalClose?.()
+  }
 
   const { data: relatedProjects, isLoading } = useQuery({
     queryKey: ['entity-projects', contextType, contextId],
@@ -86,112 +100,88 @@ export function RelatedProjects({
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-1.5 py-1">
         {[1, 2].map((i) => (
-          <Card key={i} padding="md" className="animate-pulse">
-            <div className="h-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          </Card>
+          <div key={i} className="h-6 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
         ))}
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
       {relatedProjects && relatedProjects.length > 0 ? (
         <>
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white">
-              {relatedProjects.length} Related Project{relatedProjects.length !== 1 ? 's' : ''}
-            </h4>
-            <Button size="sm" variant="outline" onClick={() => setShowCreateModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Project
-            </Button>
-          </div>
-          <div className="space-y-3">
+          {!hideCreateButton && (
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-medium text-gray-500">
+                {relatedProjects.length} project{relatedProjects.length !== 1 ? 's' : ''}
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setShowCreateModal(true)}>
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                New Project
+              </Button>
+            </div>
+          )}
+          <div className="divide-y divide-gray-100">
             {relatedProjects.map((project) => {
               const progress = calculateDeliverableProgress(project)
               const isOverdue = project.due_date && new Date(project.due_date) < new Date()
 
               return (
-                <Card
+                <div
                   key={project.id}
-                  padding="md"
-                  className="cursor-pointer hover:shadow-md transition-shadow"
+                  className="flex items-center justify-between gap-3 py-1.5 cursor-pointer hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors"
                   onClick={() => onProjectClick?.(project.id)}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                        <FolderKanban className="w-5 h-5 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-gray-900 dark:text-white mb-1 truncate">
-                          {project.title}
-                        </h4>
-                        {project.description && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
-                            {project.description}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                            {project.status === 'completed' && <CheckCircle className="w-3 h-3" />}
-                            {project.status === 'blocked' && <AlertCircle className="w-3 h-3" />}
-                            <span className="capitalize">{project.status.replace('_', ' ')}</span>
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(project.priority)}`}>
-                            {project.priority}
-                          </span>
-                          {progress && (
-                            <span className="text-xs text-gray-600 dark:text-gray-400">
-                              {progress.completed}/{progress.total} deliverables
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      {project.due_date && (
-                        <div className={`flex items-center gap-1 text-sm ${isOverdue ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
-                          <Calendar className="w-4 h-4" />
-                          <div>
-                            <div className="text-xs">{format(new Date(project.due_date), 'MMM d')}</div>
-                            <div className="text-xs">
-                              {isOverdue ? 'overdue' : formatDistanceToNow(new Date(project.due_date), { addSuffix: true })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <FolderKanban className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="text-[13px] font-medium text-gray-900 dark:text-white truncate">
+                      {project.title}
+                    </span>
+                    <span className={`inline-flex items-center gap-0.5 px-1.5 py-px rounded-full text-[10px] font-medium flex-shrink-0 ${getStatusColor(project.status)}`}>
+                      {project.status === 'completed' && <CheckCircle className="w-2.5 h-2.5" />}
+                      {project.status === 'blocked' && <AlertCircle className="w-2.5 h-2.5" />}
+                      <span className="capitalize">{project.status.replace('_', ' ')}</span>
+                    </span>
+                    <span className={`px-1.5 py-px rounded-full text-[10px] font-medium flex-shrink-0 ${getPriorityColor(project.priority)}`}>
+                      {project.priority}
+                    </span>
+                    {progress && (
+                      <span className="text-[10px] text-gray-400 flex-shrink-0 tabular-nums">
+                        {progress.completed}/{progress.total}
+                      </span>
+                    )}
                   </div>
-                </Card>
+                  {project.due_date && (
+                    <span className={`text-[11px] flex-shrink-0 tabular-nums ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                      {format(new Date(project.due_date), 'MMM d')}
+                    </span>
+                  )}
+                </div>
               )
             })}
           </div>
         </>
       ) : (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mx-auto mb-4">
-            <FolderKanban className="h-8 w-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No related projects</h3>
-          <p className="text-gray-500 dark:text-gray-400 mb-4">
-            Projects related to this {contextType} will appear here.
-          </p>
-          <Button size="sm" onClick={() => setShowCreateModal(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create First Project
-          </Button>
+        <div className="flex items-center gap-3 py-1">
+          <span className="text-[13px] text-gray-400">No related projects.</span>
+          {!hideCreateButton && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="text-[11px] font-medium text-primary-600 hover:text-primary-700 transition-colors"
+            >
+              Create First Project
+            </button>
+          )}
         </div>
       )}
 
       <CreateProjectModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        isOpen={isModalOpen}
+        onClose={closeModal}
         onSuccess={(projectId) => {
-          setShowCreateModal(false)
+          closeModal()
           onProjectClick?.(projectId)
         }}
       />

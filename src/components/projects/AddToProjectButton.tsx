@@ -1,38 +1,49 @@
+/**
+ * AddToProjectButton
+ *
+ * Association-first modal for linking an asset to a project.
+ * Matches the pattern of AddToListButton / AddToThemeButton.
+ *
+ * Primary path: pick an existing project to attach the asset to.
+ * Secondary path: create a new project inline (pre-linked to the asset).
+ */
+
 import React, { useState, useEffect } from 'react'
-import { Tag, X, Search, Plus, Check, ChevronRight } from 'lucide-react'
+import { FolderKanban, X, Search, Plus, Check, ChevronRight } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { formatDistanceToNow } from 'date-fns'
 
-interface AddToThemeButtonProps {
+interface AddToProjectButtonProps {
   assetId: string
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
-interface ThemeRow {
+interface ProjectRow {
   id: string
-  name: string
-  description: string | null
-  color: string | null
+  title: string
+  status: string
+  context_type: string | null
+  context_id: string | null
   updated_at: string | null
   created_by: string | null
-  isAdded: boolean
+  isLinked: boolean
 }
 
-export function AddToThemeButton({
+export function AddToProjectButton({
   assetId,
   variant = 'outline',
   size = 'sm',
-  className
-}: AddToThemeButtonProps) {
+  className,
+}: AddToProjectButtonProps) {
   const [showDialog, setShowDialog] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [newTitle, setNewTitle] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -44,56 +55,50 @@ export function AddToThemeButton({
     return () => clearTimeout(t)
   }, [toast])
 
-  // Fetch available themes
-  const { data: themes, isLoading } = useQuery({
-    queryKey: ['themes', assetId],
+  // Fetch all projects the user created (or is assigned to)
+  const { data: projects, isLoading } = useQuery({
+    queryKey: ['all-projects-for-link', assetId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('themes')
-        .select('id, name, description, color, updated_at, created_by')
-        .eq('created_by', user?.id)
+        .from('projects')
+        .select('id, title, status, context_type, context_id, updated_at, created_by')
+        .is('deleted_at', null)
         .order('updated_at', { ascending: false })
 
       if (error) throw error
 
-      // Check which themes already have this asset
-      const { data: existingThemeAssets } = await supabase
-        .from('theme_assets')
-        .select('theme_id')
-        .eq('asset_id', assetId)
-
-      const existingThemeIds = new Set(existingThemeAssets?.map(ta => ta.theme_id) || [])
-
-      return (data || []).map(theme => ({
-        ...theme,
-        isAdded: existingThemeIds.has(theme.id)
-      })) as ThemeRow[]
+      return (data || []).map((p) => ({
+        ...p,
+        isLinked: p.context_type === 'asset' && p.context_id === assetId,
+      })) as ProjectRow[]
     },
-    enabled: showDialog
+    enabled: showDialog,
   })
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['themes', assetId] })
-    queryClient.invalidateQueries({ queryKey: ['asset-themes', assetId] })
+    queryClient.invalidateQueries({ queryKey: ['all-projects-for-link', assetId] })
+    queryClient.invalidateQueries({ queryKey: ['entity-projects', 'asset', assetId] })
+    queryClient.invalidateQueries({ queryKey: ['asset-context-projects', assetId] })
   }
 
-  // Add to theme mutation
+  // Link asset to existing project
   const linkMutation = useMutation({
-    mutationFn: async (theme: ThemeRow) => {
-      if (theme.isAdded) {
-        return { alreadyLinked: true, name: theme.name }
+    mutationFn: async (project: ProjectRow) => {
+      if (project.isLinked) {
+        return { alreadyLinked: true, title: project.title }
       }
       const { error } = await supabase
-        .from('theme_assets')
-        .insert({ theme_id: theme.id, asset_id: assetId })
+        .from('projects')
+        .update({ context_type: 'asset', context_id: assetId })
+        .eq('id', project.id)
       if (error) throw error
-      return { alreadyLinked: false, name: theme.name }
+      return { alreadyLinked: false, title: project.title }
     },
     onSuccess: (result) => {
       if (result.alreadyLinked) {
-        setToast(`Already in ${result.name}`)
+        setToast(`Already in ${result.title}`)
       } else {
-        setToast(`Added to ${result.name}`)
+        setToast(`Added to ${result.title}`)
         invalidateAll()
       }
       setShowDialog(false)
@@ -101,29 +106,35 @@ export function AddToThemeButton({
     },
   })
 
-  // Create new theme pre-linked to this asset
+  // Create new project pre-linked to this asset
   const createMutation = useMutation({
-    mutationFn: async (name: string) => {
+    mutationFn: async (title: string) => {
       const { data, error } = await supabase
-        .from('themes')
+        .from('projects')
         .insert({
-          name,
+          title,
+          status: 'planning',
+          priority: 'medium',
           created_by: user?.id,
+          context_type: 'asset',
+          context_id: assetId,
         })
         .select('id')
         .single()
       if (error) throw error
 
-      // Link the asset to the new theme
-      await supabase
-        .from('theme_assets')
-        .insert({ theme_id: data.id, asset_id: assetId })
+      await supabase.from('project_assignments').insert({
+        project_id: data.id,
+        assigned_to: user?.id,
+        assigned_by: user?.id,
+        role: 'owner',
+      })
 
-      return { id: data.id, name }
+      return { id: data.id, title }
     },
     onSuccess: (result) => {
-      setToast(`Added to ${result.name}`)
-      setNewName('')
+      setToast(`Added to ${result.title}`)
+      setNewTitle('')
       setShowCreateForm(false)
       setShowDialog(false)
       setSearchQuery('')
@@ -131,25 +142,27 @@ export function AddToThemeButton({
     },
   })
 
-  const handleLink = (theme: ThemeRow) => {
+  const handleLink = (project: ProjectRow) => {
     if (linkMutation.isPending) return
-    linkMutation.mutate(theme)
+    linkMutation.mutate(project)
   }
 
   const handleCreate = () => {
-    if (!newName.trim() || createMutation.isPending) return
-    createMutation.mutate(newName.trim())
+    if (!newTitle.trim() || createMutation.isPending) return
+    createMutation.mutate(newTitle.trim())
   }
 
-  const filtered = themes?.filter(
-    (t) =>
+  const filtered = projects?.filter(
+    (p) =>
       !searchQuery ||
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      p.title.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
 
-  const available = filtered.filter((t) => !t.isAdded)
-  const linked = filtered.filter((t) => t.isAdded)
+  const available = filtered.filter((p) => !p.isLinked)
+  const linked = filtered.filter((p) => p.isLinked)
+
+  const statusLabel = (s: string) =>
+    s.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
   return (
     <>
@@ -162,8 +175,8 @@ export function AddToThemeButton({
         }}
         className={className}
       >
-        <Tag className="h-4 w-4 mr-2" />
-        Add to Theme
+        <FolderKanban className="h-4 w-4 mr-2" />
+        Add to Project
       </Button>
 
       {/* Toast */}
@@ -185,8 +198,8 @@ export function AddToThemeButton({
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-gray-900">Add to Theme</h3>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Select a theme to add this asset to</p>
+                  <h3 className="text-[15px] font-semibold text-gray-900">Add to Project</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Select a project to link this asset to</p>
                 </div>
                 <button
                   onClick={() => { setShowDialog(false); setSearchQuery('') }}
@@ -202,7 +215,7 @@ export function AddToThemeButton({
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search themes\u2026"
+                    placeholder="Search projects\u2026"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -211,7 +224,7 @@ export function AddToThemeButton({
                 </div>
               </div>
 
-              {/* Theme list */}
+              {/* Project list */}
               <div className="flex-1 overflow-y-auto px-3 py-1">
                 {isLoading ? (
                   <div className="space-y-1 px-2 py-1">
@@ -227,25 +240,23 @@ export function AddToThemeButton({
                         {linked.length > 0 && (
                           <p className="text-[9px] font-medium text-gray-400/70 uppercase tracking-widest mb-1 mt-2 px-2">Available</p>
                         )}
-                        {available.map((theme) => (
+                        {available.map((project) => (
                           <button
-                            key={theme.id}
-                            onClick={() => handleLink(theme)}
+                            key={project.id}
+                            onClick={() => handleLink(project)}
                             disabled={linkMutation.isPending}
                             className="w-full flex items-center justify-between px-3 py-[7px] rounded-lg cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors text-left group"
                           >
                             <div className="min-w-0 flex-1">
                               <span className="text-[13px] font-semibold text-gray-900 truncate block leading-tight">
-                                {theme.name}
+                                {project.title}
                               </span>
-                              {theme.updated_at && (
-                                <span className="text-[11px] text-gray-400/80 block mt-0.5 leading-tight">
-                                  Updated {formatDistanceToNow(new Date(theme.updated_at), { addSuffix: true })}
-                                </span>
-                              )}
-                              {theme.description && (
-                                <span className="text-[11px] text-gray-400/60 block mt-px leading-tight truncate">{theme.description}</span>
-                              )}
+                              <span className="text-[11px] text-gray-400/80 block mt-0.5 leading-tight">
+                                {statusLabel(project.status)}
+                                {project.updated_at && (
+                                  <> &middot; {formatDistanceToNow(new Date(project.updated_at), { addSuffix: true })}</>
+                                )}
+                              </span>
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
                           </button>
@@ -253,20 +264,18 @@ export function AddToThemeButton({
                       </div>
                     )}
 
-                    {/* Already added */}
+                    {/* Already linked */}
                     {linked.length > 0 && (
                       <div>
-                        <p className="text-[9px] font-medium text-gray-400/70 uppercase tracking-widest mb-1 mt-3 px-2">Already added</p>
-                        {linked.map((theme) => (
+                        <p className="text-[9px] font-medium text-gray-400/70 uppercase tracking-widest mb-1 mt-3 px-2">Already linked</p>
+                        {linked.map((project) => (
                           <div
-                            key={theme.id}
+                            key={project.id}
                             className="flex items-center justify-between px-3 py-[7px] rounded-lg cursor-default"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-medium text-gray-500 truncate block leading-tight">{theme.name}</span>
-                              {theme.description && (
-                                <span className="text-[11px] text-gray-400/60 block mt-0.5 leading-tight truncate">{theme.description}</span>
-                              )}
+                              <span className="text-[13px] font-medium text-gray-500 truncate block leading-tight">{project.title}</span>
+                              <span className="text-[11px] text-gray-400/60 block mt-0.5 leading-tight">{statusLabel(project.status)}</span>
                             </div>
                             <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
                           </div>
@@ -278,7 +287,7 @@ export function AddToThemeButton({
                     {filtered.length === 0 && !isLoading && (
                       <div className="py-6 text-center">
                         <p className="text-[13px] text-gray-400">
-                          {themes?.length === 0 ? 'No themes yet.' : 'No themes match your search.'}
+                          {projects?.length === 0 ? 'No projects yet.' : 'No projects match your search.'}
                         </p>
                       </div>
                     )}
@@ -292,14 +301,14 @@ export function AddToThemeButton({
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      placeholder="Theme name"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
+                      placeholder="Project name"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleCreate()
                         if (e.key === 'Escape') {
                           setShowCreateForm(false)
-                          setNewName('')
+                          setNewTitle('')
                         }
                       }}
                       className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -308,12 +317,12 @@ export function AddToThemeButton({
                     <Button
                       size="sm"
                       onClick={handleCreate}
-                      disabled={!newName.trim() || createMutation.isPending}
+                      disabled={!newTitle.trim() || createMutation.isPending}
                     >
                       {createMutation.isPending ? 'Creating\u2026' : 'Create'}
                     </Button>
                     <button
-                      onClick={() => { setShowCreateForm(false); setNewName('') }}
+                      onClick={() => { setShowCreateForm(false); setNewTitle('') }}
                       className="text-gray-400 hover:text-gray-600 transition-colors"
                     >
                       <X className="w-4 h-4" />
@@ -325,7 +334,7 @@ export function AddToThemeButton({
                     className="flex items-center gap-1.5 text-[11px] font-normal text-gray-400 hover:text-gray-600 transition-colors"
                   >
                     <Plus className="w-3 h-3" />
-                    Create new theme
+                    Create new project
                   </button>
                 )}
               </div>

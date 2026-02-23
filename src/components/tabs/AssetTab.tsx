@@ -21,6 +21,7 @@ import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
 import { AddToThemeButton } from '../lists/AddToThemeButton'
 import { AddToQueueButton } from '../lists/AddToQueueButton'
+import { useAssetTradeIdeas } from '../../hooks/useAssetTradeIdeas'
 import { StockQuote } from '../financial/StockQuote'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
@@ -28,6 +29,7 @@ import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
+import { AddToProjectButton } from '../projects/AddToProjectButton'
 import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
@@ -125,6 +127,7 @@ function AssetTabKeyReferencesInline({
   onToggle,
   notes,
   onCreateNote,
+  onNoteClick,
   isEmbedded
 }: {
   assetId: string
@@ -132,6 +135,7 @@ function AssetTabKeyReferencesInline({
   onToggle: () => void
   notes?: any[]
   onCreateNote?: () => void
+  onNoteClick?: (noteId: string) => void
   isEmbedded?: boolean
 }) {
   const [showVersionHistory, setShowVersionHistory] = useState(false)
@@ -147,6 +151,7 @@ function AssetTabKeyReferencesInline({
         onToggleExpanded={onToggle}
         onViewModelHistory={(modelId) => { setSelectedModelId(modelId); setShowVersionHistory(true) }}
         onCreateNote={onCreateNote}
+        onNoteClick={onNoteClick}
         notes={notes}
         isEmbedded={isEmbedded}
       />
@@ -294,6 +299,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
   const [listsFocus, setListsFocus] = useState<string | null>(null)
+  const [openItemsFilter, setOpenItemsFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling' | 'deciding'>('all')
   const headerContext = useAssetHeaderContext(asset.id)
   const [addRefType, setAddRefType] = useState<'none' | 'note' | 'file' | 'model' | 'url'>('none')
   const [newRefUrl, setNewRefUrl] = useState('')
@@ -302,6 +308,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   // Fetch asset models (Excel files)
   const { models: assetModels = [] } = useAssetModels(asset.id)
+
+  // Fetch active trade ideas for Open Items section
+  const { ideas: openItems, isLoading: openItemsLoading, totalHint: openItemsTotalHint } = useAssetTradeIdeas({ assetId: asset.id })
 
   // Refs for EditableSectionWithHistory components
   const thesisRef = useRef<EditableSectionWithHistoryRef>(null)
@@ -2978,6 +2987,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 onToggle={() => {}}
                 notes={notes || []}
                 onCreateNote={handleCreateNote}
+                onNoteClick={handleNoteClick}
                 isEmbedded
               />
             ) : isAggregatedView ? (
@@ -3714,70 +3724,102 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {activeSubPage === 'decisions' && (() => {
           // Derive summary metrics from portfolio holdings
           const portfolioCount = portfolioHoldings?.length ?? 0
+          const currentPrice = currentQuote?.price || 0
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
             const shares = parseFloat(h.shares)
             const cost = parseFloat(h.cost)
-            const total = shares * cost
+            const totalCost = shares * cost
+            const mktVal = shares * currentPrice
             const ptotal = portfolioTotals?.[h.portfolio_id] || 0
-            return { weight: ptotal > 0 ? (total / ptotal) * 100 : 0 }
+            const weight = ptotal > 0 ? (totalCost / ptotal) * 100 : 0
+            return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
           }) || []
-          const netWeight = holdingMetrics.length > 0
-            ? holdingMetrics.reduce((s, m) => s + m.weight, 0) / holdingMetrics.length
+
+          // Net exposure = sum of all market values across portfolios
+          const netExposure = holdingMetrics.reduce((s, m) => s + m.mktVal, 0)
+          // Largest position
+          const largestPos = holdingMetrics.length > 0
+            ? holdingMetrics.reduce((best, m) => m.weight > best.weight ? m : best, holdingMetrics[0])
             : null
 
           return (
-            <div className="space-y-5">
-              {/* ─── Decision Summary Strip ──────────────────────── */}
-              <div className="flex items-center gap-6 px-1 py-2 border-b border-gray-100">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-gray-400">Held in</span>
-                  <span className="text-[13px] font-semibold text-gray-800 tabular-nums">
-                    {portfolioCount > 0 ? `${portfolioCount} portfolio${portfolioCount !== 1 ? 's' : ''}` : '\u2014'}
-                  </span>
-                </div>
-                <div className="h-3.5 w-px bg-gray-200" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-gray-400">Avg weight</span>
-                  <span className="text-[13px] font-semibold text-gray-800 tabular-nums">
-                    {netWeight !== null ? `${netWeight.toFixed(2)}%` : '\u2014'}
-                  </span>
-                </div>
-                <div className="h-3.5 w-px bg-gray-200" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-gray-400">Active vs BM</span>
-                  <span className="text-[13px] font-semibold text-gray-400 tabular-nums">{'\u2014'}</span>
-                </div>
-                <div className="h-3.5 w-px bg-gray-200" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-gray-400">Last action</span>
-                  <span className="text-[13px] font-semibold text-gray-400">{'\u2014'}</span>
-                </div>
+            <div className="space-y-3">
+              {/* ─── Capital State Bar ────────────────────────────── */}
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  {
+                    label: 'Held In',
+                    value: portfolioCount > 0 ? `${portfolioCount}` : '\u2014',
+                    sub: portfolioCount > 0 ? `portfolio${portfolioCount !== 1 ? 's' : ''}` : null,
+                    active: portfolioCount > 0,
+                  },
+                  {
+                    label: 'Net Exposure',
+                    value: netExposure > 0 && currentPrice > 0
+                      ? `$${netExposure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                      : '\u2014',
+                    sub: null,
+                    active: netExposure > 0,
+                  },
+                  {
+                    label: 'Largest Position',
+                    value: largestPos && largestPos.weight > 0 ? `${largestPos.weight.toFixed(2)}%` : '\u2014',
+                    sub: largestPos && largestPos.weight > 0 ? largestPos.name : null,
+                    active: !!(largestPos && largestPos.weight > 0),
+                  },
+                  {
+                    label: 'Active vs BM',
+                    value: '\u2014',
+                    sub: null,
+                    active: false,
+                  },
+                  {
+                    label: 'Last Action',
+                    value: '\u2014',
+                    sub: null,
+                    active: false,
+                  },
+                ].map((metric) => (
+                  <div
+                    key={metric.label}
+                    className={`rounded-lg border px-3 py-2.5 ${metric.active ? 'border-gray-200/80 bg-white shadow-sm' : 'border-gray-200/60 bg-gray-50/80'}`}
+                  >
+                    <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest block leading-none">
+                      {metric.label}
+                    </span>
+                    <span className={`text-[17px] font-extrabold tabular-nums block mt-1.5 leading-tight ${metric.active ? 'text-gray-900' : 'text-gray-400'}`}>
+                      {metric.value}
+                    </span>
+                    {metric.sub && (
+                      <span className="text-[10px] text-gray-500 block mt-0.5 leading-tight truncate">{metric.sub}</span>
+                    )}
+                  </div>
+                ))}
               </div>
 
               {/* ─── Current Exposure ────────────────────────────── */}
               <Card padding="none">
-                <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
                   <h4 className="text-[13px] font-semibold text-gray-900">Current Exposure</h4>
                   {portfolioCount > 0 && (
-                    <span className="text-[10px] text-gray-400">{portfolioCount} position{portfolioCount !== 1 ? 's' : ''}</span>
+                    <span className="text-[10px] text-gray-400 tabular-nums">{portfolioCount} position{portfolioCount !== 1 ? 's' : ''}</span>
                   )}
                 </div>
                 {portfolioHoldings && portfolioHoldings.length > 0 ? (
                   <table className="min-w-full">
                     <thead>
-                      <tr className="border-b border-gray-100">
+                      <tr className="border-b border-gray-100 bg-gray-50/60">
                         <th className="px-4 py-1.5 text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider">Portfolio</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Weight</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">BM</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Active</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Shares</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Wgt</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Bench Wgt</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Active Wgt</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Shs</th>
                         <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Mkt Val</th>
                         <th className="w-8" />
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-100/80">
                       {portfolioHoldings.map((holding: any) => {
-                        const currentPrice = currentQuote?.price || 0
                         const shares = parseFloat(holding.shares)
                         const costPerShare = parseFloat(holding.cost)
                         const totalCost = shares * costPerShare
@@ -3786,24 +3828,32 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
 
                         return (
-                          <tr key={holding.id} className="hover:bg-gray-50/50 group">
-                            <td className="px-4 py-2 text-[13px] font-medium text-gray-900">
-                              {holding.portfolios?.name || 'Unknown'}
+                          <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
+                            <td className="px-4 py-1.5">
+                              <span className="text-[13px] font-medium text-gray-900">{holding.portfolios?.name || 'Unknown'}</span>
                             </td>
-                            <td className="px-4 py-2 text-[13px] text-right text-gray-900 tabular-nums">
-                              {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[13px] font-bold text-gray-900 tabular-nums">
+                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
+                              </span>
                             </td>
-                            <td className="px-4 py-2 text-[13px] text-right text-gray-400 tabular-nums">{'\u2014'}</td>
-                            <td className="px-4 py-2 text-[13px] text-right text-gray-400 tabular-nums">{'\u2014'}</td>
-                            <td className="px-4 py-2 text-[13px] text-right text-gray-900 tabular-nums">
-                              {shares.toLocaleString()}
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
                             </td>
-                            <td className="px-4 py-2 text-[13px] text-right text-gray-900 tabular-nums">
-                              {currentPrice > 0
-                                ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-                                : '\u2014'}
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
                             </td>
-                            <td className="px-1 py-2">
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-500 tabular-nums">{shares.toLocaleString()}</span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-500 tabular-nums">
+                                {currentPrice > 0
+                                  ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : '\u2014'}
+                              </span>
+                            </td>
+                            <td className="px-1 py-1.5">
                               <button
                                 onClick={() => {
                                   if (onNavigate) {
@@ -3825,46 +3875,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         )
                       })}
                     </tbody>
+
                   </table>
                 ) : (
-                  <div className="px-4 py-4 flex items-center gap-3">
-                    <span className="text-[13px] text-gray-400">Not held in any portfolios.</span>
-                    <button
-                      onClick={() => {
-                        setActiveSubPage('lists')
-                        setListsFocus('portfoliosContent')
-                      }}
-                      className="text-[11px] text-primary-600 hover:text-primary-700 font-medium"
-                    >
-                      Add to portfolio
-                    </button>
-                  </div>
-                )}
-              </Card>
-
-              {/* ─── Open Items ──────────────────────────────────── */}
-              <Card padding="none" id="decisions-open-items">
-                <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-                  <h4 className="text-[13px] font-semibold text-gray-900">Open Items</h4>
-                  <div className="flex items-center gap-1">
-                    {['All', 'Modeling', 'Deciding', 'Approved'].map((status) => (
-                      <button
-                        key={status}
-                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                          status === 'All'
-                            ? 'bg-gray-900 text-white'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        {status}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="px-4 py-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] text-gray-400">No open items for {asset.symbol}.</span>
-                    <div className="flex items-center gap-3">
+                  <div className="px-4 py-4 flex items-center justify-between">
+                    <div>
+                      <span className="text-[13px] font-medium text-gray-500 block">Not currently held</span>
+                      <span className="text-[11px] text-gray-400 block mt-0.5">No approved or executed trade proposals exist for this asset.</span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
                       <button
                         onClick={() => {
                           window.dispatchEvent(new CustomEvent('decision-engine-action', {
@@ -3874,9 +3893,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             }
                           }))
                         }}
-                        className="text-[11px] text-primary-600 hover:text-primary-700 font-medium"
+                        className="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors"
                       >
-                        Open Trade Queue
+                        View Trade Queue
                       </button>
                       <button
                         onClick={() => {
@@ -3887,23 +3906,185 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             }
                           }))
                         }}
-                        className="text-[11px] text-primary-600 hover:text-primary-700 font-medium"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors shadow-sm"
                       >
+                        <Plus className="w-3.5 h-3.5" />
                         New Trade Idea
                       </button>
                     </div>
                   </div>
+                )}
+              </Card>
+
+              {/* ─── Open Items ──────────────────────────────────── */}
+              <Card padding="none" id="decisions-open-items">
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3">
+                  <h4 className="text-[13px] font-semibold text-gray-900">Open Items</h4>
+                  <span className="text-[10px] font-medium text-gray-400 tabular-nums">({openItemsTotalHint})</span>
+                  <div className="flex items-center gap-1 ml-1">
+                    {([
+                      { key: 'all', label: 'All' },
+                      { key: 'idea', label: 'Idea' },
+                      { key: 'working_on', label: 'Working On' },
+                      { key: 'modeling', label: 'Modeling' },
+                      { key: 'deciding', label: 'Deciding' },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setOpenItemsFilter(key)}
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                          openItemsFilter === key
+                            ? 'bg-gray-900 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {openItemsLoading ? (
+                  <div className="px-4 py-3 space-y-2">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="h-8 bg-gray-50 rounded animate-pulse" />
+                    ))}
+                  </div>
+                ) : (() => {
+                  // Normalize legacy stage names: 'simulating' → 'modeling', 'discussing' → 'working_on'
+                  const normalizeStage = (s: string) => s === 'simulating' ? 'modeling' : s === 'discussing' ? 'working_on' : s
+                  const filteredItems = openItemsFilter === 'all'
+                    ? openItems
+                    : openItems.filter(item => normalizeStage(item.stage) === openItemsFilter)
+                  return filteredItems.length === 0 ? (
+                    <div className="px-4 py-3 flex items-center gap-4">
+                      <span className="text-[13px] text-gray-400">
+                        {openItems.length === 0 ? 'No open items.' : 'No items match this filter.'}
+                      </span>
+                      {openItems.length === 0 && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                detail: {
+                                  type: 'new-trade-idea',
+                                  data: { assetId: asset.id, symbol: asset.symbol }
+                                }
+                              }))
+                            }}
+                            className="px-2.5 py-1 rounded text-[11px] font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 transition-colors"
+                          >
+                            New Trade Idea
+                          </button>
+                          <button
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                detail: {
+                                  type: 'trade-queue',
+                                  data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
+                                }
+                              }))
+                            }}
+                            className="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                          >
+                            Open Trade Queue
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {filteredItems.map((item) => {
+                        const actionConfig: Record<string, { bg: string; text: string; border: string }> = {
+                          buy:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
+                          add:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
+                          sell: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
+                          trim: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
+                        }
+                        const stageColors: Record<string, string> = {
+                          idea: 'bg-gray-100 text-gray-700 ring-gray-300',
+                          working_on: 'bg-blue-100/80 text-blue-800 ring-blue-300',
+                          discussing: 'bg-blue-100/80 text-blue-800 ring-blue-300',
+                          modeling: 'bg-purple-100/80 text-purple-800 ring-purple-300',
+                          simulating: 'bg-purple-100/80 text-purple-800 ring-purple-300',
+                          deciding: 'bg-amber-100/80 text-amber-800 ring-amber-300',
+                        }
+                        const stageLabels: Record<string, string> = {
+                          idea: 'Idea',
+                          working_on: 'Working On',
+                          discussing: 'Working On',
+                          modeling: 'Modeling',
+                          simulating: 'Modeling',
+                          deciding: 'Deciding',
+                        }
+                        const ac = actionConfig[item.action] || { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-l-gray-300' }
+                        const creatorName = item.creator
+                          ? [item.creator.first_name, item.creator.last_name].filter(Boolean).join(' ') || 'Unknown'
+                          : null
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                detail: {
+                                  type: 'trade-queue',
+                                  data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
+                                }
+                              }))
+                            }}
+                            className={`w-full px-4 py-2.5 flex items-center gap-3 hover:bg-blue-50/50 active:bg-blue-100/40 transition-colors text-left group border-l-[3px] ${ac.border}`}
+                          >
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${ac.bg} ${ac.text}`}>
+                              {item.action}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[13px] font-semibold text-gray-900 block truncate leading-tight">
+                                {item.rationale || 'No rationale'}
+                              </span>
+                              <span className="text-[10px] text-gray-400 block mt-0.5 leading-tight">
+                                {item.portfolio && <>{item.portfolio.name}</>}
+                                {item.portfolio && creatorName && <> &middot; </>}
+                                {creatorName}
+                                {(item.portfolio || creatorName) && <> &middot; </>}
+                                {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
+                              </span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColors[item.stage] || 'bg-gray-100 text-gray-600 ring-gray-200'}`}>
+                              {stageLabels[item.stage] || item.stage}
+                            </span>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </Card>
 
               {/* ─── Decision History ────────────────────────────── */}
               <Card padding="none">
-                <div className="px-4 py-2.5 border-b border-gray-100">
+                <div className="px-4 py-2 border-b border-gray-200/80">
                   <h4 className="text-[13px] font-semibold text-gray-900">Decision History</h4>
                 </div>
-                <div className="px-4 py-3">
-                  <span className="text-[13px] text-gray-400">No decisions recorded yet.</span>
-                </div>
+                {/* Column headers visible even when empty — establishes table contract */}
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200/70 bg-gray-50">
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Portfolio</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Action</th>
+                      <th className="px-4 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wider tabular-nums">{'\u0394'} Weight</th>
+                      <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider w-16">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colSpan={5} className="px-4 py-4">
+                        <span className="text-[13px] text-gray-500 block">No executed decisions yet.</span>
+                        <span className="text-[11px] text-gray-400 block mt-0.5">Approved and implemented proposals will appear here.</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </Card>
             </div>
           )
@@ -3911,7 +4092,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
         {/* ========== LISTS SUB-PAGE ========== */}
         {activeSubPage === 'lists' && (
-          <div className="space-y-8">
+          <div className="space-y-3">
             {(() => {
               const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
                 const type = list.type || 'list'
@@ -3926,9 +4107,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-listsContent">
                     <button
                       onClick={() => toggleSection('listsContent')}
-                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
-                      <div className="flex justify-between items-center flex-1">
+                      <div className="flex justify-between items-center flex-1 mr-2">
                         <h4
                           onClick={(e) => {
                             e.stopPropagation()
@@ -3941,47 +4122,43 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
-                          className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
                         >
                           Lists
                         </h4>
                         <AddToListButton assetId={asset.id} />
                       </div>
                       {collapsedSections.listsContent ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
                       ) : (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                        <ChevronUp className="h-4 w-4 text-gray-400" />
                       )}
                     </button>
                     {!collapsedSections.listsContent && (
-                      <div className="border-t border-gray-100 px-5 py-2">
+                      <div className="border-t border-gray-100 px-4 py-2">
                         {listsByType.list && listsByType.list.length > 0 ? (
-                          <div className="grid gap-3">
+                          <div className="divide-y divide-gray-50">
                             {listsByType.list.map((list: any) => (
-                              <Card key={list.id} className="hover:shadow-md transition-shadow cursor-pointer">
-                                <div className="p-4">
-                                  <div className="flex items-start justify-between">
-                                    <div>
-                                      <h5 className="font-semibold text-gray-900">{list.name}</h5>
-                                      {list.description && (
-                                        <p className="text-sm text-gray-600 mt-1">{list.description}</p>
-                                      )}
-                                      {list.created_at && (
-                                        <p className="text-xs text-gray-500 mt-2">
-                                          Created {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <Badge variant="default">list</Badge>
-                                  </div>
+                              <div key={list.id} className="flex items-center justify-between py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors cursor-pointer">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-[13px] font-medium text-gray-900 truncate">{list.name}</span>
+                                  {list.description && (
+                                    <span className="text-[11px] text-gray-400 truncate hidden sm:inline">{list.description}</span>
+                                  )}
                                 </div>
-                              </Card>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {list.created_at && (
+                                    <span className="text-[10px] text-gray-400">
+                                      {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
+                                    </span>
+                                  )}
+                                  <Badge variant="default" size="sm">list</Badge>
+                                </div>
+                              </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                            <p className="text-sm text-gray-500">Not in any lists</p>
-                          </div>
+                          <p className="text-[13px] text-gray-400 py-1">Not in any lists.</p>
                         )}
                       </div>
                     )}
@@ -3991,9 +4168,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-themesContent">
                     <button
                       onClick={() => toggleSection('themesContent')}
-                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
-                      <div className="flex justify-between items-center flex-1">
+                      <div className="flex justify-between items-center flex-1 mr-2">
                         <h4
                           onClick={(e) => {
                             e.stopPropagation()
@@ -4006,26 +4183,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
-                          className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
                         >
                           Themes
                         </h4>
                         <AddToThemeButton assetId={asset.id} />
                       </div>
                       {collapsedSections.themesContent ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
                       ) : (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                        <ChevronUp className="h-4 w-4 text-gray-400" />
                       )}
                     </button>
                     {!collapsedSections.themesContent && (
-                      <div className="border-t border-gray-100 px-5 py-2">
+                      <div className="border-t border-gray-100 px-4 py-2">
                         {assetThemes && assetThemes.length > 0 ? (
-                          <div className="grid gap-2">
+                          <div className="divide-y divide-gray-50">
                             {assetThemes.map((theme: any) => (
                               <div
                                 key={theme.id}
-                                className="px-2 py-1 flex items-center gap-2"
+                                className="flex items-center gap-2 py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors"
                               >
                                 <span
                                   onClick={() => {
@@ -4038,7 +4215,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                       })
                                     }
                                   }}
-                                  className="text-sm font-medium text-gray-900 hover:bg-gray-50 cursor-pointer transition-colors px-1 py-0.5 rounded"
+                                  className="text-[13px] font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
                                 >
                                   {theme.name}
                                 </span>
@@ -4049,9 +4226,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             ))}
                           </div>
                         ) : (
-                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                            <p className="text-sm text-gray-500">Not in any themes</p>
-                          </div>
+                          <p className="text-[13px] text-gray-400 py-1">Not in any themes.</p>
                         )}
                       </div>
                     )}
@@ -4061,9 +4236,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-portfoliosContent">
                     <button
                       onClick={() => toggleSection('portfoliosContent')}
-                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
-                      <div className="flex justify-between items-center flex-1">
+                      <div className="flex justify-between items-center flex-1 mr-2">
                         <h4
                           onClick={(e) => {
                             e.stopPropagation()
@@ -4076,46 +4251,53 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
-                          className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
                         >
                           Portfolios
                         </h4>
                         <AddToQueueButton assetId={asset.id} />
                       </div>
                       {collapsedSections.portfoliosContent ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
                       ) : (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                        <ChevronUp className="h-4 w-4 text-gray-400" />
                       )}
                     </button>
                     {!collapsedSections.portfoliosContent && (
-                      <div className="border-t border-gray-100 px-5 py-3">
+                      <div className="border-t border-gray-100 px-4 py-2.5">
                         {portfolioHoldings && portfolioHoldings.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
-                            {/* Deduplicate by portfolio_id */}
-                            {Array.from(new Map(portfolioHoldings.map((h: any) => [h.portfolio_id, h])).values()).map((holding: any) => (
-                              <button
-                                key={holding.portfolio_id}
-                                onClick={() => {
-                                  if (onNavigate) {
-                                    onNavigate({
-                                      id: holding.portfolio_id,
-                                      title: holding.portfolios?.name || 'Portfolio',
-                                      type: 'portfolio',
-                                      data: { id: holding.portfolio_id }
-                                    })
-                                  }
-                                }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 hover:border-primary-300 hover:text-primary-700 hover:bg-primary-50/50 transition-colors"
-                              >
-                                <Briefcase className="w-3.5 h-3.5 text-gray-400" />
-                                {holding.portfolios?.name || 'Unknown Portfolio'}
-                                <ExternalLink className="w-3 h-3 text-gray-300" />
-                              </button>
-                            ))}
+                            {/* Deduplicate by portfolio_id, compute weight for tooltip */}
+                            {Array.from(new Map(portfolioHoldings.map((h: any) => [h.portfolio_id, h])).values()).map((holding: any) => {
+                              const shares = parseFloat(holding.shares)
+                              const cost = parseFloat(holding.cost)
+                              const ptotal = portfolioTotals?.[holding.portfolio_id] || 0
+                              const weight = ptotal > 0 ? ((shares * cost) / ptotal * 100).toFixed(2) : null
+                              return (
+                                <button
+                                  key={holding.portfolio_id}
+                                  onClick={() => {
+                                    if (onNavigate) {
+                                      onNavigate({
+                                        id: holding.portfolio_id,
+                                        title: holding.portfolios?.name || 'Portfolio',
+                                        type: 'portfolio',
+                                        data: { id: holding.portfolio_id }
+                                      })
+                                    }
+                                  }}
+                                  title={weight ? `Open portfolio \u00B7 Port Wgt: ${weight}%` : 'Open portfolio'}
+                                  className="group/chip inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold text-gray-800 bg-gray-50 border border-gray-200 cursor-pointer hover:border-primary-400 hover:text-primary-700 hover:bg-primary-50 hover:shadow-sm transition-all"
+                                >
+                                  <Briefcase className="w-3.5 h-3.5 text-gray-400 group-hover/chip:text-primary-500 transition-colors" />
+                                  {holding.portfolios?.name || 'Unknown Portfolio'}
+                                  <ExternalLink className="w-3 h-3 text-gray-300 group-hover/chip:text-primary-400 transition-colors" />
+                                </button>
+                              )
+                            })}
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-400 py-1">Not in any portfolios</p>
+                          <p className="text-[13px] text-gray-400 py-0.5">Not in any portfolios.</p>
                         )}
                       </div>
                     )}
@@ -4125,17 +4307,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-projectsContent">
                     <button
                       onClick={() => toggleSection('projectsContent')}
-                      className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
-                      <span className="font-medium text-gray-900">Projects</span>
+                      <div className="flex justify-between items-center flex-1 mr-2">
+                        <span className="text-[13px] font-semibold text-gray-900">Projects</span>
+                        <AddToProjectButton assetId={asset.id} />
+                      </div>
                       {collapsedSections.projectsContent ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
                       ) : (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                        <ChevronUp className="h-4 w-4 text-gray-400" />
                       )}
                     </button>
                     {!collapsedSections.projectsContent && (
-                      <div className="border-t border-gray-100 px-5 py-2">
+                      <div className="border-t border-gray-100 px-4 py-1.5">
                         <RelatedProjects
                           contextType="asset"
                           contextId={asset.id}
@@ -4150,6 +4335,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
+                          hideCreateButton
                         />
                       </div>
                     )}
