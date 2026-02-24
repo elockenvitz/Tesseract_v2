@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -118,6 +119,7 @@ interface AssetAllocationPageProps {
 export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocationPageProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(initialPeriodId || null)
   const [showCreatePeriodModal, setShowCreatePeriodModal] = useState(false)
@@ -126,7 +128,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
 
   // Fetch allocation periods
   const { data: periods, isLoading: periodsLoading } = useQuery({
-    queryKey: ['allocation-periods'],
+    queryKey: ['allocation-periods', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('allocation_periods')
@@ -148,7 +150,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
 
   // Fetch asset classes
   const { data: assetClasses, isLoading: assetClassesLoading } = useQuery({
-    queryKey: ['asset-classes'],
+    queryKey: ['asset-classes', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('asset_classes')

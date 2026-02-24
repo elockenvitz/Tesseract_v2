@@ -70,7 +70,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
       if (!user?.id) return []
 
       const { data, error } = await supabase
-        .from('projects')
+        .from('org_projects_v')
         .select('id, title, status, priority')
         .is('deleted_at', null)
         .neq('id', project.id)

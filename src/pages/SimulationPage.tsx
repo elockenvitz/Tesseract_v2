@@ -92,6 +92,7 @@ import { useSimulationSuggestions } from '../hooks/useSimulationSuggestions'
 import { SuggestionReviewPanel } from '../components/trading/SuggestionReviewPanel'
 import type { SimulationShareAccess, SimulationShareMode, SharedSimulationListItem } from '../hooks/useSimulationShare'
 import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
+import { OrgBadge } from '../components/common/OrgBadge'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -3650,6 +3651,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
               {isSharedView ? 'Shared Simulation' : 'Trade Lab'}
             </h1>
+            <OrgBadge />
             {isSharedView && sharedSimData && (
               <>
                 <span className="text-gray-300 dark:text-gray-600">|</span>

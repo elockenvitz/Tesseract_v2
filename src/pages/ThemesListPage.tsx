@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Tag, Search, Filter, Plus, Calendar, FileText, ArrowUpDown, ChevronDown, X, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -21,6 +23,7 @@ interface ThemesListPageProps {
 export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const [showContent, setShowContent] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -61,7 +64,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
 
   // Fetch themes user has access to (owned, collaborated, or has assets in)
   const { data: themes, isLoading, isFetching, isPending, isSuccess, dataUpdatedAt } = useQuery({
-    queryKey: ['all-themes', user?.id],
+    queryKey: buildOrgQueryKey(['all-themes', user?.id], currentOrgId),
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -104,7 +107,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
     refetchOnWindowFocus: true, // Refetch when window regains focus
     initialData: () => {
       // Use cached data on mount if available
-      return queryClient.getQueryData(['all-themes', user?.id]) as any
+      return queryClient.getQueryData(['all-themes', user?.id, currentOrgId]) as any
     },
     retry: (failureCount, error) => {
       // Don't retry on RLS policy errors

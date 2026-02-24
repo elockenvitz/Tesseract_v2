@@ -76,6 +76,8 @@ import { DependencyManager } from '../projects/DependencyManager'
 import { DatePicker } from '../ui/DatePicker'
 import { useProjectDependencies } from '../../hooks/useProjectDependencies'
 import { MentionInput } from '../ui/MentionInput'
+import { OrgSwitchBanner } from '../common/OrgSwitchBanner'
+import { useEntityOrgResolver } from '../../hooks/useEntityOrgResolver'
 
 // Project detail tab component
 
@@ -403,7 +405,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   const [justDroppedId, setJustDroppedId] = useState<string | null>(null)
 
   // Fetch fresh project data to ensure we have the latest creator info
-  const { data: freshProject } = useQuery({
+  const { data: freshProject, isError: freshProjectError } = useQuery({
     queryKey: ['project-detail', project.id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -419,6 +421,13 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
       return data
     }
   })
+
+  // Deep-link safety: if fresh fetch fails (RLS), check if project belongs to another org
+  const { targetOrg: projectTargetOrg } = useEntityOrgResolver(
+    'projects',
+    project.id,
+    freshProjectError
+  )
 
   // Merge fresh project data with prop data (fresh takes precedence)
   const projectData = freshProject ? { ...project, ...freshProject } : project
@@ -583,7 +592,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     queryKey: ['org-groups-for-project-team'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id')
         .order('name')
       if (error) throw error
@@ -1545,6 +1554,17 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
       setOptimisticOrder(null)
     }
   }, [optimisticOrder, reorderDeliverablesMutation])
+
+  // If project belongs to a different org, show switch banner
+  if (projectTargetOrg) {
+    return (
+      <div className="h-full flex items-start justify-center p-8 bg-gray-50">
+        <div className="max-w-lg w-full">
+          <OrgSwitchBanner targetOrg={projectTargetOrg} entityLabel="This project" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">

@@ -28,12 +28,13 @@ import {
   Zap,
   ArrowUp,
   Minus,
-  CalendarRange,
   Square,
   CheckSquare
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -48,10 +49,9 @@ import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { DeleteProjectModal } from '../components/projects/DeleteProjectModal'
 import { ProjectCollectionsSidebar } from '../components/projects/ProjectCollectionsSidebar'
 import { EnhancedKanbanBoard } from '../components/projects/EnhancedKanbanBoard'
-import { ProjectTimelineView } from '../components/projects/ProjectTimelineView'
 import { MyTasksView } from '../components/projects/MyTasksView'
-import { useAllProjectDependencies } from '../hooks/useProjectDependencies'
 import { DatePicker } from '../components/ui/DatePicker'
+import { OrgBadge } from '../components/common/OrgBadge'
 
 interface ProjectsPageProps {
   onProjectSelect?: (project: ProjectWithAssignments) => void
@@ -60,6 +60,7 @@ interface ProjectsPageProps {
 export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all')
@@ -82,16 +83,13 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
   const [collectionFilters, setCollectionFilters] = useState<{ statuses?: ProjectStatus[]; tagIds?: string[]; userIds?: string[]; orgGroupId?: string } | null>(null)
   const [quickStatusFilter, setQuickStatusFilter] = useState<ProjectStatus | null>(null)
-  const [viewMode, setViewMode] = useState<'list' | 'board' | 'timeline'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
   const [draggedProject, setDraggedProject] = useState<string | null>(null)
   const [draggedOverStatus, setDraggedOverStatus] = useState<ProjectStatus | null>(null)
 
-  // Fetch dependency blocking status for board/timeline views
-  const { blockingStatus } = useAllProjectDependencies()
-
   // Fetch projects user has access to (created or assigned)
   const { data: projects, isLoading } = useQuery({
-    queryKey: ['projects', user?.id, viewFilter],
+    queryKey: buildOrgQueryKey(['projects', user?.id, viewFilter], currentOrgId),
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -144,7 +142,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
 
   // Fetch collections
   const { data: collections } = useQuery({
-    queryKey: ['project-collections', user?.id],
+    queryKey: buildOrgQueryKey(['project-collections', user?.id], currentOrgId),
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -164,7 +162,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
 
   // Fetch all available tags
   const { data: allTags } = useQuery({
-    queryKey: ['project-tags', user?.id],
+    queryKey: buildOrgQueryKey(['project-tags', user?.id], currentOrgId),
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -681,6 +679,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               </button>
               <FolderKanban className="w-6 h-6 text-primary-600 dark:text-primary-400" />
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Projects</h1>
+              <OrgBadge />
             </div>
             <div className="flex items-center gap-2">
               {/* My Tasks Toggle */}
@@ -729,24 +728,6 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   title="Board view"
                 >
                   <LayoutGrid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setViewMode('timeline')
-                    // Exit My Tasks view when switching to timeline
-                    if (assignmentFilter === 'assigned') {
-                      setAssignmentFilter('all')
-                    }
-                  }}
-                  className={clsx(
-                    'p-1.5 rounded transition-colors',
-                    viewMode === 'timeline' && assignmentFilter !== 'assigned'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  )}
-                  title="Timeline view"
-                >
-                  <CalendarRange className="w-4 h-4" />
                 </button>
               </div>
 
@@ -1046,13 +1027,6 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               projects={filteredProjects}
               onProjectSelect={onProjectSelect}
             />
-          ) : viewMode === 'timeline' ? (
-            // Timeline/Gantt View
-            <ProjectTimelineView
-              projects={filteredProjects}
-              onProjectSelect={onProjectSelect}
-              blockingStatus={blockingStatus}
-            />
           ) : (
             // List View
             <div className="p-4 space-y-3">
@@ -1065,7 +1039,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               return (
                 <Card
                   key={project.id}
-                  className="p-4 hover:shadow-md transition-shadow"
+                  className="p-4 hover:shadow-md transition-shadow group"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -1405,11 +1379,9 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                       </div>
                     </div>
 
-                    {/* Delete Button */}
+                    {/* Delete Button — hover-revealed, quiet */}
                     {project.created_by === user?.id && viewFilter === 'active' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                      <button
                         onClick={(e) => {
                           e.stopPropagation()
                           setDeleteModal({
@@ -1418,11 +1390,11 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                             projectTitle: project.title
                           })
                         }}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
                         title="Cancel project"
                       >
                         <X className="w-4 h-4" />
-                      </Button>
+                      </button>
                     )}
                   </div>
                 </Card>

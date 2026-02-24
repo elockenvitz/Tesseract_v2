@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { buildOrgQueryKey } from './useOrgQueryKey'
 
 export interface TemplateVariable {
   name: string
@@ -74,11 +76,12 @@ interface UpdateTemplateData {
 
 export function useTemplates() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Fetch all templates (user's own + shared)
   const { data: templates = [], isLoading, error } = useQuery({
-    queryKey: ['templates', user?.id],
+    queryKey: buildOrgQueryKey(['templates', user?.id], currentOrgId),
     queryFn: async () => {
       if (!user) return []
 

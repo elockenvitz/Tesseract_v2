@@ -313,7 +313,7 @@ export function ContributionSection({
         .filter(Boolean)
 
       const { data: allNodes } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, color, node_type, parent_id')
 
       if (!allNodes) return { portfolios: [], teams: [], departments: [], divisions: [] }

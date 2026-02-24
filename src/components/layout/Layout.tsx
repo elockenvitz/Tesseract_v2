@@ -1,7 +1,7 @@
 import React from 'react'
 import { useState, useCallback, useEffect } from 'react'
 import { clsx } from 'clsx'
-import { Eye, X } from 'lucide-react'
+import { Eye, X, Archive } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
@@ -9,6 +9,7 @@ import { NotificationPane } from '../notifications/NotificationPane'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
+import { useOrganization } from '../../contexts/OrganizationContext'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -372,6 +373,8 @@ export function Layout({
     }
   }, [tabs, onTabChange, onSearchResult])
 
+  const { isOrgArchived } = useOrganization()
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <Header
@@ -385,6 +388,13 @@ export function Layout({
         onShowAI={handleShowAI}
         onShowThoughts={handleShowThoughts}
       />
+      {isOrgArchived && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-sm text-amber-800">
+          <Archive className="w-4 h-4 flex-shrink-0" />
+          <span className="font-medium">This organization is archived.</span>
+          <span className="text-amber-600">All data is read-only. Contact a platform administrator to restore.</span>
+        </div>
+      )}
       <TabManager
         tabs={tabs}
         activeTabId={activeTabId}

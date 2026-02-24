@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft, Square } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -24,6 +26,8 @@ import {
   RunStatusStrip,
 } from '../components/workflow/views'
 import { CreateBranchModal } from '../components/modals/CreateBranchModal'
+import { OrgSwitchBanner } from '../components/common/OrgSwitchBanner'
+import { useEntityOrgResolver } from '../hooks/useEntityOrgResolver'
 import { UniversePreviewModal } from '../components/modals/UniversePreviewModal'
 import { TemplateVersionsModal } from '../components/modals/TemplateVersionsModal'
 import { CreateVersionModal } from '../components/modals/CreateVersionModal'
@@ -48,6 +52,7 @@ import { TabStateManager } from '../lib/tabStateManager'
 import { FILTER_TYPE_REGISTRY } from '../lib/universeFilters'
 import { formatVersion } from '../lib/versionUtils'
 import { useCreateRunAction } from '../hooks/workflow/useCreateRunAction'
+import { OrgBadge } from '../components/common/OrgBadge'
 
 interface WorkflowWithStats {
   id: string
@@ -172,6 +177,7 @@ function processDynamicSuffix(suffix: string): string {
 
 export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate, initialWorkflowId, initialBranchId }: WorkflowsPageProps) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   // Initialize state from sessionStorage for immediate restoration
   const getInitialState = () => {
@@ -1683,7 +1689,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError, refetch: refetchWorkflows } = useQuery({
-    queryKey: ['workflows-full', filterBy, sortBy],
+    queryKey: buildOrgQueryKey(['workflows-full', filterBy, sortBy], currentOrgId),
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -1863,7 +1869,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   // Query for archived workflows - shown in separate section below main list
   const { data: archivedWorkflows } = useQuery({
-    queryKey: ['workflows-archived'],
+    queryKey: buildOrgQueryKey(['workflows-archived'], currentOrgId),
     queryFn: async () => {
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -2012,6 +2018,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       }
     }
   }, [workflows, archivedWorkflows, pendingWorkflowId, selectedWorkflow?.id])
+
+  // Deep-link safety: if pendingWorkflowId is set but not found after loading, check if it belongs to another org
+  const workflowNotFound = !isLoading && !!pendingWorkflowId && !selectedWorkflow &&
+    workflows && workflows.length >= 0 &&
+    !workflows.find((w: any) => w.id === pendingWorkflowId) &&
+    !(archivedWorkflows || []).find((w: any) => w.id === pendingWorkflowId)
+  const { targetOrg: workflowTargetOrg } = useEntityOrgResolver('workflows', pendingWorkflowId, workflowNotFound)
 
   // Restore selected branch when branches are loaded, or auto-open active run
   useEffect(() => {
@@ -5188,7 +5201,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-gray-900">Process</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-900">Process</h1>
+              <OrgBadge />
+            </div>
             <div className="flex items-center space-x-2">
               <Button
                 onClick={() => setSelectedWorkflow(null)}
@@ -5536,33 +5552,39 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             </div>
           </div>
         ) : pendingWorkflowId && !selectedWorkflow ? (
-          // Loading skeleton while restoring a specific workflow
-          <div className="flex-1 flex flex-col h-full overflow-hidden animate-pulse">
-            {/* Header skeleton */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-              <div className="flex items-center space-x-4">
-                <div className="w-8 h-8 rounded-full bg-gray-200 flex-shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-5 bg-gray-200 rounded w-48" />
-                  <div className="h-3 bg-gray-200 rounded w-72" />
+          workflowTargetOrg ? (
+            // Entity belongs to a different org — show switch banner
+            <div className="flex-1 flex items-start justify-center p-8 bg-gray-50">
+              <div className="max-w-lg w-full">
+                <OrgSwitchBanner targetOrg={workflowTargetOrg} entityLabel="This workflow" />
+              </div>
+            </div>
+          ) : (
+            // Loading skeleton while restoring a specific workflow
+            <div className="flex-1 flex flex-col h-full overflow-hidden animate-pulse">
+              <div className="bg-white border-b border-gray-200 px-6 py-4">
+                <div className="flex items-center space-x-4">
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-gray-200 rounded w-48" />
+                    <div className="h-3 bg-gray-200 rounded w-72" />
+                  </div>
                 </div>
               </div>
-            </div>
-            {/* Tab bar skeleton */}
-            <div className="bg-white border-b border-gray-200 px-6">
-              <div className="flex items-center gap-4 py-3">
-                <div className="h-4 bg-gray-200 rounded w-20" />
-                <div className="h-4 bg-gray-200 rounded w-16" />
-                <div className="h-4 bg-gray-200 rounded w-24" />
+              <div className="bg-white border-b border-gray-200 px-6">
+                <div className="flex items-center gap-4 py-3">
+                  <div className="h-4 bg-gray-200 rounded w-20" />
+                  <div className="h-4 bg-gray-200 rounded w-16" />
+                  <div className="h-4 bg-gray-200 rounded w-24" />
+                </div>
+              </div>
+              <div className="flex-1 p-6 bg-gray-50 space-y-4">
+                <div className="h-24 bg-white rounded-lg border border-gray-200" />
+                <div className="h-24 bg-white rounded-lg border border-gray-200" />
+                <div className="h-24 bg-white rounded-lg border border-gray-200" />
               </div>
             </div>
-            {/* Content skeleton */}
-            <div className="flex-1 p-6 bg-gray-50 space-y-4">
-              <div className="h-24 bg-white rounded-lg border border-gray-200" />
-              <div className="h-24 bg-white rounded-lg border border-gray-200" />
-              <div className="h-24 bg-white rounded-lg border border-gray-200" />
-            </div>
-          </div>
+          )
         ) : selectedWorkflow ? (
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             {/* Process Header */}

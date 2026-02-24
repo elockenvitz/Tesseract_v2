@@ -248,7 +248,7 @@ export function AddToListButton({
                 {isLoading ? (
                   <div className="space-y-1 px-2 py-1">
                     {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="h-11 bg-gray-50 rounded-lg animate-pulse" />
+                      <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse" />
                     ))}
                   </div>
                 ) : (
@@ -264,7 +264,7 @@ export function AddToListButton({
                             key={list.id}
                             onClick={() => handleLink(list)}
                             disabled={linkMutation.isPending}
-                            className="w-full flex items-center justify-between px-3 py-[7px] rounded-lg cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors text-left group"
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors text-left group"
                           >
                             <div className="min-w-0 flex-1">
                               <span className="text-[13px] font-semibold text-gray-900 truncate block leading-tight">
@@ -282,7 +282,7 @@ export function AddToListButton({
                                 )}
                               </span>
                             </div>
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
+                            <Plus className="w-3.5 h-3.5 text-gray-300 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
                           </button>
                         ))}
                       </div>
@@ -291,22 +291,25 @@ export function AddToListButton({
                     {/* Already added */}
                     {linked.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-gray-100">
-                        <p className="text-[9px] font-medium text-gray-400/70 uppercase tracking-widest mb-1 px-2">Already added</p>
+                        <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest mb-1 px-2">Already added</p>
                         {linked.map((list) => (
                           <div
                             key={list.id}
-                            className="flex items-center justify-between px-3 py-[7px] rounded-lg cursor-default border-l-2 border-green-300/60 ml-1 bg-green-50/30"
+                            className="flex items-center justify-between px-3 py-2 rounded-lg cursor-default border-l-2 border-green-300/60 ml-0.5"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-medium text-gray-500 truncate block leading-tight">
+                              <span className="text-[13px] font-medium text-gray-400 truncate block leading-tight">
                                 {list.name}
                                 {list.is_default && <Star className="inline w-3 h-3 text-yellow-400/50 ml-1 -mt-0.5" />}
                               </span>
                               {list.description && (
-                                <span className="text-[11px] text-gray-400/50 block mt-0.5 leading-tight truncate">{list.description}</span>
+                                <span className="text-[11px] text-gray-400/40 block mt-0.5 leading-tight truncate">{list.description}</span>
                               )}
-                              <span className="text-[10px] text-gray-400/50 block mt-0.5 leading-tight">
+                              <span className="text-[10px] text-gray-400/40 block mt-0.5 leading-tight">
                                 {list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}
+                                {list.updated_at && (
+                                  <> &middot; Updated {formatDistanceToNow(new Date(list.updated_at), { addSuffix: false })}</>
+                                )}
                               </span>
                             </div>
                             <Check className="w-3.5 h-3.5 text-green-500/70 flex-shrink-0" />

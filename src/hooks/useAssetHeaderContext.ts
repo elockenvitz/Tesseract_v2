@@ -83,11 +83,10 @@ export function useAssetHeaderContext(assetId: string | undefined): AssetHeaderC
     queryKey: ['asset-context-projects', assetId],
     queryFn: async () => {
       const { count, error } = await supabase
-        .from('projects')
-        .select('id', { count: 'exact', head: true })
+        .from('project_contexts')
+        .select('project_id', { count: 'exact', head: true })
         .eq('context_type', 'asset')
         .eq('context_id', assetId!)
-        .is('deleted_at', null)
       if (error) throw error
       return count || 0
     },

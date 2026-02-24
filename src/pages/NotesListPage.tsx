@@ -104,7 +104,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           .order('name')
           .limit(5),
         supabase
-          .from('themes')
+          .from('org_themes_v')
           .select('id, name')
           .or(term ? `name.ilike.%${term}%` : 'id.not.is.null')
           .order('name')

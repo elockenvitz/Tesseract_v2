@@ -3,12 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft, Pin, Reply, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { clsx } from 'clsx'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
+import { useEntityOrgResolver } from '../../hooks/useEntityOrgResolver'
+import { OrgSwitchBanner } from '../common/OrgSwitchBanner'
 
 interface DirectMessagingProps {
   isOpen: boolean
@@ -87,7 +90,16 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const hasInvalidatedOnceRef = useRef(false)
+  const [urlConversationId, setUrlConversationId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('conversation')
+  })
+  const [conversationNotFound, setConversationNotFound] = useState(false)
+
+  // Deep-link safety: resolve org when URL conversation not found in current org
+  const { targetOrg } = useEntityOrgResolver('conversations', urlConversationId, conversationNotFound)
 
   // Don't invalidate on mount - the query will fetch fresh data automatically
   // and placeholderData will prevent showing stale cached data
@@ -98,6 +110,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     const conversationId = params.get('conversation')
     if (conversationId && conversationId !== selectedConversationId) {
       setSelectedConversationId(conversationId)
+      if (!urlConversationId) setUrlConversationId(conversationId)
       // Clean up URL after setting
       params.delete('conversation')
       const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname
@@ -107,7 +120,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   // Fetch all conversations for the current user
   const { data: rawConversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
-    queryKey: ['conversations'],
+    queryKey: ['conversations', currentOrgId],
     enabled: !!user?.id,
     staleTime: 60000, // Keep data fresh for 60 seconds
     gcTime: 300000, // Keep in cache for 5 minutes
@@ -232,6 +245,14 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     // This prevents infinite loading when users don't have complete profiles
     return lastValidConversationsRef.current || rawConversations
   }, [rawConversations, user?.id])
+
+  // Detect when a URL-linked conversation is not found in this org
+  useEffect(() => {
+    if (!urlConversationId || conversationsLoading) return
+    if (!conversations) return
+    const found = conversations.some(c => c.id === urlConversationId)
+    setConversationNotFound(!found)
+  }, [urlConversationId, conversations, conversationsLoading])
 
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
@@ -665,6 +686,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   if (!selectedConversationId && !showNewConversation && !showGroupCreation) {
     return (
       <div className="flex flex-col h-full">
+        {/* Deep-link: conversation belongs to different org */}
+        {targetOrg && (
+          <div className="p-3">
+            <OrgSwitchBanner targetOrg={targetOrg} entityLabel="This conversation" />
+          </div>
+        )}
         {/* Action Buttons and Search */}
         <div className="p-4 border-b border-gray-200">
           {/* Action Buttons */}

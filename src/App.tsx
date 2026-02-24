@@ -4,13 +4,15 @@ import { supabase } from './lib/supabase'
 import { useAuth } from './hooks/useAuth'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { CaptureProvider } from './contexts/CaptureContext'
+import { OrganizationProvider } from './contexts/OrganizationContext'
 import { ErrorBoundary, ToastProvider } from './components/common'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
-import { SetupWizardPage } from './pages/SetupWizardPage'
+import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
+// SetupWizardPage removed — org creation is invite-only
 import { TesseractLoader } from './components/ui/TesseractLoader'
 import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
@@ -52,12 +54,14 @@ function AppRoutes() {
         path="/reset-password"
         element={user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />}
       />
+      <Route
+        path="/auth/sso/callback"
+        element={<SsoCallbackPage />}
+      />
 
-      {/* Setup Wizard route - protected but skips onboarding check */}
+      {/* Setup Wizard disabled — org creation is invite-only */}
       <Route path="/setup" element={
-        <ProtectedRoute skipOnboardingCheck>
-          <SetupWizardPage />
-        </ProtectedRoute>
+        <Navigate to="/dashboard" replace />
       } />
 
       {/* Protected routes */}
@@ -85,7 +89,9 @@ function App() {
           <ToastProvider>
             <CaptureProvider>
               <Router>
-                <AppRoutes />
+                <OrganizationProvider>
+                  <AppRoutes />
+                </OrganizationProvider>
                 {/* Global capture mode components */}
                 <CaptureOverlay />
                 <CaptureConfigModal />

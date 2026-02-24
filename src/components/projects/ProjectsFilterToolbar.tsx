@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Search, ChevronDown,
   ChevronLeft, ChevronRight,
-  LayoutList, LayoutGrid, CalendarRange,
+  LayoutList, LayoutGrid,
   Plus, User
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -16,7 +16,7 @@ import {
 
 // ── Types ────────────────────────────────────────────────────
 
-export type ViewMode = 'list' | 'board' | 'timeline'
+export type ViewMode = 'list' | 'board'
 export type AssignmentFilter = 'all' | 'created' | 'assigned'
 export type ViewFilter = 'active' | 'archived'
 
@@ -230,7 +230,6 @@ export function ProjectsFilterToolbar({
               {([
                 { mode: 'list' as ViewMode, icon: LayoutList, title: 'List view' },
                 { mode: 'board' as ViewMode, icon: LayoutGrid, title: 'Board view' },
-                { mode: 'timeline' as ViewMode, icon: CalendarRange, title: 'Timeline view' },
               ]).map(({ mode, icon: Icon, title }) => (
                 <button
                   key={mode}

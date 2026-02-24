@@ -13,6 +13,7 @@ import {
   Clock
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -35,11 +36,12 @@ interface TDFListPageProps {
 }
 
 export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
+  const { currentOrgId } = useOrganization()
   const [searchQuery, setSearchQuery] = useState('')
 
   // Fetch all TDFs
   const { data: tdfs, isLoading: tdfsLoading } = useQuery({
-    queryKey: ['target-date-funds'],
+    queryKey: ['target-date-funds', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('target_date_funds')
@@ -54,7 +56,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
 
   // Fetch glide path targets for all TDFs
   const { data: glidePathTargets } = useQuery({
-    queryKey: ['tdf-glide-path-targets'],
+    queryKey: ['tdf-glide-path-targets', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tdf_glide_path_targets')
@@ -67,7 +69,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
 
   // Fetch latest snapshots for all TDFs
   const { data: latestSnapshots } = useQuery({
-    queryKey: ['tdf-latest-snapshots'],
+    queryKey: ['tdf-latest-snapshots', currentOrgId],
     queryFn: async () => {
       // Get the most recent snapshot for each TDF
       const { data, error } = await supabase
@@ -96,7 +98,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
 
   // Fetch pending trade proposals count
   const { data: pendingProposals } = useQuery({
-    queryKey: ['tdf-pending-proposals'],
+    queryKey: ['tdf-pending-proposals', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tdf_trade_proposals')

@@ -43,9 +43,7 @@ import {
   Shield,
   ShieldOff,
   Phone,
-  AtSign,
   ExternalLink,
-  LogIn,
   Send,
   Link2,
   Info,
@@ -59,6 +57,18 @@ import {
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { AddTeamMemberModal } from '../components/portfolios/AddTeamMemberModal'
+import { OrgRequestsTab } from '../components/organization/OrgRequestsTab'
+import { OrgDomainsSection } from '../components/organization/OrgDomainsSection'
+import { OrgIdentityProviderSection } from '../components/organization/OrgIdentityProviderSection'
+import { OrgGovernanceSection } from '../components/organization/OrgGovernanceSection'
+import { OrgPeopleTab } from '../components/organization/OrgPeopleTab'
+import { OrgActivityTab } from '../components/organization/OrgActivityTab'
+import { OrgAccessTab } from '../components/organization/OrgAccessTab'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { useToast } from '../components/common/Toast'
+import { OrgBadge } from '../components/common/OrgBadge'
+import { useOrgWriteEnabled } from '../hooks/useOrgWriteEnabled'
+import { mapMutationError } from '../lib/archived-org-errors'
 
 interface Organization {
   id: string
@@ -67,6 +77,26 @@ interface Organization {
   description: string | null
   logo_url: string | null
   settings: any
+  onboarding_policy?: 'open' | 'approval_required' | 'invite_only'
+  updated_at?: string
+}
+
+/** Lightweight relative-time formatter (avoids pulling in a full i18n library) */
+function formatTimeAgo(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return null
+  const seconds = Math.floor((Date.now() - d.getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months}mo ago`
+  return `${Math.floor(months / 12)}y ago`
 }
 
 interface Team {
@@ -235,7 +265,7 @@ interface OrgChartNodeMember {
   user?: UserProfile
 }
 
-type TabType = 'teams' | 'people' | 'portfolios' | 'requests' | 'settings'
+type TabType = 'teams' | 'people' | 'portfolios' | 'requests' | 'access' | 'activity' | 'settings'
 
 // Loading screen component
 function LoadingScreen() {
@@ -270,10 +300,13 @@ interface OrganizationContentProps {
 // Main content component - only rendered after loading is complete
 function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentProps) {
   const { user } = useAuth()
+  const toast = useToast()
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
+  const { canWrite, reason: archivedReason } = useOrgWriteEnabled()
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const savedTab = localStorage.getItem('organization-active-tab')
-    if (savedTab && ['teams', 'people', 'portfolios', 'requests', 'settings'].includes(savedTab)) {
+    if (savedTab && ['teams', 'people', 'portfolios', 'requests', 'access', 'activity', 'settings'].includes(savedTab)) {
       return savedTab as TabType
     }
     return 'teams'
@@ -291,9 +324,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   const [newTeamColor, setNewTeamColor] = useState('#6366f1')
   const newTeamInputRef = useRef<HTMLInputElement>(null)
 
-  // People tab state
-  const [peopleView, setPeopleView] = useState<'users' | 'contacts'>('users')
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
+  // People tab state (modals remain in parent for cross-tab sharing)
   const [showAddContactModal, setShowAddContactModal] = useState(false)
   const [showSuspendModal, setShowSuspendModal] = useState<OrganizationMembership | null>(null)
   const [showRemovalRequestModal, setShowRemovalRequestModal] = useState<OrganizationMembership | null>(null)
@@ -329,24 +360,25 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     localStorage.setItem('organization-active-tab', activeTab)
   }, [activeTab])
 
-  // Fetch organization data
+  // Fetch organization data by explicit ID
   const { data: organization } = useQuery({
-    queryKey: ['organization'],
+    queryKey: ['organization', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
         .select('*')
-        .limit(1)
+        .eq('id', currentOrgId!)
         .single()
 
       if (error && error.code !== 'PGRST116') throw error
       return data as Organization | null
-    }
+    },
+    enabled: !!currentOrgId,
   })
 
-  // Fetch teams
+  // Fetch teams scoped to current org
   const { data: teams = [] } = useQuery({
-    queryKey: ['teams'],
+    queryKey: ['teams', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('teams')
@@ -356,80 +388,53 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
       if (error) throw error
       return data as Team[]
-    }
+    },
+    enabled: !!currentOrgId,
   })
 
-  // Fetch all users with accounts, joined with organization membership info and profiles
+  // Fetch org members via denormalized view scoped to current org
   const { data: orgMembers = [], isLoading: isLoadingOrgMembers } = useQuery({
-    queryKey: ['organization-members'],
+    queryKey: ['organization-members', currentOrgId],
     queryFn: async () => {
-      // Fetch ALL users from the users table (everyone with an account)
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name, coverage_admin')
-        .order('first_name', { ascending: true })
-
-      if (usersError) throw usersError
-      if (!users || users.length === 0) return []
-
-      // Fetch organization memberships to get status and admin info
-      const userIds = users.map(u => u.id)
-      const { data: memberships, error: membershipsError } = await supabase
-        .from('organization_memberships')
+      const { data, error } = await supabase
+        .from('organization_members_v')
         .select('*')
-        .in('user_id', userIds)
+        .eq('organization_id', currentOrgId!)
+        .order('user_first_name', { ascending: true })
 
-      if (membershipsError) throw membershipsError
+      if (error) throw error
+      if (!data || data.length === 0) return []
 
-      // Fetch user profiles
-      const { data: profiles, error: profilesError } = await supabase
-        .from('user_profile_extended')
-        .select('user_id, user_type, title, sector_focus, investment_style, market_cap_focus, geography_focus, time_horizon, ops_departments, compliance_areas')
-        .in('user_id', userIds)
-
-      if (profilesError) throw profilesError
-
-      // Create maps for quick lookup
-      const membershipMap = new Map((memberships || []).map(m => [m.user_id, m]))
-      const profileMap = new Map((profiles || []).map(p => [p.user_id, p]))
-
-      // Build org members list from all users, joining with membership and profile data
-      return users.map((user: any) => {
-        const membership = membershipMap.get(user.id)
-        const profile = profileMap.get(user.id)
-        return {
-          id: membership?.id || user.id, // Use membership id if exists, else user id
-          user_id: user.id,
-          organization_id: membership?.organization_id || null,
-          status: membership?.status || 'active', // Default to active if no membership record
-          is_org_admin: membership?.is_org_admin || false,
-          title: profile?.title || membership?.title || null,
-          user: {
-            id: user.id,
-            email: user.email || '',
-            full_name: user.first_name && user.last_name
-              ? `${user.first_name} ${user.last_name}`
-              : user.email?.split('@')[0] || 'Unknown',
-            coverage_admin: user.coverage_admin || false
-          },
-          profile: profile ? {
-            user_type: profile.user_type,
-            sector_focus: profile.sector_focus || [],
-            investment_style: profile.investment_style || [],
-            market_cap_focus: profile.market_cap_focus || [],
-            geography_focus: profile.geography_focus || [],
-            time_horizon: profile.time_horizon || [],
-            ops_departments: profile.ops_departments || [],
-            compliance_areas: profile.compliance_areas || []
-          } : null
-        }
-      }) as OrganizationMembership[]
+      return data.map((row: any) => ({
+        id: row.id,
+        user_id: row.user_id,
+        organization_id: row.organization_id,
+        status: row.status,
+        is_org_admin: row.is_org_admin,
+        title: row.profile_title,
+        user: {
+          id: row.user_id,
+          email: row.user_email || '',
+          full_name: row.user_full_name || 'Unknown',
+          coverage_admin: row.user_coverage_admin || false
+        },
+        profile: row.profile_user_type ? {
+          user_type: row.profile_user_type,
+          sector_focus: row.sector_focus || [],
+          investment_style: row.investment_style || [],
+          market_cap_focus: row.market_cap_focus || [],
+          geography_focus: row.geography_focus || [],
+          time_horizon: row.time_horizon || [],
+          ops_departments: row.ops_departments || [],
+          compliance_areas: row.compliance_areas || []
+        } : null
+      })) as OrganizationMembership[]
     }
   })
 
   // Fetch team memberships
   const { data: teamMemberships = [] } = useQuery({
-    queryKey: ['team-memberships'],
+    queryKey: ['team-memberships', currentOrgId],
     queryFn: async () => {
       // Fetch team memberships with team data
       const { data: memberships, error: membershipsError } = await supabase
@@ -471,9 +476,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     }
   })
 
-  // Fetch portfolios
+  // Fetch portfolios (RLS scopes to current org via team_id or null team_id fallback)
   const { data: portfolios = [] } = useQuery({
-    queryKey: ['portfolios-org'],
+    queryKey: ['portfolios-org', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolios')
@@ -482,12 +487,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
       if (error) throw error
       return data as Portfolio[]
-    }
+    },
+    enabled: !!currentOrgId,
   })
 
   // Fetch portfolio memberships
   const { data: portfolioMemberships = [] } = useQuery({
-    queryKey: ['portfolio-memberships'],
+    queryKey: ['portfolio-memberships', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_memberships')
@@ -516,7 +522,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
   // Fetch portfolio team members (unified with Portfolio Tab)
   const { data: portfolioTeamMembers = [], refetch: refetchPortfolioTeamMembers } = useQuery({
-    queryKey: ['portfolio-team-all'],
+    queryKey: ['portfolio-team-all', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_team')
@@ -610,7 +616,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
   // Fetch access requests (admin only - all pending requests)
   const { data: accessRequests = [] } = useQuery({
-    queryKey: ['access-requests'],
+    queryKey: ['access-requests', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('access_requests')
@@ -662,9 +668,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     enabled: !isOrgAdmin && !!user?.id
   })
 
-  // Fetch organization contacts (non-login personnel)
+  // Fetch organization contacts (non-login personnel) — deferred to People tab
   const { data: contacts = [] } = useQuery({
-    queryKey: ['organization-contacts'],
+    queryKey: ['organization-contacts', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organization_contacts')
@@ -674,15 +680,16 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
       if (error) throw error
       return data as OrganizationContact[]
-    }
+    },
+    enabled: activeTab === 'people'
   })
 
   // Fetch org chart nodes
   const { data: orgChartNodes = [] } = useQuery({
-    queryKey: ['org-chart-nodes'],
+    queryKey: ['org-chart-nodes', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('*')
         .eq('is_active', true)
         .order('sort_order')
@@ -694,7 +701,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
   // Fetch org chart node links (for portfolios linked to multiple teams)
   const { data: orgChartNodeLinks = [] } = useQuery({
-    queryKey: ['org-chart-node-links'],
+    queryKey: ['org-chart-node-links', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('org_chart_node_links')
@@ -707,7 +714,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
   // Fetch org chart node members
   const { data: orgChartNodeMembers = [] } = useQuery({
-    queryKey: ['org-chart-node-members'],
+    queryKey: ['org-chart-node-members', currentOrgId],
     queryFn: async () => {
       const { data: members, error: membersError } = await supabase
         .from('org_chart_node_members')
@@ -771,7 +778,22 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       if (error && error.code !== 'PGRST116') throw error // PGRST116 = no rows found
       return data
     },
-    enabled: !!organization?.id
+    enabled: activeTab === 'settings' && !!organization?.id
+  })
+
+  // Fetch verified domain count (for onboarding policy warning)
+  const { data: verifiedDomainCount = 0 } = useQuery({
+    queryKey: ['organization-domains-count', organization?.id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('organization_domains')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'verified')
+      if (error) throw error
+      return count ?? 0
+    },
+    enabled: activeTab === 'settings' && !!organization?.id,
+    staleTime: 60_000,
   })
 
   // Fetch coverage stats grouped by team_id for displaying on org nodes
@@ -869,7 +891,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       console.log('Coverage stats by team (membership-based):', stats)
       return stats
     },
-    enabled: !!orgChartNodes && orgChartNodes.length > 0
+    enabled: activeTab === 'teams' && !!orgChartNodes && orgChartNodes.length > 0
   })
 
   // Helper to get portfolio IDs for a given team
@@ -895,8 +917,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   const [showCoverageSettingsConfirm, setShowCoverageSettingsConfirm] = useState(false)
   const [isCoverageSettingsLocked, setIsCoverageSettingsLocked] = useState(true)
 
-  // Branding & Compliance settings state
+  // Branding & Compliance settings state (includes org name/description)
   const [editingBranding, setEditingBranding] = useState<{
+    org_name: string
+    org_description: string
     firm_name: string
     tagline: string
     default_disclaimer: string
@@ -940,6 +964,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     if (organization && !editingBranding) {
       const branding = organization.settings?.branding || {}
       setEditingBranding({
+        org_name: organization.name || '',
+        org_description: organization.description || '',
         firm_name: branding.firm_name || '',
         tagline: branding.tagline || '',
         default_disclaimer: branding.default_disclaimer || '',
@@ -1145,24 +1171,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     }
   })
 
-  const handleAccessRequestMutation = useMutation({
-    mutationFn: async ({ requestId, status, notes }: { requestId: string; status: 'approved' | 'rejected'; notes?: string }) => {
-      const { error } = await supabase
-        .from('access_requests')
-        .update({
-          status,
-          reviewed_by: user?.id,
-          reviewed_at: new Date().toISOString(),
-          review_notes: notes
-        })
-        .eq('id', requestId)
-
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['access-requests'] })
-    }
-  })
+  // handleAccessRequestMutation moved to OrgRequestsTab component
 
   const submitAccessRequestMutation = useMutation({
     mutationFn: async (requestData: {
@@ -1224,44 +1233,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     }
   })
 
-  // Suspend user mutation
+  // Suspend user mutation (via deactivate_org_member RPC)
   const suspendUserMutation = useMutation({
     mutationFn: async ({ membershipId, reason }: { membershipId: string; reason: string }) => {
-      const { error } = await supabase
-        .from('organization_memberships')
-        .update({
-          status: 'inactive',
-          suspended_at: new Date().toISOString(),
-          suspended_by: user?.id,
-          suspension_reason: reason
-        })
-        .eq('id', membershipId)
-
+      // Find user_id from the modal target
+      const targetUserId = showSuspendModal?.user_id
+      if (!targetUserId) throw new Error('No target user')
+      const { data, error } = await supabase.rpc('deactivate_org_member', {
+        p_target_user_id: targetUserId,
+        p_reason: reason || null,
+      })
       if (error) throw error
+      return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
+      queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
+      queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
       setShowSuspendModal(null)
-    }
-  })
-
-  // Unsuspend user mutation
-  const unsuspendUserMutation = useMutation({
-    mutationFn: async (membershipId: string) => {
-      const { error } = await supabase
-        .from('organization_memberships')
-        .update({
-          status: 'active',
-          suspended_at: null,
-          suspended_by: null,
-          suspension_reason: null
-        })
-        .eq('id', membershipId)
-
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
     }
   })
 
@@ -1302,48 +1291,6 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-contacts'] })
-    }
-  })
-
-  // Update user permissions mutation
-  const updateUserPermissionsMutation = useMutation({
-    mutationFn: async ({ userId, permissions }: { userId: string; permissions: { coverage_admin?: boolean; is_org_admin?: boolean } }) => {
-      console.log('Updating permissions for user:', userId, permissions)
-
-      // Update user-level permissions (coverage_admin) in users table
-      if (permissions.coverage_admin !== undefined) {
-        const { error: userError } = await supabase
-          .from('users')
-          .update({ coverage_admin: permissions.coverage_admin })
-          .eq('id', userId)
-
-        if (userError) {
-          console.error('Error updating coverage_admin:', userError)
-          throw userError
-        }
-      }
-
-      // Update org-level permissions (is_org_admin) in organization_memberships table
-      if (permissions.is_org_admin !== undefined && organization) {
-        const { error: membershipError } = await supabase
-          .from('organization_memberships')
-          .update({ is_org_admin: permissions.is_org_admin })
-          .eq('user_id', userId)
-          .eq('organization_id', organization.id)
-
-        if (membershipError) {
-          console.error('Error updating is_org_admin:', membershipError)
-          throw membershipError
-        }
-      }
-    },
-    onSuccess: () => {
-      console.log('Permissions updated successfully')
-      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
-    },
-    onError: (error: any) => {
-      console.error('Failed to update permissions:', error)
-      alert(`Failed to update permissions: ${error?.message || 'Unknown error'}`)
     }
   })
 
@@ -1674,6 +1621,25 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     }
   })
 
+  // Update onboarding policy mutation
+  const updateOnboardingPolicyMutation = useMutation({
+    mutationFn: async (policy: 'open' | 'approval_required' | 'invite_only') => {
+      if (!organization?.id) throw new Error('No organization found')
+      const { error } = await supabase
+        .from('organizations')
+        .update({ onboarding_policy: policy })
+        .eq('id', organization.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization'] })
+      toast.success('Onboarding policy updated')
+    },
+    onError: (error: any) => {
+      toast.error(mapMutationError(error))
+    },
+  })
+
   // Save coverage settings mutation
   const saveCoverageSettingsMutation = useMutation({
     mutationFn: async (settings: {
@@ -1721,9 +1687,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     }
   })
 
-  // Save branding settings mutation
+  // Save branding settings mutation (includes org name/description)
   const saveBrandingMutation = useMutation({
     mutationFn: async (branding: {
+      org_name: string
+      org_description: string
       firm_name: string
       tagline: string
       default_disclaimer: string
@@ -1731,6 +1699,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       removeLogo?: boolean
     }) => {
       if (!organization?.id) throw new Error('No organization found')
+      const trimmedName = branding.org_name.trim()
+      if (!trimmedName) throw new Error('Organization name is required')
 
       let logoUrl = organization.logo_url
 
@@ -1770,6 +1740,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       const { error } = await supabase
         .from('organizations')
         .update({
+          name: trimmedName,
+          description: branding.org_description.trim() || null,
           settings: newSettings,
           logo_url: logoUrl,
           updated_at: new Date().toISOString(),
@@ -1780,9 +1752,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization'] })
+      queryClient.invalidateQueries({ queryKey: ['user-organizations'] })
       setBrandingLogoFile(null)
       setIsBrandingLocked(true)
-    }
+      toast({ title: 'Settings saved', variant: 'success' })
+    },
+    onError: (err: any) => {
+      toast({ title: mapMutationError(err, 'update'), variant: 'error' })
+    },
   })
 
   const toggleTeamExpanded = (teamId: string) => {
@@ -1850,49 +1827,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     return member.user?.email?.split('@')[0] || 'Unknown'
   }
 
-  const getUserTeams = (userId: string) => {
-    return teamMemberships.filter(tm => tm.user_id === userId)
-  }
-
-  const getUserPortfolios = (userId: string) => {
-    return portfolioMemberships.filter(pm => pm.user_id === userId)
-  }
-
   const filteredTeams = teams.filter(t =>
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
-  const filteredMembers = orgMembers.filter(m =>
-    m.user?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.title?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const filteredPortfolios = portfolios.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.description?.toLowerCase().includes(searchTerm.toLowerCase())
   )
-
-  const filteredContacts = contacts.filter(c =>
-    c.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.title?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
-  // Separate active and suspended members
-  const activeMembers = filteredMembers.filter(m => m.status === 'active')
-  const suspendedMembers = filteredMembers.filter(m => m.status === 'inactive')
-
-  // Helper to format profile values (replace underscores with spaces, title case)
-  const formatProfileValue = (value: string) => {
-    return value.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  }
-
-  // Split active members into admins and regular users
-  const adminMembers = activeMembers.filter(m => m.is_org_admin || m.user?.coverage_admin)
-  const regularMembers = activeMembers.filter(m => !m.is_org_admin && !m.user?.coverage_admin)
 
   // Helper to check if current user is a member of an org chart node (team)
   const isUserMemberOfNode = (nodeId: string): boolean => {
@@ -1916,6 +1859,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     { id: 'people', label: 'People', icon: <UserCircle className="w-4 h-4" /> },
     { id: 'portfolios', label: 'Portfolios', icon: <Briefcase className="w-4 h-4" /> },
     { id: 'requests', label: 'Requests', icon: <Bell className="w-4 h-4" />, adminOnly: true },
+    { id: 'access', label: 'Access', icon: <Shield className="w-4 h-4" />, adminOnly: true },
+    { id: 'activity', label: 'Activity', icon: <Clock className="w-4 h-4" />, adminOnly: true },
     { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" />, adminOnly: true }
   ]
 
@@ -2061,6 +2006,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
               <h1 className="text-xl font-semibold text-gray-900">
                 {organization?.name || 'Organization'}
               </h1>
+              <OrgBadge />
               {/* Admin Badge */}
               <div className="relative" ref={adminBadgeRef}>
                 <button
@@ -2298,14 +2244,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
         </div>
       )}
 
-      {/* Search Bar */}
-      {['people', 'portfolios'].includes(activeTab) && (
+      {/* Search Bar (portfolios only — people tab has its own search) */}
+      {activeTab === 'portfolios' && (
         <div className="bg-white px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder={`Search ${activeTab}...`}
+              placeholder="Search portfolios..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
@@ -2443,7 +2389,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                               setDeleteNodeConfirm({ isOpen: true, node })
                             }}
                             onAddMember={(n) => setShowAddNodeMemberModal(n)}
-                            onRemoveMember={(memberId) => removeNodeMemberMutation.mutate(memberId)}
+                            onRemoveMember={(memberId) => {
+                              if (window.confirm('Remove this member from the node?')) {
+                                removeNodeMemberMutation.mutate(memberId)
+                              }
+                            }}
                             getNodeMembers={getNodeMembers}
                             getSharedTeams={getSharedTeams}
                             getTeamMembers={getTeamMembers}
@@ -2456,7 +2406,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                                 setShowAddMemberModal(true)
                               }
                             }}
-                            onRemoveTeamMember={(memberId) => removeTeamMemberMutation.mutate(memberId)}
+                            onRemoveTeamMember={(memberId) => {
+                              if (window.confirm('Remove this member from the team?')) {
+                                removeTeamMemberMutation.mutate(memberId)
+                              }
+                            }}
                             onInsertBetween={(parentId, childIds) => {
                               setAddNodeParentId(parentId)
                               setInsertBetweenChildIds(childIds)
@@ -2506,787 +2460,17 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
           {/* People Tab */}
           {activeTab === 'people' && (
-            <div className="space-y-6">
-              {/* My Access Summary (for non-admins) */}
-              {!isOrgAdmin && user && (
-                <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold text-indigo-900 flex items-center">
-                        <Shield className="w-4 h-4 mr-2" />
-                        My Access
-                      </h3>
-                      <p className="text-xs text-indigo-700 mt-1">Your current permissions and memberships</p>
-                    </div>
-                    {(() => {
-                      const myMembership = orgMembers.find(m => m.user_id === user.id)
-                      return myMembership?.user?.coverage_admin && (
-                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                          <Shield className="w-3 h-3 mr-1" />
-                          Coverage Admin
-                        </span>
-                      )
-                    })()}
-                  </div>
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Teams */}
-                    <div className="bg-white rounded-lg p-3 border border-indigo-100">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Users className="w-4 h-4 text-indigo-600" />
-                        <span className="text-xs font-medium text-gray-700">Teams</span>
-                      </div>
-                      {(() => {
-                        const myTeams = teamMemberships.filter(tm => tm.user_id === user.id)
-                        return myTeams.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {myTeams.map(tm => (
-                              <span
-                                key={tm.id}
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs"
-                                style={{
-                                  backgroundColor: `${tm.team?.color || '#6366f1'}15`,
-                                  color: tm.team?.color || '#6366f1'
-                                }}
-                              >
-                                {tm.team?.name}
-                                {tm.is_team_admin && <Crown className="w-2.5 h-2.5 ml-1" />}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-500">No team memberships</p>
-                        )
-                      })()}
-                    </div>
-                    {/* Portfolios */}
-                    <div className="bg-white rounded-lg p-3 border border-indigo-100">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Briefcase className="w-4 h-4 text-purple-600" />
-                        <span className="text-xs font-medium text-gray-700">Portfolios</span>
-                      </div>
-                      {(() => {
-                        const myPortfolios = portfolioMemberships.filter(pm => pm.user_id === user.id)
-                        return myPortfolios.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {myPortfolios.map(pm => (
-                              <span
-                                key={pm.id}
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-700"
-                              >
-                                {pm.portfolio?.name}
-                                {pm.is_portfolio_manager && <Crown className="w-2.5 h-2.5 ml-1" />}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-500">No portfolio access</p>
-                        )
-                      })()}
-                    </div>
-                    {/* Role */}
-                    <div className="bg-white rounded-lg p-3 border border-indigo-100">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <UserCircle className="w-4 h-4 text-gray-600" />
-                        <span className="text-xs font-medium text-gray-700">Your Role</span>
-                      </div>
-                      {(() => {
-                        const myMembership = orgMembers.find(m => m.user_id === user.id)
-                        return (
-                          <div className="space-y-1">
-                            <p className="text-xs text-gray-900 font-medium">{myMembership?.title || 'Member'}</p>
-                            <p className="text-xs text-gray-500">{user.email}</p>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  </div>
-                </Card>
-              )}
-
-              {/* View Toggle */}
-              <div className="flex items-center space-x-2 justify-start">
-                <button
-                  onClick={() => setPeopleView('users')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    peopleView === 'users'
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <LogIn className="w-4 h-4" />
-                    <span>Tesseract Users</span>
-                    <span className="px-1.5 py-0.5 text-xs bg-white rounded-full">
-                      {activeMembers.length}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => setPeopleView('contacts')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    peopleView === 'contacts'
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <AtSign className="w-4 h-4" />
-                    <span>Contacts</span>
-                    <span className="px-1.5 py-0.5 text-xs bg-white rounded-full">
-                      {filteredContacts.length}
-                    </span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Users View */}
-              {peopleView === 'users' && (
-                <div className="space-y-6">
-                  {/* Admins Section */}
-                  {adminMembers.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                        <Crown className="w-4 h-4 mr-1.5 text-indigo-500" />
-                        Admins ({adminMembers.length})
-                      </h3>
-                      <div className="bg-white rounded-lg border border-indigo-200 divide-y divide-indigo-100">
-                        {adminMembers.map(member => {
-                          const userTeams = getUserTeams(member.user_id)
-                          const userPortfolios = getUserPortfolios(member.user_id)
-
-                          // Get profile info for display
-                          const profileInfo = member.profile
-                          const userTypeColors: Record<string, string> = {
-                            investor: 'bg-emerald-100 text-emerald-700',
-                            operations: 'bg-blue-100 text-blue-700',
-                            compliance: 'bg-amber-100 text-amber-700'
-                          }
-
-                          const isExpanded = expandedUserId === member.user_id
-
-                          return (
-                            <div key={member.id} className="hover:bg-indigo-50/50 transition-colors">
-                              <div className="px-4 py-3 flex items-center justify-between">
-                                {/* Left: User info */}
-                                <div className="flex items-center space-x-3 min-w-0 flex-1">
-                                  <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
-                                    <span className="text-white text-sm font-semibold">
-                                      {member.user?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
-                                    </span>
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center space-x-2">
-                                      <button
-                                        onClick={() => setExpandedUserId(isExpanded ? null : member.user_id)}
-                                        className="font-medium text-gray-900 text-sm truncate hover:text-indigo-600 transition-colors text-left"
-                                      >
-                                        {member.user?.full_name}
-                                      </button>
-                                      {onUserClick && member.user_id && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
-                                          }}
-                                          className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
-                                          title="Open user profile"
-                                        >
-                                          <ExternalLink className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                      {profileInfo?.user_type && (
-                                        <span className={`px-1.5 py-0.5 text-[10px] rounded ${userTypeColors[profileInfo.user_type] || 'bg-gray-100 text-gray-600'}`}>
-                                          {formatProfileValue(profileInfo.user_type)}
-                                        </span>
-                                      )}
-                                      <span className="text-xs text-gray-400 truncate hidden sm:inline">{member.user?.email}</span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Center: Team badges only */}
-                                <div className="hidden md:flex items-center space-x-1.5 flex-shrink-0 mx-4">
-                                  {userTeams.slice(0, 2).map(tm => (
-                                    <span
-                                      key={tm.id}
-                                      className="px-1.5 py-0.5 text-[10px] rounded flex items-center"
-                                      style={{
-                                        backgroundColor: `${tm.team?.color || '#6366f1'}15`,
-                                        color: tm.team?.color || '#6366f1'
-                                      }}
-                                    >
-                                      {tm.team?.name}
-                                    </span>
-                                  ))}
-                                  {userTeams.length > 2 && (
-                                    <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
-                                      +{userTeams.length - 2}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Right: Permission toggles & Actions */}
-                                <div className="flex items-center space-x-2 flex-shrink-0">
-                                  {member.user_id === user?.id ? (
-                                    /* Current user: show status icons only (not clickable) */
-                                    <div className="flex items-center space-x-1">
-                                      {member.is_org_admin && (
-                                        <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded" title="Org Admin">
-                                          <Crown className="w-4 h-4" />
-                                        </span>
-                                      )}
-                                      {member.user?.coverage_admin && (
-                                        <span className="p-1.5 bg-purple-100 text-purple-700 rounded" title="Coverage Admin">
-                                          <Shield className="w-4 h-4" />
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : isOrgAdmin ? (
-                                    /* Admin viewing other users: show clickable buttons */
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          e.stopPropagation()
-                                          updateUserPermissionsMutation.mutate({
-                                            userId: member.user_id,
-                                            permissions: { is_org_admin: !member.is_org_admin }
-                                          })
-                                        }}
-                                        disabled={updateUserPermissionsMutation.isPending}
-                                        className={`p-1.5 rounded transition-colors ${
-                                          member.is_org_admin
-                                            ? 'bg-indigo-100 text-indigo-700'
-                                            : 'text-gray-300 hover:text-indigo-600 hover:bg-indigo-50'
-                                        }`}
-                                        title={member.is_org_admin ? 'Remove Org Admin' : 'Make Org Admin'}
-                                      >
-                                        <Crown className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          e.stopPropagation()
-                                          updateUserPermissionsMutation.mutate({
-                                            userId: member.user_id,
-                                            permissions: { coverage_admin: !member.user?.coverage_admin }
-                                          })
-                                        }}
-                                        disabled={updateUserPermissionsMutation.isPending}
-                                        className={`p-1.5 rounded transition-colors ${
-                                          member.user?.coverage_admin
-                                            ? 'bg-purple-100 text-purple-700'
-                                            : 'text-gray-300 hover:text-purple-600 hover:bg-purple-50'
-                                        }`}
-                                        title={member.user?.coverage_admin ? 'Remove Coverage Admin' : 'Make Coverage Admin'}
-                                      >
-                                        <Shield className="w-4 h-4" />
-                                      </button>
-                                      <div className="w-px h-5 bg-gray-200" />
-                                      <button
-                                        onClick={() => setShowSuspendModal(member)}
-                                        className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                        title="Suspend access"
-                                      >
-                                        <UserX className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  ) : (
-                                    /* Non-admin viewing other users: show status icons only */
-                                    <div className="flex items-center space-x-1">
-                                      {member.is_org_admin && (
-                                        <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded" title="Org Admin">
-                                          <Crown className="w-4 h-4" />
-                                        </span>
-                                      )}
-                                      {member.user?.coverage_admin && (
-                                        <span className="p-1.5 bg-purple-100 text-purple-700 rounded" title="Coverage Admin">
-                                          <Shield className="w-4 h-4" />
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Expanded Profile Details */}
-                              {isExpanded && profileInfo && (
-                                <div className="px-4 pb-3 pt-1 ml-11 border-t border-indigo-100">
-                                  <div className="flex flex-wrap gap-2 text-xs">
-                                    {member.title && (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-gray-500">Title:</span>
-                                        <span className="text-gray-700">{member.title}</span>
-                                      </div>
-                                    )}
-                                    {profileInfo.user_type === 'investor' && (
-                                      <>
-                                        {profileInfo.sector_focus?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Sectors:</span>
-                                            {profileInfo.sector_focus.map((s: string) => (
-                                              <span key={s} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded">{formatProfileValue(s)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.investment_style?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Style:</span>
-                                            {profileInfo.investment_style.map((s: string) => (
-                                              <span key={s} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded">{formatProfileValue(s)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.market_cap_focus?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Market Cap:</span>
-                                            {profileInfo.market_cap_focus.map((m: string) => (
-                                              <span key={m} className="px-1.5 py-0.5 bg-cyan-50 text-cyan-600 rounded">{formatProfileValue(m)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.geography_focus?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Geography:</span>
-                                            {profileInfo.geography_focus.map((g: string) => (
-                                              <span key={g} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded">{formatProfileValue(g)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.time_horizon?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Horizon:</span>
-                                            {profileInfo.time_horizon.map((t: string) => (
-                                              <span key={t} className="px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded">{formatProfileValue(t)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </>
-                                    )}
-                                    {profileInfo.user_type === 'operations' && profileInfo.ops_departments?.length > 0 && (
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <span className="text-gray-500">Departments:</span>
-                                        {profileInfo.ops_departments.map((d: string) => (
-                                          <span key={d} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{formatProfileValue(d)}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {profileInfo.user_type === 'compliance' && profileInfo.compliance_areas?.length > 0 && (
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <span className="text-gray-500">Areas:</span>
-                                        {profileInfo.compliance_areas.map((a: string) => (
-                                          <span key={a} className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded">{formatProfileValue(a)}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Regular Users */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                      <UserCircle className="w-4 h-4 mr-1.5 text-green-500" />
-                      Users ({regularMembers.length})
-                    </h3>
-                    {regularMembers.length === 0 ? (
-                      <div className="text-center py-8 bg-gray-50 rounded-lg">
-                        <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                        <p className="text-sm text-gray-500">No users match your search</p>
-                      </div>
-                    ) : (
-                      <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                        {regularMembers.map(member => {
-                          const userTeams = getUserTeams(member.user_id)
-                          const userPortfolios = getUserPortfolios(member.user_id)
-
-                          // Get profile info for display
-                          const profileInfo = member.profile
-                          const userTypeColors: Record<string, string> = {
-                            investor: 'bg-emerald-100 text-emerald-700',
-                            operations: 'bg-blue-100 text-blue-700',
-                            compliance: 'bg-amber-100 text-amber-700'
-                          }
-
-                          const isExpanded = expandedUserId === member.user_id
-
-                          return (
-                            <div key={member.id} className="hover:bg-gray-50 transition-colors">
-                              <div className="px-4 py-3 flex items-center justify-between">
-                                {/* Left: User info */}
-                                <div className="flex items-center space-x-3 min-w-0 flex-1">
-                                  <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                                    <span className="text-white text-sm font-semibold">
-                                      {member.user?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
-                                    </span>
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center space-x-2">
-                                      <button
-                                        onClick={() => setExpandedUserId(isExpanded ? null : member.user_id)}
-                                        className="font-medium text-gray-900 text-sm truncate hover:text-primary-600 transition-colors text-left"
-                                      >
-                                        {member.user?.full_name}
-                                      </button>
-                                      {onUserClick && member.user_id && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
-                                          }}
-                                          className="p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
-                                          title="Open user profile"
-                                        >
-                                          <ExternalLink className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                      {profileInfo?.user_type && (
-                                        <span className={`px-1.5 py-0.5 text-[10px] rounded ${userTypeColors[profileInfo.user_type] || 'bg-gray-100 text-gray-600'}`}>
-                                          {formatProfileValue(profileInfo.user_type)}
-                                        </span>
-                                      )}
-                                      <span className="text-xs text-gray-400 truncate hidden sm:inline">{member.user?.email}</span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Center: Team badges */}
-                                <div className="hidden md:flex items-center space-x-1.5 flex-shrink-0 mx-4">
-                                  {userTeams.slice(0, 2).map(tm => (
-                                    <span
-                                      key={tm.id}
-                                      className="px-1.5 py-0.5 text-[10px] rounded flex items-center"
-                                      style={{
-                                        backgroundColor: `${tm.team?.color || '#6366f1'}15`,
-                                        color: tm.team?.color || '#6366f1'
-                                      }}
-                                    >
-                                      {tm.team?.name}
-                                    </span>
-                                  ))}
-                                  {userTeams.length > 2 && (
-                                    <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
-                                      +{userTeams.length - 2}
-                                    </span>
-                                  )}
-                                  {userPortfolios.slice(0, 2).map(pm => (
-                                    <span
-                                      key={pm.id}
-                                      className="px-1.5 py-0.5 text-[10px] bg-green-50 text-green-700 rounded flex items-center"
-                                    >
-                                      {pm.portfolio?.name}
-                                    </span>
-                                  ))}
-                                  {userPortfolios.length > 2 && (
-                                    <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
-                                      +{userPortfolios.length - 2}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Right: Permission toggles & Actions */}
-                                <div className="flex items-center space-x-2 flex-shrink-0">
-                                  {/* Permission toggles for org admins */}
-                                  {isOrgAdmin && member.user_id !== user?.id ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          e.stopPropagation()
-                                          updateUserPermissionsMutation.mutate({
-                                            userId: member.user_id,
-                                            permissions: { is_org_admin: !member.is_org_admin }
-                                          })
-                                        }}
-                                        disabled={updateUserPermissionsMutation.isPending}
-                                        className={`p-1.5 rounded transition-colors ${
-                                          member.is_org_admin
-                                            ? 'bg-indigo-100 text-indigo-700'
-                                            : 'text-gray-300 hover:text-indigo-600 hover:bg-indigo-50'
-                                        }`}
-                                        title={member.is_org_admin ? 'Remove Org Admin' : 'Make Org Admin'}
-                                      >
-                                        <Crown className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          e.stopPropagation()
-                                          updateUserPermissionsMutation.mutate({
-                                            userId: member.user_id,
-                                            permissions: { coverage_admin: !member.user?.coverage_admin }
-                                          })
-                                        }}
-                                        disabled={updateUserPermissionsMutation.isPending}
-                                        className={`p-1.5 rounded transition-colors ${
-                                          member.user?.coverage_admin
-                                            ? 'bg-purple-100 text-purple-700'
-                                            : 'text-gray-300 hover:text-purple-600 hover:bg-purple-50'
-                                        }`}
-                                        title={member.user?.coverage_admin ? 'Remove Coverage Admin' : 'Make Coverage Admin'}
-                                      >
-                                        <Shield className="w-4 h-4" />
-                                      </button>
-                                      <div className="w-px h-5 bg-gray-200" />
-                                      <button
-                                        onClick={() => setShowSuspendModal(member)}
-                                        className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                        title="Suspend access"
-                                      >
-                                        <UserX className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              {/* Expanded Profile Details */}
-                              {isExpanded && profileInfo && (
-                                <div className="px-4 pb-3 pt-1 ml-11 border-t border-gray-100">
-                                  <div className="flex flex-wrap gap-2 text-xs">
-                                    {member.title && (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-gray-500">Title:</span>
-                                        <span className="text-gray-700">{member.title}</span>
-                                      </div>
-                                    )}
-                                    {profileInfo.user_type === 'investor' && (
-                                      <>
-                                        {profileInfo.sector_focus?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Sectors:</span>
-                                            {profileInfo.sector_focus.map((s: string) => (
-                                              <span key={s} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded">{formatProfileValue(s)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.investment_style?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Style:</span>
-                                            {profileInfo.investment_style.map((s: string) => (
-                                              <span key={s} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded">{formatProfileValue(s)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.market_cap_focus?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Market Cap:</span>
-                                            {profileInfo.market_cap_focus.map((m: string) => (
-                                              <span key={m} className="px-1.5 py-0.5 bg-cyan-50 text-cyan-600 rounded">{formatProfileValue(m)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.geography_focus?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Geography:</span>
-                                            {profileInfo.geography_focus.map((g: string) => (
-                                              <span key={g} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded">{formatProfileValue(g)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {profileInfo.time_horizon?.length > 0 && (
-                                          <div className="flex items-center gap-1 flex-wrap">
-                                            <span className="text-gray-500">Horizon:</span>
-                                            {profileInfo.time_horizon.map((t: string) => (
-                                              <span key={t} className="px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded">{formatProfileValue(t)}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </>
-                                    )}
-                                    {profileInfo.user_type === 'operations' && profileInfo.ops_departments?.length > 0 && (
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <span className="text-gray-500">Departments:</span>
-                                        {profileInfo.ops_departments.map((d: string) => (
-                                          <span key={d} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{formatProfileValue(d)}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {profileInfo.user_type === 'compliance' && profileInfo.compliance_areas?.length > 0 && (
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <span className="text-gray-500">Areas:</span>
-                                        {profileInfo.compliance_areas.map((a: string) => (
-                                          <span key={a} className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded">{formatProfileValue(a)}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Suspended Users (admin only) */}
-                  {isOrgAdmin && suspendedMembers.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                        <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-500" />
-                        Suspended Users ({suspendedMembers.length})
-                      </h3>
-                      <div className="bg-amber-50 rounded-lg border border-amber-200 divide-y divide-amber-100">
-                        {suspendedMembers.map(member => (
-                          <div key={member.id} className="px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center flex-shrink-0">
-                                <span className="text-white text-sm font-semibold">
-                                  {member.user?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
-                                </span>
-                              </div>
-                              <div>
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-medium text-gray-700 text-sm">{member.user?.full_name}</span>
-                                  {onUserClick && member.user_id && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
-                                      }}
-                                      className="p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
-                                      title="Open user profile"
-                                    >
-                                      <ExternalLink className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                  <span className="px-1.5 py-0.5 text-[10px] bg-amber-200 text-amber-800 rounded">
-                                    Suspended
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-500">{member.user?.email}</p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => unsuspendUserMutation.mutate(member.id)}
-                              disabled={unsuspendUserMutation.isPending}
-                              className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 rounded transition-colors flex items-center"
-                            >
-                              <Shield className="w-3 h-3 mr-1" />
-                              Restore
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Contacts View */}
-              {peopleView === 'contacts' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                      <AtSign className="w-4 h-4 mr-1.5 text-indigo-500" />
-                      Organization Contacts
-                    </h3>
-                    {isOrgAdmin && (
-                      <Button size="sm" onClick={() => setShowAddContactModal(true)}>
-                        <Plus className="w-3 h-3 mr-1" />
-                        Add Contact
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    People who don't have platform access but receive reports or communications.
-                  </p>
-
-                  {filteredContacts.length === 0 ? (
-                    <div className="text-center py-12 bg-gray-50 rounded-lg">
-                      <AtSign className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No contacts yet</h3>
-                      <p className="text-sm text-gray-500 mb-4">
-                        Add external contacts who need to receive reports or communications
-                      </p>
-                      {isOrgAdmin && (
-                        <Button onClick={() => setShowAddContactModal(true)}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add First Contact
-                        </Button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="grid gap-3">
-                      {filteredContacts.map(contact => (
-                        <Card key={contact.id} className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-3">
-                              <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
-                                <span className="text-primary-600 text-sm font-semibold">
-                                  {contact.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                                </span>
-                              </div>
-                              <div>
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-medium text-gray-900">{contact.full_name}</span>
-                                  <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full capitalize">
-                                    {contact.contact_type}
-                                  </span>
-                                  {contact.receives_reports && (
-                                    <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full flex items-center">
-                                      <Mail className="w-3 h-3 mr-1" />
-                                      Receives Reports
-                                    </span>
-                                  )}
-                                </div>
-                                {contact.title && contact.company && (
-                                  <p className="text-sm text-gray-600">{contact.title} at {contact.company}</p>
-                                )}
-                                {contact.title && !contact.company && (
-                                  <p className="text-sm text-gray-600">{contact.title}</p>
-                                )}
-                                <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                                  {contact.email && (
-                                    <span className="flex items-center">
-                                      <Mail className="w-3 h-3 mr-1" />
-                                      {contact.email}
-                                    </span>
-                                  )}
-                                  {contact.phone && (
-                                    <span className="flex items-center">
-                                      <Phone className="w-3 h-3 mr-1" />
-                                      {contact.phone}
-                                    </span>
-                                  )}
-                                </div>
-                                {contact.notes && (
-                                  <p className="text-sm text-gray-500 mt-2 italic">"{contact.notes}"</p>
-                                )}
-                              </div>
-                            </div>
-                            {isOrgAdmin && (
-                              <button
-                                onClick={() => {
-                                  if (confirm(`Remove ${contact.full_name} from contacts?`)) {
-                                    deleteContactMutation.mutate(contact.id)
-                                  }
-                                }}
-                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Remove contact"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <OrgPeopleTab
+              organization={organization}
+              isOrgAdmin={isOrgAdmin}
+              teamMemberships={teamMemberships}
+              portfolioMemberships={portfolioMemberships}
+              onUserClick={onUserClick}
+              onSuspendUser={(member) => setShowSuspendModal(member)}
+              onAddContact={() => setShowAddContactModal(true)}
+              contacts={contacts}
+              onDeleteContact={(id) => deleteContactMutation.mutate(id)}
+            />
           )}
 
           {/* Portfolios Tab */}
@@ -3408,113 +2592,43 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
             </div>
           )}
 
-          {/* Access Requests Tab (Admin Only) */}
-          {activeTab === 'requests' && isOrgAdmin && (
-            <div className="space-y-3">
-              {accessRequests.length === 0 ? (
-                <div className="text-center py-12">
-                  <Bell className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No pending requests</h3>
-                  <p className="text-sm text-gray-500">All access requests have been handled</p>
-                </div>
-              ) : (
-                accessRequests.map(request => (
-                  <Card key={request.id} className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-3">
-                        <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                          <Clock className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-900">
-                              {request.requester?.full_name}
-                            </span>
-                            <span className="text-sm text-gray-500">
-                              requested {request.request_type.replace(/_/g, ' ')}
-                            </span>
-                          </div>
-                          {request.target_team && (
-                            <p className="text-sm text-gray-600">
-                              Team: {request.target_team.name}
-                            </p>
-                          )}
-                          {request.target_portfolio && (
-                            <p className="text-sm text-gray-600">
-                              Portfolio: {request.target_portfolio.name}
-                            </p>
-                          )}
-                          {request.reason && (
-                            <p className="text-sm text-gray-500 mt-1 italic">"{request.reason}"</p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-1">
-                            {new Date(request.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAccessRequestMutation.mutate({
-                            requestId: request.id,
-                            status: 'rejected'
-                          })}
-                          className="text-red-600 hover:bg-red-50"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleAccessRequestMutation.mutate({
-                            requestId: request.id,
-                            status: 'approved'
-                          })}
-                        >
-                          <Check className="w-4 h-4 mr-1" />
-                          Approve
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                ))
-              )}
-            </div>
+          {/* Access Requests Tab (Admin Only) — extracted component with provisioning */}
+          {activeTab === 'requests' && <OrgRequestsTab isOrgAdmin={isOrgAdmin} organizationId={currentOrgId || undefined} />}
+
+          {/* Access Report Tab (Admin Only) */}
+          {activeTab === 'access' && isOrgAdmin && (
+            <OrgAccessTab
+              orgMembers={orgMembers}
+              teams={teams}
+              teamMemberships={teamMemberships}
+              portfolios={portfolios}
+              portfolioMemberships={portfolioMemberships}
+            />
+          )}
+
+          {/* Activity Tab (Admin Only) */}
+          {activeTab === 'activity' && organization && (
+            <OrgActivityTab
+              organizationId={organization.id}
+              isOrgAdmin={isOrgAdmin}
+              userNameMap={new Map(orgMembers.map(m => [m.user_id, m.user?.full_name || m.user?.email || 'Unknown']))}
+            />
           )}
 
           {/* Settings Tab (Admin Only) */}
           {activeTab === 'settings' && isOrgAdmin && (
             <div className="space-y-6">
-              <Card className="p-6">
-                <h3 className="font-medium text-gray-900 mb-4">Organization Settings</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Organization Name
-                    </label>
-                    <input
-                      type="text"
-                      value={organization?.name || ''}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Description
-                    </label>
-                    <textarea
-                      value={organization?.description || ''}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      rows={3}
-                      disabled
-                    />
-                  </div>
-                </div>
-              </Card>
 
-              <Card className="p-6">
-                <h3 className="font-medium text-gray-900 mb-4">Org Admins</h3>
+              {/* ── Identity & Access ── */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Shield className="w-3.5 h-3.5 text-gray-400" />
+                  <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Identity & Access</h2>
+                </div>
+                <div className="space-y-3">
+
+              <Card className="p-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Org Admins</h3>
                 <div className="space-y-2">
                   {orgMembers.filter(m => m.is_org_admin).map(admin => (
                     <div key={admin.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -3546,89 +2660,172 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                 </div>
               </Card>
 
-              {/* Branding & Compliance */}
-              <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-gray-900">Branding & Compliance</h3>
-                      {isBrandingLocked && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                          <Lock className="h-3 w-3" />
-                          Locked
-                        </span>
-                      )}
+              {/* Verified Domains */}
+              {organization?.id && (
+                <OrgDomainsSection organizationId={organization.id} />
+              )}
+
+              {/* Onboarding Policy */}
+              {isOrgAdmin && organization && (
+                <Card className="p-4">
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-gray-900">Onboarding Policy</h3>
+                      {(() => {
+                        const policy = organization.onboarding_policy || 'invite_only'
+                        const pillConfig = policy === 'open'
+                          ? { label: 'Open — Auto-Join Enabled', className: 'bg-amber-100 text-amber-700' }
+                          : policy === 'approval_required'
+                            ? { label: 'Approval Required', className: 'bg-blue-100 text-blue-700' }
+                            : { label: 'Invite Only', className: 'bg-gray-100 text-gray-600' }
+                        return (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pillConfig.className}`}>
+                            {pillConfig.label}
+                          </span>
+                        )
+                      })()}
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">Organization identity, logo, and default disclaimer for reports</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isBrandingLocked ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setIsBrandingLocked(false)}
-                        className="flex items-center gap-2"
-                      >
-                        <Lock className="h-4 w-4" />
-                        Unlock to Edit
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            // Reset to saved values
-                            const branding = organization?.settings?.branding || {}
-                            setEditingBranding({
-                              firm_name: branding.firm_name || '',
-                              tagline: branding.tagline || '',
-                              default_disclaimer: branding.default_disclaimer || '',
-                            })
-                            setBrandingLogoFile(null)
-                            if (organization?.logo_url) {
-                              supabase.storage.from('template-branding')
-                                .createSignedUrl(organization.logo_url, 3600)
-                                .then(({ data }) => {
-                                  if (data?.signedUrl) setBrandingLogoPreview(data.signedUrl)
-                                })
-                            } else {
-                              setBrandingLogoPreview(null)
-                            }
-                            setIsBrandingLocked(true)
-                          }}
-                          className="flex items-center gap-2"
-                        >
-                          <X className="h-4 w-4" />
-                          Cancel
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            if (!editingBranding) return
-                            saveBrandingMutation.mutate({
-                              ...editingBranding,
-                              logoFile: brandingLogoFile,
-                              removeLogo: !brandingLogoPreview && !!organization?.logo_url,
-                            })
-                          }}
-                          loading={saveBrandingMutation.isPending}
-                        >
-                          Save Changes
-                        </Button>
-                      </>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Control how users with a matching email domain can join your organization
+                    </p>
+                    {organization.updated_at && (
+                      <p className="text-[10px] text-gray-400 mt-1">Updated {formatTimeAgo(organization.updated_at)}</p>
                     )}
                   </div>
+                  <div className="space-y-2">
+                    {([
+                      { value: 'invite_only' as const, label: 'Invite Only', icon: Lock, desc: 'Users can only join via direct invitation from an admin.' },
+                      { value: 'approval_required' as const, label: 'Approval Required', icon: Clock, desc: 'Users with a matching email domain can request to join. An admin must approve.' },
+                      { value: 'open' as const, label: 'Open (Domain Auto-Join)', icon: Unlock, desc: 'Users with a matching verified email domain are automatically added.' },
+                    ] as const).map(opt => {
+                      const isActive = (organization.onboarding_policy || 'invite_only') === opt.value
+                      const Icon = opt.icon
+                      return (
+                        <label
+                          key={opt.value}
+                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isActive
+                              ? 'border-indigo-300 bg-indigo-50/50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="onboarding-policy"
+                            value={opt.value}
+                            checked={isActive}
+                            onChange={() => updateOnboardingPolicyMutation.mutate(opt.value)}
+                            disabled={updateOnboardingPolicyMutation.isPending || !canWrite}
+                            className="mt-1 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isActive ? 'text-indigo-600' : 'text-gray-400'}`} />
+                          <div className="min-w-0">
+                            <div className={`text-sm font-medium ${isActive ? 'text-indigo-900' : 'text-gray-900'}`}>
+                              {opt.label}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+
+                  {/* Warning: Open policy with zero verified domains */}
+                  {(organization.onboarding_policy || 'invite_only') === 'open' && verifiedDomainCount === 0 && (
+                    <div className="flex items-start gap-2 mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-amber-800">
+                        <strong>No verified domains.</strong> Add a verified domain to enable auto-join. Users won't be auto-routed until a domain is verified.
+                      </p>
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {/* SSO / Identity Provider */}
+              {isOrgAdmin && organization?.id && (
+                <OrgIdentityProviderSection organizationId={organization.id} verifiedDomainCount={verifiedDomainCount} />
+              )}
+
+                </div>
+              </div>
+
+              {/* ── Governance & Compliance ── */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="w-3.5 h-3.5 text-gray-400" />
+                  <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Governance & Compliance</h2>
+                </div>
+                <div className="space-y-3">
+
+              {/* Branding & Compliance */}
+              <Card className={`p-4 transition-colors ${!isBrandingLocked ? 'ring-1 ring-indigo-200 bg-indigo-50/20' : ''}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-gray-900">Branding & Compliance</h3>
+                      {isBrandingLocked ? (
+                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Read-Only</span>
+                      ) : (
+                        <span className="text-[10px] font-medium text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">Editing</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Organization identity, logo, and default disclaimer for reports</p>
+                    {organization?.updated_at && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">Updated {formatTimeAgo(organization.updated_at)}</p>
+                    )}
+                  </div>
+                  {isBrandingLocked && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsBrandingLocked(false)}
+                      className="flex items-center gap-2"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      Enable Editing
+                    </Button>
+                  )}
                 </div>
 
                 {editingBranding && (
-                  <div className="space-y-5">
+                  <div className="space-y-4">
+                    {/* Organization Name */}
+                    <div className={isBrandingLocked ? 'opacity-60' : ''}>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Organization Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBranding.org_name}
+                        disabled={isBrandingLocked}
+                        onChange={(e) => setEditingBranding({ ...editingBranding, org_name: e.target.value })}
+                        placeholder="Organization name"
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div className={isBrandingLocked ? 'opacity-60' : ''}>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Description
+                      </label>
+                      <textarea
+                        value={editingBranding.org_description}
+                        disabled={isBrandingLocked}
+                        onChange={(e) => setEditingBranding({ ...editingBranding, org_description: e.target.value })}
+                        rows={2}
+                        placeholder="Describe your organization"
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      />
+                    </div>
+
                     {/* Logo */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Organization Logo
                       </label>
-                      <p className="text-xs text-gray-500 mb-3">
+                      <p className="text-xs text-gray-500 mb-2">
                         Used on investment case reports and shared documents when &ldquo;Use org branding&rdquo; is enabled
                       </p>
                       <div className="flex items-start gap-4">
@@ -3687,10 +2884,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
                     {/* Firm Name */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Firm Name
                       </label>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-gray-500 mb-1">
                         Displayed on report covers and headers
                       </p>
                       <input
@@ -3699,13 +2896,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                         disabled={isBrandingLocked}
                         onChange={(e) => setEditingBranding({ ...editingBranding, firm_name: e.target.value })}
                         placeholder="e.g. Acme Capital"
-                        className={`w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                       />
                     </div>
 
                     {/* Tagline */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Tagline
                       </label>
                       <input
@@ -3714,16 +2911,16 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                         disabled={isBrandingLocked}
                         onChange={(e) => setEditingBranding({ ...editingBranding, tagline: e.target.value })}
                         placeholder="e.g. Investing in tomorrow"
-                        className={`w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                       />
                     </div>
 
                     {/* Default Disclaimer */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Default Disclaimer
                       </label>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-gray-500 mb-1">
                         Used as the default on investment case reports when &ldquo;Use org default disclaimer&rdquo; is enabled
                       </p>
                       <textarea
@@ -3732,77 +2929,108 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                         onChange={(e) => setEditingBranding({ ...editingBranding, default_disclaimer: e.target.value })}
                         rows={3}
                         placeholder="This document is for informational purposes only and does not constitute investment advice..."
-                        className={`w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                       />
                     </div>
+
+                    {/* Footer: Save / Cancel (editing mode only) */}
+                    {!isBrandingLocked && (
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const branding = organization?.settings?.branding || {}
+                            setEditingBranding({
+                              org_name: organization?.name || '',
+                              org_description: organization?.description || '',
+                              firm_name: branding.firm_name || '',
+                              tagline: branding.tagline || '',
+                              default_disclaimer: branding.default_disclaimer || '',
+                            })
+                            setBrandingLogoFile(null)
+                            if (organization?.logo_url) {
+                              supabase.storage.from('template-branding')
+                                .createSignedUrl(organization.logo_url, 3600)
+                                .then(({ data }) => {
+                                  if (data?.signedUrl) setBrandingLogoPreview(data.signedUrl)
+                                })
+                            } else {
+                              setBrandingLogoPreview(null)
+                            }
+                            setIsBrandingLocked(true)
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (!editingBranding) return
+                            saveBrandingMutation.mutate({
+                              ...editingBranding,
+                              logoFile: brandingLogoFile,
+                              removeLogo: !brandingLogoPreview && !!organization?.logo_url,
+                            })
+                          }}
+                          disabled={!editingBranding?.org_name?.trim()}
+                          loading={saveBrandingMutation.isPending}
+                        >
+                          Save Changes
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>
 
-              {/* Coverage Settings - Only for coverage admins */}
+              {/* Data Governance */}
+              {isOrgAdmin && organization?.id && (
+                <OrgGovernanceSection organizationId={organization.id} />
+              )}
+
+                </div>
+              </div>
+
+              {/* ── Operations ── */}
               {user?.coverage_admin && (
-                <Card className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-3.5 h-3.5 text-gray-400" />
+                  <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Operations</h2>
+                </div>
+                <div className="space-y-3">
+
+              {/* Coverage Settings - Only for coverage admins */}
+                <Card className={`p-4 transition-colors ${!isCoverageSettingsLocked ? 'ring-1 ring-indigo-200 bg-indigo-50/20' : ''}`}>
+                  <div className="flex items-center justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-gray-900">Coverage Settings</h3>
-                        {isCoverageSettingsLocked && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                            <Lock className="h-3 w-3" />
-                            Locked
-                          </span>
+                        <h3 className="text-sm font-medium text-gray-900">Coverage Settings</h3>
+                        {isCoverageSettingsLocked ? (
+                          <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Read-Only</span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">Editing</span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">Configure how coverage works across your organization</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {editingCoverageSettings && (
-                        <>
-                          {isCoverageSettingsLocked ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setIsCoverageSettingsLocked(false)}
-                              className="flex items-center gap-2"
-                            >
-                              <Lock className="h-4 w-4" />
-                              Unlock to Edit
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  // Reset to original settings and lock
-                                  if (coverageSettings) {
-                                    setEditingCoverageSettings({
-                                      default_visibility: coverageSettings.default_visibility || 'team',
-                                      enable_hierarchy: coverageSettings.enable_hierarchy || false,
-                                      hierarchy_levels: normalizeHierarchyLevels(coverageSettings.hierarchy_levels),
-                                      visibility_change_permission: coverageSettings.visibility_change_permission || 'coverage_admin',
-                                      allow_multiple_coverage: coverageSettings.allow_multiple_coverage !== false
-                                    })
-                                  }
-                                  setIsCoverageSettingsLocked(true)
-                                }}
-                                className="flex items-center gap-2"
-                              >
-                                <X className="h-4 w-4" />
-                                Cancel
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => setShowCoverageSettingsConfirm(true)}
-                                loading={saveCoverageSettingsMutation.isPending}
-                              >
-                                Save Changes
-                              </Button>
-                            </>
-                          )}
-                        </>
+                      <p className="text-xs text-gray-500 mt-1">Configure how coverage works across your organization</p>
+                      {coverageSettings?.updated_at && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">Updated {formatTimeAgo(coverageSettings.updated_at)}</p>
                       )}
                     </div>
+                    {editingCoverageSettings && isCoverageSettingsLocked && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsCoverageSettingsLocked(false)}
+                        className="flex items-center gap-2"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Enable Editing
+                      </Button>
+                    )}
                   </div>
 
                   {editingCoverageSettings && (
@@ -3985,6 +3213,39 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                           <option value="coverage_admin">Coverage Admins Only</option>
                         </select>
                       </div>
+
+                      {/* Footer: Save / Cancel (editing mode only) */}
+                      {!isCoverageSettingsLocked && (
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              if (coverageSettings) {
+                                setEditingCoverageSettings({
+                                  default_visibility: coverageSettings.default_visibility || 'team',
+                                  enable_hierarchy: coverageSettings.enable_hierarchy || false,
+                                  hierarchy_levels: normalizeHierarchyLevels(coverageSettings.hierarchy_levels),
+                                  visibility_change_permission: coverageSettings.visibility_change_permission || 'coverage_admin',
+                                  allow_multiple_coverage: coverageSettings.allow_multiple_coverage !== false
+                                })
+                              }
+                              setIsCoverageSettingsLocked(true)
+                            }}
+                            className="flex items-center gap-1.5"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => setShowCoverageSettingsConfirm(true)}
+                            loading={saveCoverageSettingsMutation.isPending}
+                          >
+                            Save Changes
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -3994,7 +3255,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                     </div>
                   )}
                 </Card>
+
+                </div>
+              </div>
               )}
+
             </div>
           )}
         </div>
@@ -4342,6 +3607,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
             updatePortfolioTeamMemberMutation.mutate({ memberId, role, focus })
           }}
           onRemoveMember={(memberId) => {
+            if (!window.confirm('Remove this member?')) return
             // For portfolio nodes, remove from portfolio_team table
             if (viewingNodeDetails.node_type === 'portfolio') {
               deletePortfolioTeamMemberMutation.mutate(memberId)
@@ -4503,17 +3769,19 @@ interface OrganizationPageProps {
 // Main exported component - handles loading state
 export function OrganizationPage({ onUserClick }: OrganizationPageProps = {}) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
-  // Single query to determine admin status - this controls the loading state
+  // Single query to determine admin status for the current org
   const { data: adminStatus, isLoading } = useQuery({
-    queryKey: ['org-admin-status', user?.id],
+    queryKey: ['org-admin-status', user?.id, currentOrgId],
     queryFn: async () => {
-      if (!user?.id) return { isAdmin: false }
+      if (!user?.id || !currentOrgId) return { isAdmin: false }
 
       const { data, error } = await supabase
         .from('organization_memberships')
         .select('is_org_admin')
         .eq('user_id', user.id)
+        .eq('organization_id', currentOrgId)
         .eq('status', 'active')
         .maybeSingle()
 
@@ -4991,7 +4259,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
 
       // Find org_chart_nodes for these portfolios
       const { data: portfolioNodes } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, settings')
         .eq('node_type', 'portfolio')
 

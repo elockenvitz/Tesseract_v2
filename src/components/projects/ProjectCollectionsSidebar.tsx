@@ -119,7 +119,7 @@ export function ProjectCollectionsSidebar({
 
       // Fetch all org nodes with their members, settings, and parent info
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select(`
           id,
           name,

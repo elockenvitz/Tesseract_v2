@@ -43,9 +43,9 @@ export function AssetWorkflowSelector({
 
       if (!userId) return []
 
-      // Get all accessible workflows
+      // Get all accessible workflows (org-scoped view)
       const { data: allWorkflows, error: workflowError } = await supabase
-        .from('workflows')
+        .from('org_workflows_v')
         .select('*')
         .or(`is_public.eq.true,created_by.eq.${userId}`)
         .order('is_default', { ascending: false })

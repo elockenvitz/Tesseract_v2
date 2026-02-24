@@ -151,7 +151,7 @@ export function QuickThoughtCapture({
       if (!user) return []
 
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id')
         .order('name')
 

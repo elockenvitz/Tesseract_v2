@@ -763,9 +763,9 @@ export function AssetTableView({
 
       const stakeholderWorkflowIds = new Set(stakeholderWorkflows?.map(sw => sw.workflow_id) || [])
 
-      // Fetch ALL active workflow branches (not templates)
+      // Fetch ALL active workflow branches (not templates) — org-scoped view
       const { data: allBranches, error } = await supabase
-        .from('workflows')
+        .from('org_workflows_v')
         .select(`
           id,
           name,
@@ -790,7 +790,7 @@ export function AssetTableView({
       // Also fetch parent workflows to check if they're archived
       const parentIds = [...new Set(allBranches?.map(b => b.parent_workflow_id).filter(Boolean) || [])]
       const { data: parentWorkflows } = await supabase
-        .from('workflows')
+        .from('org_workflows_v')
         .select('id, archived')
         .in('id', parentIds.length > 0 ? parentIds : ['none'])
 

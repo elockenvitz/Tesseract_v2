@@ -10,6 +10,7 @@ import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { InvestmentCaseTemplateManager } from '../investment-case-templates'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 
 // ============================================================================
 // TYPES
@@ -38,10 +39,11 @@ interface CaseTemplate {
 
 function useCaseTemplates() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   const { data: templates = [], isLoading } = useQuery({
-    queryKey: ['case-templates'],
+    queryKey: ['case-templates', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('case_templates')

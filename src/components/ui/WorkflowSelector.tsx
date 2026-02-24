@@ -94,7 +94,7 @@ export function WorkflowSelector({
       const sharedIds = await getSharedWorkflowIds(userId)
 
       let query = supabase
-        .from('workflows')
+        .from('org_workflows_v')
         .select('*')
 
       if (sharedIds.length > 0) {

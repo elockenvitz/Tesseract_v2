@@ -192,11 +192,11 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
       const [assetRes, projRes, portRes, themeRes, listRes] = await Promise.all([
         supabase.from('assets').select('id, symbol, company_name')
           .or(`symbol.ilike.%${q}%,company_name.ilike.%${q}%`).limit(4),
-        supabase.from('projects').select('id, title')
+        supabase.from('org_projects_v').select('id, title')
           .ilike('title', `%${q}%`).limit(3),
         supabase.from('portfolios').select('id, name')
           .ilike('name', `%${q}%`).limit(3),
-        supabase.from('themes').select('id, name')
+        supabase.from('org_themes_v').select('id, name')
           .ilike('name', `%${q}%`).limit(3),
         supabase.from('asset_lists').select('id, name')
           .ilike('name', `%${q}%`).limit(3),

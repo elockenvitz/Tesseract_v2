@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { routeOrgByEmail, autoAcceptPendingInvites, titleCase } from '../lib/org-domain-routing'
 
 const USER_CACHE_KEY = 'auth-user-cache'
 
@@ -19,6 +20,7 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(() => getCachedUser())
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const orgRouteAttemptedRef = useRef(false)
 
   // Cache user to localStorage
   const cacheUser = useCallback((userData: User | null) => {
@@ -91,7 +93,55 @@ export function useAuth() {
               .eq('id', session.user.id)
           }
           // Merge auth user with profile data
-          const userData = { ...session.user, ...existingProfile } as any
+          let userData = { ...session.user, ...existingProfile } as any
+
+          // Route org if user has no current org set
+          if (!userData.current_organization_id && !orgRouteAttemptedRef.current) {
+            orgRouteAttemptedRef.current = true
+
+            // Step A: Auto-accept any pending invites matching this email
+            const inviteResult = await autoAcceptPendingInvites()
+            if (inviteResult.accepted_count > 0) {
+              // Re-fetch profile (now has current_organization_id)
+              const { data: refreshed } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', session.user.id)
+                .single()
+              if (refreshed) {
+                userData = { ...userData, ...refreshed }
+              }
+              // Dispatch auto-join event for toast
+              if (inviteResult.org_name) {
+                window.dispatchEvent(new CustomEvent('org-auto-joined', {
+                  detail: { orgName: inviteResult.org_name },
+                }))
+              }
+            }
+
+            // Step B: If still no org, try domain-based routing
+            if (!userData.current_organization_id) {
+              const { profile, routeResult } = await routeOrgByEmail(session.user.email!, session.user.id)
+              if (profile) {
+                userData = { ...userData, ...profile }
+              }
+              // Attach route metadata for downstream screens (blocked/pending)
+              userData._routeAction = routeResult.action
+              userData._routeOrgName = routeResult.org_name
+              // Dispatch auto-join event for toast
+              if (routeResult.action === 'auto_join' && routeResult.org_name) {
+                window.dispatchEvent(new CustomEvent('org-auto-joined', {
+                  detail: { orgName: routeResult.org_name },
+                }))
+              }
+            }
+
+            // Step C: If still no org after both steps, mark as no_org
+            if (!userData.current_organization_id && !userData._routeAction) {
+              userData._routeAction = 'no_org'
+            }
+          }
+
           setUser(userData)
           cacheUser(userData)
         }
@@ -105,6 +155,7 @@ export function useAuth() {
     } else {
       setUser(null)
       cacheUser(null)
+      orgRouteAttemptedRef.current = false
     }
 
     setLoading(false)
@@ -123,7 +174,18 @@ export function useAuth() {
       handleAuthSession(session)
     })
 
-    return () => subscription.unsubscribe()
+    // Listen for org-switched event — re-read localStorage to update React state
+    // without a full page reload.
+    const handleOrgSwitched = () => {
+      const cached = getCachedUser()
+      if (cached) setUser(cached)
+    }
+    window.addEventListener('org-switched', handleOrgSwitched)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('org-switched', handleOrgSwitched)
+    }
   }, [])
 
   const signIn = async (email: string, password: string) => {
@@ -143,6 +205,10 @@ export function useAuth() {
     // If signup successful, create/update user record with names
     if (data.user && !error) {
       try {
+        // Normalize names: "JEFFREY" → "Jeffrey"
+        const normalizedFirst = titleCase(firstName)
+        const normalizedLast = titleCase(lastName)
+
         // Use upsert to handle both new users and existing users
         // This ensures first_name and last_name are always saved
         const { error: upsertError } = await supabase
@@ -150,8 +216,8 @@ export function useAuth() {
           .upsert({
             id: data.user.id,
             email: data.user.email,
-            first_name: firstName,
-            last_name: lastName
+            first_name: normalizedFirst,
+            last_name: normalizedLast
           }, {
             onConflict: 'id',
             ignoreDuplicates: false
@@ -160,7 +226,7 @@ export function useAuth() {
         if (upsertError) {
           console.error('Failed to save user record with names:', upsertError)
         } else {
-          console.log('User record saved with names:', firstName, lastName)
+          console.log('User record saved with names:', normalizedFirst, normalizedLast)
         }
       } catch (err) {
         console.error('Error saving user record:', err)

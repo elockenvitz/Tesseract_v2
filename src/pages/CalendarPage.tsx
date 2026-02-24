@@ -19,6 +19,8 @@ import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { CalendarSettings } from '../components/calendar/CalendarSettings'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 
 interface CalendarEvent {
   id: string
@@ -67,6 +69,7 @@ const CONTEXT_ICONS: Record<string, React.ReactNode> = {
 
 export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [viewMode, setViewMode] = useState<ViewMode>('month')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -120,10 +123,10 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
 
   // Fetch calendar events
   const { data: events = [], isLoading } = useQuery({
-    queryKey: ['calendar-events', dateRange.start, dateRange.end],
+    queryKey: buildOrgQueryKey(['calendar-events', dateRange.start, dateRange.end], currentOrgId),
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('calendar_events')
+        .from('org_calendar_events_v')
         .select('*')
         .gte('start_date', dateRange.start.toISOString())
         .lte('start_date', dateRange.end.toISOString())
@@ -137,7 +140,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
 
   // Fetch project deliverables with due dates
   const { data: deliverables = [] } = useQuery({
-    queryKey: ['calendar-deliverables', dateRange.start, dateRange.end],
+    queryKey: buildOrgQueryKey(['calendar-deliverables', dateRange.start, dateRange.end], currentOrgId),
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')

@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { Users, X, Search, Trash2, ChevronDown, ChevronRight, Upload, Download, FileText, AlertCircle, ChevronUp, Shield, Eye, EyeOff, History, ArrowRightLeft, RefreshCw, Clock, Plus, List, LayoutGrid, Grid3X3, Star, UserCheck, User, TrendingUp, TrendingDown, BarChart3, CheckCircle, UserPlus, Building2, FolderOpen, Check, Briefcase, Minimize2, Maximize2, Scale } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -352,6 +353,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const adminBadgeRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const hasGlobalCoverageAdmin = user?.coverage_admin || false
   const [showAdminBadgeDropdown, setShowAdminBadgeDropdown] = useState(false)
   const columnManagerRef = useRef<HTMLDivElement>(null)
@@ -567,17 +569,18 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     }
   })
 
-  // Fetch org admin status for current user
+  // Fetch org admin status for current user in current org
   const { data: isOrgAdmin = false, isLoading: isLoadingOrgAdmin } = useQuery({
-    queryKey: ['org-admin-status', user?.id],
+    queryKey: ['org-admin-status', user?.id, currentOrgId],
     queryFn: async () => {
-      if (!user?.id) return false
+      if (!user?.id || !currentOrgId) return false
       const { data, error } = await supabase
         .from('organization_memberships')
         .select('is_org_admin')
         .eq('user_id', user.id)
+        .eq('organization_id', currentOrgId)
         .eq('status', 'active')
-        .single()
+        .maybeSingle()
 
       if (error) return false
       return data?.is_org_admin || false
@@ -601,7 +604,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
       // Get all org chart nodes to find the hierarchy
       const { data: orgNodes, error: orgError } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id, settings')
 
       if (orgError) throw orgError
@@ -910,7 +913,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryFn: async () => {
       // Fetch ALL nodes to build hierarchy (not just team/portfolio/division)
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id, is_non_investment')
         .order('node_type')
         .order('name')
@@ -1093,7 +1096,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryKey: ['coverage-admin-override-nodes'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id')
         .eq('coverage_admin_override', true)
 
@@ -1111,7 +1114,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryKey: ['all-teams-for-coverage'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id')
         .eq('node_type', 'team')
         .order('name')
@@ -1122,31 +1125,22 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     enabled: isVisible
   })
 
-  // Fetch organization-level coverage settings
+  // Fetch organization-level coverage settings for current org
   const { data: coverageSettings } = useQuery({
-    queryKey: ['coverage-settings'],
+    queryKey: ['coverage-settings', currentOrgId],
     queryFn: async () => {
-      // First get the organization from user's membership
-      const { data: orgMembership, error: orgError } = await supabase
-        .from('organization_memberships')
-        .select('organization_id')
-        .eq('user_id', user?.id)
-        .single()
-
-      if (orgError || !orgMembership?.organization_id) {
-        return null
-      }
+      if (!currentOrgId) return null
 
       const { data, error } = await supabase
         .from('coverage_settings')
         .select('*')
-        .eq('organization_id', orgMembership.organization_id)
+        .eq('organization_id', currentOrgId)
         .single()
 
       if (error && error.code !== 'PGRST116') throw error
       return data || null
     },
-    enabled: isVisible && !!user?.id
+    enabled: isVisible && !!currentOrgId
   })
 
   // Fetch user's team memberships from org_chart_node_members

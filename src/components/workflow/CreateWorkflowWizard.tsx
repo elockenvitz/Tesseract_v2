@@ -282,7 +282,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     queryKey: ['themes'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('themes')
+        .from('org_themes_v')
         .select('id, name')
         .order('name')
       return data?.filter(t => t.name).map(t => ({ value: t.id, label: t.name })) || []
@@ -897,7 +897,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         if (Array.isArray(filter.values) && filter.values.length > 0) {
           // Find org_chart_nodes for these portfolios
           const { data: portfolioNodes } = await supabase
-            .from('org_chart_nodes')
+            .from('org_org_chart_nodes_v')
             .select('id, settings')
             .eq('node_type', 'portfolio')
 

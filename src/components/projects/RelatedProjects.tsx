@@ -41,19 +41,25 @@ export function RelatedProjects({
   const { data: relatedProjects, isLoading } = useQuery({
     queryKey: ['entity-projects', contextType, contextId],
     queryFn: async () => {
+      // Query via junction table
       const { data, error } = await supabase
-        .from('projects')
+        .from('project_contexts')
         .select(`
-          *,
-          project_deliverables(id, completed)
+          project:projects!inner(
+            *,
+            project_deliverables(id, completed)
+          )
         `)
         .eq('context_type', contextType)
         .eq('context_id', contextId)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
 
       if (error) throw error
-      return data || []
+
+      // Unwrap the join — each row has { project: {...} }
+      return (data || [])
+        .map((row: any) => row.project)
+        .filter((p: any) => p.deleted_at === null)
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     }
   })
 

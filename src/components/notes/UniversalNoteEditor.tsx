@@ -974,7 +974,7 @@ export function UniversalNoteEditor({
       }
       // If no recent, fetch some defaults
       const { data: defaultThemes } = await supabase
-        .from('themes')
+        .from('org_themes_v')
         .select('id, name, description')
         .order('updated_at', { ascending: false })
         .limit(5)
@@ -990,9 +990,9 @@ export function UniversalNoteEditor({
       return []
     }
 
-    // Search themes
+    // Search themes (org-scoped view)
     const { data: themes } = await supabase
-      .from('themes')
+      .from('org_themes_v')
       .select('id, name, description')
       .ilike('name', `%${query}%`)
       .limit(3)

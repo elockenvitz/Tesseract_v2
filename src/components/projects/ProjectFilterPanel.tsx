@@ -141,7 +141,7 @@ export function ProjectFilterPanel({
                   { value: 'portfolio', label: 'Portfolio' },
                   { value: 'theme', label: 'Theme' },
                   { value: 'workflow', label: 'Workflow' },
-                  { value: 'general', label: 'General' }
+                  { value: 'list', label: 'List' }
                 ]}
               />
             </div>

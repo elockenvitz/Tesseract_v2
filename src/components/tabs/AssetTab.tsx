@@ -565,7 +565,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .filter(Boolean)
 
       const { data: allNodes } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, color, node_type, parent_id')
 
       if (!allNodes) return { portfolios: [], teams: [], departments: [], divisions: [] }
@@ -4092,7 +4092,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
         {/* ========== LISTS SUB-PAGE ========== */}
         {activeSubPage === 'lists' && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {(() => {
               const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
                 const type = list.type || 'list'
@@ -4158,7 +4158,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             ))}
                           </div>
                         ) : (
-                          <p className="text-[13px] text-gray-400 py-1">Not in any lists.</p>
+                          <div className="py-1">
+                            <p className="text-[13px] text-gray-500">Not in any lists.</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">Add this asset to a list to organize and track it.</p>
+                          </div>
                         )}
                       </div>
                     )}
@@ -4226,7 +4229,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             ))}
                           </div>
                         ) : (
-                          <p className="text-[13px] text-gray-400 py-1">Not in any themes.</p>
+                          <div className="py-1">
+                            <p className="text-[13px] text-gray-500">Not in any themes.</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">Themes group assets by investment thesis or macro trend.</p>
+                          </div>
                         )}
                       </div>
                     )}
@@ -4297,7 +4303,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             })}
                           </div>
                         ) : (
-                          <p className="text-[13px] text-gray-400 py-0.5">Not in any portfolios.</p>
+                          <div className="py-0.5">
+                            <p className="text-[13px] text-gray-500">Not in any portfolios.</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">This asset has no current holdings across portfolios.</p>
+                          </div>
                         )}
                       </div>
                     )}
@@ -4310,7 +4319,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex justify-between items-center flex-1 mr-2">
-                        <span className="text-[13px] font-semibold text-gray-900">Projects</span>
+                        <h4 className="text-[13px] font-semibold text-gray-900">Projects</h4>
                         <AddToProjectButton assetId={asset.id} />
                       </div>
                       {collapsedSections.projectsContent ? (

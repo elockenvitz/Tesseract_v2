@@ -117,7 +117,7 @@ export function WorkflowManager({
       console.log('User ID:', userId)
 
       let query = supabase
-        .from('workflows')
+        .from('org_workflows_v')
         .select('*')
 
       if (userId) {

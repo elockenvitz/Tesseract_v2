@@ -105,7 +105,6 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
       const { data, error } = await supabase
         .from('organizations')
         .select('logo_url, settings')
-        .limit(1)
         .single()
       if (error && error.code !== 'PGRST116') throw error
       const branding = data?.settings?.branding || {}

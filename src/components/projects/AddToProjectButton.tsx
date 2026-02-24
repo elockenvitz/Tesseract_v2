@@ -13,6 +13,7 @@ import { FolderKanban, X, Search, Plus, Check, ChevronRight } from 'lucide-react
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { Button } from '../ui/Button'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -46,6 +47,7 @@ export function AddToProjectButton({
   const [newTitle, setNewTitle] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Auto-dismiss toast
@@ -55,42 +57,58 @@ export function AddToProjectButton({
     return () => clearTimeout(t)
   }, [toast])
 
-  // Fetch all projects the user created (or is assigned to)
+  // Fetch all projects with their context links
   const { data: projects, isLoading } = useQuery({
-    queryKey: ['all-projects-for-link', assetId],
+    queryKey: ['all-projects-for-link', currentOrgId, assetId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('projects')
+      // Fetch projects
+      const { data: projectData, error: projectError } = await supabase
+        .from('org_projects_v')
         .select('id, title, status, context_type, context_id, updated_at, created_by')
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
 
-      if (error) throw error
+      if (projectError) throw projectError
 
-      return (data || []).map((p) => ({
+      // Fetch linked context rows for this asset
+      const { data: contextData, error: contextError } = await supabase
+        .from('project_contexts')
+        .select('project_id')
+        .eq('context_type', 'asset')
+        .eq('context_id', assetId)
+
+      if (contextError) throw contextError
+
+      const linkedProjectIds = new Set((contextData || []).map(c => c.project_id))
+
+      return (projectData || []).map((p) => ({
         ...p,
-        isLinked: p.context_type === 'asset' && p.context_id === assetId,
+        isLinked: linkedProjectIds.has(p.id),
       })) as ProjectRow[]
     },
     enabled: showDialog,
   })
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['all-projects-for-link', assetId] })
+    queryClient.invalidateQueries({ queryKey: ['all-projects-for-link', currentOrgId, assetId] })
     queryClient.invalidateQueries({ queryKey: ['entity-projects', 'asset', assetId] })
     queryClient.invalidateQueries({ queryKey: ['asset-context-projects', assetId] })
   }
 
-  // Link asset to existing project
+  // Link asset to existing project via junction table
   const linkMutation = useMutation({
     mutationFn: async (project: ProjectRow) => {
       if (project.isLinked) {
         return { alreadyLinked: true, title: project.title }
       }
       const { error } = await supabase
-        .from('projects')
-        .update({ context_type: 'asset', context_id: assetId })
-        .eq('id', project.id)
+        .from('project_contexts')
+        .insert({
+          project_id: project.id,
+          context_type: 'asset',
+          context_id: assetId,
+          created_by: user?.id,
+        })
       if (error) throw error
       return { alreadyLinked: false, title: project.title }
     },
@@ -122,6 +140,14 @@ export function AddToProjectButton({
         .select('id')
         .single()
       if (error) throw error
+
+      // Insert into junction table
+      await supabase.from('project_contexts').insert({
+        project_id: data.id,
+        context_type: 'asset',
+        context_id: assetId,
+        created_by: user?.id,
+      })
 
       await supabase.from('project_assignments').insert({
         project_id: data.id,
@@ -229,7 +255,7 @@ export function AddToProjectButton({
                 {isLoading ? (
                   <div className="space-y-1 px-2 py-1">
                     {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="h-11 bg-gray-50 rounded-lg animate-pulse" />
+                      <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse" />
                     ))}
                   </div>
                 ) : (
@@ -245,20 +271,30 @@ export function AddToProjectButton({
                             key={project.id}
                             onClick={() => handleLink(project)}
                             disabled={linkMutation.isPending}
-                            className="w-full flex items-center justify-between px-3 py-[7px] rounded-lg cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors text-left group"
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors text-left group"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-semibold text-gray-900 truncate block leading-tight">
-                                {project.title}
-                              </span>
-                              <span className="text-[11px] text-gray-400/80 block mt-0.5 leading-tight">
-                                {statusLabel(project.status)}
+                              <div className="flex items-center gap-2">
+                                <span className="text-[13px] font-semibold text-gray-900 truncate leading-tight">
+                                  {project.title}
+                                </span>
+                                <span className={`inline-flex items-center px-1.5 py-px rounded-full text-[9px] font-medium flex-shrink-0 ${
+                                  project.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                  project.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                                  project.status === 'blocked' ? 'bg-red-100 text-red-700' :
+                                  project.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {statusLabel(project.status)}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-gray-400/60 block mt-0.5 leading-tight">
                                 {project.updated_at && (
-                                  <> &middot; {formatDistanceToNow(new Date(project.updated_at), { addSuffix: true })}</>
+                                  <>Updated {formatDistanceToNow(new Date(project.updated_at), { addSuffix: false })} ago</>
                                 )}
                               </span>
                             </div>
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
+                            <Plus className="w-3.5 h-3.5 text-gray-300 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
                           </button>
                         ))}
                       </div>
@@ -266,18 +302,18 @@ export function AddToProjectButton({
 
                     {/* Already linked */}
                     {linked.length > 0 && (
-                      <div>
-                        <p className="text-[9px] font-medium text-gray-400/70 uppercase tracking-widest mb-1 mt-3 px-2">Already linked</p>
+                      <div className="mt-2 pt-2 border-t border-gray-100">
+                        <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest mb-1 px-2">Already linked</p>
                         {linked.map((project) => (
                           <div
                             key={project.id}
-                            className="flex items-center justify-between px-3 py-[7px] rounded-lg cursor-default"
+                            className="flex items-center justify-between px-3 py-2 rounded-lg cursor-default border-l-2 border-green-300/60 ml-0.5"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-medium text-gray-500 truncate block leading-tight">{project.title}</span>
-                              <span className="text-[11px] text-gray-400/60 block mt-0.5 leading-tight">{statusLabel(project.status)}</span>
+                              <span className="text-[13px] font-medium text-gray-400 truncate block leading-tight">{project.title}</span>
+                              <span className="text-[10px] text-gray-400/40 block mt-0.5 leading-tight">{statusLabel(project.status)}</span>
                             </div>
-                            <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+                            <Check className="w-3.5 h-3.5 text-green-500/70 flex-shrink-0" />
                           </div>
                         ))}
                       </div>

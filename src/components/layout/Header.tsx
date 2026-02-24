@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, Activity } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, Activity, Plus, Shield } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { TesseractLogo } from '../ui/TesseractLogo'
+// SetupWizard removed — org creation disabled for normal users
 
 interface HeaderProps {
   onSearchResult: (result: any) => void
@@ -37,12 +39,28 @@ export function Header({
 }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showAppMenu, setShowAppMenu] = useState(false)
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  // showOrgWizard removed — org creation disabled for normal users
   const userMenuRef = useRef<HTMLDivElement>(null)
   const appMenuRef = useRef<HTMLDivElement>(null)
+  const orgSwitcherRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
+  const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
+
+  // Platform admin check — gates "Create Organization" for multi-org users
+  const { data: isPlatformAdmin = false } = useQuery({
+    queryKey: ['is-platform-admin', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('is_platform_admin')
+      if (error) return false
+      return data === true
+    },
+    enabled: !!user?.id,
+    staleTime: 10 * 60 * 1000,
+  })
 
   // User details are already loaded in the user object from useAuth
   const userDetails = user as any
@@ -151,13 +169,16 @@ export function Header({
       if (appMenuRef.current && !appMenuRef.current.contains(event.target as Node)) {
         setShowAppMenu(false)
       }
+      if (orgSwitcherRef.current && !orgSwitcherRef.current.contains(event.target as Node)) {
+        setShowOrgSwitcher(false)
+      }
     }
 
-    if (showUserMenu || showAppMenu) {
+    if (showUserMenu || showAppMenu || showOrgSwitcher) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showUserMenu, showAppMenu])
+  }, [showUserMenu, showAppMenu, showOrgSwitcher])
 
   const handleSignOut = async () => {
     try {
@@ -212,19 +233,17 @@ export function Header({
     <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo and Search */}
-          <div className="flex items-center space-x-6 flex-1">
-            {/* App Launcher */}
+          {/* Logo, Org Switcher, and Search */}
+          <div className="flex items-center flex-1">
+            {/* App Launcher — icon only */}
             <div className="relative" ref={appMenuRef}>
               <button
                 onClick={() => setShowAppMenu(!showAppMenu)}
-                className="flex items-center space-x-3 p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-colors group"
+                className="flex items-center justify-center w-9 h-9 -ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="App launcher"
                 title="App launcher"
               >
-                <TesseractLogo size={32} />
-                <div>
-                  <h1 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">Tesseract</h1>
-                </div>
+                <TesseractLogo size={28} />
               </button>
 
               {/* App Launcher Panel */}
@@ -314,6 +333,20 @@ export function Header({
                       </div>
                       <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">Organization</span>
                     </button>
+                    {isPlatformAdmin && (
+                      <button
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: 'admin-console', title: 'Admin Console', type: 'admin-console', data: null })
+                        }}
+                        className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile opacity-75"
+                      >
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-1.5 bg-red-50">
+                          <Shield className="h-4 w-4 text-red-400" />
+                        </div>
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">Admin</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Tools - visually de-emphasized */}
@@ -346,9 +379,76 @@ export function Header({
               )}
             </div>
 
+            {/* Divider + Org Switcher */}
+            {currentOrg && (
+              <>
+              <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-3 flex-shrink-0" />
+              <div className="relative" ref={orgSwitcherRef}>
+                <button
+                  onClick={() => { if (userOrgs.length > 1) setShowOrgSwitcher(!showOrgSwitcher) }}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
+                    userOrgs.length > 1
+                      ? 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
+                      : 'cursor-default'
+                  )}
+                  aria-label="Switch organization"
+                  title={userOrgs.length > 1 ? 'Switch organization' : currentOrg.name}
+                >
+                  <span className="font-semibold text-base text-gray-800 dark:text-gray-200 max-w-[200px] truncate">
+                    {currentOrg.name}
+                  </span>
+                  {userOrgs.length > 1 && (
+                    <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  )}
+                </button>
+
+                {showOrgSwitcher && userOrgs.length > 1 && (
+                  <div className="absolute left-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
+                    <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Switch Organization</p>
+                    </div>
+                    {userOrgs.map((org) => (
+                      <button
+                        key={org.id}
+                        onClick={async () => {
+                          try {
+                            await switchOrg(org.id)
+                            setShowOrgSwitcher(false)
+                          } catch (err: any) {
+                            console.error('Failed to switch org:', err)
+                          }
+                        }}
+                        className={clsx(
+                          'w-full flex items-center space-x-3 px-3 py-2.5 text-sm transition-colors text-left',
+                          org.id === currentOrg.id
+                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        )}
+                      >
+                        {org.logo_url ? (
+                          <img src={org.logo_url} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
+                            <Building2 className="w-3.5 h-3.5 text-gray-500" />
+                          </div>
+                        )}
+                        <span className="font-medium truncate">{org.name}</span>
+                        {org.id === currentOrg.id && (
+                          <span className="ml-auto text-indigo-500 text-xs">Active</span>
+                        )}
+                      </button>
+                    ))}
+                    {/* Create Organization removed — orgs are provisioned by platform admin only */}
+                  </div>
+                )}
+              </div>
+              </>
+            )}
+
             {/* Search */}
-            <div className="flex-1 max-w-lg">
-            <GlobalSearch onSelectResult={onSearchResult} onFocusSearch={onFocusSearch} />
+            <div className="flex-1 max-w-lg ml-5">
+              <GlobalSearch onSelectResult={onSearchResult} onFocusSearch={onFocusSearch} />
             </div>
           </div>
 
@@ -564,6 +664,8 @@ export function Header({
         </div>
       )}
 
+      {/* Org Setup Wizard — only manually triggered, never auto-opens */}
+      {/* Org creation is disabled for normal users; provisioned by platform admin only */}
     </header>
   )
 }

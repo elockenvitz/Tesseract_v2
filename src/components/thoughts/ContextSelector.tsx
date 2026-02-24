@@ -94,9 +94,9 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
         })))
       }
 
-      // Search projects
+      // Search projects (org-scoped view)
       const { data: projects } = await supabase
-        .from('projects')
+        .from('org_projects_v')
         .select('id, title')
         .ilike('title', `%${search}%`)
         .limit(5)
@@ -124,9 +124,9 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
         })))
       }
 
-      // Search themes
+      // Search themes (org-scoped view)
       const { data: themes } = await supabase
-        .from('themes')
+        .from('org_themes_v')
         .select('id, name')
         .ilike('name', `%${search}%`)
         .limit(5)

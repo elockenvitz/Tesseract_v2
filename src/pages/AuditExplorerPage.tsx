@@ -12,6 +12,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { csvSanitizeCell } from '../lib/csv-sanitize'
 import {
   Activity,
   Search,
@@ -1360,7 +1361,7 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
         e.asset_symbol || '',
         classifyActivityEvent(e).tier,
         (e.changed_fields || []).join(';'),
-      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      ].map(csvSanitizeCell).join(','))
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)

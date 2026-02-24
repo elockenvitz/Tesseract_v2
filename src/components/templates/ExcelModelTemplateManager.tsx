@@ -5146,7 +5146,7 @@ export function ExcelModelTemplateManager() {
     queryKey: ['org-chart-nodes-for-sharing'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id')
         .eq('is_active', true)
         .order('node_type')

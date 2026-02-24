@@ -92,7 +92,7 @@ export function useEntitySearch({
         searchPromises.push(
           (async () => {
             const { data: themes } = await supabase
-              .from('themes')
+              .from('org_themes_v')
               .select('id, name, description, color, theme_type')
               .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
               .limit(limit)
@@ -141,7 +141,7 @@ export function useEntitySearch({
         searchPromises.push(
           (async () => {
             const { data: workflows } = await supabase
-              .from('workflows')
+              .from('org_workflows_v')
               .select('id, name, description, color')
               .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
               .eq('deleted', false)

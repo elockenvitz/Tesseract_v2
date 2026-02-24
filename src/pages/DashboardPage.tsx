@@ -42,6 +42,7 @@ import { CoveragePage } from './CoveragePage'
 import { OrganizationPage } from './OrganizationPage'
 import { AttentionPage } from './AttentionPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
+import { AdminConsolePage } from './AdminConsolePage'
 import type { AttentionType } from '../types/attention'
 import type { DashboardItem } from '../types/dashboard-item'
 import type { CockpitBand } from '../types/cockpit'
@@ -54,6 +55,7 @@ import { SystemInsightCard } from '../components/dashboard/SystemInsightCard'
 import { useDashboardScope } from '../hooks/useDashboardScope'
 import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
+import { useToast } from '../components/common/Toast'
 
 // Helper to get initial tab state synchronously (avoids flash on refresh)
 function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
@@ -108,6 +110,17 @@ export function DashboardPage() {
   // Auth
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const toast = useToast()
+
+  // Listen for org auto-join event (dispatched from useAuth when domain routing auto-joins)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { orgName } = (e as CustomEvent).detail ?? {}
+      if (orgName) toast.success('Joined organization', orgName)
+    }
+    window.addEventListener('org-auto-joined', handler)
+    return () => window.removeEventListener('org-auto-joined', handler)
+  }, [])
 
   // Dashboard scope (portfolio, coverage, urgent filters)
   const [scope, setScope] = useDashboardScope()
@@ -640,6 +653,8 @@ export function DashboardPage() {
         return <ChartingPage onItemSelect={handleSearchResult} initialSymbol={activeTab.data?.symbol} />
       case 'audit':
         return <AuditExplorerPage onNavigate={handleSearchResult} />
+      case 'admin-console':
+        return <AdminConsolePage />
       case 'user':
         return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
       case 'templates':

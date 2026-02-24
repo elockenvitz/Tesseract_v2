@@ -16,6 +16,7 @@ import {
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../common/Toast'
+import { useOrganization } from '../../contexts/OrganizationContext'
 
 // Entity types that can be tagged
 export type ContextTagEntityType = 'asset' | 'portfolio' | 'theme' | 'asset_list' | 'trade_lab' | 'quick_thought' | 'topic'
@@ -120,6 +121,7 @@ export function ContextTagsInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
   const { error: showError } = useToast()
 
   // Auto-focus on mount if autoFocus is true
@@ -132,7 +134,7 @@ export function ContextTagsInput({
 
   // Combined search across all entity types
   const { data: searchResults, isLoading } = useQuery({
-    queryKey: ['context-tag-search', searchQuery],
+    queryKey: ['context-tag-search', currentOrgId, searchQuery],
     queryFn: async (): Promise<SearchResult[]> => {
       if (!searchQuery || searchQuery.length < 1) return []
 
@@ -169,9 +171,9 @@ export function ContextTagsInput({
         })
       })
 
-      // Search themes
+      // Search themes (org-scoped view)
       const { data: themes } = await supabase
-        .from('themes')
+        .from('org_themes_v')
         .select('id, name')
         .ilike('name', `%${searchQuery}%`)
         .limit(5)
@@ -218,7 +220,7 @@ export function ContextTagsInput({
       // Wrapped in try-catch to handle case where topics table doesn't exist yet
       try {
         const { data: topics, error: topicsError } = await supabase
-          .from('topics')
+          .from('org_topics_v')
           .select('id, name')
           .ilike('name', `%${searchQuery}%`)
           .limit(5)

@@ -193,7 +193,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     queryKey: ['org-chart-nodes-visibility'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type')
         .order('name')
       if (error) throw error

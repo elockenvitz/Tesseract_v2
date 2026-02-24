@@ -1,7 +1,16 @@
 export type ProjectStatus = 'planning' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
 export type ProjectPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type ProjectAssignmentRole = 'owner' | 'lead' | 'collaborator'
-export type ProjectContextType = 'asset' | 'portfolio' | 'theme' | 'workflow' | 'general'
+export type ProjectContextType = 'asset' | 'portfolio' | 'theme' | 'workflow' | 'list'
+
+export interface ProjectContext {
+  id: string
+  project_id: string
+  context_type: ProjectContextType
+  context_id: string
+  created_at: string
+  created_by: string | null
+}
 
 export interface Project {
   id: string

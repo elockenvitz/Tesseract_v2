@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { buildOrgQueryKey } from './useOrgQueryKey'
 import type {
   Capture,
   CaptureInsert,
@@ -50,6 +52,7 @@ interface CreateEmbedCaptureParams {
 
 export function useCapture() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Create entity capture (live or static)
@@ -84,7 +87,7 @@ export function useCapture() {
       return data as Capture
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['captures'] })
+      queryClient.invalidateQueries({ queryKey: buildOrgQueryKey(['captures'], currentOrgId) })
     }
   })
 
@@ -115,7 +118,7 @@ export function useCapture() {
       return data as Capture
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['captures'] })
+      queryClient.invalidateQueries({ queryKey: buildOrgQueryKey(['captures'], currentOrgId) })
     }
   })
 
@@ -148,7 +151,7 @@ export function useCapture() {
       return data as Capture
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['captures'] })
+      queryClient.invalidateQueries({ queryKey: buildOrgQueryKey(['captures'], currentOrgId) })
     }
   })
 
@@ -168,7 +171,7 @@ export function useCapture() {
       return data as Capture
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['captures'] })
+      queryClient.invalidateQueries({ queryKey: buildOrgQueryKey(['captures'], currentOrgId) })
     }
   })
 
@@ -200,7 +203,7 @@ export function useCapture() {
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['captures'] })
+      queryClient.invalidateQueries({ queryKey: buildOrgQueryKey(['captures'], currentOrgId) })
     }
   })
 

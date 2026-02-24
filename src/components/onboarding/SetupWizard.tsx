@@ -274,7 +274,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
     queryKey: ['org-nodes-for-wizard'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('org_chart_nodes')
+        .from('org_org_chart_nodes_v')
         .select('id, name, node_type, parent_id')
         .eq('is_active', true)
         .order('sort_order')
