@@ -43,6 +43,7 @@ interface TabManagerProps {
   onTabsReorder?: (newTabs: Tab[]) => void // For moving multiple tabs (groups)
   onTabChange: (tabId: string) => void
   onTabClose: (tabId: string) => void
+  onCloseTabs?: (tabIds: string[]) => void // Batch close for "close all" in groups
   onNewTab: () => void
   onFocusSearch: () => void
 }
@@ -138,11 +139,12 @@ interface GroupedTabProps {
   isGroupActive: boolean
   onTabChange: (tabId: string) => void
   onTabClose: (tabId: string) => void
+  onCloseTabs?: (tabIds: string[]) => void
   getTabIcon: (type: string) => JSX.Element
   sortableId: string
 }
 
-function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, getTabIcon, sortableId }: GroupedTabProps) {
+function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, onCloseTabs, getTabIcon, sortableId }: GroupedTabProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 })
@@ -245,7 +247,11 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, g
   }
 
   const handleConfirmCloseAll = () => {
-    tabs.forEach(t => onTabClose(t.id))
+    if (onCloseTabs) {
+      onCloseTabs(tabs.map(t => t.id))
+    } else {
+      tabs.forEach(t => onTabClose(t.id))
+    }
     setShowCloseConfirm(false)
   }
 
@@ -305,6 +311,8 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, g
       {showCloseConfirm && createPortal(
         <div
           ref={dropdownRef}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-[100] animate-in fade-in slide-in-from-top-2 duration-150"
           style={{
             top: dropdownPosition.top,
@@ -336,6 +344,8 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, g
       {isDropdownOpen && tabs.length > 1 && createPortal(
         <div
           ref={dropdownRef}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           className="fixed w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[100] animate-in fade-in slide-in-from-top-2 duration-150"
           style={{
             top: dropdownPosition.top,
@@ -461,7 +471,7 @@ function SortableTab({ tab, isActive, onTabChange, onTabClose, getTabIcon }: Sor
   )
 }
 
-export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onTabClose, onNewTab, onFocusSearch }: TabManagerProps) {
+export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onTabClose, onCloseTabs, onNewTab, onFocusSearch }: TabManagerProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showLeftArrow, setShowLeftArrow] = useState(false)
   const [showRightArrow, setShowRightArrow] = useState(false)
@@ -882,6 +892,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
                       isGroupActive={isGroupActive}
                       onTabChange={onTabChange}
                       onTabClose={onTabClose}
+                      onCloseTabs={onCloseTabs}
                       getTabIcon={getTabIcon}
                       sortableId={item.tabs[0].id}
                     />

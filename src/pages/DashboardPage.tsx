@@ -244,13 +244,18 @@ export function DashboardPage() {
       return
     }
     
+    // For portfolios, prefer mnemonic (portfolio_id) as tab title
+    const tabTitle = result.type === 'portfolio' && result.data?.portfolio_id
+      ? result.data.portfolio_id
+      : result.title
+
     const activeTab = tabs.find(tab => tab.id === activeTabId)
-    
+
     // If we're in a blank tab, replace it instead of creating a new one
     if (activeTab?.isBlank) {
       const updatedTab: Tab = {
         id: result.id,
-        title: result.title,
+        title: tabTitle,
         type: result.type,
         data: result.data,
         isActive: true
@@ -269,7 +274,7 @@ export function DashboardPage() {
     
     const newTab: Tab = {
       id: result.id,
-      title: result.title,
+      title: tabTitle,
       type: result.type,
       data: result.data,
       isActive: false
@@ -328,7 +333,7 @@ export function DashboardPage() {
         return
       }
     }
-    setTabs(tabs.map(tab => ({ ...tab, isActive: tab.id === tabId })))
+    setTabs(currentTabs => currentTabs.map(tab => ({ ...tab, isActive: tab.id === tabId })))
     setActiveTabId(tabId)
   }
 
@@ -385,6 +390,63 @@ export function DashboardPage() {
         if (newActiveTab) {
           setActiveTabId(newActiveTab.id)
           return newTabs.map(tab => ({ ...tab, isActive: tab.id === newActiveTab.id }))
+        }
+      }
+      return newTabs
+    })
+  }
+
+  const handleCloseTabs = (tabIds: string[]) => {
+    const idsToClose = new Set(tabIds.filter(id => id !== 'dashboard'))
+    if (idsToClose.size === 0) return
+
+    // Per-tab cleanup (note cleanup, state removal)
+    for (const tabId of idsToClose) {
+      const closingTab = tabs.find(t => t.id === tabId)
+      if (closingTab?.type === 'note' && closingTab.data?.id && user) {
+        const noteTableMap: Record<string, string> = {
+          asset: 'asset_notes',
+          portfolio: 'portfolio_notes',
+          theme: 'theme_notes',
+        }
+        const entityType = closingTab.data.entityType || 'asset'
+        const tableName = noteTableMap[entityType]
+        if (tableName) {
+          supabase
+            .from(tableName)
+            .select('id, title, content')
+            .eq('id', closingTab.data.id)
+            .eq('created_by', user.id)
+            .single()
+            .then(({ data: note }) => {
+              if (!note) return
+              const titleEmpty = !note.title || note.title === 'Untitled'
+              const contentEmpty = !note.content || !note.content.replace(/<[^>]*>/g, '').trim()
+              if (titleEmpty && contentEmpty) {
+                supabase
+                  .from(tableName)
+                  .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
+                  .eq('id', note.id)
+                  .then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['all-notes-with-users'] })
+                    queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
+                  })
+              }
+            })
+        }
+      }
+      TabStateManager.removeTabState(tabId)
+    }
+
+    // Single state update to remove all tabs at once
+    setTabs(currentTabs => {
+      const newTabs = currentTabs.filter(tab => !idsToClose.has(tab.id))
+      const activeStillExists = newTabs.some(tab => tab.id === activeTabId)
+      if (!activeStillExists) {
+        const fallback = newTabs.find(t => t.id === 'dashboard') || newTabs[0]
+        if (fallback) {
+          setActiveTabId(fallback.id)
+          return newTabs.map(tab => ({ ...tab, isActive: tab.id === fallback.id }))
         }
       }
       return newTabs
@@ -691,9 +753,11 @@ export function DashboardPage() {
         // Text template - go to templates tab
         return <TemplatesTab initialTab="text" initialTemplateId={activeTab.data?.id} />
       case 'team':
-        // Team - go to organization page with team view
+        // Team - go to organization page with access view filtered by team
         return <OrganizationPage
-          initialTeamId={activeTab.data?.id}
+          initialTab="access"
+          initialAccessSubTab="manage"
+          initialAccessFilter={{ teamNodeId: activeTab.data?.id }}
           onUserClick={(user) => handleSearchResult({
             id: user.id,
             title: user.full_name,
@@ -928,6 +992,7 @@ export function DashboardPage() {
       onTabsReorder={handleTabsReorder}
       onTabChange={handleTabChange}
       onTabClose={handleTabClose}
+      onCloseTabs={handleCloseTabs}
       onNewTab={handleNewTab}
       onSearchResult={handleSearchResult}
       onFocusSearch={handleFocusSearch}

@@ -101,7 +101,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
   const handlePortfolioClick = (portfolio: any) => {
     onPortfolioSelect?.({
       id: portfolio.id,
-      title: portfolio.portfolio_id || portfolio.name,
+      title: portfolio.name,
       type: 'portfolio',
       data: portfolio,
     })

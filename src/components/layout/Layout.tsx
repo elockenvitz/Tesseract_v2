@@ -17,6 +17,7 @@ interface LayoutProps {
   activeTabId?: string
   onTabChange: (tabId: string) => void
   onTabClose: (tabId: string) => void
+  onCloseTabs?: (tabIds: string[]) => void
   onNewTab: () => void
   onTabReorder: (fromIndex: number, toIndex: number) => void
   onTabsReorder?: (newTabs: Tab[]) => void
@@ -33,6 +34,7 @@ export function Layout({
   activeTabId,
   onTabChange,
   onTabClose,
+  onCloseTabs,
   onNewTab,
   onTabReorder,
   onTabsReorder,
@@ -400,6 +402,7 @@ export function Layout({
         activeTabId={activeTabId}
         onTabChange={onTabChange}
         onTabClose={onTabClose}
+        onCloseTabs={onCloseTabs}
         onNewTab={onNewTab}
         onTabReorder={onTabReorder}
         onTabsReorder={onTabsReorder}

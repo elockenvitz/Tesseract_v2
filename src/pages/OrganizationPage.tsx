@@ -52,7 +52,15 @@ import {
   Lock,
   Unlock,
   Upload,
-  Image
+  Image,
+  LayoutGrid,
+  Table2,
+  Eye,
+  Heart,
+  AlertCircle,
+  Minimize2,
+  Maximize2,
+  Home
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -69,6 +77,18 @@ import { useToast } from '../components/common/Toast'
 import { OrgBadge } from '../components/common/OrgBadge'
 import { useOrgWriteEnabled } from '../hooks/useOrgWriteEnabled'
 import { mapMutationError } from '../lib/archived-org-errors'
+import { useOrgGraph } from '../hooks/useOrgGraph'
+import { getRiskCountsBySeverity, computeGovernanceSummary } from '../lib/org-graph'
+import type { CoverageRecord, OrgGraphNode } from '../lib/org-graph'
+import { ROLE_OPTIONS, getFocusOptionsForRole } from '../lib/roles-config'
+import { OrganizationGovernanceHeader } from '../components/organization/OrganizationGovernanceHeader'
+import { HealthPill } from '../components/organization/HealthPill'
+import { OrgChartNodeCard } from '../components/organization/OrgChartNodeCard'
+import { resolveOrgPermissions } from '../lib/permissions/orgGovernance'
+import { RiskFlagBadge } from '../components/organization/RiskBadge'
+import { OrgNodeDetailsModal } from '../components/organization/OrgNodeDetailsModal'
+import { OrgAuthorityMap } from '../components/organization/OrgAuthorityMap'
+import { buildAuthorityRows, computeAuthoritySummary } from '../lib/authority-map'
 
 interface Organization {
   id: string
@@ -154,6 +174,7 @@ interface TeamMembership {
 
 interface Portfolio {
   id: string
+  portfolio_id: string
   name: string
   team_id: string | null
   description: string | null
@@ -262,6 +283,7 @@ interface OrgChartNodeMember {
   is_coverage_admin?: boolean
   coverage_admin_blocked?: boolean
   created_at: string
+  _source?: 'org_chart' | 'portfolio_team'
   user?: UserProfile
 }
 
@@ -295,17 +317,25 @@ function LoadingScreen() {
 interface OrganizationContentProps {
   isOrgAdmin: boolean
   onUserClick?: (user: { id: string; full_name: string }) => void
+  initialTab?: TabType
+  initialAccessSubTab?: 'manage' | 'report'
+  initialAccessFilter?: { teamNodeId?: string }
 }
 
 // Main content component - only rendered after loading is complete
-function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentProps) {
+function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAccessSubTab, initialAccessFilter }: OrganizationContentProps) {
   const { user } = useAuth()
   const toast = useToast()
   const queryClient = useQueryClient()
   const { currentOrgId } = useOrganization()
   const { canWrite, reason: archivedReason } = useOrgWriteEnabled()
+
+  // Org-scoped localStorage key helper
+  const orgKey = (key: string) => currentOrgId ? `${key}:${currentOrgId}` : key
+
   const [activeTab, setActiveTab] = useState<TabType>(() => {
-    const savedTab = localStorage.getItem('organization-active-tab')
+    if (initialTab) return initialTab
+    const savedTab = localStorage.getItem(currentOrgId ? `organization-active-tab:${currentOrgId}` : 'organization-active-tab')
     if (savedTab && ['teams', 'people', 'portfolios', 'requests', 'access', 'activity', 'settings'].includes(savedTab)) {
       return savedTab as TabType
     }
@@ -336,6 +366,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   const [editingNode, setEditingNode] = useState<OrgChartNode | null>(null)
   const [showAddNodeMemberModal, setShowAddNodeMemberModal] = useState<OrgChartNode | null>(null)
   const [viewingNodeDetails, setViewingNodeDetails] = useState<OrgChartNode | null>(null)
+  const [modalNodeId, setModalNodeId] = useState<string | null>(null)
+  const [modalInitialPage, setModalInitialPage] = useState<'profile' | 'manage'>('profile')
   const [viewingTeamCoverage, setViewingTeamCoverage] = useState<{ teamId: string; teamName: string } | null>(null)
   const [deleteNodeConfirm, setDeleteNodeConfirm] = useState<{ isOpen: boolean; node: OrgChartNode | null }>({ isOpen: false, node: null })
 
@@ -355,10 +387,88 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   const [editingPortfolioTeamMember, setEditingPortfolioTeamMember] = useState<PortfolioTeamMember | null>(null)
   const [deletePortfolioTeamConfirm, setDeletePortfolioTeamConfirm] = useState<{isOpen: boolean, member: PortfolioTeamMember | null}>({ isOpen: false, member: null })
 
-  // Persist active tab to localStorage
+  // Teams sub-view mode: structure (org chart), coverage
+  type TeamsViewMode = 'structure' | 'coverage'
+  const [teamsViewMode, setTeamsViewMode] = useState<TeamsViewMode>(() => {
+    const saved = localStorage.getItem(currentOrgId ? `organization-teams-view:${currentOrgId}` : 'organization-teams-view')
+    if (saved === 'coverage') return saved
+    return 'structure'
+  })
+
+  // Access sub-tab state
+  type AccessSubTab = 'manage' | 'report'
+  const [accessSubTab, setAccessSubTab] = useState<AccessSubTab>(() => {
+    if (initialAccessSubTab) return initialAccessSubTab
+    const saved = localStorage.getItem(currentOrgId ? `organization-access-subtab:${currentOrgId}` : 'organization-access-subtab')
+    if (saved === 'manage' || saved === 'report') return saved
+    return 'manage'
+  })
+
+  // Org chart search & filter state
+  const [orgChartSearch, setOrgChartSearch] = useState('')
+  const [debouncedOrgChartSearch, setDebouncedOrgChartSearch] = useState('')
   useEffect(() => {
-    localStorage.setItem('organization-active-tab', activeTab)
-  }, [activeTab])
+    const timer = setTimeout(() => setDebouncedOrgChartSearch(orgChartSearch), 150)
+    return () => clearTimeout(timer)
+  }, [orgChartSearch])
+  const [orgChartTypeFilter, setOrgChartTypeFilter] = useState<OrgNodeType | 'all'>('all')
+  // Persistent expansion state map — keys are node IDs, values are collapsed state
+  // Hydrate from localStorage on mount
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(currentOrgId ? `org-collapsed-nodes:${currentOrgId}` : 'org-collapsed-nodes')
+      if (saved) return new Set(JSON.parse(saved))
+    } catch { /* ignore */ }
+    return new Set()
+  })
+  // Persist collapsed state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(orgKey('org-collapsed-nodes'), JSON.stringify([...collapsedNodes]))
+    } catch { /* ignore */ }
+  }, [collapsedNodes])
+  const toggleNodeCollapsed = React.useCallback((nodeId: string) => {
+    setCollapsedNodes(prev => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) next.delete(nodeId)
+      else next.add(nodeId)
+      return next
+    })
+  }, [])
+  const orgChartNodesRef = useRef<OrgChartNode[]>([])
+  const collapseAll = React.useCallback(() => {
+    const allIds = new Set(orgChartNodesRef.current.map(n => n.id))
+    setCollapsedNodes(allIds)
+  }, [])
+  const expandAll = React.useCallback(() => {
+    setCollapsedNodes(new Set())
+  }, [])
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+
+  // Risk severity filter (from governance header click)
+  const [riskSeverityFilter, setRiskSeverityFilter] = useState<'high' | 'medium' | 'low' | null>(null)
+
+  // (permissionsRedirectNotice removed — permissions view merged into Access tab)
+
+  // Show empty branches toggle (default: ON for admins, OFF for non-admins)
+  const [showEmptyBranches, setShowEmptyBranches] = useState(isOrgAdmin)
+
+  // (Permissions view state moved into Access Matrix component)
+
+  // Persist active tab to localStorage (org-scoped)
+  useEffect(() => {
+    localStorage.setItem(orgKey('organization-active-tab'), activeTab)
+  }, [activeTab, currentOrgId])
+
+  // Persist teams view mode (org-scoped, only for permitted users)
+  useEffect(() => {
+    localStorage.setItem(orgKey('organization-teams-view'), teamsViewMode)
+  }, [teamsViewMode, currentOrgId])
+
+  // Persist access sub-tab
+  useEffect(() => {
+    localStorage.setItem(orgKey('organization-access-subtab'), accessSubTab)
+  }, [accessSubTab, currentOrgId])
 
   // Fetch organization data by explicit ID
   const { data: organization } = useQuery({
@@ -583,6 +693,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team'] })
     },
     onError: (error) => {
       console.error('Failed to update team member:', error)
@@ -608,6 +720,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team'] })
     },
     onError: (error: any) => {
       alert(`Failed to add team member: ${error.message}`)
@@ -699,6 +813,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     }
   })
 
+  // Keep ref in sync for collapseAll callback (declared before query to avoid TDZ)
+  orgChartNodesRef.current = orgChartNodes
+
   // Fetch org chart node links (for portfolios linked to multiple teams)
   const { data: orgChartNodeLinks = [] } = useQuery({
     queryKey: ['org-chart-node-links', currentOrgId],
@@ -764,6 +881,83 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     enabled: !!user?.id
   })
 
+  // Unified node members: merge portfolio_team entries into org_chart_node_members
+  // so every downstream consumer (graph, cards, modals) sees the complete picture.
+  // Dedup by node_id:user_id:role to prevent the same membership appearing from both tables.
+  const unifiedNodeMembers = React.useMemo(() => {
+    // Build a set of node_ids that are portfolio nodes with a linked portfolio_id,
+    // so we can prefer portfolio_team entries for those nodes (matches portfolio page).
+    const portfolioNodeMap = new Map<string, string>() // node_id -> portfolio_id
+    for (const node of orgChartNodes) {
+      if (node.node_type === 'portfolio' && node.settings?.portfolio_id) {
+        portfolioNodeMap.set(node.id, node.settings.portfolio_id)
+      }
+    }
+
+    const unified: OrgChartNodeMember[] = []
+    const seen = new Set<string>() // composite key: node_id:user_id:role
+
+    // Build a lookup of org_chart_node_members by node_id:user_id so we can
+    // merge coverage admin fields onto portfolio_team entries.
+    const orgMemberByNodeUser = new Map<string, OrgChartNodeMember>()
+    for (const m of orgChartNodeMembers) {
+      orgMemberByNodeUser.set(`${m.node_id}:${m.user_id}`, m)
+    }
+
+    // First pass: add portfolio_team entries for portfolio nodes (authoritative source).
+    for (const node of orgChartNodes) {
+      if (node.node_type !== 'portfolio') continue
+      const portfolioId = node.settings?.portfolio_id
+      if (!portfolioId) continue
+
+      const ptMembers = portfolioTeamMembers.filter(ptm => ptm.portfolio_id === portfolioId)
+      for (const ptm of ptMembers) {
+        const key = `${node.id}:${ptm.user_id}:${ptm.role}`
+        if (seen.has(key)) continue
+        seen.add(key)
+
+        // Merge coverage admin fields from org_chart_node_members if present
+        const orgEntry = orgMemberByNodeUser.get(`${node.id}:${ptm.user_id}`)
+
+        unified.push({
+          id: ptm.id,
+          node_id: node.id,
+          user_id: ptm.user_id,
+          role: ptm.role,
+          focus: ptm.focus,
+          created_at: ptm.created_at,
+          is_coverage_admin: orgEntry?.is_coverage_admin,
+          coverage_admin_blocked: orgEntry?.coverage_admin_blocked,
+          _source: 'portfolio_team' as const,
+          user: ptm.user ? {
+            id: ptm.user.id,
+            email: ptm.user.email,
+            full_name: [ptm.user.first_name, ptm.user.last_name].filter(Boolean).join(' ') || ptm.user.email,
+            avatar_url: null,
+          } : undefined,
+        })
+      }
+    }
+
+    // Second pass: add org_chart_node_members, but skip entries for portfolio
+    // nodes that have a linked portfolio — portfolio_team is the sole source
+    // of truth for those nodes (ensures org page matches portfolio page).
+    for (const m of orgChartNodeMembers) {
+      if (portfolioNodeMap.has(m.node_id)) continue
+
+      const key = `${m.node_id}:${m.user_id}:${m.role}`
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      unified.push({
+        ...m,
+        _source: 'org_chart' as const,
+      })
+    }
+
+    return unified
+  }, [orgChartNodeMembers, orgChartNodes, portfolioTeamMembers])
+
   // Fetch coverage settings for the organization
   const { data: coverageSettings, refetch: refetchCoverageSettings } = useQuery({
     queryKey: ['coverage-settings', organization?.id],
@@ -799,7 +993,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   // Fetch coverage stats grouped by team_id for displaying on org nodes
   // Coverage flows through USER MEMBERSHIP - a user's coverage counts for all portfolios they're a member of
   const { data: coverageStatsByTeam = {} } = useQuery({
-    queryKey: ['coverage-stats-by-team', orgChartNodes, orgChartNodeLinks, orgChartNodeMembers],
+    queryKey: ['coverage-stats-by-team', orgChartNodes, orgChartNodeLinks, unifiedNodeMembers],
     queryFn: async () => {
       // Get all coverage records
       const { data: coverageData, error: coverageError } = await supabase
@@ -823,9 +1017,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
         }
       })
 
-      // Build a map of node_id -> member user_ids (from org_chart_node_members)
+      // Build a map of node_id -> member user_ids (from unified node members)
       const nodeMemberIds = new Map<string, Set<string>>()
-      orgChartNodeMembers.forEach(member => {
+      unifiedNodeMembers.forEach(member => {
         if (!nodeMemberIds.has(member.node_id)) {
           nodeMemberIds.set(member.node_id, new Set())
         }
@@ -893,6 +1087,145 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     },
     enabled: activeTab === 'teams' && !!orgChartNodes && orgChartNodes.length > 0
   })
+
+  // Raw coverage records for OrgGraph (reuses the same query the coverage stats use)
+  const { data: rawCoverageRecords = [] } = useQuery<CoverageRecord[]>({
+    queryKey: ['coverage-records-raw', currentOrgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('coverage')
+        .select('asset_id, user_id')
+        .eq('is_active', true)
+      if (error) throw error
+      return (data || []) as CoverageRecord[]
+    },
+    enabled: activeTab === 'teams' && !!currentOrgId,
+  })
+
+  // OrgGraph — derived selector layer
+  const orgGraph = useOrgGraph({
+    nodes: orgChartNodes,
+    members: unifiedNodeMembers,
+    links: orgChartNodeLinks,
+    coverage: rawCoverageRecords,
+  })
+
+  // Risk counts by severity
+  const riskCounts = React.useMemo(() => getRiskCountsBySeverity(orgGraph), [orgGraph])
+
+  // Global coverage admin user IDs (from user profile, not node-scoped)
+  const globalCoverageAdminUserIds = React.useMemo(() => {
+    return new Set((orgMembers || []).filter((m: any) => m.user?.coverage_admin).map((m: any) => m.user_id as string))
+  }, [orgMembers])
+
+  // Governance summary — single authoritative source for header counts
+  const govSummary = React.useMemo(() => {
+    return computeGovernanceSummary(
+      orgGraph,
+      unifiedNodeMembers,
+      (orgMembers || []).map((m: any) => ({ user_id: m.user_id, is_org_admin: m.is_org_admin })),
+      globalCoverageAdminUserIds,
+    )
+  }, [orgGraph, unifiedNodeMembers, orgMembers, globalCoverageAdminUserIds])
+
+  // Convenience aliases for header
+  const adminCount = govSummary.orgAdminCount
+  const coverageAdminCount = govSummary.coverageAdminCount
+
+  // Access Matrix rows (replaces old filteredPermissionsMembers)
+  const authorityRows = React.useMemo(() =>
+    buildAuthorityRows({
+      orgMembers: orgMembers || [],
+      orgChartNodeMembers: unifiedNodeMembers,
+      orgGraph,
+      teamMemberships,
+      portfolioTeamMembers,
+      portfolios,
+      globalCoverageAdminUserIds,
+    }),
+    [orgMembers, unifiedNodeMembers, orgGraph, teamMemberships, portfolioTeamMembers, portfolios, globalCoverageAdminUserIds],
+  )
+
+  const authoritySummary = React.useMemo(() =>
+    computeAuthoritySummary(authorityRows),
+    [authorityRows],
+  )
+
+  // Pending invites count (for seat meter)
+  const { data: pendingInviteCount = 0 } = useQuery({
+    queryKey: ['organization-invite-count', currentOrgId],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('organization_invites')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', currentOrgId!)
+        .in('status', ['pending', 'sent'])
+      if (error) throw error
+      return count ?? 0
+    },
+    enabled: !!currentOrgId && isOrgAdmin,
+  })
+
+  // Suspended member count (for seat meter)
+  const suspendedCount = React.useMemo(
+    () => (orgMembers || []).filter((m: any) => m.status === 'inactive').length,
+    [orgMembers],
+  )
+
+  // Search-matching node IDs (empty set = no filter active)
+  // Uses debounced search value to avoid re-computing on every keystroke
+  const searchMatchIds = React.useMemo<Set<string>>(() => {
+    const q = debouncedOrgChartSearch.trim().toLowerCase()
+    if (!q) return new Set<string>()
+    const matches = new Set<string>()
+    for (const node of orgGraph.nodes.values()) {
+      if (
+        node.name.toLowerCase().includes(q) ||
+        node.nodeType.includes(q) ||
+        (node.customTypeLabel && node.customTypeLabel.toLowerCase().includes(q))
+      ) {
+        matches.add(node.id)
+        // Also include all ancestors so they remain visible in the tree
+        for (const ancestorId of node.path) matches.add(ancestorId)
+      }
+    }
+    return matches
+  }, [debouncedOrgChartSearch, orgGraph])
+
+  // Type-filtered node IDs (empty set = no filter active)
+  const typeFilterIds = React.useMemo<Set<string>>(() => {
+    if (orgChartTypeFilter === 'all') return new Set<string>()
+    const matches = new Set<string>()
+    for (const node of orgGraph.nodes.values()) {
+      if (node.nodeType === orgChartTypeFilter) {
+        matches.add(node.id)
+        for (const ancestorId of node.path) matches.add(ancestorId)
+      }
+    }
+    return matches
+  }, [orgChartTypeFilter, orgGraph])
+
+  // Risk-severity-filtered node IDs (from governance header click)
+  const riskFilterIds = React.useMemo<Set<string>>(() => {
+    if (!riskSeverityFilter) return new Set<string>()
+    const matches = new Set<string>()
+    for (const node of orgGraph.nodes.values()) {
+      if (node.riskFlags.some(f => f.severity === riskSeverityFilter)) {
+        matches.add(node.id)
+        for (const ancestorId of node.path) matches.add(ancestorId)
+      }
+    }
+    return matches
+  }, [riskSeverityFilter, orgGraph])
+
+  // Breadcrumb path for focused node
+  const focusedBreadcrumb = React.useMemo(() => {
+    if (!focusedNodeId) return []
+    const node = orgGraph.nodes.get(focusedNodeId)
+    if (!node) return []
+    const ancestors = node.path.map(id => orgGraph.nodes.get(id)).filter(Boolean) as { id: string; name: string }[]
+    return [...ancestors, { id: node.id, name: node.name }]
+  }, [focusedNodeId, orgGraph])
 
   // Helper to get portfolio IDs for a given team
   const getPortfolioIdsForTeam = (teamId: string): string[] => {
@@ -983,7 +1316,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
   // Get members for a specific node
   const getNodeMembers = (nodeId: string) => {
-    return orgChartNodeMembers.filter(m => m.node_id === nodeId)
+    return unifiedNodeMembers.filter(m => m.node_id === nodeId)
   }
 
   // Compute shared portfolios - portfolios that are linked to multiple teams via org_chart_node_links
@@ -1058,6 +1391,47 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   }
 
   const nodeTree = buildNodeTree(orgChartNodes)
+
+  // Effective tree based on focused subtree + empty branch filtering
+  const displayTree = React.useMemo(() => {
+    let tree = nodeTree
+
+    // Focus on subtree if a node is focused
+    if (focusedNodeId) {
+      function findNode(nodes: OrgChartNode[]): OrgChartNode | null {
+        for (const n of nodes) {
+          if (n.id === focusedNodeId) return n
+          if (n.children) {
+            const found = findNode(n.children)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      const found = findNode(nodeTree)
+      tree = found ? [found] : nodeTree
+    }
+
+    // Filter out empty leaf nodes when showEmptyBranches is OFF
+    if (!showEmptyBranches) {
+      function filterEmpty(nodes: OrgChartNode[]): OrgChartNode[] {
+        return nodes
+          .map(n => ({
+            ...n,
+            children: n.children ? filterEmpty(n.children) : undefined
+          }))
+          .filter(n => {
+            const hasChildren = n.children && n.children.length > 0
+            const hasMembers = (getNodeMembers(n.id).length > 0)
+            // Keep if it has children or has members
+            return hasChildren || hasMembers
+          })
+      }
+      tree = filterEmpty(tree)
+    }
+
+    return tree
+  }, [nodeTree, focusedNodeId, showEmptyBranches, unifiedNodeMembers])
 
   // Focus the input when creating a new team
   useEffect(() => {
@@ -1252,6 +1626,27 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
       setShowSuspendModal(null)
     }
+  })
+
+  // Reactivate user mutation (via reactivate_org_member RPC)
+  const reactivateMemberMutation = useMutation({
+    mutationFn: async ({ userId }: { userId: string }) => {
+      const { data, error } = await supabase.rpc('reactivate_org_member', {
+        p_target_user_id: userId,
+        p_reason: null,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
+      queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
+      queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
+      toast.success('Member reactivated')
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Failed to reactivate member')
+    },
   })
 
   // Submit removal request mutation (sends email to account team)
@@ -1472,18 +1867,37 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       icon: string
       custom_type_label?: string
       is_non_investment?: boolean
+      portfolio_id?: string
     }) => {
+      // Build update payload
+      const updatePayload: Record<string, any> = {
+        name: nodeData.name,
+        description: nodeData.description,
+        color: nodeData.color,
+        icon: nodeData.icon,
+        custom_type_label: nodeData.custom_type_label,
+        is_non_investment: nodeData.is_non_investment || false,
+        updated_at: new Date().toISOString(),
+      }
+
+      // If portfolio_id is provided, merge it into settings
+      if (nodeData.portfolio_id !== undefined) {
+        // Fetch existing settings to merge
+        const { data: existing } = await supabase
+          .from('org_chart_nodes')
+          .select('settings')
+          .eq('id', nodeData.id)
+          .single()
+        const currentSettings = existing?.settings || {}
+        updatePayload.settings = {
+          ...currentSettings,
+          portfolio_id: nodeData.portfolio_id || null,
+        }
+      }
+
       const { data, error } = await supabase
         .from('org_chart_nodes')
-        .update({
-          name: nodeData.name,
-          description: nodeData.description,
-          color: nodeData.color,
-          icon: nodeData.icon,
-          custom_type_label: nodeData.custom_type_label,
-          is_non_investment: nodeData.is_non_investment || false,
-          updated_at: new Date().toISOString()
-        })
+        .update(updatePayload)
         .eq('id', nodeData.id)
         .select()
         .single()
@@ -1619,6 +2033,44 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       queryClient.invalidateQueries({ queryKey: ['org-chart-nodes'] })
       queryClient.invalidateQueries({ queryKey: ['coverage-admin-override-nodes'] })
     }
+  })
+
+  // Toggle org admin status (for Access Matrix)
+  const toggleOrgAdminMutation = useMutation({
+    mutationFn: async ({ userId, isOrgAdmin }: { userId: string; isOrgAdmin: boolean }) => {
+      if (!isOrgAdmin) {
+        const activeAdminCount = (orgMembers || []).filter((m: any) => m.is_org_admin).length
+        if (activeAdminCount <= 1) throw new Error('Cannot remove the last org admin.')
+      }
+      const { error } = await supabase
+        .from('organization_memberships')
+        .update({ is_org_admin: isOrgAdmin })
+        .eq('user_id', userId)
+        .eq('organization_id', currentOrgId!)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
+      queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
+      toast.success('Org admin status updated')
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to update'),
+  })
+
+  // Toggle global coverage admin status (for Access Matrix)
+  const toggleGlobalCoverageAdminMutation = useMutation({
+    mutationFn: async ({ userId, isCoverageAdmin }: { userId: string; isCoverageAdmin: boolean }) => {
+      const { error } = await supabase
+        .from('users')
+        .update({ coverage_admin: isCoverageAdmin })
+        .eq('id', userId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
+      toast.success('Coverage admin status updated')
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to update'),
   })
 
   // Update onboarding policy mutation
@@ -1798,27 +2250,6 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     return portfolioTeamMembers.filter(ptm => ptm.portfolio_id === portfolioId)
   }
 
-  // Recursively collect all portfolio team members from a node and its descendants
-  const getAllPortfolioTeamMembersForNode = (node: OrgChartNode): PortfolioTeamMember[] => {
-    const result: PortfolioTeamMember[] = []
-
-    // If this is a portfolio node, get its portfolio_team members
-    const linkedPortfolioId = node.node_type === 'portfolio' ? node.settings?.portfolio_id : null
-    if (linkedPortfolioId) {
-      const members = getPortfolioTeamMembers(linkedPortfolioId)
-      result.push(...members)
-    }
-
-    // Recursively collect from children
-    if (node.children && node.children.length > 0) {
-      node.children.forEach(child => {
-        result.push(...getAllPortfolioTeamMembersForNode(child))
-      })
-    }
-
-    return result
-  }
-
   // Helper to get display name from portfolio team member
   const getTeamMemberDisplayName = (member: PortfolioTeamMember) => {
     if (member.user?.first_name || member.user?.last_name) {
@@ -1840,8 +2271,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   // Helper to check if current user is a member of an org chart node (team)
   const isUserMemberOfNode = (nodeId: string): boolean => {
     if (!user?.id) return false
-    // Check org_chart_node_members
-    const nodeMembers = orgChartNodeMembers.filter(m => m.node_id === nodeId)
+    // Check unified node members (org_chart + portfolio_team)
+    const nodeMembers = unifiedNodeMembers.filter(m => m.node_id === nodeId)
     if (nodeMembers.some(m => m.user_id === user.id)) return true
     // For team nodes, also check team_memberships via settings.team_id
     const node = orgChartNodes.find(n => n.id === nodeId)
@@ -1864,7 +2295,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
     { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" />, adminOnly: true }
   ]
 
-  const visibleTabs = tabs.filter(t => !t.adminOnly || isOrgAdmin)
+  // Note: Access tab visibility is refined below after orgPerms is computed
+  const _baseTabs = tabs.filter(t => !t.adminOnly || isOrgAdmin)
 
   const handleCreateInlineTeam = () => {
     if (!newTeamName.trim()) return
@@ -1949,6 +2381,19 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
   const hasNodeLevelCoverageAdmin = userCoverageAdminNodes.length > 0
   const isCoverageAdmin = hasGlobalCoverageAdmin || hasNodeLevelCoverageAdmin
   const isAdminBadgeReady = !isLoadingOrgMembers && (orgMembers.length === 0 || currentUserMembership !== undefined)
+
+  // Centralized governance permissions
+  const orgPerms = resolveOrgPermissions({
+    isOrgAdmin,
+    isCoverageAdmin,
+    profile: currentUserMembership?.profile,
+  })
+
+  // Compute visible tabs — Access tab is visible for canViewAccessSection (includes COMPLIANCE role)
+  const visibleTabs = _baseTabs.filter(t => {
+    if (t.id === 'access') return orgPerms.canViewAccessSection
+    return true
+  })
 
   // Helper function to check if user can manage coverage admins for a specific node
   // Returns true if:
@@ -2264,18 +2709,215 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
       <div
         ref={activeTab === 'teams' ? orgChartContainerRef : undefined}
         className={`flex-1 overflow-auto ${activeTab === 'teams' ? 'p-0 bg-white scrollbar-hide select-none' : 'p-6'}`}
-        style={activeTab === 'teams' ? { cursor: isPanning ? 'grabbing' : 'grab' } : undefined}
-        onMouseDown={activeTab === 'teams' ? handlePanStart : undefined}
-        onMouseMove={activeTab === 'teams' ? handlePanMove : undefined}
-        onMouseUp={activeTab === 'teams' ? handlePanEnd : undefined}
-        onMouseLeave={activeTab === 'teams' ? handlePanEnd : undefined}
-        onClick={activeTab === 'teams' ? () => setExpandedMembersNodeId(null) : undefined}
+        style={activeTab === 'teams' && teamsViewMode === 'structure' ? { cursor: isPanning ? 'grabbing' : 'grab' } : undefined}
+        onMouseDown={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanStart : undefined}
+        onMouseMove={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanMove : undefined}
+        onMouseUp={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanEnd : undefined}
+        onMouseLeave={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanEnd : undefined}
       >
-        <div className={activeTab === 'people' ? '' : activeTab === 'teams' ? 'min-w-max p-6' : activeTab === 'portfolios' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto'}>
+        <div className={activeTab === 'people' ? '' : activeTab === 'teams' && teamsViewMode === 'structure' ? 'min-w-max p-6' : activeTab === 'teams' ? 'p-6' : activeTab === 'portfolios' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto'}>
           {/* Teams Tab - Interactive Org Chart */}
           {activeTab === 'teams' && (
             <div>
-              {/* Org Chart Header - Organization Root Node */}
+              {/* ── View Switcher Toolbar + Org Summary ── */}
+              <div className="flex items-center justify-between mb-5" data-no-pan>
+                {/* View switcher */}
+                <div className="inline-flex items-center bg-gray-100 rounded p-0.5">
+                  {([
+                    { mode: 'structure' as TeamsViewMode, label: 'Structure', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+                    { mode: 'coverage' as TeamsViewMode, label: 'Coverage', icon: <Eye className="w-3.5 h-3.5" /> },
+                  ]).map(v => (
+                    <button
+                      key={v.mode}
+                      onClick={() => setTeamsViewMode(v.mode)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                        teamsViewMode === v.mode
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {v.icon}
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+                {orgPerms.canViewAccessSection && (
+                  <button
+                    onClick={() => { setActiveTab('access'); setAccessSubTab('manage') }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors border border-indigo-200"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    Manage access
+                  </button>
+                )}
+              </div>
+
+              {/* (Permissions redirect notice removed — merged into Access tab) */}
+
+              {/* Governance Header — only for admin/ops/compliance */}
+              {orgPerms.canViewGovernance && (
+                <OrganizationGovernanceHeader
+                  orgGraph={orgGraph}
+                  riskCounts={riskCounts}
+                  adminCount={adminCount}
+                  coverageAdminCount={coverageAdminCount}
+                  isOrgAdmin={isOrgAdmin}
+                  activeRiskFilter={riskSeverityFilter}
+                  onRiskFilterClick={(severity) => {
+                    setRiskSeverityFilter(prev => prev === severity ? null : severity)
+                  }}
+                />
+              )}
+
+              {/* ── Structure View (Org Chart) ── */}
+              {teamsViewMode === 'structure' && (
+              <div>
+              {/* Search + Filters + Controls bar */}
+              <div className="flex items-center gap-3 mb-4" data-no-pan>
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search nodes..."
+                    value={orgChartSearch}
+                    onChange={(e) => setOrgChartSearch(e.target.value)}
+                    className="w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                  />
+                  {orgChartSearch && (
+                    <button
+                      onClick={() => setOrgChartSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Type filter chips */}
+                <div className="flex items-center gap-1">
+                  {([
+                    { type: 'all' as const, label: 'All' },
+                    { type: 'division' as const, label: 'Divisions' },
+                    { type: 'department' as const, label: 'Departments' },
+                    { type: 'team' as const, label: 'Teams' },
+                    { type: 'portfolio' as const, label: 'Portfolios' },
+                  ]).map(chip => (
+                    <button
+                      key={chip.type}
+                      onClick={() => setOrgChartTypeFilter(chip.type)}
+                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
+                        orgChartTypeFilter === chip.type
+                          ? 'bg-indigo-50 text-indigo-700 font-medium border border-indigo-200'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex-1" />
+
+                {/* Collapse / Expand all */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={collapseAll}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    title="Collapse all"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={expandAll}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    title="Expand all"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Show empty branches toggle */}
+                <button
+                  onClick={() => setShowEmptyBranches(prev => !prev)}
+                  className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
+                    showEmptyBranches
+                      ? 'bg-gray-100 text-gray-700 border-gray-200'
+                      : 'text-gray-400 border-transparent hover:bg-gray-50'
+                  }`}
+                  title={showEmptyBranches ? 'Showing empty branches' : 'Empty branches hidden'}
+                >
+                  {showEmptyBranches ? 'Hide empty' : 'Show empty'}
+                </button>
+
+                {/* Search result count */}
+                {orgChartSearch && (
+                  <span className="text-xs text-gray-400">
+                    {searchMatchIds.size > 0
+                      ? `${searchMatchIds.size} match${searchMatchIds.size !== 1 ? 'es' : ''}`
+                      : 'No matches'}
+                  </span>
+                )}
+
+                {/* Active risk filter indicator */}
+                {riskSeverityFilter && (
+                  <button
+                    onClick={() => setRiskSeverityFilter(null)}
+                    className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
+                      riskSeverityFilter === 'high'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : riskSeverityFilter === 'medium'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-gray-100 text-gray-600 border-gray-200'
+                    }`}
+                    title="Clear risk filter"
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    {riskSeverityFilter.charAt(0).toUpperCase() + riskSeverityFilter.slice(1)} risks
+                    <X className="w-3 h-3 ml-0.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Breadcrumb trail (when focused on a subtree) */}
+              {focusedNodeId && focusedBreadcrumb.length > 0 && (
+                <div className="flex items-center justify-between mb-3 px-3 py-1.5 bg-indigo-50/50 border border-indigo-100 rounded-md" data-no-pan>
+                  <div className="flex items-center gap-1 text-xs">
+                    <button
+                      onClick={() => setFocusedNodeId(null)}
+                      className="flex items-center gap-1 px-2 py-1 text-gray-500 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors"
+                    >
+                      <Home className="w-3 h-3" />
+                      <span>Organization</span>
+                    </button>
+                    {focusedBreadcrumb.map((crumb, i) => (
+                      <React.Fragment key={crumb.id}>
+                        <ChevronRight className="w-3 h-3 text-gray-400" />
+                        <button
+                          onClick={() => i < focusedBreadcrumb.length - 1 ? setFocusedNodeId(crumb.id) : undefined}
+                          className={`px-2 py-1 rounded transition-colors ${
+                            i === focusedBreadcrumb.length - 1
+                              ? 'font-medium text-gray-900 bg-white shadow-sm border border-gray-200'
+                              : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {crumb.name}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setFocusedNodeId(null)}
+                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 rounded shadow-sm transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Exit focus
+                  </button>
+                </div>
+              )}
+
+              {/* Org Chart Header - Organization Root Node (hidden when focused on subtree) */}
+              {!focusedNodeId && (
               <div className="flex flex-col items-center">
                 <div className="relative group/org">
                   {/* Hover overlay for admin - Add button (only show when no nodes exist) */}
@@ -2305,7 +2947,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                 </div>
 
                 {/* Vertical connector from root to horizontal line - with insert button */}
-                {nodeTree.length > 0 && (
+                {displayTree.length > 0 && !focusedNodeId && (
                   <div className="relative group/connector">
                     <div className="w-0.5 h-8 bg-gray-300" />
                     {/* Insert button - appears on hover */}
@@ -2313,7 +2955,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                       <button
                         onClick={() => {
                           setAddNodeParentId(null)
-                          setInsertBetweenChildIds(nodeTree.map(n => n.id))
+                          setInsertBetweenChildIds(displayTree.map(n => n.id))
                           setShowAddNodeModal(true)
                         }}
                         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-indigo-500 hover:bg-indigo-600 rounded-full flex items-center justify-center opacity-0 group-hover/connector:opacity-100 transition-opacity shadow-md z-10"
@@ -2325,30 +2967,31 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                   </div>
                 )}
               </div>
+              )}
 
               {/* Children container with proper connectors */}
-              {nodeTree.length > 0 && (
+              {displayTree.length > 0 && (
                 <div className="flex flex-col items-center">
                   {/* Children nodes with T-connectors */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
                     {/* Org Chart Nodes - hierarchical structure */}
-                    {nodeTree.map((node, nodeIndex) => {
+                    {displayTree.map((node, nodeIndex) => {
                       const isFirstNode = nodeIndex === 0
-                      const isLastNode = nodeIndex === nodeTree.length - 1
+                      const isLastNode = nodeIndex === displayTree.length - 1
 
                       return (
-                        <div key={node.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '220px', flexShrink: 0, marginLeft: nodeIndex > 0 ? '20px' : '0' }}>
+                        <div key={node.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '216px', flexShrink: 0, marginLeft: nodeIndex > 0 ? '16px' : '0' }}>
                           {/* T-connector with overlapping lines */}
-                          <div style={{ position: 'relative', width: '100%', height: '24px', overflow: 'visible' }}>
+                          <div style={{ position: 'relative', width: '100%', height: '18px', overflow: 'visible' }}>
                             {/* Left horizontal segment - extends into the margin gap */}
                             {!isFirstNode && (
                               <div style={{
                                 position: 'absolute',
                                 top: '0',
-                                left: '-20px',
-                                width: 'calc(50% + 21px)',
+                                left: '-16px',
+                                width: 'calc(50% + 17px)',
                                 height: '2px',
-                                backgroundColor: '#d1d5db'
+                                backgroundColor: '#9ca3af'
                               }} />
                             )}
                             {/* Right horizontal segment - extends into the margin gap */}
@@ -2356,10 +2999,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                               <div style={{
                                 position: 'absolute',
                                 top: '0',
-                                right: '-20px',
-                                width: 'calc(50% + 21px)',
+                                right: '-16px',
+                                width: 'calc(50% + 17px)',
                                 height: '2px',
-                                backgroundColor: '#d1d5db'
+                                backgroundColor: '#9ca3af'
                               }} />
                             )}
                             {/* Center vertical drop */}
@@ -2370,13 +3013,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                               transform: 'translateX(-50%)',
                               width: '2px',
                               height: '100%',
-                              backgroundColor: '#d1d5db'
+                              backgroundColor: '#9ca3af'
                             }} />
                           </div>
                           <OrgChartNodeCard
                             node={node}
                             isOrgAdmin={isOrgAdmin}
-                            onEdit={(n) => setEditingNode(n)}
+                            onEdit={(n) => { setModalInitialPage('manage'); setModalNodeId(n.id) }}
                             onAddChild={(parentId) => {
                               setAddNodeParentId(parentId)
                               setShowAddNodeModal(true)
@@ -2385,8 +3028,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                               setAddNodeParentId(parentId)
                               setShowAddNodeModal(true)
                             }}
-                            onDelete={() => {
-                              setDeleteNodeConfirm({ isOpen: true, node })
+                            onDelete={(nodeId) => {
+                              const target = orgChartNodes.find(n => n.id === nodeId)
+                              if (target) setDeleteNodeConfirm({ isOpen: true, node: target })
                             }}
                             onAddMember={(n) => setShowAddNodeMemberModal(n)}
                             onRemoveMember={(memberId) => {
@@ -2398,7 +3042,6 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                             getSharedTeams={getSharedTeams}
                             getTeamMembers={getTeamMembers}
                             getTeamPortfolios={getTeamPortfolios}
-                            getPortfolioTeamMembers={getPortfolioTeamMembers}
                             onAddTeamMember={(teamId) => {
                               const team = teams.find(t => t.id === teamId)
                               if (team) {
@@ -2416,13 +3059,19 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                               setInsertBetweenChildIds(childIds)
                               setShowAddNodeModal(true)
                             }}
-                            onViewDetails={(n) => setViewingNodeDetails(n)}
+                            onViewDetails={(n) => { setModalInitialPage('profile'); setModalNodeId(n.id) }}
                             getCoverageStats={(teamId) => coverageStatsByTeam[teamId]}
                             onViewTeamCoverage={(teamId, teamName) => setViewingTeamCoverage({ teamId, teamName })}
                             parentId={null}
                             onRequestToJoin={(n) => setNodeJoinRequest(n)}
                             isUserMember={isUserMemberOfNode}
                             getNodeName={getNodeName}
+                            collapsedNodes={collapsedNodes}
+                            onToggleCollapsed={toggleNodeCollapsed}
+                            searchHighlightIds={searchMatchIds.size > 0 ? searchMatchIds : typeFilterIds.size > 0 ? typeFilterIds : riskFilterIds.size > 0 ? riskFilterIds : undefined}
+                            onFocusNode={setFocusedNodeId}
+                            getGraphNode={(id) => orgGraph.nodes.get(id)}
+                            showGovernanceSignals={orgPerms.canViewGovernance}
                           />
                         </div>
                       )
@@ -2453,6 +3102,134 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+              )}
+
+              {/* (Permissions view removed — merged into Access tab) */}
+
+              {/* ── Coverage View ── */}
+              {teamsViewMode === 'coverage' && (
+                <div className="max-w-5xl mx-auto" data-no-pan>
+                  <Card className="p-5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-9 h-9 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                        <Eye className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">Coverage Overview</h3>
+                        <p className="text-xs text-gray-500">Asset coverage by team and portfolio</p>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50/80 border-b border-gray-200">
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Team</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Members</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Portfolios</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Assets</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Analysts</th>
+                            {orgPerms.canViewGovernance && <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Health</th>}
+                            {orgPerms.canViewGovernance && <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Risks</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {Array.from(orgGraph.nodes.values())
+                            .filter(n => n.nodeType === 'team')
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(teamNode => (
+                              <tr
+                                key={teamNode.id}
+                                className="hover:bg-gray-50/50 cursor-pointer"
+                                onClick={() => { setModalInitialPage('profile'); setModalNodeId(teamNode.id) }}
+                                title="Click to view team details"
+                              >
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                      style={{ backgroundColor: teamNode.color }}
+                                    />
+                                    <div>
+                                      <button
+                                        onClick={() => {
+                                          setViewingTeamCoverage({ teamId: teamNode.id, teamName: teamNode.name })
+                                        }}
+                                        className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline"
+                                      >
+                                        {teamNode.name}
+                                      </button>
+                                      {teamNode.isNonInvestment && (
+                                        <span className="ml-1.5 text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded">Non-Inv</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                  {teamNode.totalMemberCount || <span className="text-gray-300">&mdash;</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                  {teamNode.portfolioCount || <span className="text-gray-300">&mdash;</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                  {teamNode.coverageAssetCount || <span className="text-gray-300">&mdash;</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                  {teamNode.coverageAnalystCount || <span className="text-gray-300">&mdash;</span>}
+                                </td>
+                                {orgPerms.canViewGovernance && (
+                                <td className="px-4 py-2.5 text-center">
+                                  <HealthPill score={teamNode.healthScore} />
+                                </td>
+                                )}
+                                {orgPerms.canViewGovernance && (
+                                <td className="px-4 py-2.5 text-center">
+                                  {teamNode.riskFlags.length > 0 ? (
+                                    <div className="flex items-center justify-center gap-1">
+                                      {teamNode.riskFlags.map((flag, i) => (
+                                        <RiskFlagBadge key={i} flag={flag} showLabel={false} />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <Check className="w-4 h-4 text-green-500 mx-auto" />
+                                  )}
+                                </td>
+                                )}
+                              </tr>
+                            ))}
+                          {orgGraph.totalTeams === 0 && (
+                            <tr>
+                              <td colSpan={orgPerms.canViewGovernance ? 7 : 5} className="px-4 py-8 text-center text-sm text-gray-400">
+                                No teams in the organization chart yet
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                        {orgGraph.totalTeams > 0 && (
+                          <tfoot>
+                            <tr className="bg-gray-50 border-t border-gray-200">
+                              <td className="px-4 py-2 text-xs font-medium text-gray-500">{orgGraph.totalTeams} team{orgGraph.totalTeams !== 1 ? 's' : ''}</td>
+                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500">{orgGraph.totalMembers}</td>
+                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500">{orgGraph.totalPortfolios}</td>
+                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500" colSpan={2} />
+                              {orgPerms.canViewGovernance && (
+                              <td className="px-4 py-2 text-center">
+                                <HealthPill score={orgGraph.overallHealth} showLabel />
+                              </td>
+                              )}
+                              {orgPerms.canViewGovernance && (
+                              <td className="px-4 py-2 text-center text-xs text-gray-500">
+                                {orgGraph.totalRiskFlags > 0 ? `${orgGraph.totalRiskFlags} total` : 'None'}
+                              </td>
+                              )}
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+                  </Card>
                 </div>
               )}
             </div>
@@ -2595,15 +3372,76 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
           {/* Access Requests Tab (Admin Only) — extracted component with provisioning */}
           {activeTab === 'requests' && <OrgRequestsTab isOrgAdmin={isOrgAdmin} organizationId={currentOrgId || undefined} />}
 
-          {/* Access Report Tab (Admin Only) */}
-          {activeTab === 'access' && isOrgAdmin && (
-            <OrgAccessTab
-              orgMembers={orgMembers}
-              teams={teams}
-              teamMemberships={teamMemberships}
-              portfolios={portfolios}
-              portfolioMemberships={portfolioMemberships}
-            />
+          {/* Access Hub (Manage Access + Access Report) */}
+          {activeTab === 'access' && orgPerms.canViewAccessSection && (
+            <div className="max-w-6xl mx-auto space-y-4">
+              {/* Sub-tab switcher */}
+              <div className="inline-flex items-center bg-gray-100 rounded p-0.5">
+                {([
+                  { key: 'manage' as AccessSubTab, label: 'Manage Access' },
+                  { key: 'report' as AccessSubTab, label: 'Access Report' },
+                ]).map(v => (
+                  <button
+                    key={v.key}
+                    onClick={() => setAccessSubTab(v.key)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                      accessSubTab === v.key
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Manage Access sub-tab — editable access matrix */}
+              {accessSubTab === 'manage' && (
+                <OrgAuthorityMap
+                  rows={authorityRows}
+                  summary={authoritySummary}
+                  orgPerms={orgPerms}
+                  orgGraph={orgGraph}
+                  orgMembers={orgMembers || []}
+                  onToggleOrgAdmin={orgPerms.canManageOrgStructure ? (userId, newValue) => {
+                    toggleOrgAdminMutation.mutate({ userId, isOrgAdmin: newValue })
+                  } : undefined}
+                  onToggleGlobalCoverageAdmin={orgPerms.canManageOrgStructure ? (userId, newValue) => {
+                    toggleGlobalCoverageAdminMutation.mutate({ userId, isCoverageAdmin: newValue })
+                  } : undefined}
+                  onToggleNodeCoverageAdmin={orgPerms.canManageOrgStructure ? (memberId, newValue) => {
+                    toggleNodeMemberCoverageAdminMutation.mutate({ memberId, isCoverageAdmin: newValue })
+                  } : undefined}
+                  isMutating={toggleOrgAdminMutation.isPending || toggleGlobalCoverageAdminMutation.isPending || toggleNodeMemberCoverageAdminMutation.isPending}
+                  onOpenNodeModal={(nodeId) => {
+                    setModalInitialPage('profile')
+                    setModalNodeId(nodeId)
+                  }}
+                  initialTeamNodeId={initialAccessFilter?.teamNodeId}
+                  invitedCount={pendingInviteCount}
+                  suspendedCount={suspendedCount}
+                  onSuspendUser={orgPerms.canManageOrgStructure ? (userId) => {
+                    const member = (orgMembers || []).find((m: any) => m.user_id === userId)
+                    if (member) setShowSuspendModal(member)
+                  } : undefined}
+                  onReactivateUser={orgPerms.canManageOrgStructure ? (userId) => {
+                    reactivateMemberMutation.mutate({ userId })
+                  } : undefined}
+                />
+              )}
+
+              {/* Access Report sub-tab — read-only report with CSV export */}
+              {accessSubTab === 'report' && (
+                <OrgAccessTab
+                  orgMembers={orgMembers}
+                  teams={teams}
+                  teamMemberships={teamMemberships}
+                  portfolios={portfolios}
+                  portfolioMemberships={portfolioMemberships}
+                  authorityRows={authorityRows}
+                />
+              )}
+            </div>
           )}
 
           {/* Activity Tab (Admin Only) */}
@@ -3574,60 +4412,100 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
         />
       )}
 
-      {/* Node Detail Modal */}
-      {viewingNodeDetails && (
-        <NodeDetailModal
-          node={viewingNodeDetails}
-          members={getNodeMembers(viewingNodeDetails.id)}
-          portfolioTeamMembers={getAllPortfolioTeamMembersForNode(viewingNodeDetails)}
-          onClose={() => setViewingNodeDetails(null)}
-          isAdmin={isOrgAdmin}
-          availableUsers={orgMembers}
-          onSaveNode={(data) => updateNodeMutation.mutate(data)}
-          onAddMember={(nodeId, userId, role, focus) => {
-            // For portfolio nodes, add to portfolio_team table
-            if (viewingNodeDetails.node_type === 'portfolio' && viewingNodeDetails.settings?.portfolio_id) {
-              addPortfolioTeamMemberMutation.mutate({
-                portfolioId: viewingNodeDetails.settings.portfolio_id,
-                userId,
-                role,
-                focus
-              })
-            } else {
-              // For other nodes, add to org_chart_node_members
-              addNodeMemberMutation.mutate({
-                node_id: nodeId,
-                user_id: userId,
-                role,
-                focus
-              })
+      {/* Node Detail Modal — replaced by ManageNodeDrawer.
+         NodeDetailModal component retained in codebase but no longer rendered from here. */}
+
+      {/* Node Inspector Modal */}
+      {modalNodeId && orgGraph.nodes.has(modalNodeId) && (() => {
+        const graphNode = orgGraph.nodes.get(modalNodeId)!
+        const modalBreadcrumb = graphNode.path
+          .map(id => orgGraph.nodes.get(id))
+          .filter((n): n is OrgGraphNode => !!n)
+          .map(n => ({ id: n.id, name: n.name }))
+        const raw = orgChartNodes.find(n => n.id === modalNodeId)
+
+        // Collect members for the modal: direct members + portfolio descendants' + linked portfolios' members (deduped by membership id)
+        const modalMembers = (() => {
+          const direct = getNodeMembers(modalNodeId)
+          if (graphNode.nodeType === 'portfolio') return direct
+
+          const seen = new Set(direct.map(m => m.id))
+          const result = [...direct]
+
+          const addPortfolioMembers = (portfolioNodeId: string) => {
+            for (const m of getNodeMembers(portfolioNodeId)) {
+              if (!seen.has(m.id)) {
+                seen.add(m.id)
+                result.push(m)
+              }
             }
-          }}
-          onUpdateMember={(memberId, role, focus) => {
-            updatePortfolioTeamMemberMutation.mutate({ memberId, role, focus })
-          }}
-          onRemoveMember={(memberId) => {
-            if (!window.confirm('Remove this member?')) return
-            // For portfolio nodes, remove from portfolio_team table
-            if (viewingNodeDetails.node_type === 'portfolio') {
-              deletePortfolioTeamMemberMutation.mutate(memberId)
-            } else {
-              removeNodeMemberMutation.mutate(memberId)
+          }
+
+          // Recurse children and also follow linked portfolios at each level
+          const collectFromSubtree = (nodeId: string) => {
+            const gn = orgGraph.nodes.get(nodeId)
+            if (!gn) return
+            // Linked portfolios (not in childIds)
+            for (const linkedId of gn.linkedNodeIds) {
+              const linked = orgGraph.nodes.get(linkedId)
+              if (linked?.nodeType === 'portfolio') addPortfolioMembers(linkedId)
             }
-          }}
-          onToggleCoverageAdmin={(memberId, isCoverageAdmin) => {
-            toggleNodeMemberCoverageAdminMutation.mutate({ memberId, isCoverageAdmin })
-          }}
-          onToggleCoverageAdminBlocked={(memberId, isBlocked) => {
-            toggleNodeMemberCoverageAdminBlockedMutation.mutate({ memberId, isBlocked })
-          }}
-          canManageCoverageAdmins={canManageCoverageAdminsForNode(viewingNodeDetails.id)}
-          allOrgChartNodes={orgChartNodes}
-          allNodeMembers={orgChartNodeMembers}
-          globalCoverageAdminUserIds={new Set(orgMembers.filter(m => m.user?.coverage_admin).map(m => m.user_id))}
-          isSaving={updateNodeMutation.isPending}
-        />
-      )}
+            // Child nodes
+            for (const childId of gn.childIds) {
+              const child = orgGraph.nodes.get(childId)
+              if (!child) continue
+              if (child.nodeType === 'portfolio') addPortfolioMembers(childId)
+              collectFromSubtree(childId)
+            }
+          }
+          collectFromSubtree(modalNodeId)
+          return result
+        })()
+
+        return (
+          <OrgNodeDetailsModal
+            node={graphNode}
+            members={modalMembers}
+            breadcrumb={modalBreadcrumb}
+            onClose={() => setModalNodeId(null)}
+            onNavigateNode={(id) => setModalNodeId(id)}
+            canManageOrgStructure={orgPerms.canManageOrgStructure}
+            showGovernanceSignals={orgPerms.canViewGovernance}
+            initialPage={modalInitialPage}
+            availableUsers={orgMembers}
+            availablePortfolios={portfolios.map(p => ({ id: p.id, portfolio_id: p.portfolio_id, name: p.name }))}
+            onSaveNode={(data) => updateNodeMutation.mutate(data)}
+            onAddMember={(nodeId, userId, role, focus) => {
+              if (raw?.node_type === 'portfolio' && raw.settings?.portfolio_id) {
+                addPortfolioTeamMemberMutation.mutate({ portfolioId: raw.settings.portfolio_id, userId, role, focus })
+              } else {
+                addNodeMemberMutation.mutate({ node_id: nodeId, user_id: userId, role: role || '', focus })
+              }
+            }}
+            onRemoveMember={(memberId) => {
+              if (raw?.node_type === 'portfolio') {
+                deletePortfolioTeamMemberMutation.mutate(memberId)
+              } else {
+                removeNodeMemberMutation.mutate(memberId)
+              }
+            }}
+            onUpdateMember={(memberId, role, focus) => {
+              updatePortfolioTeamMemberMutation.mutate({ memberId, role, focus })
+            }}
+            onToggleCoverageAdmin={(memberId, isCoverageAdmin) => {
+              toggleNodeMemberCoverageAdminMutation.mutate({ memberId, isCoverageAdmin })
+            }}
+            onToggleCoverageAdminBlocked={(memberId, isBlocked) => {
+              toggleNodeMemberCoverageAdminBlockedMutation.mutate({ memberId, isBlocked })
+            }}
+            canManageCoverageAdmins={canManageCoverageAdminsForNode(modalNodeId)}
+            allOrgChartNodes={orgChartNodes}
+            allNodeMembers={unifiedNodeMembers}
+            globalCoverageAdminUserIds={globalCoverageAdminUserIds}
+            isSaving={updateNodeMutation.isPending}
+          />
+        )
+      })()}
 
       {/* Team Coverage Panel */}
       {viewingTeamCoverage && (
@@ -3661,14 +4539,17 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
               <p className="text-gray-600 mb-4">
                 Are you sure you want to delete <span className="font-semibold text-gray-900">"{deleteNodeConfirm.node.name}"</span>?
               </p>
-              {deleteNodeConfirm.node.children && deleteNodeConfirm.node.children.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                  <p className="text-sm text-amber-800">
-                    <span className="font-medium">Note:</span> This {deleteNodeConfirm.node.node_type} has {deleteNodeConfirm.node.children.length} child node{deleteNodeConfirm.node.children.length !== 1 ? 's' : ''}.
-                    They will be moved up to the parent level and will not be deleted.
-                  </p>
-                </div>
-              )}
+              {(() => {
+                const childCount = orgChartNodes.filter(n => n.parent_id === deleteNodeConfirm.node!.id).length
+                return childCount > 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-amber-800">
+                      <span className="font-medium">Note:</span> This {deleteNodeConfirm.node.node_type} has {childCount} child node{childCount !== 1 ? 's' : ''}.
+                      They will be moved up to the parent level and will not be deleted.
+                    </p>
+                  </div>
+                ) : null
+              })()}
               <p className="text-sm text-gray-500">
                 The {deleteNodeConfirm.node.node_type} will be removed from the organization structure.
               </p>
@@ -3764,10 +4645,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick }: OrganizationContentPro
 
 interface OrganizationPageProps {
   onUserClick?: (user: { id: string; full_name: string }) => void
+  initialTab?: TabType
+  initialAccessSubTab?: 'manage' | 'report'
+  initialAccessFilter?: { teamNodeId?: string }
 }
 
 // Main exported component - handles loading state
-export function OrganizationPage({ onUserClick }: OrganizationPageProps = {}) {
+export function OrganizationPage({ onUserClick, initialTab, initialAccessSubTab, initialAccessFilter }: OrganizationPageProps = {}) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
 
@@ -3802,445 +4686,19 @@ export function OrganizationPage({ onUserClick }: OrganizationPageProps = {}) {
   }
 
   // Once loaded, render the content with the correct admin status
-  return <OrganizationContent isOrgAdmin={adminStatus.isAdmin} onUserClick={onUserClick} />
+  return <OrganizationContent
+    isOrgAdmin={adminStatus.isAdmin}
+    onUserClick={onUserClick}
+    initialTab={initialTab}
+    initialAccessSubTab={initialAccessSubTab}
+    initialAccessFilter={initialAccessFilter}
+  />
 }
 
 // Sub-components
 
-// OrgChartNodeCard - renders a single org chart node with its children
-interface OrgChartNodeCardProps {
-  node: OrgChartNode
-  isOrgAdmin: boolean
-  onEdit: (node: OrgChartNode) => void
-  onAddChild: (parentId: string) => void
-  onAddSibling?: (parentId: string | null) => void
-  onDelete: (nodeId: string) => void
-  onAddMember: (node: OrgChartNode) => void
-  onRemoveMember: (memberId: string) => void
-  getNodeMembers: (nodeId: string) => OrgChartNodeMember[]
-  getSharedTeams?: (nodeId: string) => string[]
-  getTeamMembers?: (teamId: string) => TeamMember[]
-  getTeamPortfolios?: (teamId: string) => Portfolio[]
-  getPortfolioTeamMembers?: (portfolioId: string) => PortfolioTeamMember[]
-  onAddTeamMember?: (teamId: string) => void
-  onRemoveTeamMember?: (memberId: string) => void
-  onInsertBetween?: (parentId: string, childIds: string[]) => void
-  onViewDetails: (node: OrgChartNode) => void
-  getCoverageStats?: (teamId: string) => { assetCount: number; analystCount: number } | undefined
-  onViewTeamCoverage?: (teamId: string, teamName: string) => void
-  depth?: number
-  parentId?: string | null
-  onRequestToJoin?: (node: OrgChartNode) => void
-  isUserMember?: (nodeId: string) => boolean
-  getNodeName?: (nodeId: string) => string | undefined
-}
-
-function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSibling, onDelete, onAddMember, onRemoveMember, getNodeMembers, getSharedTeams, getTeamMembers, getTeamPortfolios, getPortfolioTeamMembers, onAddTeamMember, onRemoveTeamMember, onInsertBetween, onViewDetails, getCoverageStats, onViewTeamCoverage, depth = 0, parentId, onRequestToJoin, isUserMember, getNodeName }: OrgChartNodeCardProps) {
-  const [showAddMenu, setShowAddMenu] = useState(false)
-  const addMenuRef = useRef<HTMLDivElement>(null)
-
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
-        setShowAddMenu(false)
-      }
-    }
-    if (showAddMenu) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showAddMenu])
-
-  // For portfolio nodes, get members from portfolio_team table
-  const linkedPortfolioId = node.node_type === 'portfolio' ? node.settings?.portfolio_id : null
-  const portfolioMembers = linkedPortfolioId && getPortfolioTeamMembers ? getPortfolioTeamMembers(linkedPortfolioId) : []
-  const [isExpanded, setIsExpanded] = useState(true)
-  const [showSharedTooltip, setShowSharedTooltip] = useState(false)
-  const hasChildren = node.children && node.children.length > 0
-  const sharedTeams = getSharedTeams?.(node.id) || []
-  const isSharedPortfolio = node.node_type === 'portfolio' && sharedTeams.length > 0
-
-  // For team nodes linked to teams table
-  // Note: linkedTeamId uses settings.team_id for legacy team lookups
-  // but for coverage stats, we use the node.id directly since coverage.team_id references org_chart_nodes.id
-  const linkedTeamId = node.node_type === 'team' ? node.settings?.team_id : null
-  const coverageTeamId = node.node_type === 'team' ? node.id : null // Use node.id for coverage lookups
-  const teamPortfolios = linkedTeamId && getTeamPortfolios ? getTeamPortfolios(linkedTeamId) : []
-
-  // Recursively collect all portfolio team members from this node and all descendants
-  const collectAllPortfolioMembers = (n: OrgChartNode): PortfolioTeamMember[] => {
-    const result: PortfolioTeamMember[] = []
-
-    // If this is a portfolio node, get its portfolio_team members
-    const nodeLinkedPortfolioId = n.node_type === 'portfolio' ? n.settings?.portfolio_id : null
-    if (nodeLinkedPortfolioId && getPortfolioTeamMembers) {
-      const members = getPortfolioTeamMembers(nodeLinkedPortfolioId)
-      result.push(...members)
-    }
-
-    // Recursively collect from children
-    if (n.children && n.children.length > 0) {
-      n.children.forEach(child => {
-        result.push(...collectAllPortfolioMembers(child))
-      })
-    }
-
-    return result
-  }
-
-  // Get all portfolio team members from this node and descendants
-  const allPortfolioMembers = collectAllPortfolioMembers(node)
-
-  // Calculate total unique member count (by user_id to avoid duplicates)
-  const uniqueUserIds = new Set<string>()
-  allPortfolioMembers.forEach(m => {
-    if (m.user_id) uniqueUserIds.add(m.user_id)
-  })
-  const totalMemberCount = uniqueUserIds.size
-
-  // Get icon based on node type
-  const getNodeIcon = () => {
-    switch (node.node_type) {
-      case 'division': return <Building2 className="w-5 h-5" style={{ color: node.color }} />
-      case 'department': return <FolderOpen className="w-5 h-5" style={{ color: node.color }} />
-      case 'team': return <Users className="w-5 h-5" style={{ color: node.color }} />
-      case 'portfolio': return <Briefcase className="w-5 h-5" style={{ color: node.color }} />
-      default: return <FolderOpen className="w-5 h-5" style={{ color: node.color }} />
-    }
-  }
-
-  // Get type label
-  const getTypeLabel = () => {
-    if (node.node_type === 'custom' && node.custom_type_label) {
-      return node.custom_type_label
-    }
-    return node.node_type.charAt(0).toUpperCase() + node.node_type.slice(1)
-  }
-
-  return (
-    <div className="inline-flex flex-col items-center">
-      {/* Node Card Container */}
-      <div className="relative group/node">
-        {/* Hover overlay actions for admins */}
-        {isOrgAdmin && (
-          <div className="absolute -top-1 -right-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-20 flex items-center space-x-0.5 bg-white rounded-lg shadow-md p-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete(node.id)
-              }}
-              className="p-1.5 hover:bg-red-50 rounded transition-colors"
-              title={`Delete ${getTypeLabel()}`}
-            >
-              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-            </button>
-          </div>
-        )}
-
-        {/* Request to Join button for non-admins (team nodes only) */}
-        {!isOrgAdmin && node.node_type === 'team' && onRequestToJoin && isUserMember && !isUserMember(node.id) && (
-          <div className="absolute -top-1 -right-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-20">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onRequestToJoin(node)
-              }}
-              className="flex items-center space-x-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg shadow-md transition-colors"
-              title={`Request to join ${node.name}`}
-            >
-              <UserPlus className="w-3 h-3" />
-              <span>Join</span>
-            </button>
-          </div>
-        )}
-
-        {/* Member indicator for non-admins */}
-        {!isOrgAdmin && node.node_type === 'team' && isUserMember && isUserMember(node.id) && (
-          <div className="absolute -top-1 -right-1 z-20">
-            <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-              <Check className="w-3 h-3 mr-0.5" />
-              Member
-            </span>
-          </div>
-        )}
-
-        {/* Node Card */}
-        <div
-          className={`relative border-2 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md ${
-            node.is_non_investment
-              ? 'bg-gray-100 border-gray-300 border-dashed'
-              : `bg-white ${isExpanded && hasChildren ? 'border-gray-300' : 'border-gray-200'}`
-          }`}
-          style={{
-            borderTopColor: node.is_non_investment ? '#9ca3af' : node.color,
-            borderTopWidth: '3px',
-            borderTopStyle: 'solid',
-            width: '220px',
-            minHeight: '120px'
-          }}
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          {/* Non-investment indicator */}
-          {node.is_non_investment && (
-            <div className="absolute top-2 left-2 z-10">
-              <span className="inline-flex items-center px-1.5 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-medium rounded">
-                Non-Investment
-              </span>
-            </div>
-          )}
-
-          {/* Collaborative/Linked portfolio indicator - positioned in upper-left corner */}
-          {(isSharedPortfolio || node.isLinkedInstance) && !node.is_non_investment && (
-            <div
-              className="absolute top-2 left-2 z-10"
-              onMouseEnter={() => setShowSharedTooltip(true)}
-              onMouseLeave={() => setShowSharedTooltip(false)}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-600">
-                <Link2 className="w-3 h-3" />
-              </div>
-              {/* Tooltip */}
-              {showSharedTooltip && (
-                <div className="absolute z-30 top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
-                  <div className="font-medium mb-1">{node.isLinkedInstance ? 'Linked portfolio' : 'Shared with:'}</div>
-                  {node.isLinkedInstance ? (
-                    <div className="text-gray-300">Primary location: {(node.parent_id && getNodeName?.(node.parent_id)) || 'Unknown'}</div>
-                  ) : sharedTeams.map((teamName, idx) => (
-                    <div key={idx} className="text-gray-300">{teamName}</div>
-                  ))}
-                  {/* Arrow */}
-                  <div className="absolute bottom-full left-2 border-4 border-transparent border-b-gray-900" />
-                </div>
-              )}
-            </div>
-          )}
-          <div className="p-4 text-center">
-            {/* Icon */}
-            <div
-              className="inline-flex items-center justify-center w-10 h-10 rounded-xl mb-3"
-              style={{ backgroundColor: `${node.color}20` }}
-            >
-              {getNodeIcon()}
-            </div>
-
-            {/* Name */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onViewDetails(node)
-              }}
-              className="block w-full font-semibold text-gray-900 text-sm hover:text-indigo-600 hover:underline"
-            >
-              {node.name}
-            </button>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {getTypeLabel()}
-              {totalMemberCount > 0 && ` · ${totalMemberCount} member${totalMemberCount !== 1 ? 's' : ''}`}
-              {linkedTeamId && teamPortfolios.length > 0 && ` · ${teamPortfolios.length} portfolio${teamPortfolios.length !== 1 ? 's' : ''}`}
-            </p>
-
-            {/* Coverage stats for team nodes - always show container for consistent sizing */}
-            {coverageTeamId && getCoverageStats && (
-              <div className="mt-1.5 text-xs h-[52px] flex flex-col justify-center">
-                {(() => {
-                  const stats = getCoverageStats(coverageTeamId)
-                  if (stats && (stats.assetCount > 0 || stats.analystCount > 0)) {
-                    return (
-                      <>
-                        <div className="flex items-center justify-center gap-2">
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                            <Briefcase className="w-3 h-3 mr-1" />
-                            {stats.assetCount} asset{stats.assetCount !== 1 ? 's' : ''}
-                          </span>
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
-                            <UserCircle className="w-3 h-3 mr-1" />
-                            {stats.analystCount} analyst{stats.analystCount !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        {onViewTeamCoverage && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onViewTeamCoverage(coverageTeamId, node.name)
-                            }}
-                            className="mt-1 text-indigo-600 hover:text-indigo-800 hover:underline text-xs flex items-center justify-center gap-1 w-full"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            View Coverage
-                          </button>
-                        )}
-                      </>
-                    )
-                  }
-                  // Show placeholder for empty coverage
-                  return (
-                    <div className="text-gray-400 text-center">
-                      No coverage assigned
-                    </div>
-                  )
-                })()}
-              </div>
-            )}
-
-            {/* Expand indicator for nodes with children */}
-            {hasChildren && (
-              <div className="mt-2">
-                {isExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-gray-400 mx-auto" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-gray-400 mx-auto" />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Add button below node - always visible on hover for admins */}
-      {isOrgAdmin && (
-        <div className="relative group/addbutton" style={{ width: '24px', height: hasChildren && isExpanded ? '24px' : '32px', display: 'flex', justifyContent: 'center' }}>
-          {/* Vertical connector line */}
-          {hasChildren && isExpanded && (
-            <div style={{ width: '2px', height: '100%', backgroundColor: '#d1d5db' }} />
-          )}
-          {/* Add button */}
-          <div ref={addMenuRef} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowAddMenu(!showAddMenu)
-              }}
-              className={`w-5 h-5 bg-indigo-500 hover:bg-indigo-600 rounded-full flex items-center justify-center shadow-md transition-opacity ${showAddMenu ? 'opacity-100' : 'opacity-0 group-hover/addbutton:opacity-100'}`}
-              title="Add node"
-            >
-              <Plus className="w-3 h-3 text-white" />
-            </button>
-            {/* Dropdown menu */}
-            {showAddMenu && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px] z-30">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onAddChild(node.id)
-                    setShowAddMenu(false)
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                >
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                  <span>Add child below</span>
-                </button>
-                {onAddSibling && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAddSibling(parentId || null)
-                      setShowAddMenu(false)
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                  >
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                    <span>Add sibling</span>
-                  </button>
-                )}
-                {hasChildren && onInsertBetween && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onInsertBetween(node.id, node.children!.map(c => c.id))
-                      setShowAddMenu(false)
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                  >
-                    <MoreHorizontal className="w-4 h-4 text-gray-400" />
-                    <span>Insert between</span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Expanded Children with connectors */}
-      {isExpanded && hasChildren && (
-        <>
-
-          {/* Children wrapper */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
-            {node.children!.map((childNode, index) => (
-              <div key={childNode.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '220px', flexShrink: 0, marginLeft: index > 0 ? '20px' : '0' }}>
-                {/* T-connector with overlapping lines */}
-                <div style={{ position: 'relative', width: '100%', height: '24px', overflow: 'visible' }}>
-                  {/* Left horizontal segment - extends into the margin gap */}
-                  {index > 0 && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '0',
-                      left: '-20px',
-                      width: 'calc(50% + 21px)',
-                      height: '2px',
-                      backgroundColor: '#d1d5db'
-                    }} />
-                  )}
-                  {/* Right horizontal segment - extends into the margin gap */}
-                  {index < node.children!.length - 1 && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '0',
-                      right: '-20px',
-                      width: 'calc(50% + 21px)',
-                      height: '2px',
-                      backgroundColor: '#d1d5db'
-                    }} />
-                  )}
-                  {/* Center vertical drop */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '0',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: '2px',
-                    height: '100%',
-                    backgroundColor: '#d1d5db'
-                  }} />
-                </div>
-                {/* Child node */}
-                <OrgChartNodeCard
-                  node={childNode}
-                  isOrgAdmin={isOrgAdmin}
-                  onEdit={onEdit}
-                  onAddChild={onAddChild}
-                  onAddSibling={onAddSibling}
-                  onDelete={onDelete}
-                  onAddMember={onAddMember}
-                  onRemoveMember={onRemoveMember}
-                  getNodeMembers={getNodeMembers}
-                  getSharedTeams={getSharedTeams}
-                  getTeamMembers={getTeamMembers}
-                  getTeamPortfolios={getTeamPortfolios}
-                  getPortfolioTeamMembers={getPortfolioTeamMembers}
-                  onAddTeamMember={onAddTeamMember}
-                  onRemoveTeamMember={onRemoveTeamMember}
-                  onInsertBetween={onInsertBetween}
-                  onViewDetails={onViewDetails}
-                  getCoverageStats={getCoverageStats}
-                  onViewTeamCoverage={onViewTeamCoverage}
-                  depth={depth + 1}
-                  parentId={node.id}
-                  onRequestToJoin={onRequestToJoin}
-                  isUserMember={isUserMember}
-                  getNodeName={getNodeName}
-                />
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
+// OrgChartNodeCard — extracted to src/components/organization/OrgChartNodeCard.tsx
+// (kept as comment for navigation reference)
 
 // TeamCoveragePanel - shows coverage details for a specific team
 interface TeamCoveragePanelProps {
@@ -4653,28 +5111,11 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
   const [focus, setFocus] = useState('')
   const [isCoverageAdmin, setIsCoverageAdmin] = useState(false)
 
-  const roleOptions = [
-    { value: 'Portfolio Manager', label: 'Portfolio Manager' },
-    { value: 'Analyst', label: 'Analyst' },
-    { value: 'Trader', label: 'Trader' },
-    { value: 'Lead', label: 'Lead' },
-    { value: 'Member', label: 'Member' },
-  ]
+  const roleOptions = ROLE_OPTIONS.map(r => ({ value: r, label: r }))
 
   const focusOptions = [
     { value: '', label: 'No Focus (Optional)' },
-    { value: 'Generalist', label: 'Generalist' },
-    { value: 'Technology', label: 'Technology' },
-    { value: 'Healthcare', label: 'Healthcare' },
-    { value: 'Energy', label: 'Energy' },
-    { value: 'Financials', label: 'Financials' },
-    { value: 'Consumer', label: 'Consumer' },
-    { value: 'Industrials', label: 'Industrials' },
-    { value: 'Utilities', label: 'Utilities' },
-    { value: 'Materials', label: 'Materials' },
-    { value: 'Real Estate', label: 'Real Estate' },
-    { value: 'Quant', label: 'Quant' },
-    { value: 'Technical', label: 'Technical' },
+    ...getFocusOptionsForRole(role).map(f => ({ value: f, label: f })),
   ]
 
   // Filter out users who already have this exact role+focus combination
@@ -4714,7 +5155,10 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
             <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => {
+                setRole(e.target.value)
+                setFocus('')
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
             >
               <option value="">Select a role...</option>
@@ -6135,46 +6579,51 @@ function NodeDetailModal({
                       <label className="block text-xs font-medium text-gray-600 mb-1">Role (optional)</label>
                       <select
                         value={memberRole}
-                        onChange={(e) => setMemberRole(e.target.value)}
+                        onChange={(e) => {
+                          setMemberRole(e.target.value)
+                          setMemberFocus('')
+                        }}
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       >
                         <option value="">Select role...</option>
-                        <option value="Portfolio Manager">Portfolio Manager</option>
-                        <option value="Analyst">Analyst</option>
-                        <option value="Trader">Trader</option>
+                        {ROLE_OPTIONS.map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {['Generalist', 'Technology', 'Healthcare', 'Energy', 'Financials', 'Consumer', 'Industrials', 'Utilities', 'Materials', 'Real Estate', 'Quant', 'Technical'].map(focus => {
-                          const currentFocuses = memberFocus ? memberFocus.split(', ').filter(Boolean) : []
-                          const isSelected = currentFocuses.includes(focus)
-                          return (
-                            <button
-                              key={focus}
-                              type="button"
-                              onClick={() => {
-                                let newFocuses: string[]
-                                if (isSelected) {
-                                  newFocuses = currentFocuses.filter(f => f !== focus)
-                                } else {
-                                  newFocuses = [...currentFocuses, focus]
-                                }
-                                setMemberFocus(newFocuses.join(', '))
-                              }}
-                              className={`px-2 py-1 text-xs rounded-full border transition-colors ${
-                                isSelected
-                                  ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                              }`}
-                            >
-                              {focus}
-                            </button>
-                          )
-                        })}
+                    {memberRole && getFocusOptionsForRole(memberRole).length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {getFocusOptionsForRole(memberRole).map(focus => {
+                            const currentFocuses = memberFocus ? memberFocus.split(', ').filter(Boolean) : []
+                            const isSelected = currentFocuses.includes(focus)
+                            return (
+                              <button
+                                key={focus}
+                                type="button"
+                                onClick={() => {
+                                  let newFocuses: string[]
+                                  if (isSelected) {
+                                    newFocuses = currentFocuses.filter(f => f !== focus)
+                                  } else {
+                                    newFocuses = [...currentFocuses, focus]
+                                  }
+                                  setMemberFocus(newFocuses.join(', '))
+                                }}
+                                className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                                  isSelected
+                                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                }`}
+                              >
+                                {focus}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </>
                 )}
                 <div className="flex justify-end space-x-2">
@@ -6206,7 +6655,7 @@ function NodeDetailModal({
 
                   // If editing this member, show inline edit form with auto-save
                   if (isEditingThisMember && isEditing && isPortfolioNode) {
-                    const focusOptions = ['Generalist', 'Technology', 'Healthcare', 'Energy', 'Financials', 'Consumer', 'Industrials', 'Utilities', 'Materials', 'Real Estate', 'Quant', 'Technical']
+                    const roleFocusOptions = getFocusOptionsForRole(editMemberRole)
                     const currentFocuses = editMemberFocus ? editMemberFocus.split(', ').filter(Boolean) : []
 
                     const toggleFocus = (focus: string) => {
@@ -6255,37 +6704,40 @@ function NodeDetailModal({
                             onChange={(e) => {
                               const newRole = e.target.value
                               setEditMemberRole(newRole)
-                              // Auto-save on role change
-                              onUpdateMember(member.id, newRole, editMemberFocus || null)
+                              setEditMemberFocus('')
+                              // Auto-save on role change (clear focus since options differ per role)
+                              onUpdateMember(member.id, newRole, null)
                             }}
                             className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                           >
                             <option value="">Select role...</option>
-                            <option value="Portfolio Manager">Portfolio Manager</option>
-                            <option value="Analyst">Analyst</option>
-                            <option value="Trader">Trader</option>
+                            {ROLE_OPTIONS.map(r => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
                           </select>
                         </div>
 
-                        {/* Focus multi-select checkboxes - auto-saves */}
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {focusOptions.map(focus => (
-                              <button
-                                key={focus}
-                                onClick={() => toggleFocus(focus)}
-                                className={`px-2 py-1 text-xs rounded-full border transition-colors ${
-                                  currentFocuses.includes(focus)
-                                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                                }`}
-                              >
-                                {focus}
-                              </button>
-                            ))}
+                        {/* Focus multi-select pills - auto-saves */}
+                        {roleFocusOptions.length > 0 && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {roleFocusOptions.map(focus => (
+                                <button
+                                  key={focus}
+                                  onClick={() => toggleFocus(focus)}
+                                  className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                                    currentFocuses.includes(focus)
+                                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                  }`}
+                                >
+                                  {focus}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     )
                   }

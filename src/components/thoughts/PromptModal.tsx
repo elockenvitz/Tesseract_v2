@@ -194,7 +194,7 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
           .or(`symbol.ilike.%${q}%,company_name.ilike.%${q}%`).limit(4),
         supabase.from('org_projects_v').select('id, title')
           .ilike('title', `%${q}%`).limit(3),
-        supabase.from('portfolios').select('id, name')
+        supabase.from('portfolios').select('id, name, portfolio_id')
           .ilike('name', `%${q}%`).limit(3),
         supabase.from('org_themes_v').select('id, name')
           .ilike('name', `%${q}%`).limit(3),
@@ -204,7 +204,7 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
 
       if (assetRes.data) results.push(...assetRes.data.map(a => ({ type: 'asset', id: a.id, title: a.symbol, subtitle: a.company_name })))
       if (projRes.data) results.push(...projRes.data.map(p => ({ type: 'project', id: p.id, title: p.title })))
-      if (portRes.data) results.push(...portRes.data.map(p => ({ type: 'portfolio', id: p.id, title: p.name })))
+      if (portRes.data) results.push(...portRes.data.map(p => ({ type: 'portfolio', id: p.id, title: p.name, data: p })))
       if (themeRes.data) results.push(...themeRes.data.map(t => ({ type: 'theme', id: t.id, title: t.name })))
       if (listRes.data) results.push(...listRes.data.map(l => ({ type: 'list', id: l.id, title: l.name })))
 

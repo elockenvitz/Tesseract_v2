@@ -1,14 +1,18 @@
 /**
- * OrgAccessTab — Admin-only access report: "who has access to what?"
- * Table: Person | Email | Org Role | Teams | Portfolios
+ * OrgAccessTab — Access report: "who has access to what?"
+ * Table: Person | Email | Status | Org Role | Admin Roles | Teams | Portfolios | Risk Flags
  * Search filter + CSV export.
+ *
+ * When `authorityRows` is provided, enriches display with admin role chips,
+ * portfolio roles, and risk flag detail from the access matrix data.
  */
 
 import React, { useState, useMemo, useCallback } from 'react'
-import { Shield, Search, Download, UserCircle } from 'lucide-react'
+import { Shield, Search, Download, UserCircle, AlertTriangle } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { format } from 'date-fns'
 import { csvSanitizeCell } from '../../lib/csv-sanitize'
+import type { AuthorityRow } from '../../lib/authority-map'
 
 interface UserProfile {
   id: string
@@ -58,27 +62,69 @@ interface OrgAccessTabProps {
   teamMemberships: TeamMembership[]
   portfolios: Portfolio[]
   portfolioMemberships: PortfolioMembership[]
+  authorityRows?: AuthorityRow[]
 }
 
 interface AccessRow {
   userId: string
   name: string
   email: string
+  status: 'active' | 'suspended'
   orgRole: string
+  adminRoles: string[]
   teamNames: string[]
   portfolioNames: string[]
+  riskFlags: string[]
 }
 
 export function OrgAccessTab({
   orgMembers,
   teamMemberships,
   portfolioMemberships,
+  authorityRows,
 }: OrgAccessTabProps) {
   const [search, setSearch] = useState('')
 
-  // Build flat access rows
+  // Build flat access rows, enriched from authorityRows when available
   const rows = useMemo<AccessRow[]>(() => {
-    // Build team lookup: userId → team names
+    // If we have authority rows, use those for richer data
+    if (authorityRows && authorityRows.length > 0) {
+      const authorityByUser = new Map(authorityRows.map(r => [r.userId, r]))
+
+      return orgMembers
+        .map((m) => {
+          const auth = authorityByUser.get(m.user_id)
+          const adminRoles: string[] = []
+          if (auth) {
+            if (auth.isOrgAdmin) adminRoles.push('Org Admin')
+            if (auth.isGlobalCoverageAdmin) adminRoles.push('Coverage Admin (Global)')
+            if (auth.coverageScopes.some(cs => cs.type === 'node')) adminRoles.push('Coverage Admin (Scoped)')
+          } else if (m.is_org_admin) {
+            adminRoles.push('Org Admin')
+          }
+
+          return {
+            userId: m.user_id,
+            name: m.user?.full_name || 'Unknown',
+            email: m.user?.email || '',
+            status: (auth?.status || (m.status === 'inactive' ? 'suspended' : 'active')) as 'active' | 'suspended',
+            orgRole: m.is_org_admin ? 'Admin' : 'Member',
+            adminRoles,
+            teamNames: auth
+              ? auth.teams.map(t => `${t.nodeName} (${t.role})`)
+              : [],
+            portfolioNames: auth
+              ? auth.portfolios.map(p => `${p.nodeName} (${p.role})`)
+              : [],
+            riskFlags: auth
+              ? auth.riskFlags.map(f => f.label)
+              : [],
+          }
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    // Fallback: build from raw membership data
     const userTeams = new Map<string, string[]>()
     for (const tm of teamMemberships) {
       const teamName = tm.team?.name
@@ -88,7 +134,6 @@ export function OrgAccessTab({
       userTeams.set(tm.user_id, arr)
     }
 
-    // Build portfolio lookup: userId → portfolio names
     const userPortfolios = new Map<string, string[]>()
     for (const pm of portfolioMemberships) {
       const name = pm.portfolio?.name
@@ -104,12 +149,15 @@ export function OrgAccessTab({
         userId: m.user_id,
         name: m.user?.full_name || 'Unknown',
         email: m.user?.email || '',
+        status: 'active' as const,
         orgRole: m.is_org_admin ? 'Admin' : 'Member',
+        adminRoles: m.is_org_admin ? ['Org Admin'] : [],
         teamNames: userTeams.get(m.user_id) || [],
         portfolioNames: userPortfolios.get(m.user_id) || [],
+        riskFlags: [],
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [orgMembers, teamMemberships, portfolioMemberships])
+  }, [orgMembers, teamMemberships, portfolioMemberships, authorityRows])
 
   // Filter
   const filtered = useMemo(() => {
@@ -128,9 +176,18 @@ export function OrgAccessTab({
   const handleExport = useCallback(() => {
     if (!filtered.length) return
     const csv = [
-      ['Name', 'Email', 'Org Role', 'Teams', 'Portfolios'].join(','),
+      ['Name', 'Email', 'Status', 'Org Role', 'Admin Roles', 'Teams', 'Portfolios', 'Risk Flags'].join(','),
       ...filtered.map((r) =>
-        [r.name, r.email, r.orgRole, r.teamNames.join('; '), r.portfolioNames.join('; ')]
+        [
+          r.name,
+          r.email,
+          r.status,
+          r.orgRole,
+          r.adminRoles.join('; '),
+          r.teamNames.join('; '),
+          r.portfolioNames.join('; '),
+          r.riskFlags.join('; '),
+        ]
           .map(csvSanitizeCell)
           .join(',')
       ),
@@ -189,19 +246,30 @@ export function OrgAccessTab({
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Person</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Email</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Org Role</th>
+                {authorityRows && (
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">Admin Roles</th>
+                )}
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Teams</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Portfolios</th>
+                {authorityRows && (
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">Risk Flags</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((row) => (
-                <tr key={row.userId} className="hover:bg-gray-50/50">
+                <tr key={row.userId} className={`hover:bg-gray-50/50 ${row.status === 'suspended' ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <UserCircle className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       <span className="font-medium text-gray-900 truncate max-w-[180px]">
                         {row.name}
                       </span>
+                      {row.status === 'suspended' && (
+                        <span className="px-1 py-0.5 text-[9px] font-medium rounded bg-amber-100 text-amber-700">
+                          Suspended
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-2.5 text-gray-600 truncate max-w-[200px]">{row.email}</td>
@@ -216,6 +284,24 @@ export function OrgAccessTab({
                       {row.orgRole}
                     </span>
                   </td>
+                  {authorityRows && (
+                    <td className="px-4 py-2.5">
+                      {row.adminRoles.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {row.adminRoles.map((r) => (
+                            <span
+                              key={r}
+                              className="px-1.5 py-0.5 text-[10px] bg-purple-50 text-purple-700 rounded whitespace-nowrap"
+                            >
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-2.5">
                     {row.teamNames.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
@@ -248,6 +334,25 @@ export function OrgAccessTab({
                       <span className="text-xs text-gray-400">-</span>
                     )}
                   </td>
+                  {authorityRows && (
+                    <td className="px-4 py-2.5">
+                      {row.riskFlags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {row.riskFlags.map((f) => (
+                            <span
+                              key={f}
+                              className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 rounded whitespace-nowrap flex items-center gap-0.5"
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

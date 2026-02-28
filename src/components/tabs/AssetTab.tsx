@@ -501,7 +501,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select('*, portfolio:portfolios(name)')
+        .select('*, portfolio:portfolios(name, portfolio_id)')
         .eq('asset_id', asset.id)
         .eq('is_active', true)
         .order('role', { ascending: true }) // primary first, then secondary, then tertiary
@@ -950,7 +950,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           *,
           portfolios (
             id,
-            name
+            name,
+            portfolio_id
           )
         `)
         .eq('asset_id', asset.id)
@@ -3861,7 +3862,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                       id: holding.portfolio_id,
                                       title: holding.portfolios?.name || 'Portfolio',
                                       type: 'portfolio',
-                                      data: { id: holding.portfolio_id }
+                                      data: { id: holding.portfolio_id, portfolio_id: holding.portfolios?.portfolio_id }
                                     })
                                   }
                                 }}
@@ -4286,7 +4287,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                     if (onNavigate) {
                                       onNavigate({
                                         id: holding.portfolio_id,
-                                        title: holding.portfolios?.name || 'Portfolio',
+                                        title: holding.portfolios?.portfolio_id || holding.portfolios?.name || 'Portfolio',
                                         type: 'portfolio',
                                         data: { id: holding.portfolio_id }
                                       })

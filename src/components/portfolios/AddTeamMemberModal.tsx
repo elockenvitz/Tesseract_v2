@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { SearchableSelect } from '../ui/SearchableSelect'
+import { ROLE_OPTIONS, getFocusOptionsForRole } from '../../lib/roles-config'
 
 interface AddTeamMemberModalProps {
   isOpen: boolean
@@ -17,6 +18,7 @@ interface AddTeamMemberModalProps {
     id: string
     user_id: string
     role: string
+    focus?: string
   } | null
   onMemberAdded?: () => void
 }
@@ -38,6 +40,7 @@ export function AddTeamMemberModal({
 }: AddTeamMemberModalProps) {
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null)
   const [role, setRole] = useState(editingMember?.role || '')
+  const [focus, setFocus] = useState('')
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
 
@@ -45,19 +48,17 @@ export function AddTeamMemberModal({
   useEffect(() => {
     if (editingMember) {
       setRole(editingMember.role || '')
+      setFocus(editingMember.focus || '')
     } else {
       setRole('')
+      setFocus('')
       setSelectedUser(null)
     }
   }, [editingMember])
 
-  // IMPORTANT: Make sure these match your DB CHECK/ENUM exactly.
-  // If your check is lowercase snake_case, switch values accordingly.
   const roleOptions = [
     { value: '', label: 'Select Role' },
-    { value: 'Portfolio Manager', label: 'Portfolio Manager' },
-    { value: 'Analyst', label: 'Analyst' },
-    { value: 'Trader', label: 'Trader' },
+    ...ROLE_OPTIONS.map(r => ({ value: r, label: r })),
   ]
 
   // Moved getUserDisplayName function definition here
@@ -140,6 +141,7 @@ export function AddTeamMemberModal({
           .from('portfolio_team')
           .update({
             role: role.trim(),
+            focus: focus.trim() || null,
           })
           .eq('id', editingMember.id)
 
@@ -150,6 +152,7 @@ export function AddTeamMemberModal({
           portfolio_id: portfolioId,
           user_id: selectedUser!.id,
           role: role.trim(),
+          focus: focus.trim() || null,
         }
 
         const { data, error } = await supabase
@@ -175,6 +178,7 @@ export function AddTeamMemberModal({
       // reset form
       setSelectedUser(null)
       setRole('')
+      setFocus('')
 
       onMemberAdded?.()
       onClose()
@@ -225,9 +229,47 @@ export function AddTeamMemberModal({
             <Select
               label="Role"
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => {
+                setRole(e.target.value)
+                setFocus('')
+              }}
               options={roleOptions}
             />
+
+            {/* Focus multi-select pills */}
+            {role && getFocusOptionsForRole(role).length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Focus (select multiple)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {getFocusOptionsForRole(role).map(f => {
+                    const currentFocuses = focus ? focus.split(', ').filter(Boolean) : []
+                    const isSelected = currentFocuses.includes(f)
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => {
+                          let newFocuses: string[]
+                          if (isSelected) {
+                            newFocuses = currentFocuses.filter(x => x !== f)
+                          } else {
+                            newFocuses = [...currentFocuses, f]
+                          }
+                          setFocus(newFocuses.join(', '))
+                        }}
+                        className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                          isSelected
+                            ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

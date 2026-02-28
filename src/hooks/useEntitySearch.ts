@@ -118,8 +118,8 @@ export function useEntitySearch({
           (async () => {
             const { data: portfolios } = await supabase
               .from('portfolios')
-              .select('id, name, description, benchmark')
-              .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+              .select('id, name, description, benchmark, portfolio_id')
+              .or(`name.ilike.%${query}%,description.ilike.%${query}%,portfolio_id.ilike.%${query}%`)
               .limit(limit)
 
             if (portfolios) {

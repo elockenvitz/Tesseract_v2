@@ -220,12 +220,45 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
           type: 'theme' as const, data: theme
         })))
       }
-      if (data?.portfolios) {
-        results.push(...data.portfolios.map((p: any) => ({
-          id: p.id, title: p.name,
-          subtitle: p.description || `Portfolio${p.benchmark ? ` • ${p.benchmark}` : ''}`,
-          type: 'portfolio' as const, data: p
-        })))
+      {
+        // Merge RPC portfolio results with a direct portfolio_id (mnemonic) search
+        const rpcPortfolios: any[] = data?.portfolios || []
+        const rpcIds = new Set(rpcPortfolios.map((p: any) => p.id))
+
+        // Also search by portfolio_id mnemonic (RPC only searches name)
+        const { data: mnemonicHits } = await supabase
+          .from('portfolios')
+          .select('id, name, description, benchmark, portfolio_id')
+          .ilike('portfolio_id', `%${debouncedQuery.trim()}%`)
+          .limit(5)
+
+        // Combine, dedup
+        const allPortfolios = [...rpcPortfolios]
+        for (const p of (mnemonicHits || [])) {
+          if (!rpcIds.has(p.id)) {
+            allPortfolios.push(p)
+            rpcIds.add(p.id)
+          }
+        }
+
+        if (allPortfolios.length > 0) {
+          // Fetch portfolio_id for any RPC results that don't have it
+          const needMnemonic = allPortfolios.filter(p => !p.portfolio_id).map(p => p.id)
+          let mnemonicMap = new Map<string, string>()
+          if (needMnemonic.length > 0) {
+            const { data: mnemonics } = await supabase
+              .from('portfolios')
+              .select('id, portfolio_id')
+              .in('id', needMnemonic)
+            mnemonicMap = new Map((mnemonics || []).map((m: any) => [m.id, m.portfolio_id]))
+          }
+
+          results.push(...allPortfolios.map((p: any) => ({
+            id: p.id, title: p.name,
+            subtitle: p.description || `Portfolio${p.benchmark ? ` • ${p.benchmark}` : ''}`,
+            type: 'portfolio' as const, data: { ...p, portfolio_id: p.portfolio_id || mnemonicMap.get(p.id) }
+          })))
+        }
       }
       if (data?.asset_lists) {
         results.push(...data.asset_lists.map((list: any) => ({
