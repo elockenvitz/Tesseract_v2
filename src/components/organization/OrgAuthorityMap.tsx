@@ -1,12 +1,14 @@
 /**
- * OrgAuthorityMap — Access Matrix component for the Access hub.
+ * OrgAuthorityMap — "Access & Roles" component for the Governance hub.
  *
- * Displays a table of org members with expandable access breakdowns.
+ * Displays a table of org members with expandable access details.
  * View mode is clean and read-only. Edit mode (ORG_ADMIN only) provides
  * controlled mutations with explicit confirmation dialogs.
+ *
+ * Lifecycle actions (suspend/reactivate) live in the Members tab only.
  */
 
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback, useMemo, useEffect } from 'react'
 import {
   Search,
   ChevronRight,
@@ -17,8 +19,6 @@ import {
   Info,
   Pencil,
   X,
-  UserX,
-  UserCheck,
 } from 'lucide-react'
 import type { OrgGraph } from '../../lib/org-graph'
 import type { OrgPermissions } from '../../lib/permissions/orgGovernance'
@@ -29,6 +29,7 @@ import {
   type AuthorityFilter,
   type UserRiskFlag,
 } from '../../lib/authority-map'
+import { GovernanceSummaryStrip, SeatSummaryBar, type SeatCounts } from './OrgBadges'
 
 // ─── Props ───────────────────────────────────────────────────────────────
 
@@ -50,9 +51,11 @@ interface OrgAuthorityMapProps {
   // Seat meter counts
   invitedCount?: number
   suspendedCount?: number
-  // Suspend/reactivate callbacks
-  onSuspendUser?: (userId: string) => void
-  onReactivateUser?: (userId: string) => void
+  // Cross-navigation: auto-expand a user from Members tab
+  focusUserId?: string | null
+  /** Optional filter to apply alongside focus (e.g. 'flagged') */
+  focusFilter?: string | null
+  onFocusUserHandled?: () => void
 }
 
 // ─── Role chip colors ────────────────────────────────────────────────────
@@ -91,7 +94,7 @@ function CollapsibleSection({
         <Chevron className="w-3 h-3 text-gray-400 flex-shrink-0" />
         {title}
       </button>
-      {open && <div className="ml-4.5 mt-1.5">{children}</div>}
+      {open && <div className="ml-4.5 mt-1">{children}</div>}
     </div>
   )
 }
@@ -139,11 +142,14 @@ function ConfirmationBanner({
 
 // ─── Role summary helpers ────────────────────────────────────────────────
 
+/** Summarize roles as "N Role · M Role", hiding default "Member" role. */
 function summarizeRoles(items: Array<{ role: string }>): string {
   const counts = new Map<string, number>()
   for (const item of items) {
+    if (item.role === 'Member') continue // default role — omit from summary
     counts.set(item.role, (counts.get(item.role) || 0) + 1)
   }
+  if (counts.size === 0) return ''
   return Array.from(counts.entries())
     .map(([role, count]) => `${count} ${role}`)
     .join(' \u00b7 ')
@@ -178,71 +184,6 @@ function SeverityIcon({ severity, className = 'w-3 h-3' }: { severity: string; c
   if (severity === 'high') return <AlertTriangle className={`${className} text-red-500`} />
   if (severity === 'medium') return <AlertCircle className={`${className} text-amber-500`} />
   return <Info className={`${className} text-gray-400`} />
-}
-
-// ─── Seat Meter ──────────────────────────────────────────────────────────
-
-function SeatMeter({
-  activeCount,
-  invitedCount,
-  suspendedCount,
-}: {
-  activeCount: number
-  invitedCount: number
-  suspendedCount: number
-}) {
-  const stats = [
-    { label: 'Active', value: activeCount, color: 'text-emerald-700' },
-    { label: 'Invited', value: invitedCount, color: 'text-blue-600' },
-    { label: 'Suspended', value: suspendedCount, color: 'text-amber-600' },
-  ]
-
-  return (
-    <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
-      <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">Seats</span>
-      {stats.map(s => (
-        <div key={s.label} className="flex items-baseline gap-1">
-          <span className={`text-sm font-semibold ${s.color}`}>{s.value}</span>
-          <span className="text-[10px] text-gray-400">{s.label}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── Summary Strip ───────────────────────────────────────────────────────
-
-function AuthoritySummaryStrip({ summary }: { summary: AuthoritySummary }) {
-  const stats = [
-    { label: 'Organization Admins', value: summary.orgAdminCount },
-    {
-      label: 'Coverage Admins',
-      value: summary.globalCoverageAdminCount + summary.nodeCoverageAdminCount,
-      sub: `${summary.globalCoverageAdminCount} Global, ${summary.nodeCoverageAdminCount} Scoped`,
-    },
-    { label: 'Portfolio Managers', value: summary.pmCount },
-    {
-      label: 'Governance Flags',
-      value: summary.flaggedUserCount,
-      sub: summary.flaggedUserCount > 0
-        ? `${summary.riskBySeverity.high}H ${summary.riskBySeverity.medium}M ${summary.riskBySeverity.low}L`
-        : undefined,
-    },
-  ]
-
-  return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-wrap gap-3">
-      {stats.map(s => (
-        <div key={s.label} className="bg-white border border-gray-200 rounded-md px-3 py-1.5 min-w-[100px]">
-          <div className="text-gray-500 text-[11px] font-medium">{s.label}</div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-sm font-semibold text-gray-900">{s.value}</span>
-            {s.sub && <span className="text-[10px] text-gray-400">({s.sub})</span>}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ─── Filter Bar ──────────────────────────────────────────────────────────
@@ -303,11 +244,11 @@ function AuthorityFilterBar({
           {FILTER_OPTIONS.map(f => (
             <button
               key={f.key}
-              onClick={() => onFilterChange(f.key)}
-              className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${
+              onClick={() => onFilterChange(filter === f.key ? 'all' : f.key)}
+              className={`px-2.5 py-1 text-[11px] font-medium rounded-md cursor-pointer transition-all ${
                 filter === f.key
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 border border-transparent'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-gray-500 bg-white border border-gray-200 hover:text-gray-700 hover:bg-gray-50 hover:shadow-sm'
               }`}
             >
               {f.label}
@@ -358,9 +299,9 @@ function AuthorityFilterBar({
   )
 }
 
-// ─── Expanded Panel (View Mode) ──────────────────────────────────────────
+// ─── Expanded Panel ─────────────────────────────────────────────────────
 
-function AuthorityExpandedPanel({
+function AccessSummaryPanel({
   row,
   orgPerms,
   orgMembers,
@@ -369,8 +310,6 @@ function AuthorityExpandedPanel({
   onToggleNodeCoverageAdmin,
   isMutating,
   onOpenNodeModal,
-  onSuspendUser,
-  onReactivateUser,
 }: {
   row: AuthorityRow
   orgPerms: OrgPermissions
@@ -380,10 +319,10 @@ function AuthorityExpandedPanel({
   onToggleNodeCoverageAdmin?: (memberId: string, newValue: boolean) => void
   isMutating?: boolean
   onOpenNodeModal?: (nodeId: string) => void
-  onSuspendUser?: (userId: string) => void
-  onReactivateUser?: (userId: string) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
+  const hasHighRisk = row.riskFlags.some(f => f.severity === 'high')
+  const [risksExpanded, setRisksExpanded] = useState(hasHighRisk)
   const [pendingConfirm, setPendingConfirm] = useState<{
     key: string
     message: string
@@ -397,7 +336,6 @@ function AuthorityExpandedPanel({
   const activeOrgAdminCount = orgMembers.filter((m: any) => m.is_org_admin).length
   const isLastAdmin = row.isOrgAdmin && activeOrgAdminCount <= 1
 
-  // Set of nodeIds that have anchored risk flags
   const flaggedNodeIds = useMemo(() => {
     const ids = new Set<string>()
     for (const f of row.riskFlags) {
@@ -406,7 +344,6 @@ function AuthorityExpandedPanel({
     return ids
   }, [row.riskFlags])
 
-  // Coverage scope summary for the organization-level access section
   const coverageScopeSummary = useMemo(() => {
     const nodeScopes = row.coverageScopes.filter(cs => cs.type === 'node')
     if (row.isGlobalCoverageAdmin) return 'Global'
@@ -415,6 +352,27 @@ function AuthorityExpandedPanel({
   }, [row.coverageScopes, row.isGlobalCoverageAdmin])
 
   const nodeScopes = row.coverageScopes.filter(cs => cs.type === 'node')
+
+  // Risk severity breakdown
+  const riskSeverityCounts = useMemo(() => {
+    const counts = { high: 0, medium: 0, low: 0 }
+    for (const f of row.riskFlags) counts[f.severity]++
+    return counts
+  }, [row.riskFlags])
+
+  // Group portfolios by role
+  const portfoliosByRole = useMemo(() => {
+    const grouped = new Map<string, typeof row.portfolios>()
+    for (const p of row.portfolios) {
+      const arr = grouped.get(p.role) || []
+      arr.push(p)
+      grouped.set(p.role, arr)
+    }
+    // Sort groups by functional role order
+    return Array.from(grouped.entries()).sort(
+      (a, b) => (FUNCTIONAL_ROLE_ORDER[a[0]] ?? 99) - (FUNCTIONAL_ROLE_ORDER[b[0]] ?? 99)
+    )
+  }, [row.portfolios])
 
   const handleRequestConfirm = useCallback((
     key: string,
@@ -440,46 +398,29 @@ function AuthorityExpandedPanel({
   }, [])
 
   return (
-    <div className="bg-gray-50/50 border-l-2 border-indigo-300 px-5 py-4 space-y-4">
+    <div className="bg-indigo-50/30 border-l-2 border-indigo-400 px-5 py-2 space-y-2">
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-            Access Breakdown
-          </div>
+          <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+            Access Summary
+          </span>
           {row.status === 'suspended' && (
             <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700 border border-amber-200">
               Suspended
             </span>
           )}
+          {/* TODO: derive from latest membership change timestamp when available */}
+          <span className="text-[10px] text-gray-400 font-normal normal-case">&middot; Last updated: &mdash;</span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Suspend / Reactivate buttons */}
-          {canEdit && row.status === 'active' && onSuspendUser && (
-            <button
-              onClick={() => onSuspendUser(row.userId)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors"
-            >
-              <UserX className="w-3 h-3" />
-              Suspend
-            </button>
-          )}
-          {canEdit && row.status === 'suspended' && onReactivateUser && (
-            <button
-              onClick={() => onReactivateUser(row.userId)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
-            >
-              <UserCheck className="w-3 h-3" />
-              Reactivate
-            </button>
-          )}
           {canEdit && !isEditing && (
             <button
               onClick={() => setIsEditing(true)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100 rounded transition-colors"
             >
               <Pencil className="w-3 h-3" />
-              Edit access
+              Manage roles
             </button>
           )}
           {isEditing && (
@@ -488,13 +429,13 @@ function AuthorityExpandedPanel({
               className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
             >
               <X className="w-3 h-3" />
-              Done editing
+              Done
             </button>
           )}
         </div>
       </div>
 
-      {/* ── Confirmation banner (if pending) ── */}
+      {/* ── Confirmation banner ── */}
       {pendingConfirm && (
         <ConfirmationBanner
           message={pendingConfirm.message}
@@ -504,12 +445,12 @@ function AuthorityExpandedPanel({
         />
       )}
 
-      {/* ── Section 1: ORGANIZATION-LEVEL ACCESS ── */}
-      <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 space-y-2">
-        <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-          Organization-Level Access
+      {/* ── Section 1: Firm-Level Permissions ── */}
+      <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 space-y-1">
+        <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+          Firm-Level Permissions
         </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Org Admin</span>
             <span className="flex items-center gap-1.5">
@@ -523,7 +464,7 @@ function AuthorityExpandedPanel({
                   <button
                     onClick={() => handleRequestConfirm(
                       'revoke-org-admin',
-                      `Confirm removal of Organization Admin access from ${row.fullName}?`,
+                      `Remove Organization Admin from ${row.fullName}?`,
                       () => onToggleOrgAdmin(row.userId, false),
                     )}
                     disabled={isLastAdmin || isMutating}
@@ -540,7 +481,7 @@ function AuthorityExpandedPanel({
                   <button
                     onClick={() => handleRequestConfirm(
                       'grant-org-admin',
-                      `Grant Organization Admin access to ${row.fullName}? This provides organization-wide administrative privileges.`,
+                      `Grant Organization Admin to ${row.fullName}? This provides organization-wide administrative privileges.`,
                       () => onToggleOrgAdmin(row.userId, true),
                       false,
                     )}
@@ -568,7 +509,7 @@ function AuthorityExpandedPanel({
                   <button
                     onClick={() => handleRequestConfirm(
                       'revoke-global-ca',
-                      `Confirm removal of Global Coverage access from ${row.fullName}?`,
+                      `Remove Global Coverage from ${row.fullName}?`,
                       () => onToggleGlobalCoverageAdmin(row.userId, false),
                     )}
                     disabled={isMutating}
@@ -580,7 +521,7 @@ function AuthorityExpandedPanel({
                   <button
                     onClick={() => handleRequestConfirm(
                       'grant-global-ca',
-                      `Grant Global Coverage access to ${row.fullName}? This provides organization-wide coverage oversight.`,
+                      `Grant Global Coverage to ${row.fullName}? This provides organization-wide coverage oversight.`,
                       () => onToggleGlobalCoverageAdmin(row.userId, true),
                       false,
                     )}
@@ -594,10 +535,9 @@ function AuthorityExpandedPanel({
             </span>
           </div>
         </div>
-        {/* Coverage scope — only show detail if node-scoped */}
         {nodeScopes.length > 0 && (
-          <div className="pt-1.5 border-t border-gray-100 mt-1">
-            <div className="text-[10px] text-gray-400 mb-1">Coverage Scope</div>
+          <div className="pt-1 border-t border-gray-100">
+            <div className="text-[10px] text-gray-400 mb-0.5">Coverage Scope</div>
             <div className="flex flex-wrap gap-1.5">
               {nodeScopes.map((scope, i) => (
                 <span
@@ -621,14 +561,14 @@ function AuthorityExpandedPanel({
         )}
       </div>
 
-      {/* ── Section 2: TEAMS ── */}
+      {/* ── Section 2: Teams ── */}
       {row.teams.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
+        <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5">
           <CollapsibleSection
-            defaultOpen={row.teams.length <= 5}
+            defaultOpen={row.teams.length <= 4}
             title={
               <span className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
                   Teams ({row.teams.length})
                 </span>
                 <span className="text-[11px] text-gray-400 normal-case font-normal">
@@ -637,22 +577,24 @@ function AuthorityExpandedPanel({
               </span>
             }
           >
-            <div className="space-y-1 mt-1">
+            <div className="space-y-px mt-1">
               {row.teams.map(team => {
                 const hasRisk = flaggedNodeIds.has(team.nodeId)
                 return (
                   <div
                     key={team.nodeId}
-                    className={`flex items-center gap-2 text-xs py-0.5 rounded ${
+                    className={`flex items-center gap-2 text-xs py-px rounded ${
                       hasRisk ? 'bg-red-50/60 -mx-1 px-1' : ''
                     } ${onOpenNodeModal ? 'cursor-pointer hover:text-indigo-600' : 'text-gray-600'}`}
                     onClick={() => onOpenNodeModal?.(team.nodeId)}
                   >
                     {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
                     <span className="font-medium">{team.nodeName}</span>
-                    <span className={`px-1.5 py-0.5 text-[10px] rounded ${getChipColor(team.role)}`}>
-                      {team.role}
-                    </span>
+                    {team.role !== 'Member' && (
+                      <span className={`px-1.5 py-0.5 text-[10px] rounded ${getChipColor(team.role)}`}>
+                        {team.role}
+                      </span>
+                    )}
                     {team.isCoverageAdmin && !team.coverageAdminBlocked && (
                       <span className="px-1 py-0.5 text-[10px] font-medium bg-purple-50 text-purple-600 rounded">
                         Coverage Admin
@@ -666,14 +608,14 @@ function AuthorityExpandedPanel({
         </div>
       )}
 
-      {/* ── Section 3: PORTFOLIOS ── */}
+      {/* ── Section 3: Portfolios (grouped by role) ── */}
       {row.portfolios.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
+        <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5">
           <CollapsibleSection
-            defaultOpen={false}
+            defaultOpen={row.portfolios.length <= 4}
             title={
               <span className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
                   Portfolios ({row.portfolios.length})
                 </span>
                 <span className="text-[11px] text-gray-400 normal-case font-normal">
@@ -682,41 +624,71 @@ function AuthorityExpandedPanel({
               </span>
             }
           >
-            <div className="space-y-1 mt-1">
-              {row.portfolios.map(port => {
-                const hasRisk = flaggedNodeIds.has(port.nodeId)
-                return (
-                  <div
-                    key={port.nodeId}
-                    className={`flex items-center gap-2 text-xs py-0.5 rounded ${
-                      hasRisk ? 'bg-red-50/60 -mx-1 px-1' : ''
-                    } text-gray-600`}
-                  >
-                    {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
-                    <span className="font-medium">{port.nodeName}</span>
-                    <span className={`px-1.5 py-0.5 text-[10px] rounded ${getChipColor(port.role)}`}>
-                      {port.role}
-                    </span>
-                    {port.parentTeamName && (
-                      <span className="text-[10px] text-gray-400">via {port.parentTeamName}</span>
-                    )}
+            <div className="space-y-1.5 mt-1">
+              {portfoliosByRole.map(([role, ports]) => (
+                <div key={role}>
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-px">
+                    {role} ({ports.length})
                   </div>
-                )
-              })}
+                  <div className="space-y-px">
+                    {ports.map(port => {
+                      const hasRisk = flaggedNodeIds.has(port.nodeId)
+                      return (
+                        <div
+                          key={port.nodeId}
+                          className={`flex items-center gap-2 text-xs py-px rounded ${
+                            hasRisk ? 'bg-red-50/60 -mx-1 px-1' : ''
+                          } text-gray-600`}
+                        >
+                          {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
+                          <span className="font-medium">{port.nodeName}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </CollapsibleSection>
         </div>
       )}
 
-      {/* ── Section 4: GOVERNANCE RISKS ── */}
+      {/* ── Section 4: Governance Risks (summary-first) ── */}
       {row.riskFlags.length > 0 ? (
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-            Governance Risks
+        <div className="bg-amber-50/50 border border-amber-200/70 rounded-lg px-3 py-1.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+              <span className="text-[11px] font-bold text-gray-700">
+                {row.riskFlags.length} Governance Risk{row.riskFlags.length !== 1 ? 's' : ''}
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                {riskSeverityCounts.high > 0 && (
+                  <span className="text-red-600 font-medium">{riskSeverityCounts.high} High</span>
+                )}
+                {riskSeverityCounts.medium > 0 && (
+                  <span className="text-amber-600 font-medium">{riskSeverityCounts.medium} Medium</span>
+                )}
+                {riskSeverityCounts.low > 0 && (
+                  <span className="text-gray-500 font-medium">{riskSeverityCounts.low} Low</span>
+                )}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRisksExpanded(o => !o)}
+              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+            >
+              {risksExpanded ? 'Hide details' : 'View details'}
+            </button>
           </div>
-          {row.riskFlags.map((flag, i) => (
-            <RiskFlagBanner key={i} flag={flag} onOpenNodeModal={onOpenNodeModal} />
-          ))}
+          {risksExpanded && (
+            <div className="mt-1 space-y-0.5">
+              {row.riskFlags.map((flag, i) => (
+                <RiskFlagRow key={i} flag={flag} onOpenNodeModal={onOpenNodeModal} />
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-[11px] text-gray-400 italic">No governance risks detected</div>
@@ -725,33 +697,45 @@ function AuthorityExpandedPanel({
   )
 }
 
-// ─── Risk flag banner ────────────────────────────────────────────────────
+// ─── Risk action mapping (frontend-only) ─────────────────────────────────
 
-function RiskFlagBanner({
+const RISK_ACTION_MAP: Record<string, string> = {
+  single_point_of_failure: 'Assign backup',
+  over_broad_access: 'Review access',
+  missing_required_admin: 'Assign admin',
+}
+
+// ─── Risk flag row (compact, inside summary) ────────────────────────────
+
+function RiskFlagRow({
   flag,
   onOpenNodeModal,
 }: {
   flag: UserRiskFlag
   onOpenNodeModal?: (nodeId: string) => void
 }) {
-  const colors = {
-    high: 'bg-red-50 border-red-200 text-red-800',
-    medium: 'bg-amber-50 border-amber-200 text-amber-800',
-    low: 'bg-gray-50 border-gray-200 text-gray-600',
-  }
-
+  const actionLabel = RISK_ACTION_MAP[flag.type]
   return (
     <div
-      className={`flex items-start gap-2 px-3 py-2 rounded-md border text-xs ${colors[flag.severity]} ${
-        flag.anchorNodeId && onOpenNodeModal ? 'cursor-pointer hover:opacity-90' : ''
+      className={`flex items-center gap-2 px-2.5 py-1 rounded text-xs text-gray-700 ${
+        flag.anchorNodeId && onOpenNodeModal ? 'cursor-pointer hover:bg-amber-100/50' : ''
       }`}
       onClick={() => flag.anchorNodeId && onOpenNodeModal?.(flag.anchorNodeId)}
     >
-      <SeverityIcon severity={flag.severity} className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-      <div className="min-w-0">
-        <div className="font-medium">{flag.label}</div>
-        <div className="text-[11px] mt-0.5 opacity-80 leading-relaxed">{flag.detail}</div>
+      <SeverityIcon severity={flag.severity} className="w-3 h-3 flex-shrink-0" />
+      <div className="min-w-0 flex-1">
+        <span className="font-medium">{flag.label}</span>
+        <span className="text-[11px] text-gray-500 ml-1">{flag.detail}</span>
       </div>
+      {actionLabel && flag.anchorNodeId && onOpenNodeModal && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOpenNodeModal(flag.anchorNodeId!) }}
+          className="flex-shrink-0 text-[10px] font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
+        >
+          {actionLabel} &rarr;
+        </button>
+      )}
     </div>
   )
 }
@@ -792,15 +776,18 @@ function AuthorityRowComponent({
   row,
   isExpanded,
   onToggle,
+  rowRef,
 }: {
   row: AuthorityRow
   isExpanded: boolean
   onToggle: () => void
+  rowRef?: React.Ref<HTMLTableRowElement>
 }) {
   const Chevron = isExpanded ? ChevronDown : ChevronRight
 
   return (
     <tr
+      ref={rowRef}
       className={`hover:bg-gray-50/50 cursor-pointer transition-colors ${
         row.status === 'suspended' ? 'opacity-60' : ''
       }`}
@@ -836,12 +823,12 @@ function AuthorityRowComponent({
           )}
         </div>
       </td>
-      {/* Portfolio Roles */}
+      {/* Portfolio Roles — derived from row.portfolios (not roleChips) to prevent team-role leakage */}
       <td className="px-4 py-2.5">
         {(() => {
-          const visible = row.roleChips
-            .filter(c => !ADMIN_ROLES.has(c) && !HIDDEN_FUNCTIONAL_ROLES.has(c))
-            .sort(sortFunctionalRoles)
+          const visible = Array.from(
+            new Set(row.portfolios.map(p => p.role).filter(r => !HIDDEN_FUNCTIONAL_ROLES.has(r)))
+          ).sort(sortFunctionalRoles)
           const capped = visible.slice(0, 4)
           const overflow = visible.length - capped.length
           return (
@@ -905,8 +892,9 @@ export function OrgAuthorityMap({
   initialTeamNodeId,
   invitedCount,
   suspendedCount,
-  onSuspendUser,
-  onReactivateUser,
+  focusUserId,
+  focusFilter,
+  onFocusUserHandled,
 }: OrgAuthorityMapProps) {
   const [search, setSearch] = useState(initialSearch || '')
   const [filter, setFilter] = useState<AuthorityFilter>(initialFilter || 'all')
@@ -955,32 +943,87 @@ export function OrgAuthorityMap({
     setExpandedUserId(prev => prev === userId ? null : userId)
   }, [])
 
+  // Cross-navigation: auto-expand focused user from Members tab
+  const focusRowRef = React.useRef<HTMLTableRowElement>(null)
+  useEffect(() => {
+    if (!focusUserId) return
+    // Apply optional filter (e.g. 'flagged') or clear filters
+    const filterMapping: Record<string, AuthorityFilter> = {
+      'flagged': 'flagged',
+      'org_admin': 'org_admin',
+      'coverage_admin': 'coverage_admin',
+      'pm': 'pm',
+    }
+    setFilter(focusFilter ? filterMapping[focusFilter] || 'all' : 'all')
+    setSearch('')
+    setStatusFilter('all')
+    setTeamFilter('')
+    setPortfolioFilter('')
+    setExpandedUserId(focusUserId)
+    onFocusUserHandled?.()
+    // Scroll to focused row after render
+    requestAnimationFrame(() => {
+      focusRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [focusUserId, focusFilter, onFocusUserHandled])
+
+  // Map GovernanceSummaryStrip filter keys to AuthorityFilter keys
+  const handleSummaryFilter = useCallback((chipFilter: string) => {
+    const mapping: Record<string, AuthorityFilter> = {
+      'org-admin': 'org_admin',
+      'coverage-admin': 'coverage_admin',
+      'pm': 'pm',
+      'flagged': 'flagged',
+      'all': 'all',
+    }
+    setFilter(mapping[chipFilter] || 'all')
+  }, [])
+
+  // Reverse mapping for GovernanceSummaryStrip active filter display
+  const summaryActiveFilter = useMemo(() => {
+    const reverseMapping: Record<AuthorityFilter, string> = {
+      'org_admin': 'org-admin',
+      'coverage_admin': 'coverage-admin',
+      'pm': 'pm',
+      'flagged': 'flagged',
+      'all': '',
+    }
+    return reverseMapping[filter] || ''
+  }, [filter])
+
+  const seatCounts: SeatCounts = useMemo(() => ({
+    active: summary.totalUsers,
+    invited: invitedCount ?? 0,
+    suspended: suspendedCount ?? 0,
+  }), [summary.totalUsers, invitedCount, suspendedCount])
+
   const showSeatMeter = invitedCount != null || suspendedCount != null
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-md bg-indigo-50 border border-indigo-200 flex items-center justify-center">
-          <Shield className="w-4 h-4 text-indigo-600" />
+      {/* Header row: title + seat counts */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-md bg-indigo-50 border border-indigo-200 flex items-center justify-center">
+            <Shield className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Access & Roles</h3>
+            <p className="text-xs text-gray-500">Role assignments, access scope, and governance risk</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Access Matrix</h3>
-          <p className="text-xs text-gray-500">Role assignments and access scope across the organization</p>
-        </div>
+        {showSeatMeter && <SeatSummaryBar seats={seatCounts} />}
       </div>
 
-      {/* Seat Meter */}
-      {showSeatMeter && (
-        <SeatMeter
-          activeCount={summary.totalUsers}
-          invitedCount={invitedCount ?? 0}
-          suspendedCount={suspendedCount ?? 0}
-        />
-      )}
-
-      {/* Summary Strip */}
-      <AuthoritySummaryStrip summary={summary} />
+      {/* Governance Summary — clickable chips drive the filter */}
+      <GovernanceSummaryStrip
+        orgAdminCount={summary.orgAdminCount}
+        coverageAdminCount={summary.globalCoverageAdminCount + summary.nodeCoverageAdminCount}
+        pmCount={summary.pmCount}
+        riskFlagCount={summary.flaggedUserCount}
+        activeFilter={summaryActiveFilter}
+        onFilterClick={handleSummaryFilter}
+      />
 
       {/* Filter Bar */}
       <AuthorityFilterBar
@@ -1010,7 +1053,7 @@ export function OrgAuthorityMap({
               <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[140px]">Portfolio Roles</th>
               <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[70px]">Teams</th>
               <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[70px]">Portfolios</th>
-              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Gov. Risk</th>
+              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Risk</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -1020,11 +1063,12 @@ export function OrgAuthorityMap({
                   row={row}
                   isExpanded={expandedUserId === row.userId}
                   onToggle={() => handleToggleExpand(row.userId)}
+                  rowRef={expandedUserId === row.userId ? focusRowRef : undefined}
                 />
                 {expandedUserId === row.userId && (
                   <tr>
                     <td colSpan={6} className="p-0">
-                      <AuthorityExpandedPanel
+                      <AccessSummaryPanel
                         row={row}
                         orgPerms={orgPerms}
                         orgMembers={orgMembers}
@@ -1033,8 +1077,6 @@ export function OrgAuthorityMap({
                         onToggleNodeCoverageAdmin={onToggleNodeCoverageAdmin}
                         isMutating={isMutating}
                         onOpenNodeModal={onOpenNodeModal}
-                        onSuspendUser={onSuspendUser}
-                        onReactivateUser={onReactivateUser}
                       />
                     </td>
                   </tr>

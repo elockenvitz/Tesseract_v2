@@ -931,7 +931,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     staleTime: 5 * 60 * 1000
   })
 
-  // Fetch coverage data
+  // Fetch coverage data (ordered for stable results)
   const { data: coverageData = [] } = useQuery({
     queryKey: ['coverage', assetId],
     queryFn: async () => {
@@ -940,6 +940,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         .select('user_id')
         .eq('asset_id', assetId)
         .eq('is_active', true)
+        .order('user_id', { ascending: true })
 
       if (error) throw error
       return data || []

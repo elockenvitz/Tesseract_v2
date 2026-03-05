@@ -92,8 +92,15 @@ function buildTestInput(overrides: Partial<BuildAuthorityRowsInput> = {}): Build
     })),
     orgGraph,
     teamMemberships: [],
-    portfolioTeamMembers: [],
-    portfolios: [],
+    portfolioTeamMembers: [
+      { portfolio_id: 'port-1', user_id: 'alice', role: 'PM' },
+      { portfolio_id: 'port-1', user_id: 'bob', role: 'Analyst' },
+      { portfolio_id: 'port-2', user_id: 'dave', role: 'PM' },
+    ],
+    portfolios: [
+      { id: 'port-1', name: 'Growth Fund', team_id: 'team-1' },
+      { id: 'port-2', name: 'Macro Fund', team_id: 'team-3' },
+    ],
     globalCoverageAdminUserIds: new Set(['charlie']),
     ...overrides,
   }
@@ -162,13 +169,17 @@ describe('buildAuthorityRows', () => {
     expect(charlie.coverageScopes.some(cs => cs.type === 'node' && cs.nodeId === 'team-2')).toBe(true)
   })
 
-  it('deduplicates roleChips via normalization', () => {
-    // alice has PM on team-1 and Analyst on team-2 — both normalized
+  it('roleChips contain only firm-level and portfolio-level roles (no team roles)', () => {
+    // alice has PM on team-1 and Analyst on team-2 as team roles,
+    // plus PM on portfolio-1 as a portfolio role.
+    // roleChips should include portfolio PM but NOT team-level PM/Analyst.
     const rows = buildAuthorityRows(buildTestInput())
     const alice = rows.find(r => r.userId === 'alice')!
-    const pmCount = alice.roleChips.filter(c => c === 'PM').length
-    expect(pmCount).toBe(1)
-    expect(alice.roleChips).toContain('Analyst')
+    expect(alice.roleChips).toContain('PM') // from portfolioTeamMembers
+    expect(alice.roleChips).toContain('Org Admin') // firm-level
+    // Team roles stay in teams array, not roleChips
+    expect(alice.teams.some(t => t.role === 'PM')).toBe(true)
+    expect(alice.teams.some(t => t.role === 'Analyst')).toBe(true)
   })
 
   it('normalizes role casing in teams array', () => {

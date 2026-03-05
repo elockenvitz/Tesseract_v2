@@ -33,6 +33,7 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { useToast } from '../components/common/Toast'
 import { format } from 'date-fns'
+import { logOrgActivity } from '../lib/org-activity-log'
 
 interface OrgSummary {
   id: string
@@ -215,9 +216,21 @@ export function AdminConsolePage() {
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-console-org-members', selectedOrgId] })
       toast.success('Temporary access granted')
+
+      logOrgActivity({
+        organizationId: variables.orgId,
+        action: 'member.temporary_access_granted',
+        targetType: 'user',
+        targetId: variables.userId,
+        entityType: 'organization_membership',
+        actionType: 'temporary_access_granted',
+        targetUserId: variables.userId,
+        details: { duration_minutes: variables.duration },
+      })
+
       setGrantUserId('')
       setGrantDuration('60')
     },
@@ -237,9 +250,20 @@ export function AdminConsolePage() {
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-console-org-members', selectedOrgId] })
       toast.success('Temporary access revoked')
+
+      logOrgActivity({
+        organizationId: variables.orgId,
+        action: 'member.temporary_access_revoked',
+        targetType: 'user',
+        targetId: variables.userId,
+        entityType: 'organization_membership',
+        actionType: 'temporary_access_revoked',
+        targetUserId: variables.userId,
+        details: { reason: 'Revoked via admin console' },
+      })
     },
     onError: (err: any) => {
       toast.error(err?.message || 'Failed to revoke temporary access')

@@ -504,7 +504,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .select('*, portfolio:portfolios(name, portfolio_id)')
         .eq('asset_id', asset.id)
         .eq('is_active', true)
-        .order('role', { ascending: true }) // primary first, then secondary, then tertiary
+        .order('is_lead', { ascending: false })
+        .order('role', { ascending: true })
+        .order('updated_at', { ascending: false })
       if (error) throw error
       return data
     },

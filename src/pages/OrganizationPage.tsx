@@ -60,7 +60,11 @@ import {
   AlertCircle,
   Minimize2,
   Maximize2,
-  Home
+  Home,
+  Archive,
+  ArchiveRestore,
+  Ban,
+  RotateCcw
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -80,7 +84,7 @@ import { mapMutationError } from '../lib/archived-org-errors'
 import { useOrgGraph } from '../hooks/useOrgGraph'
 import { getRiskCountsBySeverity, computeGovernanceSummary } from '../lib/org-graph'
 import type { CoverageRecord, OrgGraphNode } from '../lib/org-graph'
-import { ROLE_OPTIONS, getFocusOptionsForRole } from '../lib/roles-config'
+import { ROLE_OPTIONS, getFocusOptionsForRole, TEAM_ROLE_OPTIONS, TEAM_FUNCTION_OPTIONS } from '../lib/roles-config'
 import { OrganizationGovernanceHeader } from '../components/organization/OrganizationGovernanceHeader'
 import { HealthPill } from '../components/organization/HealthPill'
 import { OrgChartNodeCard } from '../components/organization/OrgChartNodeCard'
@@ -89,6 +93,11 @@ import { RiskFlagBadge } from '../components/organization/RiskBadge'
 import { OrgNodeDetailsModal } from '../components/organization/OrgNodeDetailsModal'
 import { OrgAuthorityMap } from '../components/organization/OrgAuthorityMap'
 import { buildAuthorityRows, computeAuthoritySummary } from '../lib/authority-map'
+import { AssignPortfolioRolesModal } from '../components/organization/AssignPortfolioRolesModal'
+import type { LinkedPortfolio, PortfolioRoleAssignment } from '../components/organization/AssignPortfolioRolesModal'
+import { DiscardPortfolioModal } from '../components/portfolios/DiscardPortfolioModal'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { logOrgActivity, logOrgActivityBatch } from '../lib/org-activity-log'
 
 interface Organization {
   id: string
@@ -180,6 +189,12 @@ interface Portfolio {
   description: string | null
   portfolio_type: string
   is_active: boolean
+  status?: 'active' | 'archived' | 'discarded'
+  archived_at?: string | null
+  archived_by?: string | null
+  discarded_at?: string | null
+  discarded_by?: string | null
+  lifecycle_reason?: string | null
 }
 
 interface PortfolioMembership {
@@ -387,6 +402,34 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   const [editingPortfolioTeamMember, setEditingPortfolioTeamMember] = useState<PortfolioTeamMember | null>(null)
   const [deletePortfolioTeamConfirm, setDeletePortfolioTeamConfirm] = useState<{isOpen: boolean, member: PortfolioTeamMember | null}>({ isOpen: false, member: null })
 
+  // Portfolio lifecycle state
+  const [portfolioStatusFilter, setPortfolioStatusFilter] = useState<'active' | 'archived' | 'discarded' | 'all'>('active')
+  const [portfolioArchiveConfirm, setPortfolioArchiveConfirm] = useState<{ isOpen: boolean; portfolio: Portfolio | null; action: 'archive' | 'unarchive' }>({ isOpen: false, portfolio: null, action: 'archive' })
+  const [portfolioDiscardTarget, setPortfolioDiscardTarget] = useState<{ id: string; name: string } | null>(null)
+
+  // Portfolio role assignment flow (when adding member to team node)
+  const [pendingTeamMemberAdd, setPendingTeamMemberAdd] = useState<{
+    nodeId: string
+    nodeName: string
+    userId: string
+    userName: string
+    role: string
+    focus?: string
+    isCoverageAdmin?: boolean
+    linkedPortfolios: LinkedPortfolio[]
+  } | null>(null)
+
+  // Team removal confirmation (shows which portfolios will be affected)
+  const [teamRemovalConfirm, setTeamRemovalConfirm] = useState<{
+    isOpen: boolean
+    memberId: string
+    memberName: string
+    teamNodeId: string
+    teamNodeName: string
+    userId: string
+    affectedPortfolios: string[]
+  } | null>(null)
+
   // Teams sub-view mode: structure (org chart), coverage
   type TeamsViewMode = 'structure' | 'coverage'
   const [teamsViewMode, setTeamsViewMode] = useState<TeamsViewMode>(() => {
@@ -403,6 +446,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
     if (saved === 'manage' || saved === 'report') return saved
     return 'manage'
   })
+
+  // Cross-navigation: Members → Governance focus user (cleared after handoff)
+  const [governanceFocusUserId, setGovernanceFocusUserId] = useState<string | null>(null)
+  const [governanceFocusFilter, setGovernanceFocusFilter] = useState<string | null>(null)
 
   // Org chart search & filter state
   const [orgChartSearch, setOrgChartSearch] = useState('')
@@ -670,9 +717,22 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
       // Also invalidate portfolio-specific queries used by Portfolio Tab
-      if (deletePortfolioTeamConfirm.member?.portfolio_id) {
-        queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', deletePortfolioTeamConfirm.member.portfolio_id] })
-        queryClient.invalidateQueries({ queryKey: ['portfolio-team', deletePortfolioTeamConfirm.member.portfolio_id] })
+      const member = deletePortfolioTeamConfirm.member
+      if (member?.portfolio_id) {
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users', member.portfolio_id] })
+        queryClient.invalidateQueries({ queryKey: ['portfolio-team', member.portfolio_id] })
+      }
+      if (organization?.id && member) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'portfolio_team.removed',
+          targetType: 'portfolio',
+          targetId: member.portfolio_id,
+          entityType: 'portfolio_membership',
+          actionType: 'removed',
+          targetUserId: member.user_id,
+          details: { role: member.role, portfolio_id: member.portfolio_id },
+        })
       }
       setDeletePortfolioTeamConfirm({ isOpen: false, member: null })
     },
@@ -691,26 +751,71 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { memberId, role }) => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-team'] })
+      const member = editingPortfolioTeamMember
+      if (organization?.id && member) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'portfolio_team.role_changed',
+          targetType: 'portfolio',
+          targetId: member.portfolio_id,
+          entityType: 'portfolio_membership',
+          actionType: 'role_changed',
+          targetUserId: member.user_id,
+          details: { old_role: member.role, new_role: role, portfolio_id: member.portfolio_id },
+        })
+      }
     },
     onError: (error) => {
       console.error('Failed to update team member:', error)
     }
   })
 
-  // Add portfolio team member mutation
+  // Update org_chart_node_members role/focus
+  const updateNodeMemberMutation = useMutation({
+    mutationFn: async ({ memberId, role, focus, nodeId, userId, oldRole }: { memberId: string; role: string; focus: string | null; nodeId?: string; userId?: string; oldRole?: string }) => {
+      const { error } = await supabase
+        .from('org_chart_node_members')
+        .update({ role, focus })
+        .eq('id', memberId)
+
+      if (error) throw error
+    },
+    onSuccess: (_, { role, nodeId, userId, oldRole }) => {
+      queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      if (organization?.id && nodeId && userId) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node_member.role_changed',
+          targetType: 'team_node',
+          targetId: nodeId,
+          entityType: 'team_membership',
+          actionType: 'role_changed',
+          targetUserId: userId,
+          details: { old_role: oldRole, new_role: role },
+        })
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to update node member:', error)
+    }
+  })
+
+  // Add portfolio team member mutation (direct assignment — no team provenance)
   const addPortfolioTeamMemberMutation = useMutation({
-    mutationFn: async ({ portfolioId, userId, role, focus }: { portfolioId: string; userId: string; role?: string; focus?: string }) => {
+    mutationFn: async ({ portfolioId, userId, role, focus, sourceTeamNodeId }: { portfolioId: string; userId: string; role: string; focus?: string; sourceTeamNodeId?: string | null }) => {
+      if (!role) throw new Error('Portfolio role is required')
       const { data, error } = await supabase
         .from('portfolio_team')
         .insert({
           portfolio_id: portfolioId,
           user_id: userId,
-          role: role || 'Analyst',
-          focus: focus || null
+          role,
+          focus: focus || null,
+          ...(sourceTeamNodeId ? { source_team_node_id: sourceTeamNodeId } : {}),
         })
         .select()
         .single()
@@ -718,14 +823,82 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_, { portfolioId, userId, role, sourceTeamNodeId }) => {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-team'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'portfolio_team.added',
+          targetType: 'portfolio',
+          targetId: portfolioId,
+          entityType: 'portfolio_membership',
+          actionType: 'role_granted',
+          targetUserId: userId,
+          sourceType: sourceTeamNodeId ? 'via_team' : 'direct',
+          sourceId: sourceTeamNodeId || undefined,
+          details: { role, portfolio_id: portfolioId },
+        })
+      }
     },
     onError: (error: any) => {
       alert(`Failed to add team member: ${error.message}`)
     }
+  })
+
+  // Archive / Unarchive portfolio mutation
+  const archivePortfolioMutation = useMutation({
+    mutationFn: async ({ portfolioId, action }: { portfolioId: string; action: 'archive' | 'unarchive' }) => {
+      const rpc = action === 'archive' ? 'archive_portfolio' : 'unarchive_portfolio'
+      const { error } = await supabase.rpc(rpc, { p_portfolio_id: portfolioId })
+      if (error) throw error
+    },
+    onSuccess: (_, { portfolioId, action }) => {
+      toast.success(action === 'archive' ? 'Portfolio archived' : 'Portfolio unarchived')
+      queryClient.invalidateQueries({ queryKey: ['portfolios-org'] })
+      queryClient.invalidateQueries({ queryKey: ['all-portfolios'] })
+      setPortfolioArchiveConfirm({ isOpen: false, portfolio: null, action: 'archive' })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: action === 'archive' ? 'portfolio.archived' : 'portfolio.restored',
+          targetType: 'portfolio',
+          targetId: portfolioId,
+          entityType: 'portfolio',
+          actionType: action === 'archive' ? 'archived' : 'restored',
+        })
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Operation failed')
+    },
+  })
+
+  // Restore portfolio mutation (discarded → active)
+  const restorePortfolioMutation = useMutation({
+    mutationFn: async (portfolioId: string) => {
+      const { error } = await supabase.rpc('restore_portfolio', { p_portfolio_id: portfolioId })
+      if (error) throw error
+    },
+    onSuccess: (_, portfolioId) => {
+      toast.success('Portfolio restored')
+      queryClient.invalidateQueries({ queryKey: ['portfolios-org'] })
+      queryClient.invalidateQueries({ queryKey: ['all-portfolios'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'portfolio.restored',
+          targetType: 'portfolio',
+          targetId: portfolioId,
+          entityType: 'portfolio',
+          actionType: 'restored',
+        })
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Failed to restore portfolio')
+    },
   })
 
   // Fetch access requests (admin only - all pending requests)
@@ -995,11 +1168,12 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   const { data: coverageStatsByTeam = {} } = useQuery({
     queryKey: ['coverage-stats-by-team', orgChartNodes, orgChartNodeLinks, unifiedNodeMembers],
     queryFn: async () => {
-      // Get all coverage records
+      // Get all coverage records (ordered for stable aggregation)
       const { data: coverageData, error: coverageError } = await supabase
         .from('coverage')
         .select('asset_id, user_id')
         .eq('is_active', true)
+        .order('user_id', { ascending: true })
 
       if (coverageError) {
         console.error('Error fetching coverage stats:', coverageError)
@@ -1096,6 +1270,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         .from('coverage')
         .select('asset_id, user_id')
         .eq('is_active', true)
+        .order('user_id', { ascending: true })
       if (error) throw error
       return (data || []) as CoverageRecord[]
     },
@@ -1237,6 +1412,45 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
     return teamPortfolios
       .map(p => p.settings?.portfolio_id)
       .filter((id): id is string => !!id)
+  }
+
+  /** Get all portfolios linked to a team node (direct children + org_chart_node_links). */
+  const getLinkedPortfoliosForTeamNode = (teamNodeId: string): LinkedPortfolio[] => {
+    const results: LinkedPortfolio[] = []
+    const seen = new Set<string>()
+
+    // Direct portfolio children
+    for (const n of orgChartNodes) {
+      if (n.node_type === 'portfolio' && n.parent_id === teamNodeId && n.settings?.portfolio_id) {
+        if (!seen.has(n.id)) {
+          seen.add(n.id)
+          results.push({ nodeId: n.id, portfolioId: n.settings.portfolio_id, name: n.name })
+        }
+      }
+    }
+
+    // Linked via org_chart_node_links
+    for (const link of orgChartNodeLinks) {
+      if (link.linked_node_id === teamNodeId) {
+        const linkedNode = orgChartNodes.find(nd => nd.id === link.node_id)
+        if (linkedNode?.node_type === 'portfolio' && linkedNode.settings?.portfolio_id && !seen.has(linkedNode.id)) {
+          seen.add(linkedNode.id)
+          results.push({ nodeId: linkedNode.id, portfolioId: linkedNode.settings.portfolio_id, name: linkedNode.name })
+        }
+      }
+    }
+
+    return results
+  }
+
+  /** Get portfolio names that will be affected by removing a user from a team node. */
+  const getAffectedPortfoliosForRemoval = (userId: string, teamNodeId: string): string[] => {
+    return portfolioTeamMembers
+      .filter((ptm) => ptm.user_id === userId && ptm.source_team_node_id === teamNodeId)
+      .map((ptm) => {
+        const portfolio = portfolios.find((p) => p.id === ptm.portfolio_id)
+        return portfolio?.name || 'Unknown Portfolio'
+      })
   }
 
   // Coverage settings state for editing
@@ -1618,12 +1832,23 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         p_reason: reason || null,
       })
       if (error) throw error
-      return data
+      return { data, targetUserId, reason }
     },
-    onSuccess: () => {
+    onSuccess: ({ targetUserId, reason }) => {
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
       queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
       queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'member.deactivated',
+          targetType: 'org_member',
+          entityType: 'org_member',
+          actionType: 'updated',
+          targetUserId,
+          details: { reason: reason || undefined },
+        })
+      }
       setShowSuspendModal(null)
     }
   })
@@ -1638,11 +1863,21 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_, { userId }) => {
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
       queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
       queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
       toast.success('Member reactivated')
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'member.reactivated',
+          targetType: 'org_member',
+          entityType: 'org_member',
+          actionType: 'updated',
+          targetUserId: userId,
+        })
+      }
     },
     onError: (error: any) => {
       toast.error(error?.message || 'Failed to reactivate member')
@@ -1850,6 +2085,17 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       setShowAddNodeModal(false)
       setAddNodeParentId(null)
       setInsertBetweenChildIds(null)
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node.created',
+          targetType: 'org_chart_node',
+          targetId: result.newNode.id,
+          details: { name: result.newNode.name, node_type: result.newNode.node_type },
+          entityType: 'team_node',
+          actionType: 'created',
+        })
+      }
     },
     onError: (error) => {
       console.error('Error creating org chart node:', error)
@@ -1905,9 +2151,20 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (data, nodeData) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-nodes'] })
       setEditingNode(null)
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node.updated',
+          targetType: 'org_chart_node',
+          targetId: nodeData.id,
+          details: { name: nodeData.name },
+          entityType: 'team_node',
+          actionType: 'updated',
+        })
+      }
     }
   })
 
@@ -1940,14 +2197,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, nodeId) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-nodes'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node.deleted',
+          targetType: 'org_chart_node',
+          targetId: nodeId,
+          entityType: 'team_node',
+          actionType: 'deleted',
+        })
+      }
     }
   })
 
   // Add member to org chart node mutation
   const addNodeMemberMutation = useMutation({
-    mutationFn: async (memberData: { node_id: string; user_id: string; role: string; focus?: string; is_coverage_admin?: boolean }) => {
+    mutationFn: async (memberData: { node_id: string; user_id: string; role: string; focus?: string; is_coverage_admin?: boolean; node_name?: string }) => {
       const { data, error } = await supabase
         .from('org_chart_node_members')
         .insert({
@@ -1964,9 +2231,21 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_, { node_id, user_id, role, node_name }) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
       queryClient.invalidateQueries({ queryKey: ['user-coverage-admin-nodes'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node_member.added',
+          targetType: 'team_node',
+          targetId: node_id,
+          entityType: 'team_membership',
+          actionType: 'added',
+          targetUserId: user_id,
+          details: { role, node_name },
+        })
+      }
     },
     onError: (error: any) => {
       alert(`Failed to add member: ${error.message}`)
@@ -1975,7 +2254,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
   // Remove member from org chart node mutation
   const removeNodeMemberMutation = useMutation({
-    mutationFn: async (memberId: string) => {
+    mutationFn: async ({ memberId, nodeId, userId, nodeName }: { memberId: string; nodeId?: string; userId?: string; nodeName?: string }) => {
       const { error } = await supabase
         .from('org_chart_node_members')
         .delete()
@@ -1983,9 +2262,193 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { nodeId, userId, nodeName }) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      if (organization?.id && nodeId && userId) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node_member.removed',
+          targetType: 'team_node',
+          targetId: nodeId,
+          entityType: 'team_membership',
+          actionType: 'removed',
+          targetUserId: userId,
+          details: { node_name: nodeName },
+        })
+      }
     }
+  })
+
+  // ── Compound mutation: add member to team node + assign portfolio roles ──
+  const addTeamMemberWithPortfoliosMutation = useMutation({
+    mutationFn: async ({
+      nodeId,
+      userId,
+      role,
+      focus,
+      isCoverageAdmin,
+      portfolioAssignments,
+    }: {
+      nodeId: string
+      userId: string
+      role: string
+      focus?: string
+      isCoverageAdmin?: boolean
+      portfolioAssignments: PortfolioRoleAssignment[]
+    }) => {
+      // 1. Insert org_chart_node_members with team role + function
+      const { error: nodeErr } = await supabase
+        .from('org_chart_node_members')
+        .insert({
+          node_id: nodeId,
+          user_id: userId,
+          role,
+          focus: focus || null,
+          is_coverage_admin: isCoverageAdmin || false,
+        })
+
+      if (nodeErr) {
+        throw new Error(`Failed to add node member: ${nodeErr.message}`)
+      }
+
+      // 2. Insert portfolio_team rows for each linked portfolio with source tracking
+      const portfolioInserts = portfolioAssignments.map((a) => ({
+        portfolio_id: a.portfolioId,
+        user_id: userId,
+        role: a.role,
+        focus: a.focus || null,
+        source_team_node_id: nodeId,
+      }))
+
+      if (portfolioInserts.length > 0) {
+        const { error: ptErr } = await supabase
+          .from('portfolio_team')
+          .insert(portfolioInserts)
+
+        if (ptErr) {
+          throw new Error(`Failed to assign portfolio roles: ${ptErr.message}`)
+        }
+      }
+    },
+    onSuccess: (_, { nodeId, userId, role, portfolioAssignments }) => {
+      queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      queryClient.invalidateQueries({ queryKey: ['user-coverage-admin-nodes'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team'] })
+      if (organization?.id) {
+        const nodeName = orgChartNodes.find(n => n.id === nodeId)?.name
+        const initiator = user?.id
+        const events: import('../types/organization').LogOrgActivityParams[] = [
+          {
+            organizationId: organization.id,
+            action: 'team_node_member.added',
+            targetType: 'team_node',
+            targetId: nodeId,
+            entityType: 'team_membership',
+            actionType: 'added',
+            targetUserId: userId,
+            initiatorUserId: initiator,
+            details: { role, node_name: nodeName },
+          },
+          ...portfolioAssignments.map((a) => ({
+            organizationId: organization!.id,
+            action: 'portfolio_team.added' as const,
+            targetType: 'portfolio' as const,
+            targetId: a.portfolioId,
+            entityType: 'portfolio_membership' as const,
+            actionType: 'role_granted' as const,
+            targetUserId: userId,
+            sourceType: 'via_team' as const,
+            sourceId: nodeId,
+            initiatorUserId: initiator,
+            actorOverride: null as string | null,
+            details: { role: a.role, portfolio_id: a.portfolioId, node_name: nodeName },
+          })),
+        ]
+        logOrgActivityBatch(events)
+      }
+      setPendingTeamMemberAdd(null)
+    },
+    onError: (error: any) => {
+      alert(`Failed to add team member: ${error.message}`)
+    },
+  })
+
+  // ── Compound mutation: remove member from team node + cascade portfolio_team ──
+  const removeTeamMemberWithCascadeMutation = useMutation({
+    mutationFn: async ({
+      memberId,
+      userId,
+      teamNodeId,
+    }: {
+      memberId: string
+      userId: string
+      teamNodeId: string
+    }) => {
+      // 1. Try to delete portfolio_team rows where source_team_node_id matches
+      // (gracefully skip if source_team_node_id column doesn't exist yet — migration pending)
+      try {
+        await supabase
+          .from('portfolio_team')
+          .delete()
+          .eq('user_id', userId)
+          .eq('source_team_node_id', teamNodeId)
+      } catch {
+        // Column may not exist yet; cascade delete is a no-op until migration is applied
+      }
+
+      // 2. Delete the org_chart_node_members row
+      const { error: nodeErr } = await supabase
+        .from('org_chart_node_members')
+        .delete()
+        .eq('id', memberId)
+
+      if (nodeErr) throw nodeErr
+    },
+    onSuccess: (_, { userId, teamNodeId }) => {
+      queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team-with-users'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-team'] })
+      if (organization?.id) {
+        const confirm = teamRemovalConfirm
+        const nodeName = confirm?.teamNodeName || orgChartNodes.find(n => n.id === teamNodeId)?.name
+        const initiator = user?.id
+        const events: import('../types/organization').LogOrgActivityParams[] = [
+          {
+            organizationId: organization.id,
+            action: 'team_node_member.removed',
+            targetType: 'team_node',
+            targetId: teamNodeId,
+            entityType: 'team_membership',
+            actionType: 'removed',
+            targetUserId: userId,
+            initiatorUserId: initiator,
+            details: { node_name: nodeName },
+          },
+          ...(confirm?.affectedPortfolios || []).map((portfolioId) => ({
+            organizationId: organization!.id,
+            action: 'portfolio_team.removed' as const,
+            targetType: 'portfolio' as const,
+            targetId: portfolioId,
+            entityType: 'portfolio_membership' as const,
+            actionType: 'role_revoked' as const,
+            targetUserId: userId,
+            sourceType: 'via_team' as const,
+            sourceId: teamNodeId,
+            initiatorUserId: initiator,
+            actorOverride: null as string | null,
+            details: { node_name: nodeName, cascade: true },
+          })),
+        ]
+        logOrgActivityBatch(events)
+      }
+      setTeamRemovalConfirm(null)
+    },
+    onError: (error: any) => {
+      alert(`Failed to remove team member: ${error.message}`)
+    },
   })
 
   // Toggle coverage admin status for a node member
@@ -1998,9 +2461,22 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { memberId, isCoverageAdmin }) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
       queryClient.invalidateQueries({ queryKey: ['user-coverage-admin-nodes'] })
+      const member = unifiedNodeMembers.find(m => m.id === memberId)
+      if (organization?.id && member) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: isCoverageAdmin ? 'team_node_member.coverage_admin_granted' : 'team_node_member.coverage_admin_revoked',
+          targetType: 'team_node',
+          targetId: member.node_id,
+          entityType: 'team_membership',
+          actionType: isCoverageAdmin ? 'role_granted' : 'role_revoked',
+          targetUserId: member.user_id,
+          details: { is_coverage_admin: isCoverageAdmin },
+        })
+      }
     }
   })
 
@@ -2014,8 +2490,19 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { memberId, isBlocked }) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-node-members'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node_member.coverage_admin_blocked',
+          targetType: 'org_chart_node_member',
+          targetId: memberId,
+          details: { is_blocked: isBlocked },
+          entityType: 'team_membership',
+          actionType: isBlocked ? 'role_revoked' : 'role_granted',
+        })
+      }
     }
   })
 
@@ -2029,9 +2516,20 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { nodeId, hasOverride }) => {
       queryClient.invalidateQueries({ queryKey: ['org-chart-nodes'] })
       queryClient.invalidateQueries({ queryKey: ['coverage-admin-override-nodes'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'team_node.coverage_override_changed',
+          targetType: 'org_chart_node',
+          targetId: nodeId,
+          details: { coverage_admin_override: hasOverride },
+          entityType: 'team_node',
+          actionType: 'updated',
+        })
+      }
     }
   })
 
@@ -2049,10 +2547,21 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         .eq('organization_id', currentOrgId!)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { userId, isOrgAdmin }) => {
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
       queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
       toast.success('Org admin status updated')
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'membership.admin_changed',
+          targetType: 'org_member',
+          entityType: 'org_member',
+          actionType: isOrgAdmin ? 'role_granted' : 'role_revoked',
+          targetUserId: userId,
+          details: { old_is_org_admin: !isOrgAdmin, new_is_org_admin: isOrgAdmin },
+        })
+      }
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to update'),
   })
@@ -2066,9 +2575,20 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         .eq('id', userId)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { userId, isCoverageAdmin }) => {
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
       toast.success('Coverage admin status updated')
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'user.coverage_admin_changed',
+          targetType: 'org_member',
+          entityType: 'org_member',
+          actionType: isCoverageAdmin ? 'role_granted' : 'role_revoked',
+          targetUserId: userId,
+          details: { old_coverage_admin: !isCoverageAdmin, new_coverage_admin: isCoverageAdmin },
+        })
+      }
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to update'),
   })
@@ -2083,9 +2603,20 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         .eq('id', organization.id)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, policy) => {
       queryClient.invalidateQueries({ queryKey: ['organization'] })
       toast.success('Onboarding policy updated')
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'settings.onboarding_policy_changed',
+          targetType: 'organization',
+          targetId: organization.id,
+          details: { new_policy: policy },
+          entityType: 'settings',
+          actionType: 'updated',
+        })
+      }
     },
     onError: (error: any) => {
       toast.error(mapMutationError(error))
@@ -2136,6 +2667,16 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['coverage-settings'] })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'settings.coverage_changed',
+          targetType: 'organization',
+          targetId: organization.id,
+          entityType: 'settings',
+          actionType: 'updated',
+        })
+      }
     }
   })
 
@@ -2208,6 +2749,16 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       setBrandingLogoFile(null)
       setIsBrandingLocked(true)
       toast({ title: 'Settings saved', variant: 'success' })
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'settings.branding_changed',
+          targetType: 'organization',
+          targetId: organization.id,
+          entityType: 'settings',
+          actionType: 'updated',
+        })
+      }
     },
     onError: (err: any) => {
       toast({ title: mapMutationError(err, 'update'), variant: 'error' })
@@ -2263,10 +2814,23 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
     t.description?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const filteredPortfolios = portfolios.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredPortfolios = portfolios.filter(p => {
+    const pStatus = p.status || (p.archived_at ? 'archived' : 'active')
+    if (portfolioStatusFilter === 'active' && pStatus !== 'active') return false
+    if (portfolioStatusFilter === 'archived' && pStatus !== 'archived') return false
+    if (portfolioStatusFilter === 'discarded' && pStatus !== 'discarded') return false
+    return (
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  })
+
+  const portfolioStatusCounts = {
+    active: portfolios.filter(p => (p.status || (p.archived_at ? 'archived' : 'active')) === 'active').length,
+    archived: portfolios.filter(p => (p.status || (p.archived_at ? 'archived' : 'active')) === 'archived').length,
+    discarded: portfolios.filter(p => p.status === 'discarded').length,
+    all: portfolios.length,
+  }
 
   // Helper to check if current user is a member of an org chart node (team)
   const isUserMemberOfNode = (nodeId: string): boolean => {
@@ -2287,10 +2851,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
   const tabs: { id: TabType; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
     { id: 'teams', label: 'Teams', icon: <Users className="w-4 h-4" /> },
-    { id: 'people', label: 'People', icon: <UserCircle className="w-4 h-4" /> },
+    { id: 'people', label: 'Members', icon: <UserCircle className="w-4 h-4" /> },
     { id: 'portfolios', label: 'Portfolios', icon: <Briefcase className="w-4 h-4" /> },
     { id: 'requests', label: 'Requests', icon: <Bell className="w-4 h-4" />, adminOnly: true },
-    { id: 'access', label: 'Access', icon: <Shield className="w-4 h-4" />, adminOnly: true },
+    { id: 'access', label: 'Governance', icon: <Shield className="w-4 h-4" />, adminOnly: true },
     { id: 'activity', label: 'Activity', icon: <Clock className="w-4 h-4" />, adminOnly: true },
     { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" />, adminOnly: true }
   ]
@@ -2581,12 +3145,6 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            {isOrgAdmin && activeTab === 'people' && (
-              <Button onClick={() => setShowAddContactModal(true)}>
-                <UserPlus className="w-4 h-4 mr-2" />
-                Add Person
-              </Button>
-            )}
             {!isOrgAdmin && (() => {
               const pendingCount = myAccessRequests.filter(r => r.status === 'pending').length
               const myTeamIds = teamMemberships.filter(tm => tm.user_id === user?.id).map(tm => tm.team_id)
@@ -2747,7 +3305,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors border border-indigo-200"
                   >
                     <Shield className="w-3.5 h-3.5" />
-                    Manage access
+                    Governance
                   </button>
                 )}
               </div>
@@ -3034,8 +3592,31 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                             }}
                             onAddMember={(n) => setShowAddNodeMemberModal(n)}
                             onRemoveMember={(memberId) => {
-                              if (window.confirm('Remove this member from the node?')) {
-                                removeNodeMemberMutation.mutate(memberId)
+                              const member = unifiedNodeMembers.find(m => m.id === memberId)
+                              if (member) {
+                                const affected = getAffectedPortfoliosForRemoval(member.user_id, member.node_id)
+                                const memberName = member.user?.full_name || member.user?.email || 'Unknown'
+                                const nodeName = orgChartNodes.find(n => n.id === member.node_id)?.name || 'this node'
+
+                                if (affected.length > 0) {
+                                  setTeamRemovalConfirm({
+                                    isOpen: true,
+                                    memberId,
+                                    memberName,
+                                    teamNodeId: member.node_id,
+                                    teamNodeName: nodeName,
+                                    userId: member.user_id,
+                                    affectedPortfolios: affected,
+                                  })
+                                } else {
+                                  if (window.confirm(`Remove ${memberName} from ${nodeName}?`)) {
+                                    removeNodeMemberMutation.mutate({ memberId, nodeId: member.node_id, userId: member.user_id, nodeName })
+                                  }
+                                }
+                              } else {
+                                if (window.confirm('Remove this member from the node?')) {
+                                  removeNodeMemberMutation.mutate({ memberId })
+                                }
                               }
                             }}
                             getNodeMembers={getNodeMembers}
@@ -3235,24 +3816,69 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
             </div>
           )}
 
-          {/* People Tab */}
+          {/* Members Tab */}
           {activeTab === 'people' && (
             <OrgPeopleTab
               organization={organization}
               isOrgAdmin={isOrgAdmin}
-              teamMemberships={teamMemberships}
-              portfolioMemberships={portfolioMemberships}
+              authorityRows={authorityRows}
+              activeOrgAdminCount={authoritySummary.orgAdminCount}
               onUserClick={onUserClick}
-              onSuspendUser={(member) => setShowSuspendModal(member)}
+              onSuspendUser={(member, reason) => suspendUserMutation.mutate({
+                membershipId: member.id,
+                reason,
+              })}
               onAddContact={() => setShowAddContactModal(true)}
               contacts={contacts}
               onDeleteContact={(id) => deleteContactMutation.mutate(id)}
+              onNavigateToGovernance={(userId) => {
+                setActiveTab('access')
+                setAccessSubTab('manage')
+                setGovernanceFocusUserId(userId)
+              }}
+              onNavigateToGovernanceFlagged={(userId) => {
+                setActiveTab('access')
+                setAccessSubTab('manage')
+                setGovernanceFocusUserId(userId)
+                setGovernanceFocusFilter('flagged')
+              }}
             />
           )}
 
           {/* Portfolios Tab */}
           {activeTab === 'portfolios' && (
             <div className="space-y-3">
+              {/* Status filter pills */}
+              {(portfolioStatusCounts.archived > 0 || portfolioStatusCounts.discarded > 0) && (
+                <div className="flex items-center gap-2">
+                  {(['active', 'archived', ...(isOrgAdmin && portfolioStatusCounts.discarded > 0 ? ['discarded'] as const : []), 'all'] as const).map((filter) => {
+                    const count = portfolioStatusCounts[filter]
+                    const isSelected = portfolioStatusFilter === filter
+                    return (
+                      <button
+                        key={filter}
+                        onClick={() => setPortfolioStatusFilter(filter)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                          isSelected
+                            ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {filter === 'active' && 'Active'}
+                        {filter === 'archived' && 'Archived'}
+                        {filter === 'discarded' && 'Discarded'}
+                        {filter === 'all' && 'All'}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                          isSelected ? 'bg-indigo-200/70 text-indigo-800' : 'bg-gray-200 text-gray-500'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
               {filteredPortfolios.length === 0 ? (
                 <div className="text-center py-12">
                   <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -3263,6 +3889,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 filteredPortfolios.map(portfolio => {
                   const teamMembers = getPortfolioTeamMembers(portfolio.id)
                   const team = teams.find(t => t.id === portfolio.team_id)
+                  const pStatus = portfolio.status || (portfolio.archived_at ? 'archived' : 'active')
+                  const isArchived = pStatus === 'archived'
+                  const isDiscarded = pStatus === 'discarded'
+                  const isInactive = isArchived || isDiscarded
 
                   // Group members by role
                   const membersByRole: { [role: string]: PortfolioTeamMember[] } = {}
@@ -3272,32 +3902,98 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   })
 
                   return (
-                    <Card key={portfolio.id} className="p-4">
+                    <Card key={portfolio.id} className={isInactive ? 'p-4 opacity-70 border-dashed' : 'p-4'}>
                       <div className="flex items-start justify-between">
                         <div className="flex items-start space-x-3 flex-1">
-                          <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                            <Briefcase className="w-5 h-5 text-green-600" />
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isInactive ? 'bg-gray-200' : 'bg-green-100'}`}>
+                            {isDiscarded
+                              ? <Ban className="w-5 h-5 text-gray-400" />
+                              : isArchived
+                                ? <Archive className="w-5 h-5 text-gray-400" />
+                                : <Briefcase className="w-5 h-5 text-green-600" />
+                            }
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <h3 className="font-medium text-gray-900">{portfolio.name}</h3>
-                              {isOrgAdmin && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedPortfolioForTeam(portfolio)
-                                    setEditingPortfolioTeamMember(null)
-                                    setShowAddPortfolioTeamMemberModal(true)
-                                  }}
-                                >
-                                  <UserPlus className="w-3.5 h-3.5 mr-1" />
-                                  Add Member
-                                </Button>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <h3 className={`font-medium ${isInactive ? 'text-gray-500' : 'text-gray-900'}`}>{portfolio.name}</h3>
+                                {isDiscarded && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded">
+                                    Discarded
+                                  </span>
+                                )}
+                                {isArchived && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                                    Archived
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {/* Add Member — blocked for non-active portfolios */}
+                                {isOrgAdmin && !isInactive && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedPortfolioForTeam(portfolio)
+                                      setEditingPortfolioTeamMember(null)
+                                      setShowAddPortfolioTeamMemberModal(true)
+                                    }}
+                                  >
+                                    <UserPlus className="w-3.5 h-3.5 mr-1" />
+                                    Add Member
+                                  </Button>
+                                )}
+                                {/* Lifecycle actions */}
+                                {isOrgAdmin && (
+                                  <>
+                                    {isDiscarded ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => restorePortfolioMutation.mutate(portfolio.id)}
+                                        title="Restore"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      </Button>
+                                    ) : (
+                                      <>
+                                        {isArchived ? (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPortfolioArchiveConfirm({ isOpen: true, portfolio, action: 'unarchive' })}
+                                            title="Unarchive"
+                                          >
+                                            <ArchiveRestore className="w-3.5 h-3.5" />
+                                          </Button>
+                                        ) : (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPortfolioArchiveConfirm({ isOpen: true, portfolio, action: 'archive' })}
+                                            title="Archive"
+                                          >
+                                            <Archive className="w-3.5 h-3.5" />
+                                          </Button>
+                                        )}
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => setPortfolioDiscardTarget({ id: portfolio.id, name: portfolio.name })}
+                                          title="Discard"
+                                          className="text-red-500 hover:text-red-700 hover:border-red-300"
+                                        >
+                                          <Ban className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                             {portfolio.description && (
-                              <p className="text-sm text-gray-500">{portfolio.description}</p>
+                              <p className={`text-sm ${isInactive ? 'text-gray-400' : 'text-gray-500'}`}>{portfolio.description}</p>
                             )}
                             <div className="flex items-center space-x-2 mt-2">
                               {team && (
@@ -3326,7 +4022,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                           {m.focus && (
                                             <span className="ml-1 text-gray-400">({m.focus})</span>
                                           )}
-                                          {isOrgAdmin && (
+                                          {isOrgAdmin && !isArchived && (
                                             <div className="hidden group-hover:flex items-center ml-1 space-x-0.5">
                                               <button
                                                 onClick={() => {
@@ -3375,27 +4071,33 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
           {/* Access Hub (Manage Access + Access Report) */}
           {activeTab === 'access' && orgPerms.canViewAccessSection && (
             <div className="max-w-6xl mx-auto space-y-4">
-              {/* Sub-tab switcher */}
-              <div className="inline-flex items-center bg-gray-100 rounded p-0.5">
-                {([
-                  { key: 'manage' as AccessSubTab, label: 'Manage Access' },
-                  { key: 'report' as AccessSubTab, label: 'Access Report' },
-                ]).map(v => (
-                  <button
-                    key={v.key}
-                    onClick={() => setAccessSubTab(v.key)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                      accessSubTab === v.key
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {v.label}
-                  </button>
-                ))}
+              {/* Governance header + sub-tab switcher */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Governance</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Manage roles, access scope, and governance risk</p>
+                </div>
+                <div className="inline-flex items-center bg-gray-100 rounded p-0.5">
+                  {([
+                    { key: 'manage' as AccessSubTab, label: 'Manage' },
+                    { key: 'report' as AccessSubTab, label: 'Report' },
+                  ]).map(v => (
+                    <button
+                      key={v.key}
+                      onClick={() => setAccessSubTab(v.key)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                        accessSubTab === v.key
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Manage Access sub-tab — editable access matrix */}
+              {/* Manage sub-tab — Access & Roles */}
               {accessSubTab === 'manage' && (
                 <OrgAuthorityMap
                   rows={authorityRows}
@@ -3418,19 +4120,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                     setModalNodeId(nodeId)
                   }}
                   initialTeamNodeId={initialAccessFilter?.teamNodeId}
+                  focusUserId={governanceFocusUserId}
+                  focusFilter={governanceFocusFilter}
+                  onFocusUserHandled={() => { setGovernanceFocusUserId(null); setGovernanceFocusFilter(null) }}
                   invitedCount={pendingInviteCount}
                   suspendedCount={suspendedCount}
-                  onSuspendUser={orgPerms.canManageOrgStructure ? (userId) => {
-                    const member = (orgMembers || []).find((m: any) => m.user_id === userId)
-                    if (member) setShowSuspendModal(member)
-                  } : undefined}
-                  onReactivateUser={orgPerms.canManageOrgStructure ? (userId) => {
-                    reactivateMemberMutation.mutate({ userId })
-                  } : undefined}
                 />
               )}
 
-              {/* Access Report sub-tab — read-only report with CSV export */}
+              {/* Report sub-tab — read-only governance report with CSV export */}
               {accessSubTab === 'report' && (
                 <OrgAccessTab
                   orgMembers={orgMembers}
@@ -4398,18 +5096,120 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
           availableUsers={orgMembers}
           onClose={() => setShowAddNodeMemberModal(null)}
           onSave={(userId, role, focus, isCoverageAdmin) => {
-            addNodeMemberMutation.mutate({
-              node_id: showAddNodeMemberModal.id,
-              user_id: userId,
-              role,
-              focus,
-              is_coverage_admin: isCoverageAdmin
-            }, {
-              onSuccess: () => setShowAddNodeMemberModal(null)
-            })
+            // For team-type nodes, check if there are linked portfolios
+            const linked = isTeamLikeNode(showAddNodeMemberModal)
+              ? getLinkedPortfoliosForTeamNode(showAddNodeMemberModal.id)
+              : []
+
+            if (linked.length > 0) {
+              // Show portfolio role assignment modal
+              const member = orgMembers.find(m => m.user_id === userId)
+              setPendingTeamMemberAdd({
+                nodeId: showAddNodeMemberModal.id,
+                nodeName: showAddNodeMemberModal.name,
+                userId,
+                userName: member?.user?.full_name || member?.user?.email || 'Unknown',
+                role,
+                focus,
+                isCoverageAdmin,
+                linkedPortfolios: linked,
+              })
+              setShowAddNodeMemberModal(null)
+            } else {
+              // No linked portfolios — add directly
+              addNodeMemberMutation.mutate({
+                node_id: showAddNodeMemberModal.id,
+                user_id: userId,
+                role,
+                focus,
+                is_coverage_admin: isCoverageAdmin,
+              }, {
+                onSuccess: () => setShowAddNodeMemberModal(null)
+              })
+            }
           }}
           isLoading={addNodeMemberMutation.isPending}
         />
+      )}
+
+      {/* Portfolio Role Assignment Modal (team member add flow) */}
+      {pendingTeamMemberAdd && (
+        <AssignPortfolioRolesModal
+          teamName={pendingTeamMemberAdd.nodeName}
+          userName={pendingTeamMemberAdd.userName}
+          linkedPortfolios={pendingTeamMemberAdd.linkedPortfolios}
+          onConfirm={(assignments) => {
+            addTeamMemberWithPortfoliosMutation.mutate({
+              nodeId: pendingTeamMemberAdd.nodeId,
+              userId: pendingTeamMemberAdd.userId,
+              role: pendingTeamMemberAdd.role,
+              focus: pendingTeamMemberAdd.focus,
+              isCoverageAdmin: pendingTeamMemberAdd.isCoverageAdmin,
+              portfolioAssignments: assignments,
+            })
+          }}
+          onCancel={() => setPendingTeamMemberAdd(null)}
+          isLoading={addTeamMemberWithPortfoliosMutation.isPending}
+        />
+      )}
+
+      {/* Team Removal Confirmation Modal */}
+      {teamRemovalConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Remove from {teamRemovalConfirm.teamNodeName}</h3>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-gray-600">
+                Removing <strong>{teamRemovalConfirm.memberName}</strong> from this team
+                {teamRemovalConfirm.affectedPortfolios.length > 0 ? ' will also remove access to:' : '.'}
+              </p>
+              {teamRemovalConfirm.affectedPortfolios.length > 0 && (
+                <ul className="space-y-1 ml-4">
+                  {teamRemovalConfirm.affectedPortfolios.map((name) => (
+                    <li key={name} className="flex items-center gap-2 text-sm text-gray-700">
+                      <Briefcase className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {teamRemovalConfirm.affectedPortfolios.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Access to other portfolios will remain unchanged.
+                </p>
+              )}
+            </div>
+            <div className="p-6 pt-0 flex justify-end space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setTeamRemovalConfirm(null)}
+                disabled={removeTeamMemberWithCascadeMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  removeTeamMemberWithCascadeMutation.mutate({
+                    memberId: teamRemovalConfirm.memberId,
+                    userId: teamRemovalConfirm.userId,
+                    teamNodeId: teamRemovalConfirm.teamNodeId,
+                  })
+                }}
+                loading={removeTeamMemberWithCascadeMutation.isPending}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Node Detail Modal — replaced by ManageNodeDrawer.
@@ -4477,20 +5277,71 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
             onSaveNode={(data) => updateNodeMutation.mutate(data)}
             onAddMember={(nodeId, userId, role, focus) => {
               if (raw?.node_type === 'portfolio' && raw.settings?.portfolio_id) {
+                if (!role) { alert('A role is required for portfolio members.'); return }
                 addPortfolioTeamMemberMutation.mutate({ portfolioId: raw.settings.portfolio_id, userId, role, focus })
               } else {
-                addNodeMemberMutation.mutate({ node_id: nodeId, user_id: userId, role: role || '', focus })
+                // Check for linked portfolios on team-type nodes
+                const linked = raw && isTeamLikeNode(raw)
+                  ? getLinkedPortfoliosForTeamNode(nodeId)
+                  : []
+
+                if (linked.length > 0) {
+                  const member = orgMembers.find(m => m.user_id === userId)
+                  setPendingTeamMemberAdd({
+                    nodeId,
+                    nodeName: raw?.name || graphNode.name,
+                    userId,
+                    userName: member?.user?.full_name || member?.user?.email || 'Unknown',
+                    role: role || '',
+                    focus,
+                    isCoverageAdmin: false,
+                    linkedPortfolios: linked,
+                  })
+                  setModalNodeId(null)
+                } else {
+                  addNodeMemberMutation.mutate({ node_id: nodeId, user_id: userId, role: role || '', focus })
+                }
               }
             }}
             onRemoveMember={(memberId) => {
               if (raw?.node_type === 'portfolio') {
                 deletePortfolioTeamMemberMutation.mutate(memberId)
               } else {
-                removeNodeMemberMutation.mutate(memberId)
+                // For team nodes, use cascade removal
+                const member = unifiedNodeMembers.find(m => m.id === memberId)
+                if (member) {
+                  const affected = getAffectedPortfoliosForRemoval(member.user_id, member.node_id)
+                  const memberName = member.user?.full_name || member.user?.email || 'Unknown'
+                  const nodeName = orgChartNodes.find(n => n.id === member.node_id)?.name || 'this team'
+
+                  if (affected.length > 0) {
+                    setTeamRemovalConfirm({
+                      isOpen: true,
+                      memberId,
+                      memberName,
+                      teamNodeId: member.node_id,
+                      teamNodeName: nodeName,
+                      userId: member.user_id,
+                      affectedPortfolios: affected,
+                    })
+                    setModalNodeId(null)
+                  } else {
+                    if (window.confirm(`Remove ${memberName} from ${nodeName}?`)) {
+                      removeNodeMemberMutation.mutate({ memberId, nodeId: member.node_id, userId: member.user_id, nodeName })
+                    }
+                  }
+                } else {
+                  removeNodeMemberMutation.mutate({ memberId })
+                }
               }
             }}
             onUpdateMember={(memberId, role, focus) => {
-              updatePortfolioTeamMemberMutation.mutate({ memberId, role, focus })
+              const member = unifiedNodeMembers.find(m => m.id === memberId)
+              if (member && (member as any)._source === 'org_chart') {
+                updateNodeMemberMutation.mutate({ memberId, role, focus, nodeId: member.node_id, userId: member.user_id, oldRole: member.role })
+              } else {
+                updatePortfolioTeamMemberMutation.mutate({ memberId, role, focus })
+              }
             }}
             onToggleCoverageAdmin={(memberId, isCoverageAdmin) => {
               toggleNodeMemberCoverageAdminMutation.mutate({ memberId, isCoverageAdmin })
@@ -4639,6 +5490,41 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
           </div>
         </div>
       )}
+
+      {/* Portfolio Archive / Unarchive Confirmation */}
+      <ConfirmDialog
+        isOpen={portfolioArchiveConfirm.isOpen}
+        onClose={() => setPortfolioArchiveConfirm({ isOpen: false, portfolio: null, action: 'archive' })}
+        onConfirm={() => {
+          if (portfolioArchiveConfirm.portfolio) {
+            archivePortfolioMutation.mutate({
+              portfolioId: portfolioArchiveConfirm.portfolio.id,
+              action: portfolioArchiveConfirm.action,
+            })
+          }
+        }}
+        title={portfolioArchiveConfirm.action === 'archive' ? 'Archive Portfolio' : 'Unarchive Portfolio'}
+        message={
+          portfolioArchiveConfirm.action === 'archive'
+            ? `"${portfolioArchiveConfirm.portfolio?.name}" will be hidden from active views and become read-only. You can unarchive it later.`
+            : `"${portfolioArchiveConfirm.portfolio?.name}" will be restored to active status.`
+        }
+        confirmText={portfolioArchiveConfirm.action === 'archive' ? 'Archive' : 'Unarchive'}
+        variant={portfolioArchiveConfirm.action === 'archive' ? 'warning' : 'info'}
+        isLoading={archivePortfolioMutation.isPending}
+      />
+
+      {/* Portfolio Discard Modal */}
+      <DiscardPortfolioModal
+        isOpen={!!portfolioDiscardTarget}
+        onClose={() => setPortfolioDiscardTarget(null)}
+        portfolio={portfolioDiscardTarget}
+        organizationId={organization?.id}
+        onArchiveInstead={portfolioDiscardTarget ? () => {
+          const p = portfolios.find(pp => pp.id === portfolioDiscardTarget.id)
+          if (p) setPortfolioArchiveConfirm({ isOpen: true, portfolio: p, action: 'archive' })
+        } : undefined}
+      />
     </div>
   )
 }
@@ -5096,6 +5982,11 @@ function AddMemberModal({ team, existingMembers, availableUsers, onClose, onSave
   )
 }
 
+/** Team-like nodes auto-assign "Member" role and skip the role selector — portfolio roles are set in AssignPortfolioRolesModal. */
+function isTeamLikeNode(node: OrgChartNode): boolean {
+  return node.node_type === 'team' || node.node_type === 'division' || node.node_type === 'department'
+}
+
 interface AddNodeMemberModalProps {
   node: OrgChartNode
   existingMembers: OrgChartNodeMember[]
@@ -5107,7 +5998,9 @@ interface AddNodeMemberModalProps {
 
 function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, onSave, isLoading }: AddNodeMemberModalProps) {
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [role, setRole] = useState('')
+  const teamLike = isTeamLikeNode(node)
+  const [role, setRole] = useState(teamLike ? 'Member' : '')
+  const [teamFunction, setTeamFunction] = useState('')
   const [focus, setFocus] = useState('')
   const [isCoverageAdmin, setIsCoverageAdmin] = useState(false)
 
@@ -5151,35 +6044,68 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-            <select
-              value={role}
-              onChange={(e) => {
-                setRole(e.target.value)
-                setFocus('')
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="">Select a role...</option>
-              {roleOptions.map(r => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </div>
+          {teamLike ? (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Team Role *</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  {TEAM_ROLE_OPTIONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Focus</label>
-            <select
-              value={focus}
-              onChange={(e) => setFocus(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-            >
-              {focusOptions.map(f => (
-                <option key={f.value} value={f.value}>{f.label}</option>
-              ))}
-            </select>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Function</label>
+                <select
+                  value={teamFunction}
+                  onChange={(e) => setTeamFunction(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">None (optional)</option>
+                  {TEAM_FUNCTION_OPTIONS.map(f => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                <select
+                  value={role}
+                  onChange={(e) => {
+                    setRole(e.target.value)
+                    setFocus('')
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Select a role...</option>
+                  {roleOptions.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Focus</label>
+                <select
+                  value={focus}
+                  onChange={(e) => setFocus(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  {focusOptions.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           {/* Coverage Admin Checkbox */}
           <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
@@ -5218,7 +6144,7 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
         <div className="flex justify-end space-x-3 mt-6">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() => onSave(selectedUserId, role, focus || undefined, isCoverageAdmin)}
+            onClick={() => onSave(selectedUserId, role, (teamLike ? teamFunction : focus) || undefined, isCoverageAdmin)}
             disabled={!selectedUserId || !role || isLoading}
             loading={isLoading}
           >
@@ -6395,6 +7321,7 @@ function NodeDetailModal({
 
   const currentColor = isEditing ? editColor : node.color
   const isPortfolioNode = node.node_type === 'portfolio'
+  const isTeamLike = isTeamLikeNode(node)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -6573,7 +7500,35 @@ function NodeDetailModal({
                     })}
                   </select>
                 </div>
-                {isPortfolioNode && (
+                {isTeamLike ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Team Role</label>
+                      <select
+                        value={memberRole}
+                        onChange={(e) => setMemberRole(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        {TEAM_ROLE_OPTIONS.map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Function</label>
+                      <select
+                        value={memberFocus}
+                        onChange={(e) => setMemberFocus(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="">None (optional)</option>
+                        {TEAM_FUNCTION_OPTIONS.map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                ) : isPortfolioNode ? (
                   <>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Role (optional)</label>
@@ -6625,7 +7580,7 @@ function NodeDetailModal({
                       </div>
                     )}
                   </>
-                )}
+                ) : null}
                 <div className="flex justify-end space-x-2">
                   <button
                     onClick={() => setShowAddMember(false)}
@@ -6654,7 +7609,7 @@ function NodeDetailModal({
                   const isEditingThisMember = editingMemberId === member.id
 
                   // If editing this member, show inline edit form with auto-save
-                  if (isEditingThisMember && isEditing && isPortfolioNode) {
+                  if (isEditingThisMember && isEditing && (isPortfolioNode || isTeamLike)) {
                     const roleFocusOptions = getFocusOptionsForRole(editMemberRole)
                     const currentFocuses = editMemberFocus ? editMemberFocus.split(', ').filter(Boolean) : []
 
@@ -6696,47 +7651,87 @@ function NodeDetailModal({
                           </button>
                         </div>
 
-                        {/* Role dropdown - auto-saves */}
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
-                          <select
-                            value={editMemberRole}
-                            onChange={(e) => {
-                              const newRole = e.target.value
-                              setEditMemberRole(newRole)
-                              setEditMemberFocus('')
-                              // Auto-save on role change (clear focus since options differ per role)
-                              onUpdateMember(member.id, newRole, null)
-                            }}
-                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                          >
-                            <option value="">Select role...</option>
-                            {ROLE_OPTIONS.map(r => (
-                              <option key={r} value={r}>{r}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Focus multi-select pills - auto-saves */}
-                        {roleFocusOptions.length > 0 && (
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
-                            <div className="flex flex-wrap gap-1.5">
-                              {roleFocusOptions.map(focus => (
-                                <button
-                                  key={focus}
-                                  onClick={() => toggleFocus(focus)}
-                                  className={`px-2 py-1 text-xs rounded-full border transition-colors ${
-                                    currentFocuses.includes(focus)
-                                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                                  }`}
-                                >
-                                  {focus}
-                                </button>
-                              ))}
+                        {isTeamLike ? (
+                          <>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Team Role</label>
+                              <select
+                                value={editMemberRole}
+                                onChange={(e) => {
+                                  const newRole = e.target.value
+                                  setEditMemberRole(newRole)
+                                  onUpdateMember(member.id, newRole, editMemberFocus || null)
+                                }}
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              >
+                                {TEAM_ROLE_OPTIONS.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
                             </div>
-                          </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Function</label>
+                              <select
+                                value={editMemberFocus}
+                                onChange={(e) => {
+                                  const newFunc = e.target.value
+                                  setEditMemberFocus(newFunc)
+                                  onUpdateMember(member.id, editMemberRole, newFunc || null)
+                                }}
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              >
+                                <option value="">None</option>
+                                {TEAM_FUNCTION_OPTIONS.map(f => (
+                                  <option key={f} value={f}>{f}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* Role dropdown - auto-saves */}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                              <select
+                                value={editMemberRole}
+                                onChange={(e) => {
+                                  const newRole = e.target.value
+                                  setEditMemberRole(newRole)
+                                  setEditMemberFocus('')
+                                  // Auto-save on role change (clear focus since options differ per role)
+                                  onUpdateMember(member.id, newRole, null)
+                                }}
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              >
+                                <option value="">Select role...</option>
+                                {ROLE_OPTIONS.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Focus multi-select pills - auto-saves */}
+                            {roleFocusOptions.length > 0 && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {roleFocusOptions.map(focus => (
+                                    <button
+                                      key={focus}
+                                      onClick={() => toggleFocus(focus)}
+                                      className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                                        currentFocuses.includes(focus)
+                                          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                      }`}
+                                    >
+                                      {focus}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )
@@ -6753,18 +7748,18 @@ function NodeDetailModal({
                         </div>
                         <div>
                           <p className="text-sm font-medium text-gray-900">{displayName}</p>
-                          {isPortfolioNode && member.role && <p className="text-xs text-gray-500">{member.role}</p>}
+                          {(isPortfolioNode || isTeamLike) && member.role && <p className="text-xs text-gray-500">{member.role}{member.focus ? ` · ${member.focus}` : ''}</p>}
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {isPortfolioNode && member.focus && (
+                        {isPortfolioNode && !isTeamLike && member.focus && (
                           <div className="flex flex-wrap gap-1">
                             {member.focus.split(', ').map((f, idx) => (
                               <span key={idx} className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">{f}</span>
                             ))}
                           </div>
                         )}
-                        {isEditing && isAdmin && isPortfolioNode && (
+                        {isEditing && isAdmin && (isPortfolioNode || isTeamLike) && (
                           <button
                             onClick={() => {
                               setEditingMemberId(member.id)

@@ -11,6 +11,7 @@ import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { useToast } from '../common/Toast'
 import type { AccessRequest } from '../../types/organization'
+import { logOrgActivity } from '../../lib/org-activity-log'
 
 interface OrgRequestsTabProps {
   isOrgAdmin: boolean
@@ -92,6 +93,17 @@ export function OrgRequestsTab({ isOrgAdmin, organizationId }: OrgRequestsTabPro
         toast.success('Request approved', 'Membership has been provisioned')
       } else {
         toast.info('Request rejected')
+      }
+      if (organizationId) {
+        logOrgActivity({
+          organizationId,
+          action: 'access_request.reviewed',
+          targetType: 'access_request',
+          targetId: variables.requestId,
+          entityType: 'access_request',
+          actionType: variables.status === 'approved' ? 'approved' : 'rejected',
+          details: { request_type: variables.requestType, status: variables.status, notes: variables.notes },
+        })
       }
     },
     onError: (error: any) => {

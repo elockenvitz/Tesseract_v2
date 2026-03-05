@@ -249,20 +249,45 @@ export function buildAuthorityRows(input: BuildAuthorityRowsInput): AuthorityRow
       }
     }
 
-    // Team assignments (from org chart node members where node is team-type)
+    // Team assignments — direct non-portfolio memberships + inferred parent
+    // team membership from portfolio nodes (child membership rolls up).
     const teams: TeamAssignment[] = []
+    const teamIdsSeen = new Set<string>()
     for (const nm of userNodeMems) {
       const node = orgGraph.nodes.get(nm.node_id)
       if (!node) continue
-      // Include all node types — the org chart IS the team structure
-      teams.push({
-        nodeId: nm.node_id,
-        nodeName: node.name,
-        role: normalizeRole(nm.role),
-        nodePath: getNodePathNames(nm.node_id),
-        isCoverageAdmin: nm.is_coverage_admin || false,
-        coverageAdminBlocked: nm.coverage_admin_blocked || false,
-      })
+
+      if (node.nodeType === 'portfolio') {
+        // Infer parent team membership: if the portfolio's parent is a team
+        // node, count the user as a member of that team.
+        if (node.parentId && !teamIdsSeen.has(node.parentId)) {
+          const parent = orgGraph.nodes.get(node.parentId)
+          if (parent && parent.nodeType === 'team') {
+            teamIdsSeen.add(parent.id)
+            teams.push({
+              nodeId: parent.id,
+              nodeName: parent.name,
+              role: 'Member', // inferred, no direct team role
+              nodePath: getNodePathNames(parent.id),
+              isCoverageAdmin: false,
+              coverageAdminBlocked: false,
+            })
+          }
+        }
+        continue
+      }
+
+      if (!teamIdsSeen.has(nm.node_id)) {
+        teamIdsSeen.add(nm.node_id)
+        teams.push({
+          nodeId: nm.node_id,
+          nodeName: node.name,
+          role: normalizeRole(nm.role),
+          nodePath: getNodePathNames(nm.node_id),
+          isCoverageAdmin: nm.is_coverage_admin || false,
+          coverageAdminBlocked: nm.coverage_admin_blocked || false,
+        })
+      }
     }
 
     // Portfolio assignments (from portfolio_team)
@@ -280,14 +305,13 @@ export function buildAuthorityRows(input: BuildAuthorityRowsInput): AuthorityRow
       })
     }
 
-    // Deduplicated role chips (normalized)
+    // Deduplicated role chips — firm-level + portfolio-level only.
+    // Team-level roles (Head, Lead, etc.) live in the teams array and
+    // are rendered exclusively in the Teams section to prevent scope leakage.
     const chipSet = new Set<string>()
     if (isOrgAdmin) chipSet.add('Org Admin')
     if (isGlobalCoverageAdmin || coverageScopes.some(cs => cs.type === 'node')) {
       chipSet.add('Coverage Admin')
-    }
-    for (const t of teams) {
-      chipSet.add(t.role) // already normalized above
     }
     for (const p of portfolioAssignments) {
       chipSet.add(p.role) // already normalized above

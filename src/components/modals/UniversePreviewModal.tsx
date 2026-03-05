@@ -36,6 +36,8 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             .from('coverage')
             .select('asset_id')
             .in('user_id', rule.values)
+            .eq('is_active', true)
+            .order('asset_id', { ascending: true })
           console.log(`✅ Analyst filter found ${coverageAssets?.length || 0} assets`)
           return coverageAssets?.map(c => c.asset_id) || []
 

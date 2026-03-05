@@ -86,15 +86,18 @@ export function ThesisContainer({
     return firstName || 'My View'
   }, [user])
 
-  // Fetch coverage data for this asset
+  // Fetch coverage data for this asset (ordered deterministically)
   const { data: coverageData = [] } = useQuery({
     queryKey: ['asset-coverage', assetId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select('user_id, analyst_name, role')
+        .select('user_id, analyst_name, role, is_lead, updated_at')
         .eq('asset_id', assetId)
         .eq('is_active', true)
+        .order('is_lead', { ascending: false })
+        .order('role', { ascending: true })
+        .order('updated_at', { ascending: false })
       if (error) throw error
       return (data || []) as CoverageAnalyst[]
     },

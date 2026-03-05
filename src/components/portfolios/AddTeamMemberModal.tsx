@@ -8,6 +8,8 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { SearchableSelect } from '../ui/SearchableSelect'
 import { ROLE_OPTIONS, getFocusOptionsForRole } from '../../lib/roles-config'
+import { useOrganization } from '../../contexts/OrganizationContext'
+import { logOrgActivity } from '../../lib/org-activity-log'
 
 interface AddTeamMemberModalProps {
   isOpen: boolean
@@ -43,6 +45,7 @@ export function AddTeamMemberModal({
   const [focus, setFocus] = useState('')
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
 
   // Sync form state when editingMember changes
   useEffect(() => {
@@ -174,6 +177,32 @@ export function AddTeamMemberModal({
         // Also invalidate the org-wide query used by OrganizationPage
         queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] }),
       ])
+
+      if (currentOrgId) {
+        if (editingMember) {
+          logOrgActivity({
+            organizationId: currentOrgId,
+            action: 'portfolio_team.role_changed',
+            targetType: 'portfolio',
+            targetId: portfolioId,
+            entityType: 'portfolio_membership',
+            actionType: 'role_changed',
+            targetUserId: editingMember.user_id,
+            details: { old_role: editingMember.role, new_role: role, portfolio_name: portfolioName },
+          })
+        } else if (selectedUser) {
+          logOrgActivity({
+            organizationId: currentOrgId,
+            action: 'portfolio_team.added',
+            targetType: 'portfolio',
+            targetId: portfolioId,
+            entityType: 'portfolio_membership',
+            actionType: 'role_granted',
+            targetUserId: selectedUser.id,
+            details: { role, portfolio_name: portfolioName },
+          })
+        }
+      }
 
       // reset form
       setSelectedUser(null)

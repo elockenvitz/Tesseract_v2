@@ -1207,7 +1207,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
           *,
           assets(id, symbol, company_name)
         `)
-        .in('change_type', ['created', 'analyst_changed', 'deleted', 'dates_changed', 'coverage_added', 'historical_added'])
+        .in('change_type', ['created', 'analyst_changed', 'deleted', 'dates_changed', 'coverage_added', 'historical_added', 'role_change'])
+        .order('changed_at', { ascending: false })
         .limit(100)
 
       if (error) {
@@ -1682,7 +1683,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
         .insert({
           ...request,
           requested_by: user?.id,
-          status: 'pending'
+          status: 'pending',
+          organization_id: currentOrgId,
         })
 
       if (error) throw error
@@ -1724,7 +1726,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             user_id: request.requested_user_id,
             analyst_name: request.requested_analyst_name,
             start_date: getLocalDateString(),
-            is_active: true
+            is_active: true,
+            organization_id: currentOrgId,
           })
         if (error) throw error
       } else if (request.request_type === 'change') {
@@ -1887,7 +1890,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       // Process new coverages
       for (const newCoverage of pendingNewCoverages) {
         const { id, fromCoverageId, ...insertData } = newCoverage
-        const { error } = await supabase.from('coverage').insert(insertData)
+        const { error } = await supabase.from('coverage').insert({ ...insertData, organization_id: currentOrgId })
         if (error) {
           console.error('Error inserting coverage:', error)
           errors.push(`Insert failed: ${error.message}`)
@@ -8114,7 +8117,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       notes: addingCoverage.notes || null,
                       team_id: userTeams?.[0]?.id || null,
                       visibility: coverageSettings?.default_visibility || 'team',
-                      is_lead: coverageSettings?.enable_hierarchy ? addingCoverage.isLead : false
+                      is_lead: coverageSettings?.enable_hierarchy ? addingCoverage.isLead : false,
+                      organization_id: currentOrgId
                     }
 
                     const { error } = await supabase
@@ -8783,7 +8787,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       role: 'primary',
                       notes: primaryExistsConfirm.notes || null,
                       team_id: userTeams?.[0]?.id || null,
-                      visibility: coverageSettings?.default_visibility || 'team'
+                      visibility: coverageSettings?.default_visibility || 'team',
+                      organization_id: currentOrgId
                     }
 
                     const { error } = await supabase
@@ -8887,7 +8892,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       notes: existingCoverageConfirm.notes || null,
                       team_id: userTeams?.[0]?.id || null,
                       visibility: coverageSettings?.default_visibility || 'team',
-                      is_lead: coverageSettings?.enable_hierarchy ? existingCoverageConfirm.isLead : false
+                      is_lead: coverageSettings?.enable_hierarchy ? existingCoverageConfirm.isLead : false,
+                      organization_id: currentOrgId
                     }
 
                     const { error } = await supabase
@@ -8941,7 +8947,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       notes: existingCoverageConfirm.notes || null,
                       team_id: userTeams?.[0]?.id || null,
                       visibility: coverageSettings?.default_visibility || 'team',
-                      is_lead: coverageSettings?.enable_hierarchy ? existingCoverageConfirm.isLead : false
+                      is_lead: coverageSettings?.enable_hierarchy ? existingCoverageConfirm.isLead : false,
+                      organization_id: currentOrgId
                     }
 
                     const { error } = await supabase

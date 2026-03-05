@@ -1,17 +1,22 @@
 /**
- * OrgPeopleTab — People tab extracted from OrganizationPage.
- * Server-side paginated member list with search, admin toggles,
- * suspend/unsuspend, and contacts sub-view.
+ * OrgPeopleTab — "Members" directory tab.
+ *
+ * Lightweight member directory focused on identity + seats + status + basic
+ * admin actions. Role / access changes live in Governance tab.
+ *
+ * Layout:
+ *   Header: subtitle + search + seat counts + Invite button
+ *   Table: name/email, status pill, role pill, mini metrics, actions
+ *   Contacts sub-view (toggle)
  */
 
 import React, { useState } from 'react'
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { logOrgActivity } from '../../lib/org-activity-log'
 import { useAuth } from '../../hooks/useAuth'
 import {
   UserCircle,
-  Briefcase,
-  Crown,
   Search,
   Mail,
   Phone,
@@ -19,25 +24,25 @@ import {
   Trash2,
   AtSign,
   ExternalLink,
-  LogIn,
   UserX,
-  AlertTriangle,
-  Shield,
-  Users,
   Send,
   XCircle,
   Clock,
+  ArrowRight,
+  AlertTriangle,
+  AlertCircle,
+  Info,
 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { useToast } from '../common/Toast'
+import { StatusPill, RoleBadge, SeatSummaryBar } from './OrgBadges'
+import type { AuthorityRow } from '../../lib/authority-map'
 import type {
   Organization,
   OrganizationMembership,
   OrganizationContact,
   OrganizationInvite,
-  TeamMembership,
-  PortfolioMembership,
   UserProfileData,
 } from '../../types/organization'
 
@@ -46,17 +51,23 @@ const PAGE_SIZE = 25
 interface OrgPeopleTabProps {
   organization: Organization | null
   isOrgAdmin: boolean
-  teamMemberships: TeamMembership[]
-  portfolioMemberships: PortfolioMembership[]
+  /** Authority rows from the same source as Governance — used for consistent team/portfolio/risk counts */
+  authorityRows: AuthorityRow[]
+  /** Number of currently active org admins — used for last-admin guardrail */
+  activeOrgAdminCount: number
   onUserClick?: (user: { id: string; full_name: string }) => void
   /** Render the suspend modal (kept in parent to share with other tabs) */
-  onSuspendUser: (member: OrganizationMembership) => void
+  onSuspendUser: (member: OrganizationMembership, reason: string) => void
   /** Render the add-contact modal */
   onAddContact: () => void
   /** Contacts list (fetched in parent, shared with other features) */
   contacts: OrganizationContact[]
   /** Delete contact handler */
   onDeleteContact: (contactId: string) => void
+  /** Cross-nav: navigate to Governance → Manage, focused on a user */
+  onNavigateToGovernance?: (userId: string) => void
+  /** Cross-nav: navigate to Governance → Manage, focused on a user with flagged filter */
+  onNavigateToGovernanceFlagged?: (userId: string) => void
 }
 
 // Transform a view row into OrganizationMembership
@@ -95,13 +106,15 @@ function mapViewRow(row: any): OrganizationMembership {
 export function OrgPeopleTab({
   organization,
   isOrgAdmin,
-  teamMemberships,
-  portfolioMemberships,
+  authorityRows,
+  activeOrgAdminCount,
   onUserClick,
   onSuspendUser,
   onAddContact,
   contacts,
   onDeleteContact,
+  onNavigateToGovernance,
+  onNavigateToGovernanceFlagged,
 }: OrgPeopleTabProps) {
   const { user } = useAuth()
   const toast = useToast()
@@ -109,11 +122,14 @@ export function OrgPeopleTab({
 
   const [searchTerm, setSearchTerm] = useState('')
   const [peopleView, setPeopleView] = useState<'users' | 'contacts'>('users')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'invited' | 'suspended'>('all')
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [reactivateTarget, setReactivateTarget] = useState<OrganizationMembership | null>(null)
   const [reactivateReason, setReactivateReason] = useState('')
+  const [suspendTarget, setSuspendTarget] = useState<OrganizationMembership | null>(null)
+  const [suspendReason, setSuspendReason] = useState('')
 
   // ─── Pending invites query (admin only) ───────────────────────
   const { data: pendingInvites = [] } = useQuery({
@@ -145,6 +161,16 @@ export function OrgPeopleTab({
       queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
       toast.success('Invite sent', `Invitation sent to ${inviteEmail}`)
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'invite.created',
+          targetType: 'invite',
+          entityType: 'invite',
+          actionType: 'created',
+          details: { email: inviteEmail.trim().toLowerCase() },
+        })
+      }
       setInviteEmail('')
       setShowInviteModal(false)
     },
@@ -161,9 +187,19 @@ export function OrgPeopleTab({
         .eq('id', inviteId)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, inviteId) => {
       queryClient.invalidateQueries({ queryKey: ['organization-invites'] })
       toast.info('Invite cancelled')
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'invite.cancelled',
+          targetType: 'invite',
+          targetId: inviteId,
+          entityType: 'invite',
+          actionType: 'deleted',
+        })
+      }
     },
     onError: (error: any) => {
       toast.error(error?.message || 'Failed to cancel invite')
@@ -211,15 +247,21 @@ export function OrgPeopleTab({
   const allMembers = membersData?.pages.flatMap((p) => p.rows) ?? []
   const totalCount = membersData?.pages[0]?.totalCount ?? 0
 
-  // Derived lists
-  const activeMembers = allMembers.filter((m) => m.status === 'active')
-  const suspendedMembers = allMembers.filter((m) => m.status === 'inactive')
-  const adminMembers = activeMembers.filter(
-    (m) => m.is_org_admin || m.user?.coverage_admin
-  )
-  const regularMembers = activeMembers.filter(
-    (m) => !m.is_org_admin && !m.user?.coverage_admin
-  )
+  // ─── Derived counts ───────────────────────────────────────────
+  const activeCount = allMembers.filter((m) => m.status === 'active').length
+  const suspendedCount = allMembers.filter((m) => m.status === 'inactive').length
+  const invitedCount = pendingInvites.length
+
+  // ─── Filtered + sorted member list ────────────────────────────
+  const displayMembers = React.useMemo(() => {
+    let list = [...allMembers]
+
+    // Status filter
+    if (statusFilter === 'active') list = list.filter((m) => m.status === 'active')
+    else if (statusFilter === 'suspended') list = list.filter((m) => m.status === 'inactive')
+
+    return list
+  }, [allMembers, statusFilter])
 
   // Filtered contacts (client-side, list is small)
   const filteredContacts = contacts.filter(
@@ -230,7 +272,7 @@ export function OrgPeopleTab({
       c.title?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  // ─── Mutations ───────────────────────────────────────────────
+  // ─── Mutations ────────────────────────────────────────────────
   const reactivateMemberMutation = useMutation({
     mutationFn: async ({ userId, reason }: { userId: string; reason?: string }) => {
       const { data, error } = await supabase.rpc('reactivate_org_member', {
@@ -240,11 +282,22 @@ export function OrgPeopleTab({
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_, { userId, reason }) => {
       queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
       queryClient.invalidateQueries({ queryKey: ['organization-members'] })
       queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
       toast.success('Member reactivated')
+      if (organization?.id) {
+        logOrgActivity({
+          organizationId: organization.id,
+          action: 'member.reactivated',
+          targetType: 'org_member',
+          entityType: 'org_member',
+          actionType: 'updated',
+          targetUserId: userId,
+          details: { reason: reason || undefined },
+        })
+      }
       setReactivateTarget(null)
       setReactivateReason('')
     },
@@ -253,641 +306,113 @@ export function OrgPeopleTab({
     },
   })
 
-  const updateUserPermissionsMutation = useMutation({
-    mutationFn: async ({
-      userId,
-      permissions,
-    }: {
-      userId: string
-      permissions: { coverage_admin?: boolean; is_org_admin?: boolean }
-    }) => {
-      // Frontend guard: prevent last-admin demotion
-      if (permissions.is_org_admin === false) {
-        const activeAdminCount = allMembers.filter(
-          (m) => m.is_org_admin && m.status === 'active'
-        ).length
-        if (activeAdminCount <= 1) {
-          throw new Error(
-            'Cannot remove the last org admin. Promote another user first.'
-          )
-        }
-      }
-
-      if (permissions.coverage_admin !== undefined) {
-        const { error: userError } = await supabase
-          .from('users')
-          .update({ coverage_admin: permissions.coverage_admin })
-          .eq('id', userId)
-        if (userError) throw userError
-      }
-
-      if (permissions.is_org_admin !== undefined && organization) {
-        const { error: membershipError } = await supabase
-          .from('organization_memberships')
-          .update({ is_org_admin: permissions.is_org_admin })
-          .eq('user_id', userId)
-          .eq('organization_id', organization.id)
-        if (membershipError) throw membershipError
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organization-members-paged'] })
-      queryClient.invalidateQueries({ queryKey: ['organization-members'] })
-      queryClient.invalidateQueries({ queryKey: ['org-admin-status'] })
-      toast.success('Permissions updated')
-    },
-    onError: (error: any) => {
-      toast.error(error?.message || 'Failed to update permissions')
-    },
-  })
-
-  // ─── Helpers ─────────────────────────────────────────────────
-  const getUserTeams = (userId: string) =>
-    teamMemberships.filter((tm) => tm.user_id === userId)
-  const getUserPortfolios = (userId: string) =>
-    portfolioMemberships.filter((pm) => pm.user_id === userId)
+  // ─── Authority row lookup (single source of truth for counts) ─
+  const authorityByUser = React.useMemo(() => {
+    const map = new Map<string, AuthorityRow>()
+    for (const row of authorityRows) map.set(row.userId, row)
+    return map
+  }, [authorityRows])
 
   const formatProfileValue = (value: string) =>
     value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
-  const userTypeColors: Record<string, string> = {
-    investor: 'bg-emerald-100 text-emerald-700',
-    operations: 'bg-blue-100 text-blue-700',
-    compliance: 'bg-amber-100 text-amber-700',
-  }
+  const getInitials = (name: string | null | undefined) =>
+    (name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
 
-  // ─── Shared member card renderer (admin + regular) ───────────
-  function renderMemberCard(
-    member: OrganizationMembership,
-    variant: 'admin' | 'regular'
-  ) {
-    const userTeams = getUserTeams(member.user_id)
-    const userPortfolios = getUserPortfolios(member.user_id)
-    const profileInfo = member.profile
-    const isExpanded = expandedUserId === member.user_id
-
-    const avatarBg =
-      variant === 'admin'
-        ? 'bg-indigo-600'
-        : 'bg-primary-600'
-
-    return (
-      <div
-        key={member.id}
-        className={`${
-          variant === 'admin'
-            ? 'hover:bg-indigo-50/50'
-            : 'hover:bg-gray-50'
-        } transition-colors`}
-      >
-        <div className="px-4 py-3 flex items-center justify-between">
-          {/* Left: User info */}
-          <div className="flex items-center space-x-3 min-w-0 flex-1">
-            <div
-              className={`w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center flex-shrink-0`}
-            >
-              <span className="text-white text-sm font-semibold">
-                {member.user?.full_name
-                  ?.split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase() || '?'}
-              </span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() =>
-                    setExpandedUserId(isExpanded ? null : member.user_id)
-                  }
-                  className={`font-medium text-gray-900 text-sm truncate ${
-                    variant === 'admin'
-                      ? 'hover:text-indigo-600'
-                      : 'hover:text-primary-600'
-                  } transition-colors text-left`}
-                >
-                  {member.user?.full_name}
-                </button>
-                {onUserClick && member.user_id && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onUserClick({
-                        id: member.user_id,
-                        full_name: member.user?.full_name || 'Unknown',
-                      })
-                    }}
-                    className={`p-0.5 text-gray-400 ${
-                      variant === 'admin'
-                        ? 'hover:text-indigo-600'
-                        : 'hover:text-primary-600'
-                    } transition-colors`}
-                    title="Open user profile"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </button>
-                )}
-                {profileInfo?.user_type && (
-                  <span
-                    className={`px-1.5 py-0.5 text-[10px] rounded ${
-                      userTypeColors[profileInfo.user_type] ||
-                      'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    {formatProfileValue(profileInfo.user_type)}
-                  </span>
-                )}
-                <span className="text-xs text-gray-400 truncate hidden sm:inline">
-                  {member.user?.email}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Center: Team / Portfolio badges */}
-          <div className="hidden md:flex items-center space-x-1.5 flex-shrink-0 mx-4">
-            {userTeams.slice(0, 2).map((tm) => (
-              <span
-                key={tm.id}
-                className="px-1.5 py-0.5 text-[10px] rounded flex items-center"
-                style={{
-                  backgroundColor: `${tm.team?.color || '#6366f1'}15`,
-                  color: tm.team?.color || '#6366f1',
-                }}
-              >
-                {tm.team?.name}
-              </span>
-            ))}
-            {userTeams.length > 2 && (
-              <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
-                +{userTeams.length - 2}
-              </span>
-            )}
-            {variant === 'regular' && (
-              <>
-                {userPortfolios.slice(0, 2).map((pm) => (
-                  <span
-                    key={pm.id}
-                    className="px-1.5 py-0.5 text-[10px] bg-green-50 text-green-700 rounded flex items-center"
-                  >
-                    {pm.portfolio?.name}
-                  </span>
-                ))}
-                {userPortfolios.length > 2 && (
-                  <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
-                    +{userPortfolios.length - 2}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Right: Permission toggles & Actions */}
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            {member.user_id === user?.id ? (
-              <div className="flex items-center space-x-1">
-                {member.is_org_admin && (
-                  <span
-                    className="p-1.5 bg-indigo-100 text-indigo-700 rounded"
-                    title="Org Admin"
-                  >
-                    <Crown className="w-4 h-4" />
-                  </span>
-                )}
-                {member.user?.coverage_admin && (
-                  <span
-                    className="p-1.5 bg-purple-100 text-purple-700 rounded"
-                    title="Coverage Admin"
-                  >
-                    <Shield className="w-4 h-4" />
-                  </span>
-                )}
-              </div>
-            ) : isOrgAdmin ? (
-              <>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    updateUserPermissionsMutation.mutate({
-                      userId: member.user_id,
-                      permissions: { is_org_admin: !member.is_org_admin },
-                    })
-                  }}
-                  disabled={updateUserPermissionsMutation.isPending}
-                  className={`p-1.5 rounded transition-colors ${
-                    member.is_org_admin
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'text-gray-300 hover:text-indigo-600 hover:bg-indigo-50'
-                  }`}
-                  title={
-                    member.is_org_admin
-                      ? 'Remove Org Admin'
-                      : 'Make Org Admin'
-                  }
-                >
-                  <Crown className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    updateUserPermissionsMutation.mutate({
-                      userId: member.user_id,
-                      permissions: {
-                        coverage_admin: !member.user?.coverage_admin,
-                      },
-                    })
-                  }}
-                  disabled={updateUserPermissionsMutation.isPending}
-                  className={`p-1.5 rounded transition-colors ${
-                    member.user?.coverage_admin
-                      ? 'bg-purple-100 text-purple-700'
-                      : 'text-gray-300 hover:text-purple-600 hover:bg-purple-50'
-                  }`}
-                  title={
-                    member.user?.coverage_admin
-                      ? 'Remove Coverage Admin'
-                      : 'Make Coverage Admin'
-                  }
-                >
-                  <Shield className="w-4 h-4" />
-                </button>
-                <div className="w-px h-5 bg-gray-200" />
-                <button
-                  onClick={() => onSuspendUser(member)}
-                  className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                  title="Suspend access"
-                >
-                  <UserX className="w-4 h-4" />
-                </button>
-              </>
-            ) : variant === 'admin' ? (
-              <div className="flex items-center space-x-1">
-                {member.is_org_admin && (
-                  <span
-                    className="p-1.5 bg-indigo-100 text-indigo-700 rounded"
-                    title="Org Admin"
-                  >
-                    <Crown className="w-4 h-4" />
-                  </span>
-                )}
-                {member.user?.coverage_admin && (
-                  <span
-                    className="p-1.5 bg-purple-100 text-purple-700 rounded"
-                    title="Coverage Admin"
-                  >
-                    <Shield className="w-4 h-4" />
-                  </span>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Expanded Profile Details */}
-        {isExpanded && profileInfo && (
-          <div
-            className={`px-4 pb-3 pt-1 ml-11 border-t ${
-              variant === 'admin' ? 'border-indigo-100' : 'border-gray-100'
-            }`}
-          >
-            <div className="flex flex-wrap gap-2 text-xs">
-              {member.title && (
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-500">Title:</span>
-                  <span className="text-gray-700">{member.title}</span>
-                </div>
-              )}
-              {renderProfileTags(profileInfo)}
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ─── Profile tag renderer ────────────────────────────────────
-  function renderProfileTags(profileInfo: UserProfileData) {
-    const tags: React.ReactNode[] = []
-
-    if (profileInfo.user_type === 'investor') {
-      if (profileInfo.sector_focus?.length > 0) {
-        tags.push(
-          <div key="sectors" className="flex items-center gap-1 flex-wrap">
-            <span className="text-gray-500">Sectors:</span>
-            {profileInfo.sector_focus.map((s: string) => (
-              <span key={s} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded">
-                {formatProfileValue(s)}
-              </span>
-            ))}
-          </div>
-        )
-      }
-      if (profileInfo.investment_style?.length > 0) {
-        tags.push(
-          <div key="style" className="flex items-center gap-1 flex-wrap">
-            <span className="text-gray-500">Style:</span>
-            {profileInfo.investment_style.map((s: string) => (
-              <span key={s} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded">
-                {formatProfileValue(s)}
-              </span>
-            ))}
-          </div>
-        )
-      }
-      if (profileInfo.market_cap_focus?.length > 0) {
-        tags.push(
-          <div key="mcap" className="flex items-center gap-1 flex-wrap">
-            <span className="text-gray-500">Market Cap:</span>
-            {profileInfo.market_cap_focus.map((m: string) => (
-              <span key={m} className="px-1.5 py-0.5 bg-cyan-50 text-cyan-600 rounded">
-                {formatProfileValue(m)}
-              </span>
-            ))}
-          </div>
-        )
-      }
-      if (profileInfo.geography_focus?.length > 0) {
-        tags.push(
-          <div key="geo" className="flex items-center gap-1 flex-wrap">
-            <span className="text-gray-500">Geography:</span>
-            {profileInfo.geography_focus.map((g: string) => (
-              <span key={g} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded">
-                {formatProfileValue(g)}
-              </span>
-            ))}
-          </div>
-        )
-      }
-      if (profileInfo.time_horizon?.length > 0) {
-        tags.push(
-          <div key="horizon" className="flex items-center gap-1 flex-wrap">
-            <span className="text-gray-500">Horizon:</span>
-            {profileInfo.time_horizon.map((t: string) => (
-              <span key={t} className="px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded">
-                {formatProfileValue(t)}
-              </span>
-            ))}
-          </div>
-        )
-      }
-    }
-
-    if (
-      profileInfo.user_type === 'operations' &&
-      profileInfo.ops_departments?.length > 0
-    ) {
-      tags.push(
-        <div key="depts" className="flex items-center gap-1 flex-wrap">
-          <span className="text-gray-500">Departments:</span>
-          {profileInfo.ops_departments.map((d: string) => (
-            <span key={d} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
-              {formatProfileValue(d)}
-            </span>
-          ))}
-        </div>
-      )
-    }
-
-    if (
-      profileInfo.user_type === 'compliance' &&
-      profileInfo.compliance_areas?.length > 0
-    ) {
-      tags.push(
-        <div key="areas" className="flex items-center gap-1 flex-wrap">
-          <span className="text-gray-500">Areas:</span>
-          {profileInfo.compliance_areas.map((a: string) => (
-            <span key={a} className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded">
-              {formatProfileValue(a)}
-            </span>
-          ))}
-        </div>
-      )
-    }
-
-    return tags
-  }
-
-  // ─── Render ──────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      {/* Search Bar + Invite Button */}
-      <div className="flex items-center space-x-3">
-        <div className="relative max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search people..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-          />
+    <div className="max-w-5xl mx-auto space-y-4">
+      {/* ── Header: subtitle + search + seats + invite ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Members</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Invite, suspend, and manage organization membership</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <SeatSummaryBar seats={{ active: activeCount, invited: invitedCount, suspended: suspendedCount }} />
+            {isOrgAdmin && (
+              <Button size="sm" onClick={() => setShowInviteModal(true)}>
+                <Send className="w-3.5 h-3.5 mr-1.5" />
+                Invite
+              </Button>
+            )}
+          </div>
         </div>
-        {isOrgAdmin && (
-          <Button size="sm" onClick={() => setShowInviteModal(true)}>
-            <Send className="w-3.5 h-3.5 mr-1.5" />
-            Invite User
-          </Button>
-        )}
+
+        {/* Search + filters */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search members..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+            />
+          </div>
+
+          {/* Status filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          >
+            <option value="all">All statuses</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+
+          {/* View toggle: Members / Contacts */}
+          <div className="inline-flex items-center bg-gray-100 rounded p-0.5 ml-auto">
+            <button
+              onClick={() => setPeopleView('users')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                peopleView === 'users'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Members
+              <span className="ml-1 text-gray-400">{totalCount}</span>
+            </button>
+            <button
+              onClick={() => setPeopleView('contacts')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                peopleView === 'contacts'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Contacts
+              <span className="ml-1 text-gray-400">{contacts.length}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* My Access Summary (for non-admins) */}
-      {!isOrgAdmin && user && (
-        <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-indigo-900 flex items-center">
-                <Shield className="w-4 h-4 mr-2" />
-                My Access
-              </h3>
-              <p className="text-xs text-indigo-700 mt-1">
-                Your current permissions and memberships
-              </p>
-            </div>
-            {(() => {
-              const myMembership = allMembers.find(
-                (m) => m.user_id === user.id
-              )
-              return (
-                myMembership?.user?.coverage_admin && (
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                    <Shield className="w-3 h-3 mr-1" />
-                    Coverage Admin
-                  </span>
-                )
-              )
-            })()}
-          </div>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Teams */}
-            <div className="bg-white rounded-lg p-3 border border-indigo-100">
-              <div className="flex items-center space-x-2 mb-2">
-                <Users className="w-4 h-4 text-indigo-600" />
-                <span className="text-xs font-medium text-gray-700">
-                  Teams
-                </span>
-              </div>
-              {(() => {
-                const myTeams = teamMemberships.filter(
-                  (tm) => tm.user_id === user.id
-                )
-                return myTeams.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {myTeams.map((tm) => (
-                      <span
-                        key={tm.id}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs"
-                        style={{
-                          backgroundColor: `${
-                            tm.team?.color || '#6366f1'
-                          }15`,
-                          color: tm.team?.color || '#6366f1',
-                        }}
-                      >
-                        {tm.team?.name}
-                        {tm.is_team_admin && (
-                          <Crown className="w-2.5 h-2.5 ml-1" />
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">No team memberships</p>
-                )
-              })()}
-            </div>
-            {/* Portfolios */}
-            <div className="bg-white rounded-lg p-3 border border-indigo-100">
-              <div className="flex items-center space-x-2 mb-2">
-                <Briefcase className="w-4 h-4 text-purple-600" />
-                <span className="text-xs font-medium text-gray-700">
-                  Portfolios
-                </span>
-              </div>
-              {(() => {
-                const myPortfolios = portfolioMemberships.filter(
-                  (pm) => pm.user_id === user.id
-                )
-                return myPortfolios.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {myPortfolios.map((pm) => (
-                      <span
-                        key={pm.id}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-700"
-                      >
-                        {pm.portfolio?.name}
-                        {pm.is_portfolio_manager && (
-                          <Crown className="w-2.5 h-2.5 ml-1" />
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">No portfolio access</p>
-                )
-              })()}
-            </div>
-            {/* Role */}
-            <div className="bg-white rounded-lg p-3 border border-indigo-100">
-              <div className="flex items-center space-x-2 mb-2">
-                <UserCircle className="w-4 h-4 text-gray-600" />
-                <span className="text-xs font-medium text-gray-700">
-                  Your Role
-                </span>
-              </div>
-              {(() => {
-                const myMembership = allMembers.find(
-                  (m) => m.user_id === user.id
-                )
-                return (
-                  <div className="space-y-1">
-                    <p className="text-xs text-gray-900 font-medium">
-                      {myMembership?.title || 'Member'}
-                    </p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* View Toggle */}
-      <div className="flex items-center space-x-2 justify-start">
-        <button
-          onClick={() => setPeopleView('users')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-            peopleView === 'users'
-              ? 'bg-indigo-100 text-indigo-700'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          <div className="flex items-center space-x-2">
-            <LogIn className="w-4 h-4" />
-            <span>Tesseract Users</span>
-            <span className="px-1.5 py-0.5 text-xs bg-white rounded-full">
-              {totalCount}
-            </span>
-          </div>
-        </button>
-        <button
-          onClick={() => setPeopleView('contacts')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-            peopleView === 'contacts'
-              ? 'bg-indigo-100 text-indigo-700'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          <div className="flex items-center space-x-2">
-            <AtSign className="w-4 h-4" />
-            <span>Contacts</span>
-            <span className="px-1.5 py-0.5 text-xs bg-white rounded-full">
-              {filteredContacts.length}
-            </span>
-          </div>
-        </button>
-      </div>
-
-      {/* Users View */}
+      {/* ── Members table ── */}
       {peopleView === 'users' && (
-        <div className="space-y-6">
-          {/* Pending Invites (admin only) */}
-          {isOrgAdmin && pendingInvites.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                <Send className="w-4 h-4 mr-1.5 text-blue-500" />
-                Pending Invites ({pendingInvites.length})
-              </h3>
-              <div className="bg-blue-50 rounded-lg border border-blue-200 divide-y divide-blue-100">
-                {pendingInvites.map((invite) => (
-                  <div
-                    key={invite.id}
-                    className="px-4 py-3 flex items-center justify-between"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-200 flex items-center justify-center flex-shrink-0">
-                        <Mail className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {invite.email}
-                        </p>
-                        <div className="flex items-center space-x-2 text-xs text-gray-500">
-                          <Clock className="w-3 h-3" />
-                          <span>
-                            Sent {new Date(invite.created_at).toLocaleDateString()}
-                          </span>
-                          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded capitalize">
-                            {invite.status}
-                          </span>
-                        </div>
-                      </div>
+        <div className="space-y-3">
+          {/* Pending invites row (admin only) */}
+          {isOrgAdmin && pendingInvites.length > 0 && statusFilter !== 'suspended' && (
+            <div className="bg-amber-50 rounded-lg border border-amber-200 divide-y divide-amber-100">
+              {pendingInvites.map((invite) => (
+                <div key={invite.id} className="px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center shrink-0">
+                      <Mail className="w-4 h-4 text-amber-600" />
                     </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{invite.email}</p>
+                      <p className="text-[11px] text-gray-500">
+                        Sent {new Date(invite.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <StatusPill status="invited" />
                     <button
                       onClick={() => cancelInviteMutation.mutate(invite.id)}
                       disabled={cancelInviteMutation.isPending}
@@ -897,159 +422,80 @@ export function OrgPeopleTab({
                       <XCircle className="w-4 h-4" />
                     </button>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* Admins Section */}
-          {adminMembers.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                <Crown className="w-4 h-4 mr-1.5 text-indigo-500" />
-                Admins ({adminMembers.length})
-              </h3>
-              <div className="bg-white rounded-lg border border-indigo-200 divide-y divide-indigo-100">
-                {adminMembers.map((member) =>
-                  renderMemberCard(member, 'admin')
-                )}
-              </div>
+          {/* Member rows */}
+          {displayMembers.length > 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50/80 border-b border-gray-200">
+                    <th className="px-4 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Name</th>
+                    <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Org Role</th>
+                    <th className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Teams</th>
+                    <th className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Portfolios</th>
+                    <th className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Risk</th>
+                    <th className="px-4 py-1.5 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wider"><span className="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {displayMembers.map((member) => {
+                    const auth = authorityByUser.get(member.user_id)
+                    return (
+                      <MemberRow
+                        key={member.id}
+                        member={member}
+                        isCurrentUser={member.user_id === user?.id}
+                        isOrgAdmin={isOrgAdmin}
+                        teamCount={auth?.teams.length ?? 0}
+                        portfolioCount={auth?.portfolios.length ?? 0}
+                        riskFlags={auth?.riskFlags ?? []}
+                        isExpanded={expandedUserId === member.user_id}
+                        onToggleExpand={() => setExpandedUserId(expandedUserId === member.user_id ? null : member.user_id)}
+                        onUserClick={onUserClick}
+                        onSuspend={() => setSuspendTarget(member)}
+                        onReactivate={() => setReactivateTarget(member)}
+                        onManageRoles={onNavigateToGovernance ? () => onNavigateToGovernance(member.user_id) : undefined}
+                        onRiskClick={onNavigateToGovernanceFlagged ? () => onNavigateToGovernanceFlagged(member.user_id) : undefined}
+                        formatProfileValue={formatProfileValue}
+                      />
+                    )
+                  })}
+                </tbody>
+              </table>
+
+              {hasNextPage && (
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="w-full px-4 py-2.5 text-sm text-indigo-600 hover:bg-indigo-50 transition-colors font-medium border-t border-gray-100"
+                >
+                  {isFetchingNextPage
+                    ? 'Loading...'
+                    : `Show more (${totalCount - allMembers.length} remaining)`}
+                </button>
+              )}
             </div>
-          )}
-
-          {/* Regular Users */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-gray-700 flex items-center">
-              <UserCircle className="w-4 h-4 mr-1.5 text-green-500" />
-              Users ({regularMembers.length})
-            </h3>
-            {regularMembers.length === 0 ? (
-              <div className="text-center py-8 bg-gray-50 rounded-lg">
-                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm text-gray-500">
-                  No users match your search
-                </p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                {regularMembers.map((member) =>
-                  renderMemberCard(member, 'regular')
-                )}
-                {hasNextPage && (
-                  <button
-                    onClick={() => fetchNextPage()}
-                    disabled={isFetchingNextPage}
-                    className="w-full px-4 py-2.5 text-sm text-primary-600 hover:bg-primary-50 transition-colors font-medium"
-                  >
-                    {isFetchingNextPage
-                      ? 'Loading...'
-                      : `Show more (${totalCount - allMembers.length} remaining)`}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Suspended Users (admin only) */}
-          {isOrgAdmin && suspendedMembers.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-gray-700 flex items-center">
-                <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-500" />
-                Suspended Users ({suspendedMembers.length})
-              </h3>
-              <div className="bg-amber-50 rounded-lg border border-amber-200 divide-y divide-amber-100">
-                {suspendedMembers.map((member) => {
-                  const suspenderName = member.suspended_by
-                    ? allMembers.find((m) => m.user_id === member.suspended_by)?.user?.full_name || 'Unknown'
-                    : null
-                  return (
-                    <div
-                      key={member.id}
-                      className="px-4 py-3 flex items-center justify-between"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center flex-shrink-0">
-                          <span className="text-white text-sm font-semibold">
-                            {member.user?.full_name
-                              ?.split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                              .slice(0, 2)
-                              .toUpperCase() || '?'}
-                          </span>
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-700 text-sm">
-                              {member.user?.full_name}
-                            </span>
-                            {onUserClick && member.user_id && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onUserClick({
-                                    id: member.user_id,
-                                    full_name:
-                                      member.user?.full_name || 'Unknown',
-                                  })
-                                }}
-                                className="p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
-                                title="Open user profile"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                              </button>
-                            )}
-                            <span className="px-1.5 py-0.5 text-[10px] bg-amber-200 text-amber-800 rounded">
-                              Suspended
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500">
-                            {member.user?.email}
-                          </p>
-                          {/* Suspension details */}
-                          <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
-                            {member.suspended_at && (
-                              <span className="flex items-center">
-                                <Clock className="w-3 h-3 mr-0.5" />
-                                {new Date(member.suspended_at).toLocaleDateString()}
-                              </span>
-                            )}
-                            {suspenderName && (
-                              <span>by {suspenderName}</span>
-                            )}
-                            {member.suspension_reason && (
-                              <span className="text-amber-700 italic truncate max-w-[200px]" title={member.suspension_reason}>
-                                — {member.suspension_reason}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setReactivateTarget(member)}
-                        disabled={reactivateMemberMutation.isPending}
-                        className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 rounded transition-colors flex items-center flex-shrink-0"
-                      >
-                        <Shield className="w-3 h-3 mr-1" />
-                        Restore
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
+          ) : (
+            <div className="text-center py-12 bg-gray-50 rounded-lg">
+              <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm text-gray-500">No members match your search</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Contacts View */}
+      {/* ── Contacts sub-view ── */}
       {peopleView === 'contacts' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-700 flex items-center">
-              <AtSign className="w-4 h-4 mr-1.5 text-indigo-500" />
-              Organization Contacts
-            </h3>
+            <p className="text-xs text-gray-500">
+              People who don't have platform access but receive reports or communications.
+            </p>
             {isOrgAdmin && (
               <Button size="sm" onClick={onAddContact}>
                 <Plus className="w-3 h-3 mr-1" />
@@ -1057,20 +503,13 @@ export function OrgPeopleTab({
               </Button>
             )}
           </div>
-          <p className="text-xs text-gray-500">
-            People who don't have platform access but receive reports or
-            communications.
-          </p>
 
           {filteredContacts.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">
               <AtSign className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No contacts yet
-              </h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No contacts yet</h3>
               <p className="text-sm text-gray-500 mb-4">
-                Add external contacts who need to receive reports or
-                communications
+                Add external contacts who need to receive reports or communications
               </p>
               {isOrgAdmin && (
                 <Button onClick={onAddContact}>
@@ -1085,21 +524,14 @@ export function OrgPeopleTab({
                 <Card key={contact.id} className="p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-3">
-                      <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
                         <span className="text-primary-600 text-sm font-semibold">
-                          {contact.full_name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')
-                            .slice(0, 2)
-                            .toUpperCase()}
+                          {getInitials(contact.full_name)}
                         </span>
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900">
-                            {contact.full_name}
-                          </span>
+                          <span className="font-medium text-gray-900">{contact.full_name}</span>
                           <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full capitalize">
                             {contact.contact_type}
                           </span>
@@ -1110,45 +542,32 @@ export function OrgPeopleTab({
                             </span>
                           )}
                         </div>
-                        {contact.title && contact.company && (
+                        {contact.title && (
                           <p className="text-sm text-gray-600">
-                            {contact.title} at {contact.company}
-                          </p>
-                        )}
-                        {contact.title && !contact.company && (
-                          <p className="text-sm text-gray-600">
-                            {contact.title}
+                            {contact.title}{contact.company ? ` at ${contact.company}` : ''}
                           </p>
                         )}
                         <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                           {contact.email && (
                             <span className="flex items-center">
-                              <Mail className="w-3 h-3 mr-1" />
-                              {contact.email}
+                              <Mail className="w-3 h-3 mr-1" />{contact.email}
                             </span>
                           )}
                           {contact.phone && (
                             <span className="flex items-center">
-                              <Phone className="w-3 h-3 mr-1" />
-                              {contact.phone}
+                              <Phone className="w-3 h-3 mr-1" />{contact.phone}
                             </span>
                           )}
                         </div>
                         {contact.notes && (
-                          <p className="text-sm text-gray-500 mt-2 italic">
-                            "{contact.notes}"
-                          </p>
+                          <p className="text-sm text-gray-500 mt-2 italic">"{contact.notes}"</p>
                         )}
                       </div>
                     </div>
                     {isOrgAdmin && (
                       <button
                         onClick={() => {
-                          if (
-                            confirm(
-                              `Remove ${contact.full_name} from contacts?`
-                            )
-                          ) {
+                          if (confirm(`Remove ${contact.full_name} from contacts?`)) {
                             onDeleteContact(contact.id)
                           }
                         }}
@@ -1166,14 +585,73 @@ export function OrgPeopleTab({
         </div>
       )}
 
-      {/* Reactivate Confirmation Modal */}
+      {/* ── Suspend Access Confirmation ── */}
+      {suspendTarget && (() => {
+        const isLastAdmin = suspendTarget.is_org_admin && activeOrgAdminCount <= 1
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setSuspendTarget(null); setSuspendReason('') }} />
+            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                Suspend access for {suspendTarget.user?.full_name}?
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                They will immediately lose access to the organization and all portfolios.
+              </p>
+
+              {isLastAdmin && (
+                <div className="flex items-start gap-2 p-3 mb-4 rounded-lg bg-red-50 border border-red-200">
+                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-red-700">
+                    You can't suspend the last active org admin. Promote another member to org admin first.
+                  </p>
+                </div>
+              )}
+
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason <span className="text-gray-400">(optional)</span>
+              </label>
+              <textarea
+                value={suspendReason}
+                onChange={(e) => setSuspendReason(e.target.value)}
+                placeholder="e.g. Left the team, compliance review..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+                rows={2}
+                autoFocus
+              />
+
+              <div className="flex justify-end space-x-3 mt-5">
+                <Button variant="outline" onClick={() => { setSuspendTarget(null); setSuspendReason('') }}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-amber-600 hover:bg-amber-700"
+                  disabled={isLastAdmin}
+                  onClick={() => {
+                    onSuspendUser(suspendTarget, suspendReason)
+                    setSuspendTarget(null)
+                    setSuspendReason('')
+                  }}
+                >
+                  <UserX className="w-3.5 h-3.5 mr-1.5" />
+                  Suspend access
+                </Button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Reactivate Access Confirmation ── */}
       {reactivateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => { setReactivateTarget(null); setReactivateReason('') }} />
           <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Reactivate Member</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+              Reactivate access for {reactivateTarget.user?.full_name}?
+            </h3>
             <p className="text-sm text-gray-500 mb-4">
-              Restore access for <span className="font-medium text-gray-700">{reactivateTarget.user?.full_name}</span> ({reactivateTarget.user?.email}).
+              They will regain access to the organization and their previous role assignments.
             </p>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Reason <span className="text-gray-400">(optional)</span>
@@ -1194,38 +672,29 @@ export function OrgPeopleTab({
                 onClick={() => reactivateMemberMutation.mutate({ userId: reactivateTarget.user_id, reason: reactivateReason })}
                 disabled={reactivateMemberMutation.isPending}
               >
-                {reactivateMemberMutation.isPending ? 'Restoring...' : 'Restore Access'}
+                {reactivateMemberMutation.isPending ? 'Reactivating...' : 'Reactivate access'}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Invite Modal */}
+      {/* ── Invite Modal ── */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowInviteModal(false)}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowInviteModal(false)} />
           <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">
-              Invite User
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Invite User</h3>
             <p className="text-sm text-gray-500 mb-4">
               Send an invitation to join {organization?.name || 'the organization'}.
             </p>
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                if (inviteEmail.trim()) {
-                  createInviteMutation.mutate(inviteEmail)
-                }
+                if (inviteEmail.trim()) createInviteMutation.mutate(inviteEmail)
               }}
             >
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email address
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
               <input
                 type="email"
                 value={inviteEmail}
@@ -1236,26 +705,12 @@ export function OrgPeopleTab({
                 required
               />
               <div className="flex justify-end space-x-3 mt-5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowInviteModal(false)
-                    setInviteEmail('')
-                  }}
-                >
+                <Button type="button" variant="outline" onClick={() => { setShowInviteModal(false); setInviteEmail('') }}>
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    !inviteEmail.trim() || createInviteMutation.isPending
-                  }
-                >
+                <Button type="submit" disabled={!inviteEmail.trim() || createInviteMutation.isPending}>
                   <Send className="w-3.5 h-3.5 mr-1.5" />
-                  {createInviteMutation.isPending
-                    ? 'Sending...'
-                    : 'Send Invite'}
+                  {createInviteMutation.isPending ? 'Sending...' : 'Send Invite'}
                 </Button>
               </div>
             </form>
@@ -1264,4 +719,296 @@ export function OrgPeopleTab({
       )}
     </div>
   )
+}
+
+// ─── RiskPill — severity-aware, clickable risk indicator ────────────────
+
+const SEVERITY_ICON: Record<string, React.ReactNode> = {
+  high: <AlertTriangle className="w-3 h-3" />,
+  medium: <AlertCircle className="w-3 h-3" />,
+  low: <Info className="w-3 h-3" />,
+}
+
+const SEVERITY_STYLE: Record<string, string> = {
+  high: 'bg-red-50 text-red-700 border-red-200',
+  medium: 'bg-amber-50 text-amber-700 border-amber-200',
+  low: 'bg-gray-100 text-gray-600 border-gray-200',
+}
+
+function RiskPill({
+  flags,
+  onClick,
+}: {
+  flags: Array<{ severity: 'high' | 'medium' | 'low'; label: string }>
+  onClick?: () => void
+}) {
+  if (flags.length === 0) return null
+  const worst = flags.some(f => f.severity === 'high')
+    ? 'high'
+    : flags.some(f => f.severity === 'medium')
+    ? 'medium'
+    : 'low'
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick?.()
+      }}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded-full border transition-colors ${SEVERITY_STYLE[worst]} ${
+        onClick ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+      }`}
+      title={flags.map(f => f.label).join('\n')}
+    >
+      {SEVERITY_ICON[worst]}
+      {flags.length}
+    </button>
+  )
+}
+
+// ─── MemberRow ──────────────────────────────────────────────────────────
+
+function MemberRow({
+  member,
+  isCurrentUser,
+  isOrgAdmin,
+  teamCount,
+  portfolioCount,
+  riskFlags,
+  isExpanded,
+  onToggleExpand,
+  onUserClick,
+  onSuspend,
+  onReactivate,
+  onManageRoles,
+  onRiskClick,
+  formatProfileValue,
+}: {
+  member: OrganizationMembership
+  isCurrentUser: boolean
+  isOrgAdmin: boolean
+  teamCount: number
+  portfolioCount: number
+  riskFlags: Array<{ severity: 'high' | 'medium' | 'low'; label: string }>
+  isExpanded: boolean
+  onToggleExpand: () => void
+  onUserClick?: (user: { id: string; full_name: string }) => void
+  onSuspend: () => void
+  onReactivate: () => void
+  onManageRoles?: () => void
+  onRiskClick?: () => void
+  formatProfileValue: (v: string) => string
+}) {
+  const isSuspended = member.status === 'inactive'
+
+  return (
+    <React.Fragment>
+      <tr
+        className={`hover:bg-gray-50/50 cursor-pointer transition-colors ${isSuspended ? 'opacity-60' : ''}`}
+        onClick={onToggleExpand}
+      >
+        {/* Name + avatar */}
+        <td className="px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                isSuspended ? 'bg-gray-400' : member.is_org_admin ? 'bg-indigo-600' : 'bg-gray-500'
+              }`}
+            >
+              <span className="text-white text-xs font-semibold">
+                {(member.user?.full_name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium text-gray-900 truncate">{member.user?.full_name}</span>
+                {onUserClick && member.user_id && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onUserClick({ id: member.user_id, full_name: member.user?.full_name || 'Unknown' })
+                    }}
+                    className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors shrink-0"
+                    title="Open user profile"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 truncate">{member.user?.email}</p>
+            </div>
+          </div>
+        </td>
+
+        {/* Status */}
+        <td className="px-3 py-2.5">
+          <StatusPill status={isSuspended ? 'suspended' : 'active'} />
+        </td>
+
+        {/* Org Role */}
+        <td className="px-3 py-2.5">
+          {member.is_org_admin ? (
+            <RoleBadge role="org-admin" compact />
+          ) : member.user?.coverage_admin ? (
+            <RoleBadge role="coverage-admin" compact />
+          ) : (
+            <RoleBadge role="member" compact />
+          )}
+        </td>
+
+        {/* Teams */}
+        <td className="px-3 py-2.5 text-center">
+          <span className="text-sm font-medium text-gray-700">{teamCount}</span>
+        </td>
+
+        {/* Portfolios */}
+        <td className="px-3 py-2.5 text-center">
+          <span className="text-sm font-medium text-gray-700">{portfolioCount}</span>
+        </td>
+
+        {/* Risk */}
+        <td className="px-3 py-2.5 text-center">
+          {riskFlags.length > 0 ? (
+            <RiskPill flags={riskFlags} onClick={onRiskClick} />
+          ) : (
+            <span className="text-gray-300">&mdash;</span>
+          )}
+        </td>
+
+        {/* Actions */}
+        <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1 justify-end">
+            {isOrgAdmin && !isCurrentUser && (
+              <>
+                {onManageRoles && !isSuspended && (
+                  <button
+                    onClick={onManageRoles}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded transition-colors whitespace-nowrap"
+                  >
+                    Manage roles
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+                {isSuspended ? (
+                  <button
+                    onClick={onReactivate}
+                    className="px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 rounded transition-colors whitespace-nowrap"
+                  >
+                    Reactivate access
+                  </button>
+                ) : (
+                  <button
+                    onClick={onSuspend}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors whitespace-nowrap"
+                  >
+                    <UserX className="w-3 h-3" />
+                    Suspend access
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+
+      {/* Expanded detail row */}
+      {isExpanded && (
+        <tr>
+          <td colSpan={7} className="px-0 py-0">
+            <div className="px-4 pb-3 pt-2 ml-[52px] border-t border-gray-100 space-y-2 bg-gray-50/30">
+              {/* Profile tags */}
+              {(member.title || member.profile) && (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {member.title && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">Title:</span>
+                      <span className="text-gray-700">{member.title}</span>
+                    </div>
+                  )}
+                  {member.profile && renderProfileTags(member.profile, formatProfileValue)}
+                </div>
+              )}
+
+              {/* Suspension info */}
+              {isSuspended && member.suspended_at && (
+                <div className="flex items-center gap-1 text-xs text-amber-600">
+                  <Clock className="w-3 h-3" />
+                  <span>Suspended {new Date(member.suspended_at).toLocaleDateString()}</span>
+                  {member.suspension_reason && (
+                    <span className="italic">— {member.suspension_reason}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Actions row */}
+              {isOrgAdmin && !isCurrentUser && (
+                <div className="flex items-center gap-2 pt-1">
+                  {onManageRoles && !isSuspended && (
+                    <button
+                      onClick={onManageRoles}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors"
+                    >
+                      Manage roles
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  )}
+                  {isSuspended ? (
+                    <button
+                      onClick={onReactivate}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors"
+                    >
+                      Reactivate access
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onSuspend}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded transition-colors"
+                    >
+                      <UserX className="w-3 h-3" />
+                      Suspend access
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
+  )
+}
+
+// ─── Profile tag renderer ────────────────────────────────────────────────
+
+function renderProfileTags(profileInfo: UserProfileData, format: (v: string) => string) {
+  const tags: React.ReactNode[] = []
+
+  const addTag = (key: string, label: string, values: string[], style: string) => {
+    if (values.length === 0) return
+    tags.push(
+      <div key={key} className="flex items-center gap-1 flex-wrap">
+        <span className="text-gray-500">{label}:</span>
+        {values.map((v) => (
+          <span key={v} className={`px-1.5 py-0.5 rounded ${style}`}>{format(v)}</span>
+        ))}
+      </div>
+    )
+  }
+
+  if (profileInfo.user_type === 'investor') {
+    addTag('sectors', 'Sectors', profileInfo.sector_focus || [], 'bg-emerald-50 text-emerald-600')
+    addTag('style', 'Style', profileInfo.investment_style || [], 'bg-indigo-50 text-indigo-600')
+    addTag('mcap', 'Market Cap', profileInfo.market_cap_focus || [], 'bg-cyan-50 text-cyan-600')
+    addTag('geo', 'Geography', profileInfo.geography_focus || [], 'bg-orange-50 text-orange-600')
+    addTag('horizon', 'Horizon', profileInfo.time_horizon || [], 'bg-violet-50 text-violet-600')
+  }
+  if (profileInfo.user_type === 'operations') {
+    addTag('depts', 'Departments', profileInfo.ops_departments || [], 'bg-blue-50 text-blue-600')
+  }
+  if (profileInfo.user_type === 'compliance') {
+    addTag('areas', 'Areas', profileInfo.compliance_areas || [], 'bg-amber-50 text-amber-600')
+  }
+
+  return tags
 }

@@ -31,7 +31,7 @@ import {
 import { HealthPill } from './HealthPill'
 import { RiskFlagBadge, RiskCountBadge } from './RiskBadge'
 import type { OrgGraphNode, RawNodeMember } from '../../lib/org-graph'
-import { ROLE_OPTIONS, getFocusOptionsForRole } from '../../lib/roles-config'
+import { ROLE_OPTIONS, getFocusOptionsForRole, TEAM_ROLE_OPTIONS, TEAM_FUNCTION_OPTIONS } from '../../lib/roles-config'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -150,6 +150,11 @@ const DIAG_BADGE_LABELS: Record<DiagSeverity, string> = {
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
+/** Team-like nodes skip the node-member role selector — portfolio roles are set in AssignPortfolioRolesModal. */
+function isTeamLikeNodeType(nodeType: string): boolean {
+  return nodeType === 'team' || nodeType === 'division' || nodeType === 'department'
+}
+
 const SLIDE_TRANSITION = 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)'
 
 // ─── Component ──────────────────────────────────────────────────────────
@@ -214,10 +219,12 @@ export function OrgNodeDetailsModal({
   const [removeMemberConfirm, setRemoveMemberConfirm] = useState<string | null>(null)
 
   // ── Manage state: members tab ──
+  const teamLike = isTeamLikeNodeType(node.nodeType)
   const [showAddMember, setShowAddMember] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [memberRole, setMemberRole] = useState('')
+  const [memberRole, setMemberRole] = useState(teamLike ? 'Member' : '')
   const [memberFocus, setMemberFocus] = useState('')
+  const [memberTeamFunction, setMemberTeamFunction] = useState('')
 
   // ── Reset state when node changes (via breadcrumb navigation) ──
   useEffect(() => {
@@ -240,8 +247,9 @@ export function OrgNodeDetailsModal({
       }
       setShowAddMember(false)
       setSelectedUserId('')
-      setMemberRole('')
+      setMemberRole(isTeamLikeNodeType(node.nodeType) ? 'Member' : '')
       setMemberFocus('')
+      setMemberTeamFunction('')
     }
   }, [node.id, node.name, node.description, node.color, node.customTypeLabel, node.isNonInvestment])
 
@@ -433,15 +441,19 @@ export function OrgNodeDetailsModal({
 
   const membersWithDescendants = (() => {
     const memberMap = new Map<string, RawNodeMember>()
+    const addMember = (m: RawNodeMember) => {
+      if (!memberMap.has(m.user_id)) {
+        memberMap.set(m.user_id, m)
+      } else if (m.is_coverage_admin && !memberMap.get(m.user_id)?.is_coverage_admin) {
+        memberMap.set(m.user_id, m)
+      }
+    }
+    // Include members prop (covers linked portfolio members not in parent_id tree)
+    members.forEach(addMember)
+    // Include descendant node members from the full org member list
     allNodeMembers
       .filter(m => allDescendantNodeIds.has(m.node_id))
-      .forEach(m => {
-        if (!memberMap.has(m.user_id)) {
-          memberMap.set(m.user_id, m)
-        } else if (m.is_coverage_admin && !memberMap.get(m.user_id)?.is_coverage_admin) {
-          memberMap.set(m.user_id, m)
-        }
-      })
+      .forEach(addMember)
     return Array.from(memberMap.values())
   })()
 
@@ -475,10 +487,12 @@ export function OrgNodeDetailsModal({
 
   const handleAddMember = () => {
     if (!selectedUserId || !onAddMember) return
-    onAddMember(node.id, selectedUserId, memberRole || undefined, memberFocus || undefined)
+    const effectiveFocus = teamLike ? memberTeamFunction : memberFocus
+    onAddMember(node.id, selectedUserId, memberRole || undefined, effectiveFocus || undefined)
     setSelectedUserId('')
-    setMemberRole('')
+    setMemberRole(teamLike ? 'Member' : '')
     setMemberFocus('')
+    setMemberTeamFunction('')
     setShowAddMember(false)
   }
 
@@ -725,10 +739,13 @@ export function OrgNodeDetailsModal({
                     selectedUserId={selectedUserId}
                     memberRole={memberRole}
                     memberFocus={memberFocus}
+                    memberTeamFunction={memberTeamFunction}
+                    isTeamLike={teamLike}
                     onToggleAddMember={() => setShowAddMember(v => !v)}
                     onSelectUser={setSelectedUserId}
                     onRoleChange={setMemberRole}
                     onFocusChange={setMemberFocus}
+                    onTeamFunctionChange={setMemberTeamFunction}
                     onAddMember={handleAddMember}
                     onRemoveMember={handleRemoveMember}
                     onUpdateMember={onUpdateMember}
@@ -918,63 +935,58 @@ function MembersCard({
     <div className="border border-gray-200 rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
         <span className="text-xs font-semibold text-gray-600">Members</span>
+        <span className="text-[10px] text-gray-400 font-medium">{groups.length}</span>
       </div>
 
       <div className="px-4 py-3">
         {showSearch && (
-          <div className="relative mb-2">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search members..."
-              className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-300"
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-300"
             />
           </div>
         )}
 
         {filteredGroups.length > 0 ? (
-          <div className="space-y-0.5 max-h-52 overflow-y-auto overflow-x-hidden">
-            {filteredGroups.map(g => {
-              return (
-                <div key={g.userId}>
-                  {/* Person row */}
-                  <div className="flex items-center gap-2 py-1">
-                    <div
-                      className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-medium text-gray-600 shrink-0"
-                      title={g.displayName}
-                    >
-                      {g.initial}
-                    </div>
-                    <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0">
-                      {g.displayName}
-                    </span>
-                    <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
-                      {g.entries.length} {g.entries.length === 1 ? 'role' : 'roles'}
-                    </span>
-                    {g.isCoverageAdmin && (
-                      <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium shrink-0">
-                        Cov Admin
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Membership entries — always visible */}
-                  <div className="ml-7 mb-1 space-y-0.5">
-                    {g.entries.map(entry => (
-                      <div key={entry.id} className="text-[10px] text-gray-500 py-0.5 flex items-center gap-1.5">
-                        <span className="w-1 h-1 rounded-full bg-gray-300 shrink-0" />
-                        <span className="truncate">{getRoleLabel(entry)}</span>
+          <div className="max-h-64 overflow-y-auto -mr-2 pr-2 custom-scrollbar">
+            <div className="space-y-1">
+              {filteredGroups.map(g => (
+                  <div key={g.userId} className="rounded-lg hover:bg-gray-50 transition-colors px-1.5 py-1.5">
+                    {/* Person row */}
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-[10px] font-semibold text-gray-600 shrink-0"
+                        title={g.displayName}
+                      >
+                        {g.initial}
                       </div>
-                    ))}
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-medium text-gray-800 truncate block">
+                          {g.displayName}
+                        </span>
+                        {g.entries.map(entry => (
+                          <span key={entry.id} className="text-[10px] text-gray-400 leading-tight block truncate">
+                            {getRoleLabel(entry)}
+                          </span>
+                        ))}
+                      </div>
+                      {g.isCoverageAdmin && (
+                        <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium shrink-0">
+                          Cov Admin
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+              ))}
+            </div>
           </div>
         ) : (
-          <p className="text-xs text-gray-400 italic py-1">
+          <p className="text-xs text-gray-400 italic py-2 text-center">
             {searchQuery ? 'No matching members' : 'No members'}
           </p>
         )}
@@ -1307,10 +1319,13 @@ function ManageMembersTab({
   selectedUserId,
   memberRole,
   memberFocus,
+  memberTeamFunction = '',
+  isTeamLike = false,
   onToggleAddMember,
   onSelectUser,
   onRoleChange,
   onFocusChange,
+  onTeamFunctionChange,
   onAddMember,
   onRemoveMember,
   onUpdateMember,
@@ -1324,10 +1339,13 @@ function ManageMembersTab({
   selectedUserId: string
   memberRole: string
   memberFocus: string
+  memberTeamFunction?: string
+  isTeamLike?: boolean
   onToggleAddMember: () => void
   onSelectUser: (id: string) => void
   onRoleChange: (v: string) => void
   onFocusChange: (v: string) => void
+  onTeamFunctionChange?: (v: string) => void
   onAddMember: () => void
   onRemoveMember: (id: string) => void
   onUpdateMember?: (memberId: string, role: string, focus: string | null) => void
@@ -1407,54 +1425,86 @@ function ManageMembersTab({
               })}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
-            <select
-              value={memberRole}
-              onChange={(e) => {
-                onRoleChange(e.target.value)
-                onFocusChange('')
-              }}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
-              <option value="">Select role...</option>
-              {ROLE_OPTIONS.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-          {memberRole && getFocusOptionsForRole(memberRole).length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
-              <div className="flex flex-wrap gap-1.5">
-                {getFocusOptionsForRole(memberRole).map(focus => {
-                  const currentFocuses = memberFocus ? memberFocus.split(', ').filter(Boolean) : []
-                  const isSelected = currentFocuses.includes(focus)
-                  return (
-                    <button
-                      key={focus}
-                      type="button"
-                      onClick={() => {
-                        let newFocuses: string[]
-                        if (isSelected) {
-                          newFocuses = currentFocuses.filter(f => f !== focus)
-                        } else {
-                          newFocuses = [...currentFocuses, focus]
-                        }
-                        onFocusChange(newFocuses.join(', '))
-                      }}
-                      className={`px-2 py-1 text-xs rounded-full border transition-colors ${
-                        isSelected
-                          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      {focus}
-                    </button>
-                  )
-                })}
+          {isTeamLike ? (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Team Role</label>
+                <select
+                  value={memberRole}
+                  onChange={(e) => onRoleChange(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  {TEAM_ROLE_OPTIONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
               </div>
-            </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Function</label>
+                <select
+                  value={memberTeamFunction}
+                  onChange={(e) => onTeamFunctionChange?.(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">None (optional)</option>
+                  {TEAM_FUNCTION_OPTIONS.map(f => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                <select
+                  value={memberRole}
+                  onChange={(e) => {
+                    onRoleChange(e.target.value)
+                    onFocusChange('')
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">Select role...</option>
+                  {ROLE_OPTIONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              {memberRole && getFocusOptionsForRole(memberRole).length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {getFocusOptionsForRole(memberRole).map(focus => {
+                      const currentFocuses = memberFocus ? memberFocus.split(', ').filter(Boolean) : []
+                      const isSelected = currentFocuses.includes(focus)
+                      return (
+                        <button
+                          key={focus}
+                          type="button"
+                          onClick={() => {
+                            let newFocuses: string[]
+                            if (isSelected) {
+                              newFocuses = currentFocuses.filter(f => f !== focus)
+                            } else {
+                              newFocuses = [...currentFocuses, focus]
+                            }
+                            onFocusChange(newFocuses.join(', '))
+                          }}
+                          className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                            isSelected
+                              ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          {focus}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           )}
           <div className="flex justify-end gap-2">
             <button onClick={onCancelAdd} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
@@ -1497,54 +1547,94 @@ function ManageMembersTab({
                     const currentFocuses = editFocus ? editFocus.split(', ').filter(Boolean) : []
                     return (
                       <div key={entry.id} className="bg-indigo-50 rounded-lg p-2.5 space-y-2">
-                        <div>
-                          <label className="block text-[10px] font-medium text-gray-600 mb-1">Role</label>
-                          <select
-                            value={editRole}
-                            onChange={(e) => {
-                              const newRole = e.target.value
-                              setEditRole(newRole)
-                              setEditFocus('')
-                              onUpdateMember(entry.id, newRole, null)
-                            }}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                          >
-                            <option value="">Select role...</option>
-                            {ROLE_OPTIONS.map(r => (
-                              <option key={r} value={r}>{r}</option>
-                            ))}
-                          </select>
-                        </div>
-                        {focusOpts.length > 0 && (
-                          <div>
-                            <label className="block text-[10px] font-medium text-gray-600 mb-1">Focus</label>
-                            <div className="flex flex-wrap gap-1">
-                              {focusOpts.map(f => {
-                                const selected = currentFocuses.includes(f)
-                                return (
-                                  <button
-                                    key={f}
-                                    type="button"
-                                    onClick={() => {
-                                      const newFocuses = selected
-                                        ? currentFocuses.filter(x => x !== f)
-                                        : [...currentFocuses, f]
-                                      const newFocusStr = newFocuses.join(', ')
-                                      setEditFocus(newFocusStr)
-                                      onUpdateMember(entry.id, editRole, newFocusStr || null)
-                                    }}
-                                    className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
-                                      selected
-                                        ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                        : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                                    }`}
-                                  >
-                                    {f}
-                                  </button>
-                                )
-                              })}
+                        {isTeamLike ? (
+                          <>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-600 mb-1">Team Role</label>
+                              <select
+                                value={editRole}
+                                onChange={(e) => {
+                                  const newRole = e.target.value
+                                  setEditRole(newRole)
+                                  onUpdateMember(entry.id, newRole, editFocus || null)
+                                }}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              >
+                                {TEAM_ROLE_OPTIONS.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
                             </div>
-                          </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-600 mb-1">Function</label>
+                              <select
+                                value={editFocus}
+                                onChange={(e) => {
+                                  const newFunc = e.target.value
+                                  setEditFocus(newFunc)
+                                  onUpdateMember(entry.id, editRole, newFunc || null)
+                                }}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              >
+                                <option value="">None</option>
+                                {TEAM_FUNCTION_OPTIONS.map(f => (
+                                  <option key={f} value={f}>{f}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-600 mb-1">Role</label>
+                              <select
+                                value={editRole}
+                                onChange={(e) => {
+                                  const newRole = e.target.value
+                                  setEditRole(newRole)
+                                  setEditFocus('')
+                                  onUpdateMember(entry.id, newRole, null)
+                                }}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              >
+                                <option value="">Select role...</option>
+                                {ROLE_OPTIONS.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {focusOpts.length > 0 && (
+                              <div>
+                                <label className="block text-[10px] font-medium text-gray-600 mb-1">Focus</label>
+                                <div className="flex flex-wrap gap-1">
+                                  {focusOpts.map(f => {
+                                    const selected = currentFocuses.includes(f)
+                                    return (
+                                      <button
+                                        key={f}
+                                        type="button"
+                                        onClick={() => {
+                                          const newFocuses = selected
+                                            ? currentFocuses.filter(x => x !== f)
+                                            : [...currentFocuses, f]
+                                          const newFocusStr = newFocuses.join(', ')
+                                          setEditFocus(newFocusStr)
+                                          onUpdateMember(entry.id, editRole, newFocusStr || null)
+                                        }}
+                                        className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
+                                          selected
+                                            ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                        }`}
+                                      >
+                                        {f}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                         <div className="flex justify-end">
                           <button

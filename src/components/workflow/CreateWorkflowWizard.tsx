@@ -868,6 +868,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             .select('asset_id')
             .in('user_id', filter.values)
             .eq('is_active', true)
+            .order('asset_id', { ascending: true })
           filterAssetIds = coverageData?.map(c => c.asset_id).filter(Boolean) || []
         }
         break
@@ -921,6 +922,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 .select('asset_id')
                 .in('user_id', memberUserIds)
                 .eq('is_active', true)
+                .order('asset_id', { ascending: true })
               filterAssetIds = portfolioCoverage?.map(p => p.asset_id).filter(Boolean) || []
             }
           }

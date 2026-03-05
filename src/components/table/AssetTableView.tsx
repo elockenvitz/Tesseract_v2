@@ -28,6 +28,7 @@ import { Badge } from '../ui/Badge'
 import { ListSkeleton } from '../common/LoadingSkeleton'
 import { EmptyState } from '../common/EmptyState'
 import { useMarketData, useMarketStatus } from '../../hooks/useMarketData'
+import { sortCoverageDeterministically, resolveCoverageDefault, type CoverageRow } from '../../lib/coverage/resolveCoverage'
 import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 import { DENSITY_CONFIG } from '../../contexts/TableContext'
@@ -675,7 +676,7 @@ export function AssetTableView({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select(`asset_id, user_id, analyst_name, role, is_lead, is_active, team_id, org_chart_nodes:team_id (id, name)`)
+        .select(`asset_id, user_id, analyst_name, role, is_lead, is_active, team_id, visibility, updated_at, org_chart_nodes:team_id (id, name)`)
         .eq('is_active', true)
       if (error) throw error
       return data || []
@@ -705,15 +706,31 @@ export function AssetTableView({
 
   const assetCoverageMap = useMemo(() => {
     if (!coverageData) return new Map<string, Array<{ analyst: string; team: string; isLead: boolean }>>()
-    const map = new Map<string, Array<{ analyst: string; team: string; isLead: boolean }>>()
+    // Group by asset_id, then sort deterministically within each group
+    const grouped = new Map<string, CoverageRow[]>()
     coverageData.forEach(cov => {
-      const orgChartNode = cov.org_chart_nodes as any
-      const analystName = (cov.user_id && usersMap.get(cov.user_id)) || cov.analyst_name || 'Unknown'
-      const teamName = orgChartNode?.name || ''
-      const existing = map.get(cov.asset_id) || []
-      existing.push({ analyst: analystName, team: teamName, isLead: cov.is_lead || false })
-      map.set(cov.asset_id, existing)
+      const rows = grouped.get(cov.asset_id) || []
+      rows.push({
+        asset_id: cov.asset_id,
+        user_id: cov.user_id,
+        analyst_name: cov.analyst_name,
+        role: cov.role,
+        is_lead: cov.is_lead,
+        team_id: cov.team_id,
+        visibility: (cov as any).visibility ?? null,
+        updated_at: (cov as any).updated_at ?? null,
+      })
+      grouped.set(cov.asset_id, rows)
     })
+    const map = new Map<string, Array<{ analyst: string; team: string; isLead: boolean }>>()
+    for (const [assetId, rows] of grouped) {
+      const sorted = sortCoverageDeterministically(rows)
+      map.set(assetId, sorted.map(r => {
+        const orgNode = coverageData.find(c => c.asset_id === assetId && c.user_id === r.user_id)?.org_chart_nodes as any
+        const analystName = (r.user_id && usersMap.get(r.user_id)) || r.analyst_name || 'Unknown'
+        return { analyst: analystName, team: orgNode?.name || '', isLead: r.is_lead || false }
+      }))
+    }
     return map
   }, [coverageData, usersMap])
 
@@ -3521,7 +3538,7 @@ export function AssetTableView({
                                   if (coverage.length === 0) {
                                     return <span className="pro-empty-cell">—</span>
                                   }
-                                  const lead = coverage.find(c => c.isLead) || coverage[0]
+                                  const lead = coverage[0] // deterministically sorted: is_lead → role → updated_at → user_id
                                   const isMicro = density === 'micro'
 
                                   if (density === 'comfortable') {
@@ -4382,7 +4399,7 @@ export function AssetTableView({
                                       )}
                                       {col.id === 'coverage' && (() => {
                                         if (coverage.length === 0) return <span className="pro-empty-cell">\u2014</span>
-                                        const lead = coverage.find(c => c.isLead) || coverage[0]
+                                        const lead = coverage[0] // deterministically sorted: is_lead → role → updated_at → user_id
                                         const isMicro = density === 'micro'
                                         if (density === 'comfortable') {
                                           return (

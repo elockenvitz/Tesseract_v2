@@ -14,6 +14,8 @@ import { getContentPreview } from '../../utils/stripHtml'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { PortfolioDecisionView } from '../portfolio/PortfolioDecisionView'
+import { useOrganization } from '../../contexts/OrganizationContext'
+import { logOrgActivity } from '../../lib/org-activity-log'
 
 interface PortfolioTabProps {
   portfolio: any
@@ -63,6 +65,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   const [marketCapMax, setMarketCapMax] = useState('')
   const [marketCapOperator, setMarketCapOperator] = useState<'gt' | 'lt' | 'between'>('gt')
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
 
   // Update local state when switching to a different portfolio
   useEffect(() => {
@@ -385,6 +388,19 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       queryClient.invalidateQueries({ queryKey: ['portfolio-team', portfolio.id] })
       // Also invalidate the org-wide query used by OrganizationPage
       queryClient.invalidateQueries({ queryKey: ['portfolio-team-all'] })
+
+      if (currentOrgId && deleteConfirm.teamMemberId) {
+        logOrgActivity({
+          organizationId: currentOrgId,
+          action: 'portfolio_team.removed',
+          targetType: 'portfolio',
+          targetId: portfolio.id,
+          entityType: 'portfolio_membership',
+          actionType: 'role_revoked',
+          details: { portfolio_name: portfolio.name, user_name: deleteConfirm.userName, role: deleteConfirm.role },
+        })
+      }
+
       setDeleteConfirm({ isOpen: false, teamMemberId: null, userName: '', role: '' })
     },
     onError: (error) => {

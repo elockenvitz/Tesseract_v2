@@ -357,6 +357,7 @@ export function SimplifiedUniverseBuilder({
         .from('coverage')
         .select('user_id, analyst_name')
         .in('user_id', rule.values)
+        .order('analyst_name', { ascending: true })
 
       if (data) {
         // Get unique analysts

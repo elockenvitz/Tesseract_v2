@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { coverageRoleRank } from '../lib/coverage/resolveCoverage'
 import type { AnalystPriceTarget } from './useAnalystPriceTargets'
 
 export type AggregationMethod = 'average' | 'weighted' | 'median' | 'range' | 'latest' | 'primary_only'
@@ -97,7 +98,11 @@ function calculateAggregation(
       break
 
     case 'primary_only':
-      const primary = filteredTargets.find(t => t.coverage?.role === 'primary')
+      // Sort by coverage role rank (deterministic) then take best match
+      const byRole = [...filteredTargets].sort((a, b) =>
+        coverageRoleRank(a.coverage?.role) - coverageRoleRank(b.coverage?.role)
+      )
+      const primary = byRole.find(t => t.coverage?.role === 'primary') ?? byRole[0]
       aggregatedPrice = primary?.price || null
       break
 

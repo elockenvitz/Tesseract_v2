@@ -154,7 +154,7 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
       const { data: portfolios, error: portfoliosError } = await supabase
         .from('portfolios')
         .select('id, name')
-        .neq('is_active', false)
+        .in('status', ['active', 'archived'])
         .order('name')
 
       if (portfoliosError) {

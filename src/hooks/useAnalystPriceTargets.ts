@@ -126,14 +126,17 @@ export function useAnalystPriceTargets({
 
       if (error) throw error
 
-      // Fetch coverage data for each user to get their role
+      // Fetch coverage data for each user to get their role (ordered deterministically)
       const userIds = [...new Set((data || []).map(pt => pt.user_id))]
       const { data: coverageData } = await supabase
         .from('coverage')
-        .select('user_id, role, is_active')
+        .select('user_id, role, is_active, is_lead, updated_at')
         .eq('asset_id', assetId)
         .eq('is_active', true)
         .in('user_id', userIds)
+        .order('is_lead', { ascending: false })
+        .order('role', { ascending: true })
+        .order('updated_at', { ascending: false })
 
       const coverageMap = new Map(
         (coverageData || []).map(c => [c.user_id, { role: c.role, is_active: c.is_active }])

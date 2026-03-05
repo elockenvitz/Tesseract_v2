@@ -49,7 +49,7 @@ async function resolveRuleAssetIds(rule: FilterRule): Promise<string[]> {
 
   switch (rule.type) {
     case 'analyst': {
-      const { data } = await supabase.from('coverage').select('asset_id').in('user_id', rule.values)
+      const { data } = await supabase.from('coverage').select('asset_id').in('user_id', rule.values).eq('is_active', true).order('asset_id', { ascending: true })
       return data?.map(r => r.asset_id) || []
     }
     case 'list': {

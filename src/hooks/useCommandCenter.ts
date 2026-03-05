@@ -192,6 +192,7 @@ export function useCommandCenter() {
         .select('asset_id')
         .eq('user_id', userId)
         .eq('is_active', true)
+        .order('asset_id', { ascending: true })
 
       const coveredAssetIds = new Set(userCoverage?.map(c => c.asset_id) || [])
 

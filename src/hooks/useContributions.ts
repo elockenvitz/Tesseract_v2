@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { useAIConfig } from './useAIConfig'
 import {
   findOrCreateRevision,
@@ -98,6 +99,7 @@ interface UseContributionsOptions {
 
 export function useContributions({ assetId, section }: UseContributionsOptions) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Fetch contributions for an asset, grouped by user (one per user per section)
@@ -212,7 +214,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             .from('contribution_visibility_targets')
             .insert(targetIds.map(nodeId => ({
               contribution_id: existing.id,
-              node_id: nodeId
+              node_id: nodeId,
+              organization_id: currentOrgId
             })))
         }
 
@@ -232,7 +235,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             attachments: attachments || [],
             created_by: user?.id,
             team_id: targetIds.length === 1 ? targetIds[0] : null,
-            visibility
+            visibility,
+            organization_id: currentOrgId
           })
           .select(`
             *,
@@ -249,7 +253,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             .from('contribution_visibility_targets')
             .insert(targetIds.map(nodeId => ({
               contribution_id: data.id,
-              node_id: nodeId
+              node_id: nodeId,
+              organization_id: currentOrgId
             })))
         }
 
@@ -327,7 +332,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             draft_content: content,
             draft_updated_at: new Date().toISOString(),
             created_by: user?.id,
-            visibility: 'firm'
+            visibility: 'firm',
+            organization_id: currentOrgId
           })
           .select()
           .single()
@@ -400,7 +406,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
           .from('contribution_visibility_targets')
           .insert(targetIds.map(nodeId => ({
             contribution_id: existing.id,
-            node_id: nodeId
+            node_id: nodeId,
+            organization_id: currentOrgId
           })))
       }
 
@@ -541,7 +548,8 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
           .from('contribution_visibility_targets')
           .insert(targetIds.map(nodeId => ({
             contribution_id: contribId,
-            node_id: nodeId
+            node_id: nodeId,
+            organization_id: currentOrgId
           })))
 
         if (insertError) {

@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { Shield, Download, AlertTriangle, XCircle, RefreshCw, Loader2 } from 'lucide-react'
+import { logOrgActivity } from '../../lib/org-activity-log'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { useToast } from '../common/Toast'
@@ -114,6 +115,15 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
       queryClient.invalidateQueries({ queryKey: ['org-governance', organizationId] })
       toast.success('Retention policy updated')
       setHasRetentionChange(false)
+      logOrgActivity({
+        organizationId,
+        action: 'settings.retention_changed',
+        targetType: 'organization',
+        targetId: organizationId,
+        details: { retention_days: retentionDays },
+        entityType: 'settings',
+        actionType: 'updated',
+      })
     },
     onError: (err: any) => {
       toast.error(err?.message || 'Failed to update retention')

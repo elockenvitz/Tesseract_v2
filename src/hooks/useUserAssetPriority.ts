@@ -128,6 +128,7 @@ export function useUserAssetPriority(assetId: string | undefined) {
         .select('user_id')
         .eq('asset_id', assetId)
         .eq('is_active', true)
+        .order('user_id', { ascending: true })
 
       if (error) throw error
       return (data || []).map(c => c.user_id).filter(Boolean) as string[]
@@ -363,6 +364,7 @@ export function useFirmAssetPriorities(assetIds: string[]) {
         .select('asset_id, user_id')
         .in('asset_id', assetIds)
         .eq('is_active', true)
+        .order('user_id', { ascending: true })
 
       if (error) throw error
       return data || []

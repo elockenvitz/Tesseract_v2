@@ -69,6 +69,7 @@ export function AssetRunDetailPanel({
         .select('asset_id')
         .eq('user_id', userId)
         .eq('is_active', true)
+        .order('asset_id', { ascending: true })
       if (error) return []
       return data || []
     },
