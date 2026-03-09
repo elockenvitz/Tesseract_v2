@@ -1,7 +1,7 @@
 /**
  * Deterministic coverage resolution.
  *
- * All coverage "default owner" selection MUST go through this module.
+ * All coverage resolution (picking a single row for system routing) MUST go through this module.
  * See docs/coverage/coverage_contract.md for the canonical tie-break rule.
  */
 

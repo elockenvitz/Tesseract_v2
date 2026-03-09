@@ -187,7 +187,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   const initialState = getInitialState()
 
   const [searchTerm, setSearchTerm] = useState(initialState.searchTerm || '')
-  const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>(initialState.filterBy || 'all')
+  const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>(initialWorkflowId ? 'all' : (initialState.filterBy || 'all'))
   const [sortBy, setSortBy] = useState<'name' | 'usage' | 'created' | 'updated'>(initialState.sortBy || 'usage')
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)

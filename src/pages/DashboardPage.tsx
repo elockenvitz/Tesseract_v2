@@ -222,6 +222,7 @@ export function DashboardPage() {
       if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
       if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
       if (result.type === 'trade-plans' && tab.type === 'trade-plans') return true
+      if (result.type === 'workflows' && tab.type === 'workflows') return true
       return false
     })
 
@@ -502,6 +503,22 @@ export function DashboardPage() {
     return () => window.removeEventListener('openTradeLab', handleOpenTradeLab as EventListener)
   }, [])
 
+  // Listen for custom event to open a portfolio tab
+  useEffect(() => {
+    const handleOpenPortfolio = (event: CustomEvent) => {
+      const { id, name } = event.detail || {}
+      if (!id) return
+      handleSearchResult({
+        id,
+        title: name || 'Portfolio',
+        type: 'portfolio',
+        data: { id, name },
+      })
+    }
+    window.addEventListener('open-portfolio', handleOpenPortfolio as EventListener)
+    return () => window.removeEventListener('open-portfolio', handleOpenPortfolio as EventListener)
+  }, [])
+
   // Listen for custom event to open a shared simulation
   useEffect(() => {
     const handleOpenSharedSimulation = (event: CustomEvent) => {
@@ -549,6 +566,15 @@ export function DashboardPage() {
 
     window.addEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
     return () => window.removeEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
+  }, [])
+
+  // Listen for custom event to navigate to an asset (e.g., from coverage matrix)
+  useEffect(() => {
+    const handleNavigateToAsset = (event: CustomEvent) => {
+      handleSearchResult(event.detail)
+    }
+    window.addEventListener('navigate-to-asset', handleNavigateToAsset as EventListener)
+    return () => window.removeEventListener('navigate-to-asset', handleNavigateToAsset as EventListener)
   }, [])
 
   // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)
@@ -606,7 +632,7 @@ export function DashboardPage() {
       case 'idea-generator':
         return <IdeaGeneratorPage onItemSelect={handleSearchResult} initialFilters={activeTab.data?.initialFilters} />
       case 'workflows':
-        return <WorkflowsPage onNavigate={handleSearchResult} />
+        return <WorkflowsPage initialWorkflowId={activeTab.data?.id} onNavigate={handleSearchResult} />
       case 'projects-list':
         return <ProjectsPage onProjectSelect={handleSearchResult} />
       case 'project':
