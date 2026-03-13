@@ -20,6 +20,7 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(() => getCachedUser())
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isRecoverySession, setIsRecoverySession] = useState(false)
   const orgRouteAttemptedRef = useRef(false)
 
   // Cache user to localStorage
@@ -170,7 +171,10 @@ export function useAuth() {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoverySession(true)
+      }
       handleAuthSession(session)
     })
 
@@ -244,8 +248,18 @@ export function useAuth() {
 
   const resetPassword = async (email: string) => {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${window.location.origin}/update-password`,
     })
+    return { data, error }
+  }
+
+  const updatePassword = async (newPassword: string) => {
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    })
+    if (!error) {
+      setIsRecoverySession(false)
+    }
     return { data, error }
   }
 
@@ -253,9 +267,11 @@ export function useAuth() {
     user,
     session,
     loading,
+    isRecoverySession,
     signIn,
     signUp: signUpWithNames,
     signOut,
     resetPassword,
+    updatePassword,
   }
 }

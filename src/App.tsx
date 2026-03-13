@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
+import { UpdatePasswordPage } from './pages/auth/UpdatePasswordPage'
 import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
 // SetupWizardPage removed — org creation is invite-only
 import { TesseractLoader } from './components/ui/TesseractLoader'
@@ -29,7 +30,7 @@ const queryClient = new QueryClient({
 })
 
 function AppRoutes() {
-  const { user, loading } = useAuth()
+  const { user, loading, isRecoverySession } = useAuth()
 
   if (loading) {
     return (
@@ -53,6 +54,10 @@ function AppRoutes() {
       <Route
         path="/reset-password"
         element={user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />}
+      />
+      <Route
+        path="/update-password"
+        element={isRecoverySession ? <UpdatePasswordPage /> : <Navigate to={user ? "/dashboard" : "/login"} replace />}
       />
       <Route
         path="/auth/sso/callback"

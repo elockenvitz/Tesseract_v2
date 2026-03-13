@@ -11,7 +11,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading: authLoading, signOut } = useAuth()
+  const { user, loading: authLoading, isRecoverySession, signOut } = useAuth()
   const location = useLocation()
   const [inviteToken, setInviteToken] = useState('')
   const [inviteError, setInviteError] = useState<string | null>(null)
@@ -30,6 +30,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Redirect to login if not authenticated
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Redirect to update-password if in a recovery session
+  if (isRecoverySession) {
+    return <Navigate to="/update-password" replace />
   }
 
   const routeAction = (user as any)?._routeAction as string | undefined
