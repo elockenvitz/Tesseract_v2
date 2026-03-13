@@ -15,6 +15,7 @@ import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 // AssetWorkflowSelector and WorkflowSelector removed — header workflow dropdown replaced by state chips
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
+import { DecisionTimeline } from '../asset/DecisionTimeline'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
@@ -4063,32 +4064,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 })()}
               </Card>
 
-              {/* ─── Decision History ────────────────────────────── */}
-              <Card padding="none">
-                <div className="px-4 py-2 border-b border-gray-200/80">
-                  <h4 className="text-[13px] font-semibold text-gray-900">Decision History</h4>
-                </div>
-                {/* Column headers visible even when empty — establishes table contract */}
-                <table className="min-w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200/70 bg-gray-50">
-                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Portfolio</th>
-                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Action</th>
-                      <th className="px-4 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wider tabular-nums">{'\u0394'} Weight</th>
-                      <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider w-16">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colSpan={5} className="px-4 py-4">
-                        <span className="text-[13px] text-gray-500 block">No executed decisions yet.</span>
-                        <span className="text-[11px] text-gray-400 block mt-0.5">Approved and implemented proposals will appear here.</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </Card>
+              {/* ─── Decision Timeline ────────────────────────────── */}
+              <DecisionTimeline
+                assetId={asset.id}
+                onNavigate={onNavigate}
+              />
             </div>
           )
         })()}

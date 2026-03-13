@@ -1,0 +1,5 @@
+export { extractReferencesFromHTML } from './extract-references'
+export type { LinkableEntityType, LinkRelationshipType, ExtractedReference } from './extract-references'
+export { syncNoteLinks, getNoteSourceType } from './sync-note-links'
+export type { NoteSourceType } from './sync-note-links'
+export { backfillObjectLinks } from './backfill-links'

@@ -31,7 +31,8 @@ import {
   Pencil,
   Plus,
   Check,
-  Briefcase
+  Briefcase,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -51,6 +52,10 @@ import type {
 } from '../../types/trading'
 import { clsx } from 'clsx'
 import { PairTradeLegEditor } from './PairTradeLegEditor'
+import { CounterViewModal } from './CounterViewModal'
+import { canMoveGlobalStage } from '../../lib/permissions/trade-idea-permissions'
+import { CounterViewsSection } from './CounterViewsSection'
+import { CounterViewBadge } from './CounterViewBadge'
 
 type ModalTab = 'details' | 'discussion' | 'proposals' | 'activity'
 
@@ -59,6 +64,8 @@ interface TradeIdeaDetailModalProps {
   tradeId: string
   onClose: () => void
   initialTab?: ModalTab
+  /** Navigate to a different trade idea (e.g. counter-view) */
+  onNavigateToIdea?: (ideaId: string) => void
 }
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> = {
@@ -77,7 +84,7 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> 
   deleted: { label: 'Deleted', color: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' },
 }
 
-export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'details' }: TradeIdeaDetailModalProps) {
+export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'details', onNavigateToIdea }: TradeIdeaDetailModalProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const discussionInputRef = useRef<UniversalSmartInputRef>(null)
@@ -103,6 +110,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [showDeferModal, setShowDeferModal] = useState(false)
   const [deferUntilDate, setDeferUntilDate] = useState<string | null>(null)
   const [showProposalModal, setShowProposalModal] = useState(false)
+  const [showCounterViewModal, setShowCounterViewModal] = useState(false)
   const [proposalWeight, setProposalWeight] = useState<string>('')
   const [proposalShares, setProposalShares] = useState<string>('')
   const [proposalNotes, setProposalNotes] = useState<string>('')
@@ -1539,6 +1547,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const isPairTradeOwner = pairTradeData?.created_by === user?.id ||
     (pairTradeData?.legs?.[0]?.created_by === user?.id) ||
     (pairTradeData?.trade_queue_items?.[0]?.created_by === user?.id)
+
+  // Can this user move the idea through global stages (idea → working_on → modeling)?
+  const canMoveStages = !!(user?.id && trade && canMoveGlobalStage(user.id, {
+    created_by: trade.created_by,
+    assigned_to: trade.assigned_to,
+    collaborators: (trade as any).collaborators,
+  }))
 
   // Edit handlers
   const startEditRationale = () => {
@@ -4503,6 +4518,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     )}
                   </div>
 
+                  {/* ========== COUNTER-VIEWS SECTION ========== */}
+                  <CounterViewsSection
+                    tradeIdeaId={tradeId}
+                    onNavigateToIdea={(ideaId) => {
+                      if (onNavigateToIdea) {
+                        onNavigateToIdea(ideaId)
+                      }
+                    }}
+                    className="pb-4 border-b border-gray-200 dark:border-gray-700"
+                  />
+
                   {/* ========== ACTIONS - SEGMENTED SECTIONS ========== */}
                   {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && trade.status !== 'archived' && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
@@ -4513,42 +4539,89 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
                             Move Forward
                           </h4>
-                          <div className="flex flex-wrap gap-2">
-                            {(trade.status === 'idea' || trade.stage === 'idea') && (
-                              <>
-                                <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('discussing')} disabled={updateStatusMutation.isPending}>
-                                  <Wrench className="h-4 w-4 mr-1" />
-                                  Working On
-                                </Button>
-                                <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
-                                  <FlaskConical className="h-4 w-4 mr-1" />
-                                  Modeling
-                                </Button>
-                                <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
+                          {canMoveStages ? (
+                            <div className="flex flex-wrap gap-2">
+                              {(trade.status === 'idea' || trade.stage === 'idea') && (
+                                <>
+                                  <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('discussing')} disabled={updateStatusMutation.isPending}>
+                                    <Wrench className="h-4 w-4 mr-1" />
+                                    Working On
+                                  </Button>
+                                  <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
+                                    <FlaskConical className="h-4 w-4 mr-1" />
+                                    Modeling
+                                  </Button>
+                                  <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
+                                    <Scale className="h-4 w-4 mr-1" />
+                                    Deciding
+                                  </Button>
+                                </>
+                              )}
+                              {(trade.status === 'discussing' || trade.stage === 'working_on') && (
+                                <>
+                                  <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
+                                    <FlaskConical className="h-4 w-4 mr-1" />
+                                    Modeling
+                                  </Button>
+                                  <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
+                                    <Scale className="h-4 w-4 mr-1" />
+                                    Deciding
+                                  </Button>
+                                </>
+                              )}
+                              {(trade.status === 'simulating' || trade.stage === 'modeling') && (
+                                <Button size="sm" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
                                   <Scale className="h-4 w-4 mr-1" />
                                   Deciding
                                 </Button>
-                              </>
-                            )}
-                            {(trade.status === 'discussing' || trade.stage === 'working_on') && (
-                              <>
-                                <Button size="sm" onClick={() => updateStatusMutation.mutate('simulating')} disabled={updateStatusMutation.isPending}>
-                                  <FlaskConical className="h-4 w-4 mr-1" />
-                                  Modeling
-                                </Button>
-                                <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
-                                  <Scale className="h-4 w-4 mr-1" />
-                                  Deciding
-                                </Button>
-                              </>
-                            )}
-                            {(trade.status === 'simulating' || trade.stage === 'modeling') && (
-                              <Button size="sm" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
-                                <Scale className="h-4 w-4 mr-1" />
-                                Deciding
+                              )}
+                              {/* Counter-View button available at all non-deciding stages */}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setShowCounterViewModal(true)}
+                                className="border-violet-300 text-violet-600 hover:bg-violet-50 hover:border-violet-400 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-900/20 dark:hover:border-violet-600"
+                              >
+                                <ArrowLeftRight className="h-4 w-4 mr-1" />
+                                Counter-View
                               </Button>
-                            )}
-                          </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const creatorName = trade.users?.first_name
+                                      ? `${trade.users.first_name}${trade.users.last_name ? ' ' + trade.users.last_name : ''}`
+                                      : trade.users?.email?.split('@')[0] || 'the creator'
+                                    const stageLabel = trade.stage === 'idea' ? 'Idea' : trade.stage === 'working_on' ? 'Working On' : trade.stage === 'modeling' ? 'Modeling' : trade.stage || trade.status
+                                    sendDiscussionMessageMutation.mutate({
+                                      content: `Any update on this? Currently in ${stageLabel} — wondering if it's ready to move forward.`,
+                                    })
+                                    setActiveTab('discussion')
+                                  }}
+                                  disabled={sendDiscussionMessageMutation.isPending}
+                                >
+                                  <MessageCircle className="h-4 w-4 mr-1" />
+                                  Request Update
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setShowCounterViewModal(true)}
+                                  className="border-violet-300 text-violet-600 hover:bg-violet-50 hover:border-violet-400 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-900/20 dark:hover:border-violet-600"
+                                >
+                                  <ArrowLeftRight className="h-4 w-4 mr-1" />
+                                  Counter-View
+                                </Button>
+                              </div>
+                              <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                Only the creator or assigned analyst can move stages.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -4669,6 +4742,15 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 >
                                   <XCircle className="h-4 w-4 mr-1" />
                                   {activePortfolioTracks.length === 1 ? 'Reject' : 'Reject...'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => setShowCounterViewModal(true)}
+                                  className="!text-violet-600 hover:!bg-violet-50 hover:!border-violet-300 dark:!text-violet-400 dark:hover:!bg-violet-900/20"
+                                >
+                                  <ArrowLeftRight className="h-4 w-4 mr-1" />
+                                  Counter-View
                                 </Button>
                               </div>
                             )}
@@ -5986,7 +6068,66 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           Link this trade idea to a portfolio to submit proposals
                         </p>
                       </div>
-                    ) : null}
+                    ) : (
+                      /* Proposals exist but no portfolio context cards — show a flat list */
+                      <div className="space-y-2">
+                        {proposals.map((proposal: any) => {
+                          const userName = proposal.users?.first_name && proposal.users?.last_name
+                            ? `${proposal.users.first_name} ${proposal.users.last_name}`
+                            : proposal.users?.email?.split('@')[0] || 'Unknown'
+                          const isCurrentUser = proposal.user_id === user?.id
+                          const portfolioName = proposal.portfolio?.name || proposal.portfolios?.name || 'Unknown Portfolio'
+
+                          return (
+                            <div
+                              key={proposal.id}
+                              className={clsx(
+                                "p-3 rounded-lg border",
+                                isCurrentUser
+                                  ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800"
+                                  : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
+                              )}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                    {userName}
+                                    {isCurrentUser && (
+                                      <span className="ml-1 text-xs text-primary-600 dark:text-primary-400">(You)</span>
+                                    )}
+                                  </span>
+                                  <span className="text-xs text-gray-400">·</span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">{portfolioName}</span>
+                                </div>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                                  {proposal.weight !== null && proposal.weight !== undefined
+                                    ? `${Number(proposal.weight).toFixed(2)}%`
+                                    : proposal.shares
+                                    ? `${Number(proposal.shares).toLocaleString()} sh`
+                                    : '—'}
+                                </span>
+                              </div>
+                              {proposal.sizing_input && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  Sizing: {proposal.sizing_input}
+                                  {proposal.sizing_mode && proposal.sizing_mode !== 'weight' && (
+                                    <span className="ml-1 text-gray-400">({proposal.sizing_mode})</span>
+                                  )}
+                                </div>
+                              )}
+                              {proposal.notes && (
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 italic">
+                                  "{proposal.notes}"
+                                </p>
+                              )}
+                              <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                                {new Date(proposal.updated_at || proposal.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
 
                     {/* Cancelled Proposals */}
                     {rejectedProposals.length > 0 && (() => {
@@ -6630,6 +6771,33 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             </div>
           </div>
         </div>
+      )}
+
+      {/* Counter-View Modal */}
+      {trade && (
+        <CounterViewModal
+          isOpen={showCounterViewModal}
+          onClose={() => setShowCounterViewModal(false)}
+          originalIdea={{
+            id: trade.id,
+            action: trade.action,
+            asset_id: trade.asset_id,
+            asset_symbol: trade.assets?.symbol,
+            asset_name: trade.assets?.company_name,
+            portfolio_id: trade.portfolio_id,
+            portfolio_name: labLinks?.[0]?.trade_lab?.portfolio?.name,
+            urgency: trade.urgency || 'medium',
+            rationale: trade.rationale,
+            sharing_visibility: trade.sharing_visibility,
+          }}
+          onCreated={(newIdeaId) => {
+            queryClient.invalidateQueries({ queryKey: ['counter-views', tradeId] })
+            queryClient.invalidateQueries({ queryKey: ['counter-view-count', tradeId] })
+            if (onNavigateToIdea) {
+              onNavigateToIdea(newIdeaId)
+            }
+          }}
+        />
       )}
     </div>
   )

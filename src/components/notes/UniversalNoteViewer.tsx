@@ -165,7 +165,7 @@ export function UniversalNoteViewer({
               </h1>
               <div className="flex items-center space-x-3">
                 <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
-                  {note.note_type || 'general'}
+                  {getNoteType(note.note_type).label}
                 </Badge>
               </div>
             </div>

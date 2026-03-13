@@ -13,6 +13,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from './useAuth'
 import { useToast } from '../components/common/Toast'
+import { usePendingLineageStore } from '../stores/pendingLineageStore'
 import {
   moveTradeIdea,
   deleteTradeIdea,
@@ -458,8 +459,22 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         contextTags: params.contextTags,
       })
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       invalidateQueries()
+
+      // Auto-link to parent if a "Next step" action was pending
+      if (result?.id && user?.id) {
+        const linked = await usePendingLineageStore.getState().linkIfPending({
+          childType: 'trade_idea',
+          childId: result.id,
+          userId: user.id,
+        })
+        if (linked) {
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
+        }
+      }
+
       toast.success('Trade idea created', {
         action: {
           label: 'View in Queue',

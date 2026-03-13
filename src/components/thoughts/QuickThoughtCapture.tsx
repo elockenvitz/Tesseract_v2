@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
+import { usePendingLineageStore } from '../../stores/pendingLineageStore'
 import { clsx } from 'clsx'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 import type { CapturedContext } from './ContextSelector'
@@ -264,10 +265,23 @@ export function QuickThoughtCapture({
 
       return data
     },
-    onSuccess: () => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts'] })
       // Also invalidate attention queries so the Attention Dashboard updates immediately
       invalidateAttention()
+
+      // Auto-link to parent if a "Next step" action was pending
+      if (data?.id) {
+        const linked = await usePendingLineageStore.getState().linkIfPending({
+          childType: 'quick_thought',
+          childId: data.id,
+          userId: data.created_by,
+        })
+        if (linked) {
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
+        }
+      }
 
       // Capture the current idea type before resetting (for toast message)
       const capturedIdeaType = ideaType as ThoughtIdeaType

@@ -2,6 +2,7 @@ import React from 'react'
 import { FileText, Link2, Upload, Lock, Share2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '../ui/Badge'
+import { getNoteType } from '../../lib/note-types'
 import clsx from 'clsx'
 
 export type NoteSourceType = 'platform' | 'uploaded' | 'external_link'
@@ -108,8 +109,8 @@ export function CompactNoteCard({ note, currentUserId, showAuthor = true, onClic
         )}
 
         {note.note_type && (
-          <Badge variant="default" size="sm" className="text-[10px] px-1.5 py-0">
-            {note.note_type}
+          <Badge variant={getNoteType(note.note_type).badgeVariant} size="sm" className="text-[10px] px-1.5 py-0">
+            {getNoteType(note.note_type).label}
           </Badge>
         )}
 

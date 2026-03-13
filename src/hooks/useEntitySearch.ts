@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 
-export type EntityType = 'user' | 'asset' | 'theme' | 'portfolio' | 'note' | 'workflow' | 'list'
+export type EntityType = 'user' | 'asset' | 'theme' | 'portfolio' | 'note' | 'workflow' | 'list' | 'trade_idea' | 'project' | 'trade' | 'trade_sheet' | 'meeting'
 
 export interface EntitySearchResult {
   id: string
@@ -20,7 +20,7 @@ interface UseEntitySearchOptions {
   enabled?: boolean
 }
 
-const DEFAULT_TYPES: EntityType[] = ['user', 'asset', 'theme', 'portfolio', 'note', 'workflow', 'list']
+const DEFAULT_TYPES: EntityType[] = ['user', 'asset', 'theme', 'portfolio', 'note', 'workflow', 'list', 'trade_idea', 'project']
 
 export function useEntitySearch({
   query,
@@ -265,6 +265,159 @@ export function useEntitySearch({
         )
       }
 
+      // Search trade ideas
+      if (types.includes('trade_idea')) {
+        searchPromises.push(
+          (async () => {
+            const { data: ideas } = await supabase
+              .from('trade_queue_items')
+              .select('id, action, stage, assets(id, symbol, company_name)')
+              .or(`action.ilike.%${query}%`)
+              .limit(limit)
+
+            // Also search by symbol if the query didn't match actions
+            const { data: ideasBySymbol } = await supabase
+              .from('trade_queue_items')
+              .select('id, action, stage, assets!inner(id, symbol, company_name)')
+              .or(`symbol.ilike.%${query}%,company_name.ilike.%${query}%`, { referencedTable: 'assets' })
+              .limit(limit)
+
+            const combined = new Map<string, any>()
+            for (const item of [...(ideas || []), ...(ideasBySymbol || [])]) {
+              combined.set(item.id, item)
+            }
+
+            for (const idea of combined.values()) {
+              const asset = idea.assets as any
+              const symbol = asset?.symbol || '?'
+              const companyName = asset?.company_name || ''
+              searchResults.push({
+                id: idea.id,
+                type: 'trade_idea' as const,
+                title: `${idea.action || 'Trade'} ${symbol}`,
+                subtitle: [companyName, idea.stage].filter(Boolean).join(' · '),
+                icon: 'zap',
+                data: idea
+              })
+            }
+          })()
+        )
+      }
+
+      // Search projects
+      if (types.includes('project')) {
+        searchPromises.push(
+          (async () => {
+            const { data: projects } = await supabase
+              .from('projects')
+              .select('id, name, description, status')
+              .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+              .limit(limit)
+
+            if (projects) {
+              searchResults.push(...projects.map(project => ({
+                id: project.id,
+                type: 'project' as const,
+                title: project.name,
+                subtitle: [project.description, project.status].filter(Boolean).join(' · '),
+                icon: 'folder',
+                data: project
+              })))
+            }
+          })()
+        )
+      }
+
+      // Search trades (lab_variants)
+      if (types.includes('trade')) {
+        searchPromises.push(
+          (async () => {
+            const { data: variants } = await supabase
+              .from('lab_variants')
+              .select('id, direction, sizing_input, created_at, asset:assets(id, symbol, company_name), portfolio:portfolios!inner(id, name)')
+              .limit(limit)
+
+            if (variants) {
+              for (const v of variants as any[]) {
+                const symbol = v.asset?.symbol || '?'
+                const matchesQuery = !query.trim() ||
+                  symbol.toLowerCase().includes(query.toLowerCase()) ||
+                  (v.asset?.company_name || '').toLowerCase().includes(query.toLowerCase()) ||
+                  (v.direction || '').toLowerCase().includes(query.toLowerCase())
+                if (!matchesQuery) continue
+                searchResults.push({
+                  id: v.id,
+                  type: 'trade' as const,
+                  title: `${v.direction || 'Trade'} ${symbol}`,
+                  subtitle: [v.sizing_input, v.portfolio?.name].filter(Boolean).join(' · '),
+                  icon: 'arrow-right-left',
+                  data: v
+                })
+              }
+            }
+          })()
+        )
+      }
+
+      // Search trade sheets
+      if (types.includes('trade_sheet')) {
+        searchPromises.push(
+          (async () => {
+            const { data: sheets } = await supabase
+              .from('trade_sheets')
+              .select('id, name, status, created_at, portfolio:portfolios(name)')
+              .or(`name.ilike.%${query}%`)
+              .limit(limit)
+
+            if (sheets) {
+              searchResults.push(...(sheets as any[]).map(sheet => ({
+                id: sheet.id,
+                type: 'trade_sheet' as const,
+                title: sheet.name || 'Trade Sheet',
+                subtitle: [sheet.status, sheet.portfolio?.name].filter(Boolean).join(' · '),
+                icon: 'clipboard-check',
+                data: sheet
+              })))
+            }
+          })()
+        )
+      }
+
+      // Search meetings / calendar events
+      if (types.includes('meeting')) {
+        searchPromises.push(
+          (async () => {
+            const { data: events } = await supabase
+              .from('calendar_events')
+              .select('id, title, description, start_time, end_time, event_type')
+              .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+              .order('start_time', { ascending: false })
+              .limit(limit)
+
+            if (events) {
+              searchResults.push(...events.map(evt => {
+                let timeLabel = ''
+                if (evt.start_time) {
+                  try {
+                    const d = new Date(evt.start_time)
+                    timeLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                      ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                  } catch { /* ignore */ }
+                }
+                return {
+                  id: evt.id,
+                  type: 'meeting' as const,
+                  title: evt.title || 'Meeting',
+                  subtitle: [evt.event_type, timeLabel].filter(Boolean).join(' · '),
+                  icon: 'calendar',
+                  data: evt
+                }
+              }))
+            }
+          })()
+        )
+      }
+
       // Run all searches in parallel
       await Promise.all(searchPromises)
 
@@ -297,7 +450,12 @@ export function getEntityIcon(type: EntityType): string {
     portfolio: 'Briefcase',
     note: 'FileText',
     workflow: 'GitBranch',
-    list: 'List'
+    list: 'List',
+    trade_idea: 'Zap',
+    project: 'Folder',
+    trade: 'ArrowRightLeft',
+    trade_sheet: 'ClipboardCheck',
+    meeting: 'Calendar'
   }
   return icons[type]
 }
@@ -311,7 +469,12 @@ export function getEntityLabel(type: EntityType): string {
     portfolio: 'Portfolio',
     note: 'Note',
     workflow: 'Workflow',
-    list: 'List'
+    list: 'List',
+    trade_idea: 'Trade Idea',
+    project: 'Project',
+    trade: 'Trade',
+    trade_sheet: 'Trade Sheet',
+    meeting: 'Meeting'
   }
   return labels[type]
 }
@@ -325,7 +488,12 @@ export function getEntityColor(type: EntityType): string {
     portfolio: 'orange',
     note: 'gray',
     workflow: 'cyan',
-    list: 'pink'
+    list: 'pink',
+    trade_idea: 'amber',
+    project: 'indigo',
+    trade: 'rose',
+    trade_sheet: 'teal',
+    meeting: 'sky'
   }
   return colors[type]
 }

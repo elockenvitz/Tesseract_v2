@@ -13,6 +13,7 @@ import { clsx } from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { usePendingLineageStore } from '../../stores/pendingLineageStore'
 import { useToast } from '../common/Toast'
 import type { CapturedContext } from './ContextSelector'
 
@@ -377,7 +378,20 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
 
       return prompt
     },
-    onSuccess: () => {
+    onSuccess: async (prompt) => {
+      // Auto-link to parent if a "Next step" action was pending
+      if (prompt?.id) {
+        const linked = await usePendingLineageStore.getState().linkIfPending({
+          childType: 'quick_thought',
+          childId: prompt.id,
+          userId: prompt.created_by,
+        })
+        if (linked) {
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
+        }
+      }
+
       success('Prompt sent')
       queryClient.invalidateQueries({ queryKey: ['recent-quick-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['notifications'] })

@@ -10,7 +10,7 @@ export interface SelectedItem {
 export type SidebarMode = 'capture' | 'inspect'
 
 /** One-shot capture type for auto-selecting a capture form when the sidebar opens */
-export type PendingCaptureType = 'trade_idea' | 'prompt' | null
+export type PendingCaptureType = 'idea' | 'trade_idea' | 'prompt' | null
 
 interface SidebarState {
   // State

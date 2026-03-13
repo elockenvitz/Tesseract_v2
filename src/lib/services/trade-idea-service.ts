@@ -24,6 +24,7 @@ import {
   createStateSnapshot,
   SYSTEM_ACTORS,
 } from '../audit'
+import { captureDecisionPriceSnapshot, outcomeToSnapshotType } from './decision-snapshot-service'
 import type {
   TradeStage,
   TradeOutcome,
@@ -413,6 +414,23 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
 
   if (error) {
     throw new Error(`Failed to move trade: ${error.message}`)
+  }
+
+  // ── Capture decision price snapshot on outcome set ──
+  // Fire-and-forget: snapshot failure must not block the state transition.
+  if (target.outcome) {
+    const snapshotType = outcomeToSnapshotType(target.outcome)
+    if (snapshotType) {
+      captureDecisionPriceSnapshot({
+        tradeQueueItemId: tradeId,
+        assetId: currentTrade.asset_id,
+        portfolioId: currentTrade.portfolio_id || null,
+        snapshotType,
+        actorId: context.actorId,
+      }).catch(err => {
+        console.error(`[TRADE] Failed to capture ${snapshotType} price snapshot for ${tradeId}:`, err)
+      })
+    }
   }
 
   // Cancel all active proposals when moving out of deciding stage
@@ -1417,6 +1435,32 @@ export async function movePairTrade(params: {
 
   if (legsError) {
     throw new Error(`Failed to update pair trade legs: ${legsError.message}`)
+  }
+
+  // ── Capture decision price snapshots for pair trade legs ──
+  if (target.outcome) {
+    const snapshotType = outcomeToSnapshotType(target.outcome)
+    if (snapshotType) {
+      // Fetch leg details for snapshot capture
+      const { data: legDetails } = await supabase
+        .from('trade_queue_items')
+        .select('id, asset_id, portfolio_id')
+        .eq(isPairIdOnly ? 'pair_id' : 'pair_trade_id', pairTradeId)
+
+      if (legDetails) {
+        for (const leg of legDetails) {
+          captureDecisionPriceSnapshot({
+            tradeQueueItemId: leg.id,
+            assetId: leg.asset_id,
+            portfolioId: leg.portfolio_id || null,
+            snapshotType,
+            actorId: context.actorId,
+          }).catch(err => {
+            console.error(`[TRADE] Failed to capture ${snapshotType} price snapshot for leg ${leg.id}:`, err)
+          })
+        }
+      }
+    }
   }
 
   // Determine action type

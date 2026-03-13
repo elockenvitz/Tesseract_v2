@@ -1,6 +1,7 @@
 import React, { useEffect, forwardRef, useImperativeHandle, useRef, useCallback, memo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, Extension } from '@tiptap/react'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import { Highlight } from '@tiptap/extension-highlight'
 import { Underline } from '@tiptap/extension-underline'
@@ -47,6 +48,36 @@ import { useUrlMetadata } from '../../hooks/useUrlMetadata'
 import { ScreenshotModal } from '../capture/ScreenshotModal'
 import type { CaptureEntityType } from '../../types/capture'
 
+const InlineNodeClickExtension = Extension.create({
+  name: 'inlineNodeClick',
+  addOptions() {
+    return { onClick: undefined as ((info: { type: string; attrs: Record<string, string>; rect: DOMRect }) => void) | undefined }
+  },
+  addProseMirrorPlugins() {
+    const onClick = this.options.onClick
+    return [new Plugin({
+      key: new PluginKey('inlineNodeClick'),
+      props: {
+        handleClick(_view, _pos, event) {
+          const el = event.target as HTMLElement
+          for (const dataType of ['asset', 'mention', 'hashtag'] as const) {
+            const node = el.closest(`[data-type="${dataType}"]`) as HTMLElement
+            if (node) {
+              const attrs: Record<string, string> = {}
+              for (const attr of node.attributes) {
+                if (attr.name.startsWith('data-')) attrs[attr.name] = attr.value
+              }
+              onClick?.({ type: dataType, attrs, rect: node.getBoundingClientRect() })
+              return true
+            }
+          }
+          return false
+        }
+      }
+    })]
+  }
+})
+
 export interface RichTextEditorRef {
   getHTML: () => string
   getText: () => string
@@ -85,6 +116,11 @@ export interface RichTextEditorProps {
   onNoteLinkSearch?: (query: string) => Promise<NoteLinkItem[]>
   onNoteLinkSelect?: (note: NoteLinkItem) => void
   onNoteLinkNavigate?: (note: NoteLinkItem) => void
+  onInlineNodeClick?: (info: {
+    type: 'asset' | 'mention' | 'hashtag'
+    attrs: Record<string, string>
+    rect: DOMRect
+  }) => void
 }
 
 const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>(({
@@ -107,6 +143,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
   onAssetSelect,
   onNoteLinkSelect,
   onNoteLinkNavigate,
+  onInlineNodeClick,
   onInsertEvent,
   onInsertAttachment,
   readOnly = false,
@@ -488,7 +525,17 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
             targetName: targetName || (type === 'private' ? 'Private' : type === 'team' ? 'Team Only' : 'Portfolio Only')
           }).run()
           console.log('[VisibilityCommand] done')
-        }
+        },
+        onAssetSearch: onAssetSearch ? async (query: string) => {
+          const results = await onAssetSearch(query)
+          return results.map(r => ({
+            id: r.id,
+            symbol: r.symbol,
+            companyName: r.companyName,
+            price: r.price,
+            change: r.change,
+          }))
+        } : undefined,
       }),
       AIPromptExtension.configure({
         onSubmit: handleAISubmit,
@@ -503,6 +550,23 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
               return await onMentionSearch(query)
             }
             return []
+          },
+          command: ({ editor, range, props }: any) => {
+            if (onMentionSelect) {
+              onMentionSelect({
+                id: props.id,
+                name: props.label,
+                email: undefined
+              })
+            }
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(range, [
+                { type: 'mention', attrs: props },
+                { type: 'text', text: ' ' }
+              ])
+              .run()
           },
           render: () => {
             let component: any
@@ -534,6 +598,23 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
             }
             return []
           },
+          command: ({ editor, range, props }: any) => {
+            if (onAssetSelect) {
+              onAssetSelect({
+                id: props.id,
+                symbol: props.symbol,
+                companyName: ''
+              })
+            }
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(range, [
+                { type: 'asset', attrs: props },
+                { type: 'text', text: ' ' }
+              ])
+              .run()
+          },
           render: () => {
             let component: any
 
@@ -564,6 +645,24 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
             }
             return []
           },
+          command: ({ editor, range, props }: any) => {
+            if (onHashtagSelect) {
+              onHashtagSelect({
+                id: props.id,
+                name: props.label,
+                type: props.tagType,
+                description: undefined
+              })
+            }
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(range, [
+                { type: 'hashtag', attrs: props },
+                { type: 'text', text: ' ' }
+              ])
+              .run()
+          },
           render: () => {
             let component: any
 
@@ -584,6 +683,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           }
         }
       })] : []),
+      ...(onInlineNodeClick ? [InlineNodeClickExtension.configure({ onClick: onInlineNodeClick })] : []),
       ...(enableNoteLinks ? [NoteLinkExtension.configure({
         onSelect: onNoteLinkSelect,
         onNavigate: onNoteLinkNavigate,
@@ -1328,6 +1428,12 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           border-radius: 0.25rem;
           font-weight: 500;
           font-size: 0.875rem;
+          cursor: pointer;
+          transition: background-color 0.15s;
+        }
+
+        .ProseMirror .mention:hover {
+          background-color: #bfdbfe;
         }
 
         .ProseMirror .asset {
@@ -1337,6 +1443,12 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           border-radius: 0.25rem;
           font-weight: 600;
           font-size: 0.875rem;
+          cursor: pointer;
+          transition: background-color 0.15s;
+        }
+
+        .ProseMirror .asset:hover {
+          background-color: #a7f3d0;
         }
 
         .ProseMirror .hashtag {
@@ -1346,6 +1458,12 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           border-radius: 0.25rem;
           font-weight: 500;
           font-size: 0.875rem;
+          cursor: pointer;
+          transition: background-color 0.15s;
+        }
+
+        .ProseMirror .hashtag:hover {
+          background-color: #fde68a;
         }
 
         .ProseMirror .note-link {

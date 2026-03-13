@@ -275,8 +275,19 @@ export interface OutcomeSummaryStats {
 // ============================================================
 
 /**
- * TODO: Implement holdings snapshot ingestion
+ * NOTE: Holdings diff detection is now implemented via the Trade Journal system.
+ * See: portfolio_trade_events table + trade-event-service.ts
  *
+ * The generateEventsFromHoldingsDiff() function in trade-event-service.ts
+ * creates portfolio_trade_events from holdings changes. These events feed
+ * into the Trade Journal for rationale capture, and will later connect
+ * to this outcomes system via linked_decision_id / linked_trade_idea_id.
+ *
+ * Future: ExecutionObservation can be populated from portfolio_trade_events
+ * where source_type = 'holdings_diff'.
+ */
+
+/**
  * HoldingsSnapshot represents a point-in-time portfolio state
  * uploaded from external systems (custodian, broker, etc.)
  */

@@ -48,6 +48,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
+import { CounterViewBadge } from '../components/trading/CounterViewBadge'
 import type {
   TradeQueueItemWithDetails,
   TradeQueueStatus,
@@ -993,6 +994,12 @@ export function TradeQueuePage() {
   }, [pairTradeGroups])
 
   // Drag handlers - use dataTransfer to pass the item ID reliably
+  // Permission check: can this user move this item through stages?
+  const canUserMoveItem = useCallback((item: { created_by: string | null; assigned_to: string | null; collaborators?: string[] | null }) => {
+    if (!user?.id) return false
+    return isCreatorOrCoAnalyst(user.id, item)
+  }, [user?.id])
+
   const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
     e.dataTransfer.setData('text/plain', itemId)
     e.dataTransfer.setData('type', 'item')
@@ -1549,7 +1556,7 @@ export function TradeQueuePage() {
                             onLabClick={handleLabClick}
                             onAcknowledgeResurfaced={() => acknowledgeResurfacedMutation.mutate(item)}
                             canMoveLeft={false}
-                            canMoveRight={true}
+                            canMoveRight={canUserMoveItem(item)}
                             onMoveRight={() => moveTrade({ tradeId: item.id, targetStatus: 'discussing', uiSource: 'arrow_button' })}
                           />
                         ))}
@@ -1633,8 +1640,8 @@ export function TradeQueuePage() {
                             onClick={() => { setSelectedTradeId(item.id); setSelectedTradeInitialTab('details') }}
                             onLabClick={handleLabClick}
                             onAcknowledgeResurfaced={() => acknowledgeResurfacedMutation.mutate(item)}
-                            canMoveLeft={true}
-                            canMoveRight={true}
+                            canMoveLeft={canUserMoveItem(item)}
+                            canMoveRight={canUserMoveItem(item)}
                             onMoveLeft={() => moveTrade({ tradeId: item.id, targetStatus: 'idea', uiSource: 'arrow_button' })}
                             onMoveRight={() => moveTrade({ tradeId: item.id, targetStatus: 'simulating', uiSource: 'arrow_button' })}
                           />
@@ -1722,8 +1729,8 @@ export function TradeQueuePage() {
                             onDragEnd={handleDragEnd}
                             onClick={() => { setSelectedTradeId(item.id); setSelectedTradeInitialTab('details') }}
                             onLabClick={handleLabClick}
-                            canMoveLeft={true}
-                            canMoveRight={true}
+                            canMoveLeft={canUserMoveItem(item)}
+                            canMoveRight={canUserMoveItem(item)}
                             onMoveLeft={() => moveTrade({ tradeId: item.id, targetStatus: 'discussing', uiSource: 'arrow_button' })}
                             onMoveRight={() => {
                               setProposalTradeId(item.id)
@@ -2454,6 +2461,10 @@ export function TradeQueuePage() {
           initialTab={selectedTradeInitialTab}
           onClose={() => {
             setSelectedTradeId(null)
+            setSelectedTradeInitialTab('details')
+          }}
+          onNavigateToIdea={(ideaId) => {
+            setSelectedTradeId(ideaId)
             setSelectedTradeInitialTab('details')
           }}
         />
@@ -4595,6 +4606,7 @@ function TradeQueueCard({
               {item.assets?.symbol}
             </button>
             <span className="text-gray-500 dark:text-gray-400">{item.assets?.company_name}</span>
+            <CounterViewBadge tradeIdeaId={item.id} onClick={onClick} />
           </div>
         </div>
 
@@ -4656,10 +4668,21 @@ function TradeQueueCard({
               </button>
             )
           ) : item.portfolios?.name ? (
-            // Not in labs but has portfolio
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-medium">{item.portfolios.name}</span>
-            </span>
+            // Not in labs but has portfolio — link to portfolio tab
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const pid = item.portfolios?.id || item.portfolios?.portfolio_id || item.portfolio_id
+                if (pid) {
+                  window.dispatchEvent(new CustomEvent('open-portfolio', {
+                    detail: { id: pid, name: item.portfolios.name }
+                  }))
+                }
+              }}
+              className="text-xs text-primary-600 dark:text-primary-400 font-medium hover:underline"
+            >
+              {item.portfolios.name}
+            </button>
           ) : null}
 
           {/* Urgency badge OR Restored badge (restored takes precedence) */}

@@ -147,7 +147,7 @@ export function EditorToolbar({
       if (sizeRef.current && !sizeRef.current.contains(e.target as Node)) setShowSizeMenu(false)
       if (fontRef.current && !fontRef.current.contains(e.target as Node)) setShowFontMenu(false)
       if (listRef.current && !listRef.current.contains(e.target as Node)) setShowListMenu(false)
-      if (insertRef.current && !insertRef.current.contains(e.target as Node)) setShowInsertMenu(false)
+      if (insertRef.current && !insertRef.current.contains(e.target as Node)) { setShowInsertMenu(false); setShowLinkInput(false) }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -723,56 +723,6 @@ export function EditorToolbar({
           <Quote className="w-4 h-4" />
         </ToolButton>
 
-        {/* Link */}
-        <div className="relative">
-          <ToolButton
-            onClick={() => {
-              if (editor.isActive('link')) {
-                editor.chain().focus().unsetLink().run()
-              } else {
-                setShowLinkInput(!showLinkInput)
-                setTimeout(() => linkInputRef.current?.focus(), 0)
-              }
-            }}
-            isActive={editor.isActive('link')}
-            title="Link (Ctrl+K)"
-          >
-            <LinkIcon className="w-4 h-4" />
-          </ToolButton>
-
-          {showLinkInput && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 w-72">
-              <p className="text-xs font-medium text-gray-500 mb-2">Insert Link</p>
-              <input
-                ref={linkInputRef}
-                type="url"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                placeholder="https://example.com"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addLink()
-                  else if (e.key === 'Escape') setShowLinkInput(false)
-                }}
-              />
-              <div className="flex justify-end gap-2 mt-2">
-                <button
-                  onClick={() => setShowLinkInput(false)}
-                  className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addLink}
-                  className="px-3 py-1.5 text-xs bg-primary-600 text-white rounded hover:bg-primary-700"
-                >
-                  Insert
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         <Divider />
 
         {/* Insert Menu */}
@@ -791,6 +741,54 @@ export function EditorToolbar({
 
           {showInsertMenu && (
             <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[180px]">
+              {/* Hyperlink */}
+              {!showLinkInput ? (
+                <button
+                  onClick={() => {
+                    if (editor.isActive('link')) {
+                      editor.chain().focus().unsetLink().run()
+                      setShowInsertMenu(false)
+                    } else {
+                      setShowLinkInput(true)
+                      setTimeout(() => linkInputRef.current?.focus(), 0)
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <LinkIcon className="w-4 h-4 text-blue-500" /> {editor.isActive('link') ? 'Remove Hyperlink' : 'Hyperlink'}
+                </button>
+              ) : (
+                <div className="px-3 py-2">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Insert Hyperlink</p>
+                  <input
+                    ref={linkInputRef}
+                    type="url"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { addLink(); setShowInsertMenu(false) }
+                      else if (e.key === 'Escape') { setShowLinkInput(false); setShowInsertMenu(false) }
+                    }}
+                  />
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      onClick={() => setShowLinkInput(false)}
+                      className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => { addLink(); setShowInsertMenu(false) }}
+                      className="px-3 py-1.5 text-xs bg-primary-600 text-white rounded hover:bg-primary-700"
+                    >
+                      Insert
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="border-t border-gray-100 my-1" />
               <button
                 onClick={() => { setShowImageModal(true); setShowInsertMenu(false) }}
                 className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"

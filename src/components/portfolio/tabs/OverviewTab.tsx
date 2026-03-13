@@ -3,6 +3,7 @@ import { ArrowRight, ChevronRight, AlertTriangle, FileText, FolderKanban, Activi
 import { useQuery } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import { useMarketData, useMarketStatus } from '../../../hooks/useMarketData'
+import { usePendingRationaleCount } from '../../../hooks/useTradeJournal'
 import { supabase } from '../../../lib/supabase'
 import type { PortfolioHolding, CombinedUniverse, NavigateHandler } from './portfolio-tab-types'
 
@@ -82,14 +83,17 @@ interface Signal {
 // ---------------------------------------------------------------------------
 
 const LOG_LABEL: Record<string, string> = {
-  thesis: 'Portfolio Thesis', thesis_update: 'Portfolio Thesis',
-  earnings: 'Earnings', earnings_prep: 'Earnings',
-  meeting: 'Meeting Notes', meeting_notes: 'Meeting Notes',
-  risk: 'Risk Log', risk_review: 'Risk Log',
-  trade_rationale: 'Trade Idea', idea: 'Trade Idea',
-  market_commentary: 'Macro View', analysis: 'Macro View',
+  // Current types
+  research: 'Research', analysis: 'Analysis', earnings: 'Earnings Review',
+  model_valuation: 'Model / Valuation',
+  idea: 'Idea', decision: 'Decision', risk: 'Risk',
+  meeting: 'Meeting', call: 'Call',
+  // Legacy types (existing notes in DB)
+  thesis: 'Research', thesis_update: 'Research', risk_review: 'Risk',
+  trade_rationale: 'Idea', market_commentary: 'Analysis',
+  general: 'Research',
+  earnings_prep: 'Earnings Review', meeting_notes: 'Meeting',
   performance: 'Performance', performance_review: 'Performance',
-  research: 'Decision', general: 'Log Entry',
 }
 
 function workLabel(t: string | null | undefined): string {
@@ -130,6 +134,9 @@ export function OverviewTab({
   )
   const { quotes } = useMarketData(symbols, { enabled: symbols.length > 0 })
   const marketStatus = useMarketStatus()
+
+  // ── Pending rationale count ─────────────────────────────
+  const { data: pendingRationaleCount } = usePendingRationaleCount(portfolio.id)
 
   // ── Projects ─────────────────────────────────────────────
   const { data: relatedProjects } = useQuery({
@@ -222,6 +229,16 @@ export function OverviewTab({
 
     // --- Portfolio-level signals (show first) ---
 
+    // Pending trade rationale
+    if (pendingRationaleCount && pendingRationaleCount > 0) {
+      items.push({
+        id: 'pending-rationale', tag: 'Journal',
+        severity: pendingRationaleCount >= 5 ? 'high' : 'medium',
+        title: `${pendingRationaleCount} trade${pendingRationaleCount === 1 ? '' : 's'} awaiting rationale`,
+        detail: 'Open Trade Journal to document rationale for recent portfolio actions',
+      })
+    }
+
     // Top-N concentration
     if (posCount > 0 && posCount <= 5) {
       items.push({
@@ -275,7 +292,7 @@ export function OverviewTab({
     }
 
     return items.slice(0, 5)
-  }, [enriched, top5Wt, posCount, sectors])
+  }, [enriched, top5Wt, posCount, sectors, pendingRationaleCount])
 
   // Concentrated names — supporting detail for the concentration signal,
   // shown as compact inline text, not counted as individual signals.
@@ -392,7 +409,8 @@ export function OverviewTab({
                       s.severity === 'high' ? 'border-l-red-500 bg-red-50/30' :
                       s.severity === 'medium' ? 'border-l-amber-400' :
                       'border-l-gray-300'
-                    }`}
+                    } ${s.id === 'pending-rationale' ? 'cursor-pointer hover:bg-amber-50/50' : ''}`}
+                    onClick={s.id === 'pending-rationale' ? () => onNavigateToTab('journal') : undefined}
                   >
                     <div className="flex-1 min-w-0">
                       <p className={`text-[11px] font-semibold leading-tight ${s.severity === 'high' ? 'text-red-800' : 'text-gray-800'}`}>

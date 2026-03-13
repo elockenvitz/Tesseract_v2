@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase, AlertCircle } from 'lucide-react'
+import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase, AlertCircle, ArrowLeftRight } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -39,6 +39,7 @@ interface ProposalEditorModalProps {
   availablePortfolios?: PortfolioOption[]  // Available portfolios for dropdown
   initialSizingInput?: string  // Pre-fill sizing from variant
   onSaved?: (proposal: TradeProposal) => void
+  onCreateCounterView?: () => void  // Called when user wants to create a counter-view instead
 }
 
 export function ProposalEditorModal({
@@ -52,6 +53,7 @@ export function ProposalEditorModal({
   availablePortfolios = [],
   initialSizingInput,
   onSaved,
+  onCreateCounterView,
 }: ProposalEditorModalProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -438,6 +440,25 @@ export function ProposalEditorModal({
                 sizingInput={sizingValue}
                 className="mt-2"
               />
+            )}
+            {/* Counter-view suggestion when direction conflict detected */}
+            {directionConflict !== null && onCreateCounterView && (
+              <div className="mt-2 p-2.5 bg-violet-50 dark:bg-violet-900/20 border border-violet-200/60 dark:border-violet-800/40 rounded-lg">
+                <p className="text-xs text-violet-700 dark:text-violet-300 mb-1.5">
+                  Disagree with the direction? Create a counter-view instead of a conflicting proposal.
+                </p>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onClose()
+                    onCreateCounterView()
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
+                >
+                  <ArrowLeftRight className="h-3 w-3" />
+                  Create Counter-View
+                </button>
+              </div>
             )}
 
             {/* Preview for computed values */}

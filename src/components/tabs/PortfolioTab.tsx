@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen } from 'lucide-react'
+import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
@@ -20,6 +20,8 @@ import { PortfolioLogTab } from '../portfolio/tabs/PortfolioLogTab'
 import { TeamTab } from '../portfolio/tabs/TeamTab'
 import { ProcessesTab } from '../portfolio/tabs/ProcessesTab'
 import { InvestableUniverseSection } from '../portfolio/InvestableUniverseSection'
+import { TradeJournalTab } from '../portfolio/tabs/TradeJournalTab'
+import { usePendingRationaleCount } from '../../hooks/useTradeJournal'
 
 interface PortfolioTabProps {
   portfolio: any
@@ -40,6 +42,7 @@ const TABS: { key: PortfolioTabType; label: string; icon: React.ElementType; bad
   { key: 'positions', label: 'Positions', icon: TrendingUp, badgeKey: 'holdings' },
   { key: 'performance', label: 'Performance', icon: BarChart3 },
   { key: 'log', label: 'Portfolio Log', icon: BookOpen },
+  { key: 'journal', label: 'Trade Journal', icon: BookText, badgeKey: 'pendingRationale' },
   { key: 'team', label: 'Team', icon: Users, badgeKey: 'team' },
   { key: 'processes', label: 'Processes', icon: RefreshCw },
   { key: 'universe', label: 'Universe', icon: Globe },
@@ -65,6 +68,9 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const queryClient = useQueryClient()
   const { currentOrgId } = useOrganization()
+
+  // Trade Journal pending rationale count
+  const { data: pendingRationaleCount } = usePendingRationaleCount(portfolio.id)
 
   // Update local state when switching to a different portfolio
   useEffect(() => {
@@ -374,6 +380,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
               let badge: number | null = null
               if (badgeKey === 'holdings' && holdings && holdings.length > 0) badge = holdings.length
               if (badgeKey === 'team' && teamCount > 0) badge = teamCount
+              if (badgeKey === 'pendingRationale' && pendingRationaleCount && pendingRationaleCount > 0) badge = pendingRationaleCount
 
               return (
                 <button
@@ -388,7 +395,14 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                   <div className="flex items-center space-x-2">
                     <Icon className="h-4 w-4" />
                     <span>{label}</span>
-                    {badge !== null && <Badge variant="default" size="sm">{badge}</Badge>}
+                    {badge !== null && (
+                      <Badge
+                        variant={badgeKey === 'pendingRationale' ? 'warning' : 'default'}
+                        size="sm"
+                      >
+                        {badge}
+                      </Badge>
+                    )}
                   </div>
                 </button>
               )
@@ -440,6 +454,13 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             <PortfolioLogTab
               portfolio={portfolio}
               portfolioId={portfolio.id}
+            />
+          )}
+
+          {activeTab === 'journal' && (
+            <TradeJournalTab
+              portfolioId={portfolio.id}
+              portfolio={portfolio}
             />
           )}
 

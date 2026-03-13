@@ -26,7 +26,7 @@ import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
 // Project widgets removed - content now in Command Center carousel
 import { TradeQueuePage } from './TradeQueuePage'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
-import { OutcomesPage } from './OutcomesPage'
+import { DecisionAccountabilityPage } from './DecisionAccountabilityPage'
 import { FilesPage } from './FilesPage'
 import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
@@ -734,7 +734,7 @@ export function DashboardPage() {
           data: user
         })} />
       case 'outcomes':
-        return <OutcomesPage onItemSelect={handleSearchResult} />
+        return <DecisionAccountabilityPage onItemSelect={handleSearchResult} />
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':

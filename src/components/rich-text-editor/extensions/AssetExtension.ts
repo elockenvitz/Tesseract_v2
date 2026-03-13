@@ -202,12 +202,14 @@ export class AssetList {
       return true
     }
 
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Tab') {
       const item = this.props.items[this.selectedIndex]
       if (item) {
         this.props.command({ id: item.id, symbol: item.symbol })
+        return true
       }
-      return true
+      // No items — let the key pass through normally
+      return false
     }
 
     if (event.key === 'Escape') {

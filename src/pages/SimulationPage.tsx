@@ -93,6 +93,7 @@ import { SuggestionReviewPanel } from '../components/trading/SuggestionReviewPan
 import type { SimulationShareAccess, SimulationShareMode, SharedSimulationListItem } from '../hooks/useSimulationShare'
 import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
 import { OrgBadge } from '../components/common/OrgBadge'
+import { CounterViewBadge } from '../components/trading/CounterViewBadge'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -3112,6 +3113,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   {idea.assets.company_name}
                 </span>
               )}
+              <CounterViewBadge
+                tradeIdeaId={idea.id}
+                onClick={() => setSelectedTradeId(idea.id)}
+              />
             </div>
 
             {/* Proposed size + propose button */}
@@ -5095,6 +5100,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           onClose={() => {
             setSelectedTradeId(null)
             setTradeModalInitialTab('details') // Reset to default tab
+          }}
+          onNavigateToIdea={(ideaId) => {
+            setSelectedTradeId(ideaId)
+            setTradeModalInitialTab('details')
           }}
         />
       )}

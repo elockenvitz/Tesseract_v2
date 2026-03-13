@@ -7,7 +7,7 @@ import ReactDOM from 'react-dom/client'
 import {
   Sparkles, Camera, Image as ImageIcon, Link, FileText, BarChart3,
   Table2, ListChecks, Calendar, Hash, HelpCircle, Minus, LucideIcon,
-  TrendingUp, Activity, LineChart, Lock, Users, Building2
+  TrendingUp, Activity, LineChart, Lock, Users, Building2, Search
 } from 'lucide-react'
 
 const DotCommandPluginKey = new PluginKey('dotCommand')
@@ -77,6 +77,14 @@ export interface TemplateWithShortcut {
   content: string
 }
 
+export interface AssetSearchResult {
+  id: string
+  symbol: string
+  companyName: string
+  price?: number
+  change?: number
+}
+
 export interface DotCommandSuggestionOptions {
   onAICommand?: (model?: string) => void
   onCaptureCommand?: () => void
@@ -91,6 +99,7 @@ export interface DotCommandSuggestionOptions {
   onDividerCommand?: () => void
   onHelpCommand?: () => void
   onVisibilityCommand?: (type: 'private' | 'team' | 'portfolio', targetId?: string, targetName?: string) => void
+  onAssetSearch?: (query: string) => Promise<AssetSearchResult[]>
   templates?: TemplateWithShortcut[]
 }
 
@@ -116,6 +125,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       onDividerCommand: undefined,
       onHelpCommand: undefined,
       onVisibilityCommand: undefined,
+      onAssetSearch: undefined,
       templates: [],
     }
   },
@@ -129,6 +139,28 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
     let reactRoot: ReactDOM.Root | null = null
     let triggerPos: number = 0
     let selectedIndex: number = 0
+
+    // Symbol mode: commands that accept a trailing .SYMBOL
+    const SYMBOL_COMMANDS = ['price', 'volume', 'marketcap', 'change', 'pe', 'dividend', 'data', 'table', 'metric', 'chart', 'chart.price', 'chart.volume', 'chart.performance', 'chart.comparison', 'chart.technicals']
+
+    // Detect if query is in "symbol mode" (e.g. "chart." or "price.AA")
+    // Returns { commandId, symbolQuery } or null
+    const detectSymbolMode = (query: string): { commandId: string; symbolQuery: string } | null => {
+      // Try longest matches first (chart.price.X before chart.X)
+      const sorted = [...SYMBOL_COMMANDS].sort((a, b) => b.length - a.length)
+      for (const cmd of sorted) {
+        const prefix = cmd + '.'
+        if (query.toLowerCase().startsWith(prefix)) {
+          return { commandId: cmd, symbolQuery: query.slice(prefix.length) }
+        }
+      }
+      return null
+    }
+
+    // Asset search state
+    let assetResults: AssetSearchResult[] = []
+    let assetSearchPending = false
+    let currentSymbolMode: { commandId: string; symbolQuery: string } | null = null
 
     const getFilteredItems = (query: string): DotCommandItem[] => {
       const lowerQuery = query.toLowerCase()
@@ -260,6 +292,18 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
         React.createElement(DotCommandList, {
           items,
           selectedIndex,
+          onSelect
+        })
+      )
+    }
+
+    const renderAssetPopup = (assets: AssetSearchResult[], commandLabel: string, onSelect: (asset: AssetSearchResult) => void) => {
+      if (!popupElement || !reactRoot) return
+      reactRoot.render(
+        React.createElement(AssetSearchList, {
+          items: assets,
+          selectedIndex,
+          commandLabel,
           onSelect
         })
       )
@@ -401,6 +445,59 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       return null
     }
 
+    // Helper to select an asset in symbol mode
+    const handleAssetSelect = (view: EditorView, cmdStart: number, commandId: string, asset: AssetSearchResult) => {
+      closePopup()
+      currentSymbolMode = null
+      view.dispatch(view.state.tr.delete(cmdStart, view.state.selection.from))
+      executeCommand(commandId, asset.symbol)
+    }
+
+    // Trigger async asset search and update popup
+    const triggerAssetSearch = (view: EditorView, cmdStart: number, symbolMode: { commandId: string; symbolQuery: string }) => {
+      if (!options.onAssetSearch || assetSearchPending) return
+      assetSearchPending = true
+      currentSymbolMode = symbolMode
+      options.onAssetSearch(symbolMode.symbolQuery).then(results => {
+        assetSearchPending = false
+        assetResults = results
+        // Check we're still in the same symbol mode
+        if (!currentSymbolMode || currentSymbolMode.commandId !== symbolMode.commandId) return
+
+        if (selectedIndex >= results.length) selectedIndex = 0
+
+        const cmdLabel = `.${symbolMode.commandId}`
+
+        if (results.length === 0 && !symbolMode.symbolQuery) {
+          // Just entered symbol mode with empty query — show prompt
+          showPopup(view, cmdStart, [], () => {})
+          if (popupElement && reactRoot) {
+            reactRoot.render(
+              React.createElement(AssetSearchList, {
+                items: [],
+                selectedIndex: 0,
+                commandLabel: cmdLabel,
+                onSelect: () => {}
+              })
+            )
+          }
+          return
+        }
+
+        if (results.length === 0) {
+          if (popup) closePopup()
+          return
+        }
+
+        showPopup(view, cmdStart, [] as DotCommandItem[], () => {})
+        renderAssetPopup(results, cmdLabel, (asset) => {
+          handleAssetSelect(view, cmdStart, symbolMode.commandId, asset)
+        })
+      }).catch(() => {
+        assetSearchPending = false
+      })
+    }
+
     return [
       new Plugin({
         key: DotCommandPluginKey,
@@ -410,12 +507,22 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
             if (text === ' ') {
               const cmdInfo = getCommandQuery(view)
               if (cmdInfo && cmdInfo.query.length > 0) {
+                // If in symbol mode and an asset is selected, pick it
+                if (currentSymbolMode && assetResults.length > 0) {
+                  const asset = assetResults[selectedIndex]
+                  if (asset) {
+                    handleAssetSelect(view, cmdInfo.start, currentSymbolMode.commandId, asset)
+                    return true
+                  }
+                }
+
                 const items = getFilteredItems(cmdInfo.query)
                 const exactMatch = items.find(item =>
                   item.name.toLowerCase().slice(1) === cmdInfo.query.toLowerCase()
                 )
                 if (exactMatch) {
                   closePopup()
+                  currentSymbolMode = null
                   view.dispatch(view.state.tr.delete(cmdInfo.start, from))
                   executeCommand(exactMatch.id)
                   return true
@@ -425,12 +532,14 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
                 const parsed = parseCommand('.' + cmdInfo.query)
                 if (parsed) {
                   closePopup()
+                  currentSymbolMode = null
                   view.dispatch(view.state.tr.delete(cmdInfo.start, from))
                   executeCommand(parsed.commandId, parsed.symbol)
                   return true
                 }
               }
               closePopup()
+              currentSymbolMode = null
               return false
             }
 
@@ -443,12 +552,49 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
 
             if (!cmdInfo) {
               if (popup) closePopup()
+              currentSymbolMode = null
               return false
             }
 
+            // Symbol mode keyboard handling
+            const symbolMode = detectSymbolMode(cmdInfo.query)
+            if (symbolMode && popup && assetResults.length > 0) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                selectedIndex = Math.min(assetResults.length - 1, selectedIndex + 1)
+                renderAssetPopup(assetResults, `.${symbolMode.commandId}`, (asset) => {
+                  handleAssetSelect(view, cmdInfo.start, symbolMode.commandId, asset)
+                })
+                return true
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                selectedIndex = Math.max(0, selectedIndex - 1)
+                renderAssetPopup(assetResults, `.${symbolMode.commandId}`, (asset) => {
+                  handleAssetSelect(view, cmdInfo.start, symbolMode.commandId, asset)
+                })
+                return true
+              }
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault()
+                const asset = assetResults[selectedIndex]
+                if (asset) {
+                  handleAssetSelect(view, cmdInfo.start, symbolMode.commandId, asset)
+                }
+                return true
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                closePopup()
+                currentSymbolMode = null
+                return true
+              }
+              return false
+            }
+
+            // Normal command mode keyboard handling
             const items = getFilteredItems(cmdInfo.query)
 
-            // Handle navigation and selection
             if (items.length > 0 && popup) {
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
@@ -499,10 +645,25 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
 
             if (!cmdInfo) {
               if (popup) closePopup()
+              currentSymbolMode = null
               return
             }
 
             console.log('[DotCommand] updateHandler: query found:', cmdInfo.query)
+
+            // Check for symbol mode first (e.g., "chart." or "price.AA")
+            const symbolMode = detectSymbolMode(cmdInfo.query)
+            if (symbolMode) {
+              console.log('[DotCommand] symbol mode detected:', symbolMode.commandId, 'query:', symbolMode.symbolQuery)
+              triggerPos = cmdInfo.start
+              triggerAssetSearch(editorView, cmdInfo.start, symbolMode)
+              return
+            }
+
+            // Normal command mode
+            currentSymbolMode = null
+            assetResults = []
+
             const items = getFilteredItems(cmdInfo.query)
 
             if (items.length === 0) {
@@ -513,7 +674,6 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
 
             console.log('[DotCommand] updateHandler: showing popup with', items.length, 'items')
 
-            // Ensure selectedIndex is valid
             if (selectedIndex >= items.length) {
               selectedIndex = 0
             }
@@ -602,6 +762,79 @@ function DotCommandList({ items, selectedIndex, onSelect }: DotCommandListProps)
       })
     ])
   }))
+}
+
+// ─── Asset Search List (symbol mode dropdown) ──────────────────────
+
+interface AssetSearchListProps {
+  items: AssetSearchResult[]
+  selectedIndex: number
+  commandLabel: string
+  onSelect: (asset: AssetSearchResult) => void
+}
+
+function AssetSearchList({ items, selectedIndex, commandLabel, onSelect }: AssetSearchListProps) {
+  if (items.length === 0) {
+    return React.createElement('div', {
+      className: 'bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[280px]'
+    }, [
+      React.createElement('div', {
+        key: 'header',
+        className: 'flex items-center gap-2 text-xs text-gray-400 mb-1'
+      }, [
+        React.createElement(Search, { key: 'icon', className: 'w-3 h-3' }),
+        React.createElement('span', { key: 'label' }, `${commandLabel} — type a ticker`)
+      ])
+    ])
+  }
+
+  return React.createElement('div', {
+    className: 'bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[280px] max-h-[300px] overflow-y-auto'
+  }, [
+    React.createElement('div', {
+      key: 'header',
+      className: 'px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5'
+    }, [
+      React.createElement(Search, { key: 'icon', className: 'w-3 h-3' }),
+      React.createElement('span', { key: 'text' }, `${commandLabel} — select ticker`)
+    ]),
+    ...items.map((item, index) =>
+      React.createElement('button', {
+        key: item.id,
+        className: `w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${
+          index === selectedIndex ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50'
+        }`,
+        onClick: () => onSelect(item)
+      }, [
+        React.createElement('div', {
+          key: 'symbol',
+          className: 'w-12 h-8 rounded bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs shrink-0'
+        }, item.symbol),
+        React.createElement('div', {
+          key: 'info',
+          className: 'flex-1 min-w-0'
+        }, [
+          React.createElement('div', {
+            key: 'name',
+            className: 'text-sm font-medium text-gray-900 truncate'
+          }, item.companyName),
+          item.price !== undefined && React.createElement('div', {
+            key: 'price',
+            className: 'flex items-center gap-2 text-xs'
+          }, [
+            React.createElement('span', {
+              key: 'priceValue',
+              className: 'text-gray-600'
+            }, `$${item.price.toFixed(2)}`),
+            item.change !== undefined && React.createElement('span', {
+              key: 'change',
+              className: item.change >= 0 ? 'text-emerald-600' : 'text-red-600'
+            }, `${item.change >= 0 ? '+' : ''}${item.change.toFixed(2)}%`)
+          ])
+        ])
+      ])
+    )
+  ])
 }
 
 export default DotCommandSuggestionExtension

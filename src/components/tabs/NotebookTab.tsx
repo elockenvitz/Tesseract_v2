@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { FileText, Calendar, User as UserIcon, Share2 } from 'lucide-react'
+import { getNoteType } from '../../lib/note-types'
 import { formatDistanceToNow } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 
@@ -106,23 +107,6 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
     }
   }
 
-  const getNoteTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'meeting':
-        return 'primary'
-      case 'call':
-        return 'success'
-      case 'research':
-        return 'warning'
-      case 'idea':
-        return 'error'
-      case 'analysis':
-      case 'general':
-      default:
-        return 'default'
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* Notebook Header */}
@@ -131,8 +115,8 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
           <div className="flex items-center space-x-3 mb-2">
             <h1 className="text-2xl font-bold text-gray-900">{notebook.title}</h1>
             {notebook.note_type && (
-              <Badge variant={getNoteTypeColor(notebook.note_type)} size="sm">
-                {notebook.note_type}
+              <Badge variant={getNoteType(notebook.note_type).badgeVariant} size="sm">
+                {getNoteType(notebook.note_type).label}
               </Badge>
             )}
             {notebook.is_shared && (

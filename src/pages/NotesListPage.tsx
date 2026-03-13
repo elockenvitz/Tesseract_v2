@@ -10,7 +10,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { getContentPreview } from '../utils/stripHtml'
-import { NOTE_TYPES, getNoteType } from '../lib/note-types'
+import { NOTE_TYPES_GROUPED, getNoteType } from '../lib/note-types'
 
 interface NotesListPageProps {
   onNoteSelect?: (note: any) => void
@@ -42,9 +42,6 @@ interface Note {
   created_by_user?: UserLite
   updated_by_user?: UserLite
 }
-
-// Note type options derived from centralized config
-const NOTE_TYPE_OPTIONS = NOTE_TYPES.map(nt => ({ value: nt.id, label: nt.label }))
 
 // Source type options
 const SOURCE_TYPE_OPTIONS = [
@@ -393,8 +390,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
     })
 
     selectedNoteTypes.forEach(t => {
-      const option = NOTE_TYPE_OPTIONS.find(o => o.value === t)
-      filters.push({ type: 'noteType', value: t, label: capitalizeFirst(option?.label || t) })
+      filters.push({ type: 'noteType', value: t, label: capitalizeFirst(getNoteType(t).label) })
     })
 
     if (sharedFilter !== 'all') {
@@ -443,7 +439,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         sourceName.includes(searchQuery.toLowerCase())
 
       const matchesSource = selectedSourceTypes.length === 0 || selectedSourceTypes.includes(note.source_type)
-      const matchesType = selectedNoteTypes.length === 0 || (note.note_type && selectedNoteTypes.includes(note.note_type))
+      const matchesType = selectedNoteTypes.length === 0 || selectedNoteTypes.includes(getNoteType(note.note_type).id)
       const matchesShared = sharedFilter === 'all' ||
         (sharedFilter === 'shared' && note.is_shared) ||
         (sharedFilter === 'private' && !note.is_shared)
@@ -468,8 +464,8 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           bValue = b.source_type
           break
         case 'note_type':
-          aValue = a.note_type || 'general'
-          bValue = b.note_type || 'general'
+          aValue = a.note_type || 'research'
+          bValue = b.note_type || 'research'
           break
         case 'updated_at':
         default:
@@ -693,18 +689,28 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           </button>
 
           {activeFilter === 'type' && (
-            <div className="absolute top-full left-0 mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-              {NOTE_TYPE_OPTIONS.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => toggleNoteType(option.value)}
-                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50"
-                >
-                  {option.label}
-                  {selectedNoteTypes.includes(option.value) && (
-                    <Check className="h-4 w-4 text-primary-600" />
-                  )}
-                </button>
+            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+              {NOTE_TYPES_GROUPED.map(({ group, types }) => (
+                <div key={group}>
+                  <div className="px-3 pt-2 pb-0.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{group}</span>
+                  </div>
+                  {types.map(nt => (
+                    <button
+                      key={nt.id}
+                      onClick={() => toggleNoteType(nt.id)}
+                      className="w-full px-3 py-1.5 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className={clsx('h-2 w-2 rounded-full', nt.dotColor)} />
+                        {nt.label}
+                      </span>
+                      {selectedNoteTypes.includes(nt.id) && (
+                        <Check className="h-4 w-4 text-primary-600" />
+                      )}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           )}
@@ -848,7 +854,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                     <td className="px-4 py-3">
                       {note.note_type && (
                         <Badge variant={getNoteTypeColor(note.note_type)} size="sm">
-                          {capitalizeFirst(note.note_type)}
+                          {getNoteType(note.note_type).label}
                         </Badge>
                       )}
                     </td>

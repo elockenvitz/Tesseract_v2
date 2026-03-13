@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { usePendingLineageStore } from '../../stores/pendingLineageStore'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -18,7 +19,13 @@ import { useNoteVersions } from '../../hooks/useNoteVersions'
 import { useOfflineNotes } from '../../hooks/useOfflineNotes'
 import { useTemplates } from '../../hooks/useTemplates'
 import { formatDistanceToNow, format } from 'date-fns'
-import { NOTE_TYPES, getNoteType } from '../../lib/note-types'
+import { NOTE_TYPES, NOTE_TYPES_GROUPED, getNoteType } from '../../lib/note-types'
+import { syncNoteLinks, getNoteSourceType } from '../../lib/object-links'
+import type { LinkableEntityType } from '../../lib/object-links'
+import { useBacklinkCount, useForwardLinksEnriched, useManualLinks } from '../../hooks/useObjectLinks'
+import { ObjectLinkPicker } from './ObjectLinkPicker'
+import { LinkedObjectsPanel } from './LinkedObjectsPanel'
+import { InlineReferencePopup } from './InlineReferencePopup'
 import { clsx } from 'clsx'
 import { stripHtml } from '../../utils/stripHtml'
 
@@ -142,6 +149,12 @@ export function UniversalNoteEditor({
   const [isExporting, setIsExporting] = useState(false)
   const [showFilesLinksDropdown, setShowFilesLinksDropdown] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [showLinkPicker, setShowLinkPicker] = useState(false)
+  const [inlinePopup, setInlinePopup] = useState<{
+    type: 'asset' | 'mention' | 'hashtag'
+    attrs: Record<string, string>
+    rect: DOMRect
+  } | null>(null)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const richTextEditorRef = useRef<RichTextEditorRef>(null)
@@ -229,6 +242,12 @@ export function UniversalNoteEditor({
       return map
     }
   })
+
+  // Backlink count for the selected note
+  const selectedNoteSourceType = getNoteSourceType(entityType) as LinkableEntityType
+  const { data: backlinkCount } = useBacklinkCount(selectedNoteSourceType, selectedNoteId)
+  const { data: forwardLinks = [], isLoading: isLoadingLinks } = useForwardLinksEnriched(selectedNoteSourceType, selectedNoteId)
+  const { createManualLink, deleteManualLink } = useManualLinks(selectedNoteSourceType, selectedNoteId)
 
   const nameFor = (id?: string | null) => {
     if (!id) return 'Unknown'
@@ -545,6 +564,16 @@ export function UniversalNoteEditor({
       setIsSaving(false)
       setLastSavedAt(new Date())
       setHasUnsavedChanges(false)
+
+      // Sync object links then refresh linked-objects display
+      if (result.content !== undefined && !result.offline && user?.id) {
+        syncNoteLinks(result.id, getNoteSourceType(entityType), result.content, user.id)
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: ['object-links', 'forward-enriched', selectedNoteSourceType, result.id] })
+            queryClient.invalidateQueries({ queryKey: ['object-links', 'forward', selectedNoteSourceType, result.id] })
+          })
+          .catch(() => {}) // sync-note-links already logs internally
+      }
     },
     onError: (error) => {
       setIsSaving(false)
@@ -602,8 +631,22 @@ export function UniversalNoteEditor({
       console.log('✅ createNoteMutation: Note created successfully:', data)
       return data
     },
-    onSuccess: (newNote) => {
+    onSuccess: async (newNote) => {
       console.log('🎉 createNoteMutation onSuccess: Note created, calling onNoteSelect with:', newNote.id)
+
+      // Auto-link portfolio notes to parent if a "Next step" action was pending
+      if (config.tableName === 'portfolio_notes' && newNote?.id) {
+        const linked = await usePendingLineageStore.getState().linkIfPending({
+          childType: 'portfolio_note',
+          childId: newNote.id,
+          userId: newNote.created_by,
+        })
+        if (linked) {
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
+          queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
       // Pre-populate content cache for the new note
@@ -1307,7 +1350,7 @@ export function UniversalNoteEditor({
       container.innerHTML = `
         <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 8px; color: #111827;">${editingTitle || selectedNote.title}</h1>
         <p style="font-size: 12px; color: #6b7280; margin-bottom: 24px;">
-          ${entityName} · ${selectedNote.note_type || 'General'} · ${format(new Date(selectedNote.updated_at), 'MMM d, yyyy h:mm a')}
+          ${entityName} · ${getNoteType(selectedNote.note_type).label} · ${format(new Date(selectedNote.updated_at), 'MMM d, yyyy h:mm a')}
         </p>
         <div style="font-size: 14px; line-height: 1.6; color: #374151;">
           ${editingContentRef.current || selectedNote.content}
@@ -1376,7 +1419,7 @@ export function UniversalNoteEditor({
         new Paragraph({
           children: [
             new TextRun({
-              text: `${entityName} · ${selectedNote.note_type || 'General'} · ${format(new Date(selectedNote.updated_at), 'MMM d, yyyy h:mm a')}`,
+              text: `${entityName} · ${getNoteType(selectedNote.note_type).label} · ${format(new Date(selectedNote.updated_at), 'MMM d, yyyy h:mm a')}`,
               size: 20,
               color: '6b7280'
             })
@@ -1672,10 +1715,12 @@ export function UniversalNoteEditor({
                 className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-8 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 cursor-pointer"
               >
                 <option value="">All Types</option>
-                {NOTE_TYPES.map(nt => (
-                  <option key={nt.id} value={nt.id}>
-                    {nt.label}
-                  </option>
+                {NOTE_TYPES_GROUPED.map(({ group, types }) => (
+                  <optgroup key={group} label={group}>
+                    {types.map(nt => (
+                      <option key={nt.id} value={nt.id}>{nt.label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
@@ -1774,7 +1819,7 @@ export function UniversalNoteEditor({
                             <Share2 className="h-3 w-3" />
                           </>
                         )}
-                        {note.note_type && note.note_type !== 'general' && (
+                        {note.note_type && (
                           <>
                             <span>•</span>
                             <span className={clsx(
@@ -1928,10 +1973,10 @@ export function UniversalNoteEditor({
                         )} />
                       </button>
 
-                      {/* Dropdown: single-select controlled taxonomy */}
+                      {/* Dropdown: single-select controlled taxonomy, grouped */}
                       {showNoteTypeDropdown && (
                         <div
-                          className="absolute top-full left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[180px]"
+                          className="absolute top-full left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[190px]"
                           onKeyDown={(e) => {
                             if (e.key === 'ArrowDown') {
                               e.preventDefault()
@@ -1949,37 +1994,43 @@ export function UniversalNoteEditor({
                           tabIndex={-1}
                           ref={(el) => el?.focus()}
                         >
-                          <div className="px-3 pt-1.5 pb-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Note Type</span>
-                          </div>
-                          {NOTE_TYPES.map((nt, idx) => {
-                            const isActive = (selectedNote.note_type || 'general') === nt.id
-                            const isHighlighted = noteTypeActiveIdx === idx
-                            return (
-                              <button
-                                key={nt.id}
-                                onClick={() => handleNoteTypeChange(nt.id)}
-                                onMouseEnter={() => setNoteTypeActiveIdx(idx)}
-                                className={clsx(
-                                  'w-full px-3 py-[7px] text-left text-[12px] flex items-center gap-2.5 transition-colors',
-                                  isHighlighted ? 'bg-gray-50' : 'hover:bg-gray-50',
-                                  isActive && 'bg-gray-50/80'
-                                )}
-                                disabled={updateNoteTypeMutation.isPending}
-                              >
-                                <span className={clsx('h-2 w-2 rounded-full flex-shrink-0', nt.dotColor)} />
-                                <span className={clsx(
-                                  'font-medium flex-1',
-                                  isActive ? 'text-gray-900' : 'text-gray-600'
-                                )}>
-                                  {nt.label}
-                                </span>
-                                {isActive && (
-                                  <Check className="h-3.5 w-3.5 text-primary-500 flex-shrink-0" />
-                                )}
-                              </button>
-                            )
-                          })}
+                          {NOTE_TYPES_GROUPED.map(({ group, types }) => (
+                            <div key={group}>
+                              <div className="px-3 pt-2 pb-0.5">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{group}</span>
+                              </div>
+                              {types.map(nt => {
+                                const flatIdx = NOTE_TYPES.indexOf(nt)
+                                const resolvedType = getNoteType(selectedNote.note_type).id
+                                const isActive = resolvedType === nt.id
+                                const isHighlighted = noteTypeActiveIdx === flatIdx
+                                return (
+                                  <button
+                                    key={nt.id}
+                                    onClick={() => handleNoteTypeChange(nt.id)}
+                                    onMouseEnter={() => setNoteTypeActiveIdx(flatIdx)}
+                                    className={clsx(
+                                      'w-full px-3 py-[7px] text-left text-[12px] flex items-center gap-2.5 transition-colors',
+                                      isHighlighted ? 'bg-gray-50' : 'hover:bg-gray-50',
+                                      isActive && 'bg-gray-50/80'
+                                    )}
+                                    disabled={updateNoteTypeMutation.isPending}
+                                  >
+                                    <span className={clsx('h-2 w-2 rounded-full flex-shrink-0', nt.dotColor)} />
+                                    <span className={clsx(
+                                      'font-medium flex-1',
+                                      isActive ? 'text-gray-900' : 'text-gray-600'
+                                    )}>
+                                      {nt.label}
+                                    </span>
+                                    {isActive && (
+                                      <Check className="h-3.5 w-3.5 text-primary-500 flex-shrink-0" />
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1989,6 +2040,25 @@ export function UniversalNoteEditor({
                         Shared
                       </Badge>
                     )}
+
+                    {typeof backlinkCount === 'number' && backlinkCount > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 bg-gray-50 rounded-md border border-gray-200/60"
+                        title={`Referenced in ${backlinkCount} other note${backlinkCount === 1 ? '' : 's'}`}
+                      >
+                        <Link2 className="h-3 w-3 text-gray-400" />
+                        {backlinkCount} ref{backlinkCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+
+                    {/* Link to Object */}
+                    <button
+                      onClick={() => setShowLinkPicker(true)}
+                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                      title="Link to an object"
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
+                      <span className="font-medium">Link</span>
+                    </button>
 
                     <div className="h-4 w-px bg-gray-200" />
 
@@ -2171,6 +2241,13 @@ export function UniversalNoteEditor({
 
             </div>
 
+            {/* Linked Objects Panel */}
+            <LinkedObjectsPanel
+              links={forwardLinks}
+              onDeleteLink={(linkId) => deleteManualLink.mutate(linkId)}
+              isLoading={isLoadingLinks}
+            />
+
             {/* Editor Content */}
             <div className="flex-1 overflow-y-auto bg-white">
               {/* Sticky Header: Title + Toolbar */}
@@ -2220,6 +2297,7 @@ export function UniversalNoteEditor({
                   onMentionSelect={saveRecentMention}
                   onAssetSelect={saveRecentAsset}
                   onNoteLinkNavigate={handleNoteLinkNavigate}
+                  onInlineNodeClick={(info) => setInlinePopup(info)}
                   assetContext={entityType === 'asset' ? { id: entityId, symbol: entityName } : null}
                   templates={templatesWithShortcuts.map(t => ({
                     id: t.id,
@@ -2398,6 +2476,54 @@ export function UniversalNoteEditor({
           onCreateCheckpoint={handleCreateCheckpoint}
         />
       )}
+
+      {/* Inline Reference Popup */}
+      {inlinePopup && (
+        <InlineReferencePopup
+          type={inlinePopup.type}
+          attrs={inlinePopup.attrs}
+          rect={inlinePopup.rect}
+          onClose={() => setInlinePopup(null)}
+          onNavigate={(type, id) => {
+            if (type === 'asset') window.dispatchEvent(new CustomEvent('navigate-to-asset', { detail: { assetId: id } }))
+            if (type === 'theme') window.dispatchEvent(new CustomEvent('navigate-to-theme', { detail: { themeId: id } }))
+            if (type === 'portfolio') window.dispatchEvent(new CustomEvent('navigate-to-portfolio', { detail: { portfolioId: id } }))
+            setInlinePopup(null)
+          }}
+        />
+      )}
+
+      {/* Object Link Picker */}
+      <ObjectLinkPicker
+        isOpen={showLinkPicker}
+        onClose={() => setShowLinkPicker(false)}
+        existingLinkIds={new Set(forwardLinks.map(l => l.target_id))}
+        existingLinks={forwardLinks.map(l => ({
+          id: l.id,
+          targetId: l.target_id,
+          targetType: l.target_type,
+          label: l.label,
+          subtitle: l.subtitle,
+          linkType: l.link_type,
+          isAuto: l.is_auto,
+        }))}
+        onDeleteLink={(linkId) => {
+          deleteManualLink.mutate(linkId)
+        }}
+        onLinkMultiple={(items) => {
+          if (!user) return
+          for (const item of items) {
+            createManualLink.mutate({
+              targetType: item.entityType,
+              targetId: item.id,
+              label: item.label,
+              userId: user.id,
+              linkType: item.linkType,
+            })
+          }
+          setShowLinkPicker(false)
+        }}
+      />
 
       {/* Smart Input Help Modal */}
       {showSmartInputHelp && (

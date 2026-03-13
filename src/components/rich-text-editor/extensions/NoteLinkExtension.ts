@@ -237,7 +237,7 @@ export class NoteLinkList {
       return true
     }
 
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === 'Tab') {
       const item = this.props.items[this.selectedIndex]
       if (item) {
         this.props.command({
@@ -247,8 +247,9 @@ export class NoteLinkList {
           entityId: item.entityId,
           entityName: item.entityName
         })
+        return true
       }
-      return true
+      return false
     }
 
     if (event.key === 'Escape') {
