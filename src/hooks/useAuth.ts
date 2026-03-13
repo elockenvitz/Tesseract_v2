@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { routeOrgByEmail, autoAcceptPendingInvites, titleCase } from '../lib/org-domain-routing'
 
 const USER_CACHE_KEY = 'auth-user-cache'
+const RECOVERY_SESSION_KEY = 'auth-recovery-session'
 
 // Read cached user synchronously (outside hook to avoid re-reads)
 function getCachedUser(): User | null {
@@ -15,12 +16,30 @@ function getCachedUser(): User | null {
   }
 }
 
+// Check if this page load is a password recovery redirect
+function detectRecoveryFromUrl(): boolean {
+  // Supabase PKCE: /update-password?code=XXX (code param on the recovery page)
+  if (window.location.pathname === '/update-password' && new URLSearchParams(window.location.search).has('code')) {
+    return true
+  }
+  // Supabase implicit flow: #type=recovery in hash
+  if (window.location.hash.includes('type=recovery')) {
+    return true
+  }
+  // Previously flagged recovery session that hasn't been completed yet
+  try {
+    return sessionStorage.getItem(RECOVERY_SESSION_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 export function useAuth() {
   // Initialize from cache for instant display
   const [user, setUser] = useState<User | null>(() => getCachedUser())
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isRecoverySession, setIsRecoverySession] = useState(false)
+  const [isRecoverySession, setIsRecoverySession] = useState(() => detectRecoveryFromUrl())
   const orgRouteAttemptedRef = useRef(false)
 
   // Cache user to localStorage
@@ -174,6 +193,7 @@ export function useAuth() {
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecoverySession(true)
+        try { sessionStorage.setItem(RECOVERY_SESSION_KEY, 'true') } catch {}
       }
       handleAuthSession(session)
     })
@@ -241,7 +261,9 @@ export function useAuth() {
   }
 
   const signOut = async () => {
-    cacheUser(null) // Clear cache on sign out
+    cacheUser(null)
+    try { sessionStorage.removeItem(RECOVERY_SESSION_KEY) } catch {}
+    setIsRecoverySession(false)
     const { error } = await supabase.auth.signOut()
     return { error }
   }
@@ -259,6 +281,7 @@ export function useAuth() {
     })
     if (!error) {
       setIsRecoverySession(false)
+      try { sessionStorage.removeItem(RECOVERY_SESSION_KEY) } catch {}
     }
     return { data, error }
   }
