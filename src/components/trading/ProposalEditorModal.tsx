@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase, AlertCircle, ArrowLeftRight } from 'lucide-react'
+import { X, Check, AlertTriangle, History, Clock, Scale, FileText, Briefcase, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -39,7 +39,7 @@ interface ProposalEditorModalProps {
   availablePortfolios?: PortfolioOption[]  // Available portfolios for dropdown
   initialSizingInput?: string  // Pre-fill sizing from variant
   onSaved?: (proposal: TradeProposal) => void
-  onCreateCounterView?: () => void  // Called when user wants to create a counter-view instead
+  onAddPosition?: () => void  // Called when user wants to add a debate position instead
 }
 
 export function ProposalEditorModal({
@@ -53,7 +53,7 @@ export function ProposalEditorModal({
   availablePortfolios = [],
   initialSizingInput,
   onSaved,
-  onCreateCounterView,
+  onAddPosition,
 }: ProposalEditorModalProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -441,22 +441,22 @@ export function ProposalEditorModal({
                 className="mt-2"
               />
             )}
-            {/* Counter-view suggestion when direction conflict detected */}
-            {directionConflict !== null && onCreateCounterView && (
-              <div className="mt-2 p-2.5 bg-violet-50 dark:bg-violet-900/20 border border-violet-200/60 dark:border-violet-800/40 rounded-lg">
-                <p className="text-xs text-violet-700 dark:text-violet-300 mb-1.5">
-                  Disagree with the direction? Create a counter-view instead of a conflicting proposal.
+            {/* Debate position suggestion when direction conflict detected */}
+            {directionConflict !== null && onAddPosition && (
+              <div className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 rounded-lg">
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-1.5">
+                  Disagree with the direction? Add your position to the debate instead of a conflicting proposal.
                 </p>
                 <button
                   onClick={(e) => {
                     e.preventDefault()
                     onClose()
-                    onCreateCounterView()
+                    onAddPosition()
                   }}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
                 >
-                  <ArrowLeftRight className="h-3 w-3" />
-                  Create Counter-View
+                  <Scale className="h-3 w-3" />
+                  Take a Side Instead
                 </button>
               </div>
             )}

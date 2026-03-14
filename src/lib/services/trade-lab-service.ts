@@ -11,6 +11,7 @@
 
 import { supabase } from '../supabase'
 import { emitAuditEvent } from '../audit'
+import { moveTradeIdea } from './trade-idea-service'
 import type {
   ActionContext,
   TradeAction,
@@ -1541,8 +1542,82 @@ export async function upsertProposal(
       proposal_id: data.id,
     }, context).catch(e => console.warn('Failed to log proposal_created event:', e))
 
+    // Auto-advance to deciding if all portfolios are now covered by proposals
+    autoAdvanceToDeciding(input.trade_queue_item_id, context)
+      .catch(e => console.warn('Failed to auto-advance to deciding:', e))
+
     return data as TradeProposal
   }
+}
+
+/**
+ * Auto-advance a trade idea to 'deciding' if every linked portfolio
+ * has at least one active proposal.
+ *
+ * Only fires for ideas still in a pre-deciding stage (idea, working_on,
+ * discussing, simulating, modeling).
+ */
+async function autoAdvanceToDeciding(
+  tradeQueueItemId: string,
+  context: ActionContext
+): Promise<void> {
+  // 1. Get the trade idea's current state
+  const { data: idea, error: ideaErr } = await supabase
+    .from('trade_queue_items')
+    .select('id, stage, portfolio_id')
+    .eq('id', tradeQueueItemId)
+    .single()
+
+  if (ideaErr || !idea) return
+
+  // Only auto-advance from pre-deciding stages
+  const preDecidingStages = ['idea', 'working_on', 'discussing', 'simulating', 'modeling']
+  if (!preDecidingStages.includes(idea.stage)) return
+
+  // 2. Determine all portfolios this idea is linked to
+  const { data: portfolioTracks } = await supabase
+    .from('trade_idea_portfolios')
+    .select('portfolio_id')
+    .eq('trade_queue_item_id', tradeQueueItemId)
+
+  // Build the set of portfolios that need coverage
+  const requiredPortfolios = new Set<string>()
+  if (idea.portfolio_id) requiredPortfolios.add(idea.portfolio_id)
+  if (portfolioTracks) {
+    for (const track of portfolioTracks) {
+      requiredPortfolios.add(track.portfolio_id)
+    }
+  }
+
+  if (requiredPortfolios.size === 0) return
+
+  // 3. Get all active proposals for this idea
+  const { data: proposals } = await supabase
+    .from('trade_proposals')
+    .select('portfolio_id')
+    .eq('trade_queue_item_id', tradeQueueItemId)
+    .eq('is_active', true)
+
+  if (!proposals) return
+
+  const coveredPortfolios = new Set(proposals.map(p => p.portfolio_id))
+
+  // 4. Check if every required portfolio is covered
+  for (const pid of requiredPortfolios) {
+    if (!coveredPortfolios.has(pid)) return // Not fully covered yet
+  }
+
+  // 5. All portfolios covered — move to deciding
+  await moveTradeIdea({
+    tradeId: tradeQueueItemId,
+    target: { stage: 'deciding' },
+    context: {
+      ...context,
+      requestId: crypto.randomUUID(),
+      uiSource: 'auto_advance_proposal_coverage',
+    },
+    note: 'Auto-advanced: all portfolios have proposals',
+  })
 }
 
 /**
@@ -2018,6 +2093,27 @@ export async function updatePortfolioTrackDecision(
     }, context)
   } catch (e) {
     console.warn(`Failed to log ${eventType} event:`, e)
+  }
+
+  // Check if all portfolio tracks are now decided — if so, update the idea status
+  try {
+    const { data: allTracks } = await supabase
+      .from('trade_idea_portfolios')
+      .select('decision_outcome')
+      .eq('trade_queue_item_id', trade_queue_item_id)
+
+    const allDecided = allTracks?.every(t => t.decision_outcome !== null)
+    if (allDecided) {
+      const anyAccepted = allTracks?.some(t => t.decision_outcome === 'accepted')
+      const allDeferred = allTracks?.every(t => t.decision_outcome === 'deferred')
+      const newStatus = anyAccepted ? 'approved' : allDeferred ? 'cancelled' : 'rejected'
+      await supabase
+        .from('trade_queue_items')
+        .update({ status: newStatus, stage: 'deciding' })
+        .eq('id', trade_queue_item_id)
+    }
+  } catch (e) {
+    console.warn('Failed to sync idea status after portfolio decision:', e)
   }
 
   return data as TradeIdeaPortfolio

@@ -31,6 +31,7 @@ import {
   Briefcase,
   Link2,
   Scale,
+  Gavel,
   Wrench,
   Trash2,
   Circle,
@@ -48,7 +49,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
-import { CounterViewBadge } from '../components/trading/CounterViewBadge'
+import { DebateIndicatorBadge } from '../components/trading/DebateIndicatorBadge'
 import type {
   TradeQueueItemWithDetails,
   TradeQueueStatus,
@@ -72,7 +73,7 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; ic
   // Legacy stages (kept for backwards compat)
   discussing: { label: 'Working On', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', icon: Wrench },
   simulating: { label: 'Modeling', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', icon: FlaskConical },
-  deciding: { label: 'Deciding', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', icon: Scale },
+  deciding: { label: 'Deciding', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', icon: Gavel },
   approved: { label: 'Committed', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle2 },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300', icon: XCircle },
   cancelled: { label: 'Deferred', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300', icon: XCircle },
@@ -458,10 +459,6 @@ export function TradeQueuePage() {
     [pairTradeProposalGroups]
   )
 
-  const groupedDecidingProposals = useMemo(() => {
-    return groupProposalsByTradeIdea(nonPairTradeProposals as ProposalData[])
-  }, [nonPairTradeProposals])
-
   // Fetch portfolios where current user is PM (for portfolio-specific decision permissions)
   const { data: userPMPortfolios } = useQuery({
     queryKey: ['user-pm-portfolios', user?.id],
@@ -527,6 +524,71 @@ export function TradeQueuePage() {
     enabled: proposalTradeIds.length > 0,
     staleTime: 30000,
   })
+
+  // Split proposals into pending (deciding) vs committed based on track status
+  const groupedDecidingProposals = useMemo(() => {
+    const pending = portfolioTrackStatuses
+      ? nonPairTradeProposals.filter((p: any) => {
+          const key = `${p.trade_queue_item_id}-${p.portfolio_id}`
+          const track = portfolioTrackStatuses.get(key)
+          return !track?.decision_outcome || track.decision_outcome === null
+        })
+      : nonPairTradeProposals
+    return groupProposalsByTradeIdea(pending as ProposalData[])
+  }, [nonPairTradeProposals, portfolioTrackStatuses])
+
+  // Fetch committed proposals — proposals on ideas where the portfolio track decision is 'accepted'
+  const { data: committedProposalsRaw } = useQuery({
+    queryKey: ['committed-proposals', filters.portfolio_id],
+    queryFn: async () => {
+      // Step 1: Get accepted portfolio tracks
+      let trackQuery = supabase
+        .from('trade_idea_portfolios')
+        .select('trade_queue_item_id, portfolio_id')
+        .eq('decision_outcome', 'accepted')
+      if (filters.portfolio_id && filters.portfolio_id !== 'all') {
+        trackQuery = trackQuery.eq('portfolio_id', filters.portfolio_id)
+      }
+      const { data: tracks } = await trackQuery
+      if (!tracks || tracks.length === 0) return []
+
+      // Step 2: Fetch proposals for those trade/portfolio combos
+      const tradeIds = [...new Set(tracks.map(t => t.trade_queue_item_id))]
+      const { data: proposals, error } = await supabase
+        .from('trade_proposals')
+        .select(`
+          id, trade_queue_item_id, user_id, portfolio_id, weight, shares, notes,
+          is_active, created_at, updated_at, sizing_context, proposal_type,
+          portfolios:portfolio_id (id, name),
+          trade_queue_items:trade_queue_item_id (
+            id, action, rationale, created_by, assigned_to, pair_trade_id,
+            assets:asset_id (id, symbol, company_name)
+          )
+        `)
+        .in('trade_queue_item_id', tradeIds)
+
+      if (error || !proposals?.length) return []
+
+      // Step 3: Attach user data
+      const userIds = [...new Set(proposals.map((p: any) => p.user_id).filter(Boolean))]
+      let userMap: Record<string, any> = {}
+      if (userIds.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, email, first_name, last_name')
+          .in('id', userIds)
+        users?.forEach(u => { userMap[u.id] = u })
+      }
+
+      return proposals.map((p: any) => ({ ...p, users: userMap[p.user_id] || null }))
+    },
+    staleTime: 30000,
+  })
+
+  const groupedCommittedProposals = useMemo(() => {
+    if (!committedProposalsRaw) return []
+    return groupProposalsByTradeIdea(committedProposalsRaw as ProposalData[])
+  }, [committedProposalsRaw])
 
   // Fetch simulations with their linked trade queue items (for pretrade section)
   const { data: simulations } = useQuery({
@@ -1764,7 +1826,7 @@ export function TradeQueuePage() {
                   >
                     <div className="flex items-center gap-2 mb-3 px-2">
                       {/* Icon changes based on view */}
-                      {fourthColumnView === 'deciding' && <Scale className="h-5 w-5 text-amber-500" />}
+                      {fourthColumnView === 'deciding' && <Gavel className="h-5 w-5 text-amber-500" />}
                       {fourthColumnView === 'executed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
                       {fourthColumnView === 'rejected' && <XCircle className="h-5 w-5 text-gray-400" />}
                       {fourthColumnView === 'deferred' && <Clock className="h-5 w-5 text-gray-400" />}
@@ -1819,7 +1881,7 @@ export function TradeQueuePage() {
                               {fourthColumnView === 'deciding' && (
                                 <Circle className="h-2 w-2 fill-amber-500 text-amber-500" />
                               )}
-                              <Scale className={clsx("h-4 w-4", fourthColumnView === 'deciding' ? "text-amber-600" : "text-gray-400")} />
+                              <Gavel className={clsx("h-4 w-4", fourthColumnView === 'deciding' ? "text-amber-600" : "text-gray-400")} />
                               <span className={fourthColumnView === 'deciding' ? "font-medium text-amber-700 dark:text-amber-400" : ""}>Deciding</span>
                             </div>
                             <Badge variant="secondary" className="text-xs">{groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.filter(g => !pairIdsWithProposals.has(g.pairTradeId)).length}</Badge>
@@ -1845,7 +1907,7 @@ export function TradeQueuePage() {
                           >
                             <CheckCircle2 className="h-4 w-4 text-green-500" />
                             <span className={fourthColumnView === 'executed' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Committed</span>
-                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.approved.length + pairTradesByStatus.approved.length}</Badge>
+                            <Badge variant="secondary" className="text-xs ml-auto">{groupedCommittedProposals.length}</Badge>
                           </button>
                           <button
                             onClick={() => setFourthColumnView('rejected')}
@@ -1857,7 +1919,7 @@ export function TradeQueuePage() {
                           >
                             <XCircle className="h-4 w-4 text-red-400" />
                             <span className={fourthColumnView === 'rejected' ? "font-medium" : "text-gray-600 dark:text-gray-300"}>Rejected</span>
-                            <Badge variant="secondary" className="text-xs ml-auto">{itemsByStatus.rejected.length + pairTradesByStatus.rejected.length}</Badge>
+                            <Badge variant="secondary" className="text-xs ml-auto">{archivedItems.filter(i => i.status === 'rejected').length + pairTradesByStatus.rejected.length}</Badge>
                           </button>
                           <button
                             onClick={() => setFourthColumnView('deferred')}
@@ -1891,9 +1953,9 @@ export function TradeQueuePage() {
                         {fourthColumnView === 'deciding'
                           ? groupedDecidingProposals.length + pairTradeProposalGroups.length + pairTradesByStatus.deciding.filter(g => !pairIdsWithProposals.has(g.pairTradeId)).length
                           : fourthColumnView === 'executed'
-                            ? itemsByStatus.approved.length + pairTradesByStatus.approved.length
+                            ? groupedCommittedProposals.length
                             : fourthColumnView === 'rejected'
-                              ? itemsByStatus.rejected.length + pairTradesByStatus.rejected.length
+                              ? archivedItems.filter(i => i.status === 'rejected').length + pairTradesByStatus.rejected.length
                               : fourthColumnView === 'deferred'
                                 ? deferredItems.length + pairTradesByStatus.cancelled.length
                                 : fourthColumnView === 'archived'
@@ -2357,17 +2419,67 @@ export function TradeQueuePage() {
                           )
                         })}
 
-                        {/* Non-Deciding Views: Show Trade Cards */}
-                        {fourthColumnView !== 'deciding' && (
-                          fourthColumnView === 'executed'
-                            ? itemsByStatus.approved
-                            : fourthColumnView === 'rejected'
-                              ? itemsByStatus.rejected
-                              : fourthColumnView === 'deferred'
-                                ? deferredItems
-                                : fourthColumnView === 'archived'
-                                  ? archivedItems
-                                  : deletedItems
+                        {/* Committed View: Show grouped proposals (same format as Deciding) */}
+                        {fourthColumnView === 'executed' && groupedCommittedProposals.map(group => (
+                          <div key={group.tradeId} className="rounded-lg border border-green-200 dark:border-green-800/40 overflow-hidden">
+                            <div
+                              className="flex items-center gap-2 px-3 py-2 bg-green-50/50 dark:bg-green-900/10 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                              onClick={() => { setSelectedTradeId(group.tradeId); setSelectedTradeInitialTab('proposals') }}
+                            >
+                              <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                              <button
+                                className="font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!group.assetId) return
+                                  window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                                    detail: { type: 'asset', id: group.assetId, title: group.ticker, data: { id: group.assetId, symbol: group.ticker } }
+                                  }))
+                                }}
+                              >
+                                {group.ticker}
+                              </button>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate flex-1">{group.companyName}</span>
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                                Committed
+                              </span>
+                            </div>
+                            <div className="border-t border-green-200/60 dark:border-green-800/30 bg-gray-50 dark:bg-gray-800/50 px-3 py-2 space-y-1">
+                              {group.proposals.filter(p => p != null).map(proposal => {
+                                const proposalUser = (proposal as any).users
+                                const userName = proposalUser
+                                  ? [proposalUser.first_name, proposalUser.last_name].filter(Boolean).join(' ') || proposalUser.email?.split('@')[0]
+                                  : 'Unknown'
+                                return (
+                                  <div key={proposal.id} className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-600 dark:text-gray-400">{userName}</span>
+                                    <div className="flex items-center gap-2">
+                                      {proposal.weight != null && (
+                                        <span className="font-medium text-gray-700 dark:text-gray-300">{proposal.weight}%</span>
+                                      )}
+                                      {proposal.shares != null && (
+                                        <span className="text-gray-500">#{proposal.shares}</span>
+                                      )}
+                                      <span className="text-[10px] text-gray-400">
+                                        {format(new Date(proposal.updated_at || proposal.created_at), 'MMM d')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Other Non-Deciding Views: Show Trade Cards */}
+                        {fourthColumnView !== 'deciding' && fourthColumnView !== 'executed' && (
+                          fourthColumnView === 'rejected'
+                            ? archivedItems.filter(i => i.status === 'rejected')
+                            : fourthColumnView === 'deferred'
+                              ? deferredItems
+                              : fourthColumnView === 'archived'
+                                ? archivedItems
+                                : deletedItems
                         ).map(item => (
                           <TradeQueueCard
                             key={item.id}
@@ -2381,7 +2493,7 @@ export function TradeQueuePage() {
                             onDragEnd={handleDragEnd}
                             onClick={() => { setSelectedTradeId(item.id); setSelectedTradeInitialTab('details') }}
                             onLabClick={handleLabClick}
-                            isArchived={fourthColumnView === 'deferred' || fourthColumnView === 'archived' || fourthColumnView === 'deleted'}
+                            isArchived
                             canMoveLeft={false}
                             canMoveRight={false}
                             onAcknowledgeResurfaced={() => acknowledgeResurfacedMutation.mutate(item)}
@@ -2394,19 +2506,19 @@ export function TradeQueuePage() {
                           groupedDecidingProposals.length === 0 &&
                           pairTradeProposalGroups.length === 0 && (
                             <div className="flex flex-col items-center justify-center py-12 text-center">
-                              <Scale className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-4" />
+                              <Gavel className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-4" />
                               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No trade proposals pending decision</p>
                               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Drag a trade idea here to create proposals</p>
                             </div>
                           )}
-                        {fourthColumnView === 'executed' && itemsByStatus.approved.length === 0 && pairTradesByStatus.approved.length === 0 && (
+                        {fourthColumnView === 'executed' && groupedCommittedProposals.length === 0 && (
                           <div className="flex flex-col items-center justify-center py-12 text-center">
                             <CheckCircle2 className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-4" />
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No committed trades yet</p>
                             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Accepted trade proposals will appear here</p>
                           </div>
                         )}
-                        {fourthColumnView === 'rejected' && itemsByStatus.rejected.length === 0 && pairTradesByStatus.rejected.length === 0 && (
+                        {fourthColumnView === 'rejected' && archivedItems.filter(i => i.status === 'rejected').length === 0 && pairTradesByStatus.rejected.length === 0 && (
                           <div className="flex flex-col items-center justify-center py-12 text-center">
                             <XCircle className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-4" />
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No rejected trades</p>
@@ -3675,7 +3787,7 @@ function PairTradeCard({
         {hasProposals && (
           <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 -mx-3 px-3 pb-2">
             <div className="flex items-center gap-1.5 mb-2">
-              <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              <Gavel className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
               <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
                 {pairTradeProposals.length} Proposal{pairTradeProposals.length !== 1 ? 's' : ''}
               </span>
@@ -4258,7 +4370,7 @@ function ProposalCard({
           )}
           {/* Call to action banner */}
           <div className="flex items-center gap-1.5 mt-2 mb-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
-            <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+            <Gavel className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
             <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Decision required</span>
           </div>
           {!showOverrideInput && !showDeferPicker ? (
@@ -4606,7 +4718,7 @@ function TradeQueueCard({
               {item.assets?.symbol}
             </button>
             <span className="text-gray-500 dark:text-gray-400">{item.assets?.company_name}</span>
-            <CounterViewBadge tradeIdeaId={item.id} onClick={onClick} />
+            <DebateIndicatorBadge tradeIdeaId={item.id} onClick={onClick} />
           </div>
         </div>
 

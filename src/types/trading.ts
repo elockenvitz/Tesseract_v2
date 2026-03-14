@@ -35,6 +35,30 @@ export type DecisionOutcome = 'accepted' | 'deferred' | 'rejected'
 export type TradeOutcome = 'executed' | 'rejected' | 'deferred' | 'accepted'
 export type VisibilityTier = 'active' | 'trash' | 'archive'
 
+// Thesis/debate system
+export type ThesisDirection = 'bull' | 'bear'
+export type ThesisConviction = 'low' | 'medium' | 'high'
+
+export interface TradeIdeaThesis {
+  id: string
+  trade_queue_item_id: string
+  direction: ThesisDirection
+  rationale: string
+  conviction: ThesisConviction | null
+  created_by: string
+  updated_at: string
+  created_at: string
+}
+
+export interface ThesisWithUser extends TradeIdeaThesis {
+  users: { id: string; email: string; first_name: string | null; last_name: string | null }
+}
+
+export interface ThesisCounts {
+  bull: number
+  bear: number
+}
+
 // Portfolio-scoped workflow track for a trade idea
 export interface TradeIdeaPortfolio {
   id: string

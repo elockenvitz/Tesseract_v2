@@ -123,9 +123,6 @@ export function Layout({
   }
 
   const handleNotificationClick = useCallback((notification: any) => {
-    console.log('🔔 Notification clicked:', notification)
-    console.log('🔔 Notification type:', notification.type)
-    console.log('🔔 Notification data:', notification.data)
 
     // Handle coverage_manager_requests type - open as a tab
     if (notification.type === 'coverage_manager_requests') {
@@ -169,8 +166,6 @@ export function Layout({
 
   const handleFocusMode = useCallback((enable: boolean) => {
     setIsFocusMode(enable)
-    console.log('🔍 Focus mode:', enable ? 'enabled' : 'disabled')
-
     // Focus mode is no longer tied to context conversations.
     // Keep the flag for any citation-based features that remain.
   }, [isCommPaneOpen, toggleCommPane])
@@ -191,8 +186,6 @@ export function Layout({
   useEffect(() => {
     const handleOpenDirectMessage = (event: CustomEvent) => {
       const { conversationId } = event.detail
-      console.log('📬 Opening direct message conversation:', conversationId)
-
       // Switch to direct-messages view
       setCommPaneView('direct-messages')
 
@@ -333,18 +326,12 @@ export function Layout({
     ? commPaneContext
     : tabContext
 
-  console.log('🎯 Context resolution - hasOverride:', hasOverride, 'commPaneContext:', commPaneContext, 'tabContext:', tabContext, 'final:', { contextType, contextId, contextTitle })
-
   const handleContextChange = useCallback((contextType: string, contextId: string, contextTitle: string, contextData?: any) => {
-    console.log('🔄 handleContextChange called with:', { contextType, contextId, contextTitle, contextData })
     // If context is being cleared (back to conversation list), clear the override
     if (!contextType || !contextId) {
-      console.log('✅ Context cleared, showing conversation list')
       setCommPaneContext({ contextType: undefined, contextId: undefined, contextTitle: undefined })
       return
     }
-
-    console.log('🔧 Setting override context')
     // Set the override context
     setCommPaneContext({ contextType, contextId, contextTitle })
 

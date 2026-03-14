@@ -66,7 +66,7 @@ export function Header({
   const userDetails = user as any
 
   // Check for unread direct messages (conversation_messages table only)
-  const { data: hasUnreadDirectMessages, refetch: refetchDirectMessages } = useQuery({
+  const { data: hasUnreadDirectMessages, refetch: refetchDirectMessagesUnstable } = useQuery({
     queryKey: ['unread-direct-messages', user?.id],
     queryFn: async () => {
       if (!user?.id) return false
@@ -96,18 +96,20 @@ export function Header({
           .gt('created_at', conv.last_read_at || '1970-01-01')
 
         if (count && count > 0) {
-          console.log('Header: Found unread direct messages in conversation', conv.conversation_id, 'count:', count)
           return true
         }
       }
 
-      console.log('Header: No unread direct messages')
       return false
     },
     enabled: !!user?.id,
     refetchInterval: 30000, // Check every 30 seconds
     staleTime: 0 // Always consider data stale to refetch on invalidation
   })
+
+  // Stable ref for refetch to avoid re-creating realtime subscription on every render
+  const refetchDMRef = useRef(refetchDirectMessagesUnstable)
+  refetchDMRef.current = refetchDirectMessagesUnstable
 
   // Listen for openSettings event from AI section
   useEffect(() => {
@@ -122,8 +124,6 @@ export function Header({
   useEffect(() => {
     if (!user?.id) return
 
-    console.log('Header: Setting up realtime subscription for new messages')
-
     // Subscribe to new conversation messages
     const channel = supabase
       .channel('header-messages')
@@ -134,9 +134,8 @@ export function Header({
           schema: 'public',
           table: 'conversation_messages'
         },
-        (payload) => {
-          console.log('Header: New message received, refetching unread status')
-          refetchDirectMessages()
+        () => {
+          refetchDMRef.current()
         }
       )
       .on(
@@ -147,18 +146,16 @@ export function Header({
           table: 'conversation_participants',
           filter: `user_id=eq.${user.id}`
         },
-        (payload) => {
-          console.log('Header: Conversation marked as read, refetching unread status')
-          refetchDirectMessages()
+        () => {
+          refetchDMRef.current()
         }
       )
       .subscribe()
 
     return () => {
-      console.log('Header: Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
-  }, [user?.id, refetchDirectMessages])
+  }, [user?.id])
 
   // Close dropdowns when clicking outside
   useEffect(() => {

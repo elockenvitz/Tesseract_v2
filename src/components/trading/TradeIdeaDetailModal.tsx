@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Link2,
   Scale,
+  Gavel,
   FlaskConical,
   Wrench,
   Trash2,
@@ -32,7 +33,6 @@ import {
   Plus,
   Check,
   Briefcase,
-  ArrowLeftRight,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -52,12 +52,12 @@ import type {
 } from '../../types/trading'
 import { clsx } from 'clsx'
 import { PairTradeLegEditor } from './PairTradeLegEditor'
-import { CounterViewModal } from './CounterViewModal'
 import { canMoveGlobalStage } from '../../lib/permissions/trade-idea-permissions'
-import { CounterViewsSection } from './CounterViewsSection'
-import { CounterViewBadge } from './CounterViewBadge'
+import { ThesesDebatePanel } from './ThesesDebatePanel'
+import { AddThesisModal } from './AddThesisModal'
+import { useThesisCounts } from '../../hooks/useTheses'
 
-type ModalTab = 'details' | 'discussion' | 'proposals' | 'activity'
+type ModalTab = 'details' | 'debate' | 'discussion' | 'proposals' | 'activity'
 
 interface TradeIdeaDetailModalProps {
   isOpen: boolean
@@ -110,7 +110,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [showDeferModal, setShowDeferModal] = useState(false)
   const [deferUntilDate, setDeferUntilDate] = useState<string | null>(null)
   const [showProposalModal, setShowProposalModal] = useState(false)
-  const [showCounterViewModal, setShowCounterViewModal] = useState(false)
+  const [showAddThesisModal, setShowAddThesisModal] = useState(false)
+  const [defaultThesisDirection, setDefaultThesisDirection] = useState<'bull' | 'bear' | undefined>()
   const [proposalWeight, setProposalWeight] = useState<string>('')
   const [proposalShares, setProposalShares] = useState<string>('')
   const [proposalNotes, setProposalNotes] = useState<string>('')
@@ -348,6 +349,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const trade = tradeData?.type === 'single' ? tradeData.data : null
   const pairTrade = tradeData?.type === 'pair' ? tradeData.data : null
   const pairFromLegs = tradeData?.type === 'pair_from_legs' ? tradeData.data : null
+
+  // Thesis debate counts
+  const { data: thesisCounts } = useThesisCounts(trade?.id)
+  const totalTheses = (thesisCounts?.bull ?? 0) + (thesisCounts?.bear ?? 0)
 
   // Combined pair trade data (from either source)
   const isPairTrade = !!(pairTrade || pairFromLegs)
@@ -1880,6 +1885,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               Details
             </button>
             <button
+              onClick={() => setActiveTab('debate')}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
+                activeTab === 'debate'
+                  ? "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+                  : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              )}
+            >
+              <Scale className="h-4 w-4" />
+              Debate
+              {totalTheses > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-full">
+                  {totalTheses}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('discussion')}
               className={clsx(
                 "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
@@ -2635,7 +2657,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   Modeling
                                 </Button>
                                 <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('deciding')} disabled={updatePairTradeStatusMutation.isPending}>
-                                  <Scale className="h-4 w-4 mr-1" />
+                                  <Gavel className="h-4 w-4 mr-1" />
                                   Deciding
                                 </Button>
                               </>
@@ -2647,14 +2669,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   Modeling
                                 </Button>
                                 <Button size="sm" variant="secondary" onClick={() => updatePairTradeStatusMutation.mutate('deciding')} disabled={updatePairTradeStatusMutation.isPending}>
-                                  <Scale className="h-4 w-4 mr-1" />
+                                  <Gavel className="h-4 w-4 mr-1" />
                                   Deciding
                                 </Button>
                               </>
                             )}
                             {(pairTradeData.status === 'simulating' || pairTradeData.status === 'modeling') && (
                               <Button size="sm" onClick={() => updatePairTradeStatusMutation.mutate('deciding')} disabled={updatePairTradeStatusMutation.isPending}>
-                                <Scale className="h-4 w-4 mr-1" />
+                                <Gavel className="h-4 w-4 mr-1" />
                                 Deciding
                               </Button>
                             )}
@@ -3809,6 +3831,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             </>
           ) : trade ? (
             <>
+              {/* Debate Tab */}
+              {activeTab === 'debate' && (
+                <div className="p-4">
+                  <ThesesDebatePanel
+                    tradeIdeaId={tradeId}
+                    onAddThesis={(direction) => {
+                      setDefaultThesisDirection(direction)
+                      setShowAddThesisModal(true)
+                    }}
+                    readOnly={false}
+                    ideaRationale={trade?.rationale}
+                    ideaAction={trade?.action}
+                    ideaCreatedBy={trade?.created_by}
+                  />
+                </div>
+              )}
+
               {/* Single Trade Details Tab */}
               {activeTab === 'details' && (
                 <div className="p-4 space-y-4">
@@ -4518,16 +4557,18 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     )}
                   </div>
 
-                  {/* ========== COUNTER-VIEWS SECTION ========== */}
-                  <CounterViewsSection
-                    tradeIdeaId={tradeId}
-                    onNavigateToIdea={(ideaId) => {
-                      if (onNavigateToIdea) {
-                        onNavigateToIdea(ideaId)
-                      }
-                    }}
-                    className="pb-4 border-b border-gray-200 dark:border-gray-700"
-                  />
+                  {/* ========== DEBATE PREVIEW (shows thesis count, links to debate tab) ========== */}
+                  {totalTheses > 0 && (
+                    <button
+                      onClick={() => setActiveTab('debate')}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors pb-4 border-b"
+                    >
+                      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                        Debate — {thesisCounts?.bull ?? 0} bull · {thesisCounts?.bear ?? 0} bear
+                      </span>
+                      <span className="text-[10px] text-primary-600 dark:text-primary-400 font-medium">View →</span>
+                    </button>
+                  )}
 
                   {/* ========== ACTIONS - SEGMENTED SECTIONS ========== */}
                   {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && trade.status !== 'archived' && (
@@ -4552,7 +4593,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     Modeling
                                   </Button>
                                   <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
-                                    <Scale className="h-4 w-4 mr-1" />
+                                    <Gavel className="h-4 w-4 mr-1" />
                                     Deciding
                                   </Button>
                                 </>
@@ -4564,14 +4605,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     Modeling
                                   </Button>
                                   <Button size="sm" variant="secondary" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
-                                    <Scale className="h-4 w-4 mr-1" />
+                                    <Gavel className="h-4 w-4 mr-1" />
                                     Deciding
                                   </Button>
                                 </>
                               )}
                               {(trade.status === 'simulating' || trade.stage === 'modeling') && (
                                 <Button size="sm" onClick={() => setShowProposalModal(true)} disabled={updateStatusMutation.isPending}>
-                                  <Scale className="h-4 w-4 mr-1" />
+                                  <Gavel className="h-4 w-4 mr-1" />
                                   Deciding
                                 </Button>
                               )}
@@ -4579,11 +4620,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => setShowCounterViewModal(true)}
-                                className="border-violet-300 text-violet-600 hover:bg-violet-50 hover:border-violet-400 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-900/20 dark:hover:border-violet-600"
+                                onClick={() => { setDefaultThesisDirection(trade?.action === 'sell' || trade?.action === 'trim' ? 'bear' : 'bull'); setShowAddThesisModal(true) }}
+                                className="border-amber-300 text-amber-600 hover:bg-amber-50 hover:border-amber-400 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20 dark:hover:border-amber-600"
                               >
-                                <ArrowLeftRight className="h-4 w-4 mr-1" />
-                                Counter-View
+                                <Scale className="h-4 w-4 mr-1" />
+                                Take a Side
                               </Button>
                             </div>
                           ) : (
@@ -4610,11 +4651,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => setShowCounterViewModal(true)}
-                                  className="border-violet-300 text-violet-600 hover:bg-violet-50 hover:border-violet-400 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-900/20 dark:hover:border-violet-600"
+                                  onClick={() => { setDefaultThesisDirection(trade?.action === 'sell' || trade?.action === 'trim' ? 'bear' : 'bull'); setShowAddThesisModal(true) }}
+                                  className="border-amber-300 text-amber-600 hover:bg-amber-50 hover:border-amber-400 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20 dark:hover:border-amber-600"
                                 >
-                                  <ArrowLeftRight className="h-4 w-4 mr-1" />
-                                  Counter-View
+                                  <Scale className="h-4 w-4 mr-1" />
+                                  Take a Side
                                 </Button>
                               </div>
                               <p className="text-[10px] text-gray-400 dark:text-gray-500">
@@ -4746,11 +4787,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 <Button
                                   size="sm"
                                   variant="secondary"
-                                  onClick={() => setShowCounterViewModal(true)}
-                                  className="!text-violet-600 hover:!bg-violet-50 hover:!border-violet-300 dark:!text-violet-400 dark:hover:!bg-violet-900/20"
+                                  onClick={() => { setDefaultThesisDirection(trade?.action === 'sell' || trade?.action === 'trim' ? 'bear' : 'bull'); setShowAddThesisModal(true) }}
+                                  className="!text-amber-600 hover:!bg-amber-50 hover:!border-amber-300 dark:!text-amber-400 dark:hover:!bg-amber-900/20"
                                 >
-                                  <ArrowLeftRight className="h-4 w-4 mr-1" />
-                                  Counter-View
+                                  <Scale className="h-4 w-4 mr-1" />
+                                  Take a Side
                                 </Button>
                               </div>
                             )}
@@ -6773,29 +6814,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         </div>
       )}
 
-      {/* Counter-View Modal */}
+      {/* Add Thesis Modal */}
       {trade && (
-        <CounterViewModal
-          isOpen={showCounterViewModal}
-          onClose={() => setShowCounterViewModal(false)}
-          originalIdea={{
-            id: trade.id,
-            action: trade.action,
-            asset_id: trade.asset_id,
-            asset_symbol: trade.assets?.symbol,
-            asset_name: trade.assets?.company_name,
-            portfolio_id: trade.portfolio_id,
-            portfolio_name: labLinks?.[0]?.trade_lab?.portfolio?.name,
-            urgency: trade.urgency || 'medium',
-            rationale: trade.rationale,
-            sharing_visibility: trade.sharing_visibility,
-          }}
-          onCreated={(newIdeaId) => {
-            queryClient.invalidateQueries({ queryKey: ['counter-views', tradeId] })
-            queryClient.invalidateQueries({ queryKey: ['counter-view-count', tradeId] })
-            if (onNavigateToIdea) {
-              onNavigateToIdea(newIdeaId)
-            }
+        <AddThesisModal
+          isOpen={showAddThesisModal}
+          onClose={() => setShowAddThesisModal(false)}
+          tradeIdeaId={tradeId}
+          assetSymbol={trade.assets?.symbol}
+          defaultDirection={defaultThesisDirection}
+          onCreated={() => {
+            queryClient.invalidateQueries({ queryKey: ['theses', tradeId] })
+            queryClient.invalidateQueries({ queryKey: ['thesis-counts', tradeId] })
           }}
         />
       )}

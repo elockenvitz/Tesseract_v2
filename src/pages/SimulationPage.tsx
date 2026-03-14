@@ -93,7 +93,7 @@ import { SuggestionReviewPanel } from '../components/trading/SuggestionReviewPan
 import type { SimulationShareAccess, SimulationShareMode, SharedSimulationListItem } from '../hooks/useSimulationShare'
 import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
 import { OrgBadge } from '../components/common/OrgBadge'
-import { CounterViewBadge } from '../components/trading/CounterViewBadge'
+import { DebateIndicatorBadge } from '../components/trading/DebateIndicatorBadge'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -3113,7 +3113,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   {idea.assets.company_name}
                 </span>
               )}
-              <CounterViewBadge
+              <DebateIndicatorBadge
                 tradeIdeaId={idea.id}
                 onClick={() => setSelectedTradeId(idea.id)}
               />
