@@ -31,6 +31,7 @@ import { format, subDays } from 'date-fns'
 import {
   useDecisionAccountability,
   useDecisionStory,
+  useSavePostMortem,
   usePortfoliosForFilter,
   useUsersForFilter,
 } from '../hooks/useDecisionAccountability'
@@ -651,6 +652,207 @@ function RationaleField({ label, value }: { label: string; value: string | null 
   )
 }
 
+// =============================================================================
+// Post-Mortem Section — inline retrospective editor for Outcomes.
+// Canonical post-mortem authoring surface. Stores in trade_event_rationales.
+//
+// Field mapping (DB field → retrospective UI label):
+//   reason_for_action → Outcome assessment (what happened overall)
+//   thesis_context    → Thesis vs reality (was the thesis right/wrong)
+//   what_changed      → What changed (between decision and outcome)
+//   sizing_logic      → Sizing reflection (was the size right)
+//   execution_context → Execution reflection (timing, fills, process)
+//   why_now           → What was right (what to repeat)
+//   catalyst_trigger  → What was wrong (what to avoid)
+//   risk_context      → Lessons learned (key takeaway)
+// =============================================================================
+
+const PM_FIELDS: Array<{ key: string; label: string; placeholder: string; rows?: number }> = [
+  { key: 'reason_for_action', label: 'Outcome Assessment', placeholder: 'What happened with this trade? How did it perform?', rows: 3 },
+  { key: 'thesis_context', label: 'Thesis vs Reality', placeholder: 'Was the original thesis correct? What played out differently?', rows: 2 },
+  { key: 'what_changed', label: 'What Changed', placeholder: 'What information or circumstances changed between the decision and the outcome?', rows: 2 },
+  { key: 'sizing_logic', label: 'Sizing Reflection', placeholder: 'Was the position size appropriate? Would you size it differently?', rows: 2 },
+  { key: 'execution_context', label: 'Execution Reflection', placeholder: 'Was the timing and execution quality adequate? Any process issues?', rows: 2 },
+  { key: 'why_now', label: 'What Was Right', placeholder: 'What should be repeated in future decisions?', rows: 2 },
+  { key: 'catalyst_trigger', label: 'What Was Wrong', placeholder: 'What should be avoided or done differently?', rows: 2 },
+  { key: 'risk_context', label: 'Lessons Learned', placeholder: 'Key takeaway from this decision.', rows: 2 },
+]
+
+function PostMortemSection({ story, row, executionEventId }: {
+  story: import('../hooks/useDecisionAccountability').DecisionStory | null | undefined
+  row: AccountabilityRow
+  executionEventId: string | null
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [diverged, setDiverged] = useState(false)
+  const [divergeExplanation, setDivergeExplanation] = useState('')
+
+  const saveM = useSavePostMortem(row.decision_id, executionEventId)
+  const existing = story?.executionRationale
+
+  const startEdit = () => {
+    // Prefill from existing rationale if any
+    const init: Record<string, string> = {}
+    if (existing) {
+      PM_FIELDS.forEach(f => { init[f.key] = (existing as any)[f.key] || '' })
+    }
+    setDraft(init)
+    setDiverged(existing?.divergence_from_plan ?? false)
+    setDivergeExplanation(existing?.divergence_explanation || '')
+    setEditing(true)
+  }
+
+  const handleSave = (status: 'draft' | 'complete') => {
+    const params: any = {
+      status,
+      divergence_from_plan: diverged,
+      divergence_explanation: diverged ? divergeExplanation : null,
+    }
+    PM_FIELDS.forEach(f => { params[f.key] = draft[f.key]?.trim() || null })
+    saveM.mutate(params, { onSuccess: () => setEditing(false) })
+  }
+
+  // Determine review status
+  const reviewStatus: 'missing' | 'draft' | 'complete' | 'reviewed' | 'not_applicable' =
+    row.execution_status !== 'executed' ? 'not_applicable' :
+    !existing ? 'missing' :
+    existing.status === 'reviewed' ? 'reviewed' :
+    existing.status === 'complete' ? 'complete' :
+    'draft'
+
+  const statusBadge = {
+    missing: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Missing</span>,
+    draft: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">In Progress</span>,
+    complete: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Captured</span>,
+    reviewed: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Reviewed</span>,
+    not_applicable: undefined,
+  }[reviewStatus]
+
+  return (
+    <StorySection icon={Pencil} title="Post-Mortem" defaultOpen={reviewStatus === 'missing' || editing} badge={statusBadge}>
+      {row.execution_status !== 'executed' ? (
+        <EmptyField text="Post-mortem available after execution" />
+      ) : !executionEventId ? (
+        <EmptyField text="No matched execution event — post-mortem requires an execution record" />
+      ) : editing ? (
+        /* ── Edit Mode ── */
+        <div className="space-y-3">
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            Retrospective review: look back at the decision and capture what happened, what you learned, and what to do differently.
+          </p>
+          {PM_FIELDS.map(f => (
+            <div key={f.key}>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-1">{f.label}</label>
+              <textarea
+                value={draft[f.key] || ''}
+                onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
+                placeholder={f.placeholder}
+                rows={f.rows || 2}
+                className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 leading-relaxed resize-none"
+              />
+            </div>
+          ))}
+
+          {/* Divergence checkbox */}
+          <div className="flex items-start gap-2 mt-1">
+            <input
+              type="checkbox"
+              checked={diverged}
+              onChange={e => setDiverged(e.target.checked)}
+              className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+            />
+            <div className="flex-1">
+              <span className="text-[10px] font-medium text-gray-600">Diverged from original plan</span>
+              {diverged && (
+                <textarea
+                  value={divergeExplanation}
+                  onChange={e => setDivergeExplanation(e.target.value)}
+                  placeholder="Explain how and why the execution diverged..."
+                  rows={2}
+                  className="w-full mt-1 text-[11px] px-2.5 py-1.5 rounded-md border border-amber-200 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 leading-relaxed resize-none"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => handleSave('complete')}
+              disabled={saveM.isPending}
+              className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50"
+            >
+              {saveM.isPending ? 'Saving...' : 'Save Review'}
+            </button>
+            <button
+              onClick={() => handleSave('draft')}
+              disabled={saveM.isPending}
+              className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              Save as Draft
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-3 py-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : existing ? (
+        /* ── View Mode (content exists) ── */
+        <div>
+          {PM_FIELDS.map(f => {
+            const val = (existing as any)[f.key]
+            if (!val) return null
+            return (
+              <div key={f.key} className="mb-2.5">
+                <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{f.label}</div>
+                <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{val}</p>
+              </div>
+            )
+          })}
+          {existing.divergence_from_plan && (
+            <div className="mt-2 px-2.5 py-2 rounded bg-amber-50 border border-amber-200">
+              <div className="text-[9px] font-semibold text-amber-700 mb-1">Diverged from plan</div>
+              <p className="text-[11px] text-gray-700">{existing.divergence_explanation || 'No explanation provided'}</p>
+            </div>
+          )}
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex items-center gap-3 text-[10px] text-gray-400">
+              {existing.authored_by_name && <span>by {existing.authored_by_name}</span>}
+              <span className="capitalize">{existing.status}</span>
+            </div>
+            <button
+              onClick={startEdit}
+              className="flex items-center gap-1 text-[10px] font-medium text-primary-600 hover:text-primary-700 transition-colors"
+            >
+              <Pencil className="w-3 h-3" />
+              Edit Review
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* ── Empty State (no review yet) ── */
+        <div className="text-center py-5">
+          <Pencil className="w-7 h-7 text-gray-300 mx-auto mb-2" />
+          <p className="text-[12px] font-medium text-gray-600 mb-1">No post-mortem captured</p>
+          <p className="text-[10px] text-gray-400 mb-3 max-w-xs mx-auto leading-relaxed">
+            Review what happened with this decision and capture lessons for future reference.
+          </p>
+          <button
+            onClick={startEdit}
+            className="px-4 py-2 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors"
+          >
+            Add Post-Mortem
+          </button>
+        </div>
+      )}
+    </StorySection>
+  )
+}
+
 function DetailPanel({
   row,
   onClose,
@@ -666,12 +868,12 @@ function DetailPanel({
   const firstExecId = row.matched_executions?.[0]?.event_id || null
   const { data: story, isLoading: storyLoading } = useDecisionStory(row.decision_id, firstExecId)
 
-  // Review status badge
-  const reviewBadge = story?.executionRationale
-    ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Reviewed</span>
-    : row.execution_status === 'executed'
-      ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Needs review</span>
-      : null
+  // Review status badge (mirrors PostMortemSection logic)
+  const reviewBadge = row.execution_status !== 'executed' ? null
+    : !story?.executionRationale ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">No review</span>
+    : story.executionRationale.status === 'reviewed' ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Reviewed</span>
+    : story.executionRationale.status === 'complete' ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Captured</span>
+    : <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">In Progress</span>
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -1026,58 +1228,11 @@ function DetailPanel({
         </StorySection>
 
         {/* ── 6. Post-Mortem / Lessons ── */}
-        <StorySection icon={Pencil} title="Post-Mortem" defaultOpen={true} badge={
-          story?.executionRationale
-            ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Captured</span>
-            : row.execution_status === 'executed'
-              ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Needs review</span>
-              : undefined
-        }>
-          {story?.executionRationale ? (
-            <div className="space-y-1">
-              <RationaleField label="Why was this trade made?" value={story.executionRationale.reason_for_action} />
-              <RationaleField label="Why now?" value={story.executionRationale.why_now} />
-              <RationaleField label="What changed?" value={story.executionRationale.what_changed} />
-              <RationaleField label="Thesis context" value={story.executionRationale.thesis_context} />
-              <RationaleField label="Catalyst / trigger" value={story.executionRationale.catalyst_trigger} />
-              <RationaleField label="Sizing logic" value={story.executionRationale.sizing_logic} />
-              <RationaleField label="Risk context" value={story.executionRationale.risk_context} />
-              <RationaleField label="Execution context" value={story.executionRationale.execution_context} />
-              {story.executionRationale.divergence_from_plan && (
-                <div className="mt-2 px-2.5 py-2 rounded bg-amber-50 border border-amber-200">
-                  <div className="text-[9px] font-semibold text-amber-700 mb-1">Diverged from plan</div>
-                  <p className="text-[11px] text-gray-700">{story.executionRationale.divergence_explanation || 'No explanation provided'}</p>
-                </div>
-              )}
-              <div className="mt-2 flex items-center gap-3 text-[10px] text-gray-400">
-                {story.executionRationale.authored_by_name && <span>by {story.executionRationale.authored_by_name}</span>}
-                {story.executionRationale.reviewed_by_name && <span>Reviewed by {story.executionRationale.reviewed_by_name}</span>}
-                <span className="capitalize">{story.executionRationale.status}</span>
-              </div>
-            </div>
-          ) : row.execution_status === 'executed' ? (
-            <div className="text-center py-4">
-              <Pencil className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-              <p className="text-[11px] font-medium text-gray-500 mb-1">No post-mortem captured yet</p>
-              <p className="text-[10px] text-gray-400 mb-3">Review what happened and capture lessons learned.</p>
-              {onNavigate && row.portfolio_id && (
-                <button
-                  onClick={() => onNavigate({
-                    id: row.portfolio_id,
-                    title: row.portfolio_name,
-                    type: 'portfolio',
-                    data: { subTab: 'journal' },
-                  })}
-                  className="text-[10px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
-                >
-                  Open Trade Journal to write review →
-                </button>
-              )}
-            </div>
-          ) : (
-            <EmptyField text="Post-mortem available after execution" />
-          )}
-        </StorySection>
+        <PostMortemSection
+          story={story}
+          row={row}
+          executionEventId={firstExecId}
+        />
 
         {/* ── Navigation & Metadata ── */}
         <div className="px-4 py-3">
@@ -1096,14 +1251,6 @@ function DetailPanel({
               >
                 View source idea
               </button>
-              {row.portfolio_id && (
-                <button
-                  onClick={() => onNavigate({ id: row.portfolio_id, title: row.portfolio_name, type: 'portfolio', data: { subTab: 'journal' } })}
-                  className="text-[10px] text-primary-600 hover:text-primary-700 hover:underline"
-                >
-                  Trade journal
-                </button>
-              )}
             </div>
           )}
 

@@ -24,7 +24,7 @@
  * - All are directional proxies, NOT exact P&L attribution
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
@@ -1094,6 +1094,28 @@ export function useDecisionStory(decisionId: string | null, executionEventId?: s
           thesis_text: ideaRes.data.thesis_text,
         } : null,
       }
+    },
+  })
+}
+
+// =============================================================================
+// Save post-mortem rationale from Outcomes (canonical post-mortem authoring path).
+// Reuses trade_event_rationales via saveRationale() from trade-event-service.
+// =============================================================================
+
+import { saveRationale } from '../lib/services/trade-event-service'
+import type { SaveRationaleParams } from '../types/trade-journal'
+
+export function useSavePostMortem(decisionId: string | null, executionEventId: string | null) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (fields: Omit<SaveRationaleParams, 'trade_event_id'>) => {
+      if (!executionEventId) throw new Error('No execution event to attach rationale to')
+      return saveRationale({ ...fields, trade_event_id: executionEventId }, undefined)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decision-story', decisionId, executionEventId] })
     },
   })
 }
